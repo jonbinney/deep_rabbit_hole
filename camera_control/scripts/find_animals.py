@@ -13,9 +13,9 @@ def update_gui(window_name, image, background_image, thresholded_image):
     cv2.imshow(window_name, combined_image)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-v', '--video', help='path to the video file')
-parser.add_argument('-a', '--min-area', type=int, default=500, help='minimum area of a change')
-parser.add_argument('-t', '--threshold', type=int, default=5, help='pixel difference threshold')
+parser.add_argument('video', help='path to the video file')
+parser.add_argument('-a', '--min-area', type=int, default=200, help='minimum area of a change')
+parser.add_argument('-t', '--threshold', type=int, default=20, help='pixel difference threshold')
 parser.add_argument('-b', '--blur-size', type=int, default=21,
     help='size of guassian blur (must be odd')
 args = parser.parse_args()
@@ -57,7 +57,7 @@ while not exit_triggered:
 
     for c in big_enough_contours:
         (x, y, w, h) = cv2.boundingRect(c)
-        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 4)
 
     update_gui(window_name, image, background_image, thresholded_diff_image)
 
