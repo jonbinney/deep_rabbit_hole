@@ -4,10 +4,21 @@ Script to run inference on a video file and generate annotations for detected ob
 import argparse
 import cv2
 import json
+from groundingdino.util.inference import load_model, predict
+import torchvision.transforms as T
 
 def detect_objects(model, frame):
-    # Hardcoded for now
-    return ((0, 0, 100, 100),)
+    # Convert frame to a torch tensor
+    frame_tensor = T.ToTensor()(frame)
+    boxes, logits, phrases = predict(
+        model=model,
+        image=frame_tensor,
+        caption="rabbit",
+        box_threshold=0.3,
+        text_threshold=0.25,
+        device='cpu'
+    )
+    return boxes
 
 def test_model(video_path, annotation_path):
     print("running")
@@ -18,10 +29,8 @@ def test_model(video_path, annotation_path):
     annotations = []
 
     # Load model
-    model = None
-    #model = Model()
-    #model.load_state_dict(torch.load('/path/to/model/weights.pth'))
-    #model.eval()
+    model = load_model("../../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "../../../weights/groundingdino_swint_ogc.pth")
+    print("model loaded")
 
     # Process frames
     frame_count = 0
@@ -39,7 +48,7 @@ def test_model(video_path, annotation_path):
 
         keyframe = False
 
-        # Run inference on one frame every 250
+        # Run inference on one frame every 10
         if frame_count % 10 == 0:
             # Preprocess frame
             preprocessed_frame = frame
@@ -47,6 +56,7 @@ def test_model(video_path, annotation_path):
             # Perform inference
             bboxes = detect_objects(model, preprocessed_frame)
             keyframe = True
+            print("Detected objects:", bboxes)
 
         # Write annotations
         if propagate_annotations or frame_count % 10 == 0:
