@@ -1,24 +1,58 @@
 """
 Script to run inference on a video file and generate annotations for detected objects.
+
+It focuses on formatting stuff.
+The following is working now:
+ - It runs on Julian's VSCode using a python debug config
+ - It successfully loads Grounding DINO and executes on Julian's CUDA
+ - It sucks at detecting rabbits, it detects random crap given the low threshold
+ - BUT: the written annotations file is correct and can be successfully imported in CVAT.ai
+ - The annotation bbox format is correctly converted from the model's format to COCO's format
+
+Bonus:
+ - There's a test for the bbox conversion function and Julian could run it from VSCode
+
+Next up:
+ - Get the model to actually detect something useful
+ - Perform fine-tuning?
+ - Implement a tracker?
+ - Clean-up / organize the code properly?
+ - Likewise organize datasets properly?
+ - Figure out how to benchmark detection results vs. manual labels?
 """
 import argparse
 import cv2
 import json
-from groundingdino.util.inference import load_model, predict
+from groundingdino.util.inference import load_model, predict, annotate
 import torchvision.transforms as T
 
+# This function is used to convert from the bbox format used
+# by the model (percentual cxcywh) to the format used by the COCO dataset (xywh)
+# TODO: Use torch.transform functions (see torchvision.ops.box_convert)
+def convert_bbox_format(bbox, shape):
+    h, w, _ = shape
+    cx, cy, cw, ch = bbox.numpy()
+    return [
+        (cx * w) - (cw * w) / 2,
+        (cy * h) - (ch * h) / 2,
+        cw * w,
+        ch * h
+    ]
+
 def detect_objects(model, frame):
+    h, w, _ = frame.shape
+    frame = cv2.resize(frame, (int(w/2), int(h/2)))
     # Convert frame to a torch tensor
     frame_tensor = T.ToTensor()(frame)
     boxes, logits, phrases = predict(
         model=model,
         image=frame_tensor,
-        caption="rabbit",
-        box_threshold=0.3,
-        text_threshold=0.25,
-        device='cpu'
+        caption="rabbits",
+        box_threshold=0.15,
+        text_threshold=0.15
     )
-    return boxes
+
+    return map(lambda bbox: convert_bbox_format(bbox, (h, w, _)), boxes)
 
 def test_model(video_path, annotation_path):
     print("running")
@@ -54,9 +88,9 @@ def test_model(video_path, annotation_path):
             preprocessed_frame = frame
 
             # Perform inference
-            bboxes = detect_objects(model, preprocessed_frame)
+            bboxes = list(detect_objects(model, preprocessed_frame))
             keyframe = True
-            print("Detected objects:", bboxes)
+            print(f"Detected objects: {list(bboxes)}")
 
         # Write annotations
         if propagate_annotations or frame_count % 10 == 0:
