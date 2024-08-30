@@ -88,10 +88,6 @@ def test_model(video_path, annotation_path):
 
         keyframe = False
 
-        # frame = cv2.imread("/home/julian/aaae/deep-rabbit-hole/datasets/rabbits_2024_08_12_25_15sec/images/001.png")
-        # if frame_count > 0:
-        #     break
-
         # Run inference on one frame every 10
         if frame_count % 10 == 0:
             # Preprocess frame
