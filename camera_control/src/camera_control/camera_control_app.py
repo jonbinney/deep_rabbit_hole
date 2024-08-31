@@ -40,7 +40,7 @@ class CameraControlApp(QMainWindow):
         self.seek_slider.setValue(0)
         self.seek_slider.valueChanged.connect(self.seek_frame)
 
-        default_detection_parameters = DetectionParameters(200, 11, "MOG2", 0.001)
+        default_detection_parameters = DetectionParameters(10, 11, "MOG2", 0.001)
         self.detection_control_widget = DetectionControlWidget(self.app_signals, self.video_path, default_detection_parameters)
 
         self.app_signals.frame_updated.connect(

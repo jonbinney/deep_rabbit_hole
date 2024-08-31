@@ -5,7 +5,7 @@ Expected folder structure:
 datasets/
     <dataset_name>/
         video/
-            <dataset_name>.mp4
+            video.mp4
         annotations/
             some_annotation_file.json
             some_other_annotation_file.json

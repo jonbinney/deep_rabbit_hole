@@ -8,7 +8,7 @@
             "program": "camera_control/src/camera_control/camera_control_app.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
-            "args": ["datasets/${input:dataset}/video/${input:dataset}.mp4"],
+            "args": ["datasets/${input:dataset}/video/video.mp4"],
         },
     ],
     "inputs": [
@@ -16,7 +16,9 @@
           "id": "dataset",
           "type": "pickString",
           "description": "Dataset",
-          "options": ["rabbits_2024_08_12_25_10min_div2"]
+          "options": [
+            "rabbits_2024_08_12_25_10min_div2",
+            "rabbits_2024_08_12_25_15sec"]
         }
       ]
 }
