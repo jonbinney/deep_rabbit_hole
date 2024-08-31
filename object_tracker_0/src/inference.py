@@ -5,15 +5,14 @@ It focuses on formatting stuff.
 The following is working now:
  - It runs on Julian's VSCode using a python debug config
  - It successfully loads Grounding DINO and executes on Julian's CUDA
- - It sucks at detecting rabbits, it detects random crap given the low threshold
- - BUT: the written annotations file is correct and can be successfully imported in CVAT.ai
+ - It detects some rabbits!
+ - The written annotations file is correct and can be successfully imported in CVAT.ai
  - The annotation bbox format is correctly converted from the model's format to COCO's format
 
 Bonus:
  - There's a test for the bbox conversion function and Julian could run it from VSCode
 
 Next up:
- - Get the model to actually detect something useful
  - Perform fine-tuning?
  - Implement a tracker?
  - Clean-up / organize the code properly?
@@ -24,7 +23,9 @@ import argparse
 import cv2
 import json
 from groundingdino.util.inference import load_model, predict, annotate
-import torchvision.transforms as T
+import groundingdino.datasets.transforms as T
+from PIL import Image
+
 
 # This function is used to convert from the bbox format used
 # by the model (percentual cxcywh) to the format used by the COCO dataset (xywh)
@@ -39,23 +40,29 @@ def convert_bbox_format(bbox, shape):
         ch * h
     ]
 
+def prepare_frame(frame):
+    transform = T.Compose([
+        T.RandomResize([800], max_size=1333),
+        T.ToTensor(),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+    prepared_frame, _ = transform(frame, None)
+    return prepared_frame
+
 def detect_objects(model, frame):
-    h, w, _ = frame.shape
-    frame = cv2.resize(frame, (int(w/2), int(h/2)))
-    # Convert frame to a torch tensor
-    frame_tensor = T.ToTensor()(frame)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    pil_frame = Image.fromarray(frame)
+    frame_tensor = prepare_frame(pil_frame)
     boxes, logits, phrases = predict(
         model=model,
         image=frame_tensor,
-        caption="rabbits",
+        caption="rabbit",
         box_threshold=0.15,
         text_threshold=0.15
     )
-
-    return map(lambda bbox: convert_bbox_format(bbox, (h, w, _)), boxes)
+    return map(lambda bbox: convert_bbox_format(bbox, frame.shape), boxes)
 
 def test_model(video_path, annotation_path):
-    print("running")
     # Open video file
     video = cv2.VideoCapture(video_path)
 
@@ -64,7 +71,6 @@ def test_model(video_path, annotation_path):
 
     # Load model
     model = load_model("../../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "../../../weights/groundingdino_swint_ogc.pth")
-    print("model loaded")
 
     # Process frames
     frame_count = 0
