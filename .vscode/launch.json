@@ -8,17 +8,48 @@
             "program": "camera_control/src/camera_control/camera_control_app.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
-            "args": ["datasets/${input:dataset}/video/video.mp4"],
+            "args": [
+                "datasets/${input:dataset}/video/video.mp4"
+            ],
         },
+        {
+            "name": "Inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/inference.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-v",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
+                "-a",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
+            ],
+            "cwd": "${workspaceFolder}/object_tracker_0"
+        },
+        {
+            "name": "Visualize",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/visualize.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-v",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
+                "-a",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
+            ],
+            "cwd": "${workspaceFolder}/object_tracker_0"
+        }
     ],
     "inputs": [
         {
-          "id": "dataset",
-          "type": "pickString",
-          "description": "Dataset",
-          "options": [
-            "rabbits_2024_08_12_25_10min_div2",
-            "rabbits_2024_08_12_25_15sec"]
+            "id": "dataset",
+            "type": "pickString",
+            "description": "Dataset",
+            "options": [
+                "rabbits_2024_08_12_25_10min_div2",
+                "rabbits_2024_08_12_25_15sec"
+            ]
         }
-      ]
+    ]
 }
