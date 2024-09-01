@@ -16,15 +16,14 @@
             "name": "Inference",
             "type": "debugpy",
             "request": "launch",
-            "program": "src/inference.py",
+            "program": "object_tracker_0/src/inference.py",
             "console": "integratedTerminal",
             "args": [
                 "-v",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
                 "-a",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
-            ],
-            "cwd": "${workspaceFolder}/object_tracker_0"
+            ]
         },
         {
             "name": "Visualize",
