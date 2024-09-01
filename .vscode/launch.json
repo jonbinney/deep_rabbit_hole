@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Camera control App",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "camera_control/src/camera_control/camera_control_app.py",
+            "console": "integratedTerminal",
+            "redirectOutput": true,
+            "args": ["datasets/${input:dataset}/video/video.mp4"],
+        },
+    ],
+    "inputs": [
+        {
+          "id": "dataset",
+          "type": "pickString",
+          "description": "Dataset",
+          "options": [
+            "rabbits_2024_08_12_25_10min_div2",
+            "rabbits_2024_08_12_25_15sec"]
+        }
+      ]
+}
