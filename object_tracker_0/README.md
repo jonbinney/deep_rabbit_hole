@@ -2,54 +2,48 @@
 
 This project is a Python project using PyTorch to train and test a model for object tracking.
 
-## Project Structure
+# Running inference
 
-The project has the following files and directories:
+Use the Run configuration "Inference".
+I used it with the rabbits_2024_08_12_25_15sec video and it successfully detects the rabbit
+on many frames (it only runs detection every 10 frames or so) and writes the result in an
+annotation file. If you take that annotation file and uploaded on CVAT, you can see it matches
+the video appropriately.
 
-- `data/raw`: This folder is used to store the raw data for training and testing the model.
+# Installing Grounding DINO
 
-- `data/processed`: This folder is used to store the processed data after pre-processing.
+These instructions need to be done only once to set-up your environment so that you can run
+inference using Grounding DINO
 
-- `models/model.py`: This file contains the Python code for the model. It exports a class `Model` which implements the PyTorch model architecture.
+## Download Grounding DINO code
 
-- `notebooks/exploration.ipynb`: This Jupyter notebook is used for data exploration and analysis.
+It should be installed as an external subtree under external/GroundingDINO.
+If it doesn't show-up in your repo, it's done like so:
 
-- `src/train.py`: This file contains the Python code for training the model. It imports the `Model` class from `models/model.py` and uses it to train the model on the processed data.
+   git remote add GroundingDINO https://github.com/IDEA-Research/GroundingDINO.git
+   git subtree add --prefix=external/GroundingDINO GroundingDINO main --squash
 
-- `src/test.py`: This file contains the Python code for testing the trained model. It imports the `Model` class from `models/model.py` and uses it to evaluate the model's performance on test data.
+## Install CUDA dependencies
 
-- `src/utils.py`: This file contains utility functions that are used in the training and testing process.
+You can use `nvidia-smi` to check your current CUDA version. Mine (Julian) was 12.5
+at the time of writing this, thus the versions chosen in the next step.
 
-- `requirements.txt`: This file lists the dependencies required for the project. It specifies the PyTorch library as a dependency.
+I had to install the following in Ubuntu 20.04 for the subsequent pip installation
+to work:
 
-## Usage
+   sudo apt install libcusparse-dev-12-5 libcusolver-dev-12-5 libcublas-dev-12-5
 
-To use this project, follow these steps:
+I also set-up CUDA_HOME just in case
 
-1. Clone the repository.
+   export CUDA_HOME=/usr/local/cuda
 
-2. Install the required dependencies by running the following command:
+Which in my case it was a symlink to a symlink to a symlink to /usr/local/cuda-12.5
 
-   ```
-   pip install -r requirements.txt
-   ```
+## pip install
 
-3. Preprocess the raw data and store it in the `data/processed` directory.
+The instructions are [in the Grounding DINO repo](https://github.com/IDEA-Research/GroundingDINO?tab=readme-ov-file#hammer_and_wrench-install)
+but basically it comes down to:
 
-4. Train the model by running the following command:
-
-   ```
-   python src/train.py
-   ```
-
-5. Test the trained model by running the following command:
-
-   ```
-   python src/test.py
-   ```
-
-For more details on the project and its implementation, refer to the source code and the `notebooks/exploration.ipynb` notebook.
-
-```
-
-This file provides an overview of the project structure and instructions on how to use it.
+ - Activate your venv (VSCode does it for you I think)
+ - Go to external/GroundingDINO
+ - pip install -e .

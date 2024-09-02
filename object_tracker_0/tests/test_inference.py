@@ -1,6 +1,3 @@
-import sys
-print(sys.path)
-
 import unittest
 from inference import convert_bbox_format
 import torch

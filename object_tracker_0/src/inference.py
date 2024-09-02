@@ -70,7 +70,7 @@ def test_model(video_path, annotation_path):
     annotations = []
 
     # Load model
-    model = load_model("../../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "../../../weights/groundingdino_swint_ogc.pth")
+    model = load_model("external/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "models/weights/groundingdino_swint_ogc.pth")
 
     # Process frames
     frame_count = 0
