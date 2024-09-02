@@ -74,7 +74,7 @@ def test_model(video_path, annotation_path):
 
     # Process frames
     frame_count = 0
-    coco_id = 0
+    coco_id = 1
     bboxes = []
     propagate_annotations = True  # Whether to propagate annotations to subsequent frames
 
@@ -105,10 +105,10 @@ def test_model(video_path, annotation_path):
             for bbox in bboxes:
                 x, y, width, height = bbox
                 coco_annotation = {
-                    'image_id': frame_count,
+                    'image_id': frame_count + 1,
                     'id': coco_id,
                     'category_id': 1,
-                    'bbox': [x, y, width, height],
+                    'bbox': [float(x), float(y), float(width), float(height)],
                     'attributes': { 'keyframe': keyframe },
                     'iscrowd': 0,
                     'segmentation': []
@@ -123,7 +123,7 @@ def test_model(video_path, annotation_path):
         'categories': [
             {'id': 1, 'name': 'rabbit'}
         ],
-        'images': list(map(lambda x: {'id': x['image_id'], 'file_name': f"frame_{x['image_id']}.PNG" }, annotations)),
+        'images': list(map(lambda x: {'id': x['image_id'], 'file_name': f"frame_{x['image_id'] - 1:06d}.PNG" }, annotations)),
         'annotations': annotations
     }
     with open(annotation_path, 'w') as f:
