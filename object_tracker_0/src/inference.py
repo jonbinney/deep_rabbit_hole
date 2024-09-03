@@ -11,7 +11,7 @@ import json
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
-def load_model(config_path, weights_path):
+def load_model():
     model_id = "IDEA-Research/grounding-dino-base"
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -65,7 +65,7 @@ def test_model(video_path, annotation_path):
     annotations = []
 
     # Load model
-    (model, processor) = load_model("external/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "models/weights/groundingdino_swint_ogc.pth")
+    (model, processor) = load_model()
 
     # Process frames
     frame_count = 0
