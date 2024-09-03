@@ -50,5 +50,5 @@ but basically it comes down to:
  - Activate your venv (VSCode does it for you I think)
  - Go to external/GroundingDINO
  - pip install -e .
- if that rails, try:
+ if that fails, try:
  - python setup.py install
