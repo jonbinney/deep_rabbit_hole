@@ -1,3 +1,4 @@
 torch
 pycocotools
 opencv-python
+huggingface-hub==0.24.6

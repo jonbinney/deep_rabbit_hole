@@ -13,7 +13,10 @@ the video appropriately.
 # Installing Grounding DINO
 
 These instructions need to be done only once to set-up your environment so that you can run
-inference using Grounding DINO
+inference using Grounding DINO (inference_gd.py).
+
+NOTE: These instructions aren't necessary if you use the Hugging Face Transformers Library
+version: inference.py
 
 ## Download Grounding DINO code
 
@@ -47,3 +50,5 @@ but basically it comes down to:
  - Activate your venv (VSCode does it for you I think)
  - Go to external/GroundingDINO
  - pip install -e .
+ if that fails, try:
+ - python setup.py install

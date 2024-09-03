@@ -1,31 +1,39 @@
 """
 Script to run inference on a video file and generate annotations for detected objects.
-This is the same as inference_gd.py, but with the groundingdino dependency removed and using
-the Hugging Face Transformer library instead.
+It uses Grounding DINO code directly.
+See inference.py for a version that uses the Hugging Face Transformer library instead.
+
+The following is working:
+ - It runs on Julian's VSCode using a python debug config
+ - It successfully loads Grounding DINO and executes on Julian's CUDA
+ - It detects some rabbits!
+ - The written annotations file is correct and can be successfully imported in CVAT.ai
+ - The annotation bbox format is correctly converted from the model's format to COCO's format
+
+Bonus:
+ - There's a test for the bbox conversion function and Julian could run it from VSCode
+
+Next up:
+ - Perform fine-tuning?
+ - Implement a tracker?
+ - Clean-up / organize the code properly?
+ - Likewise organize datasets properly?
+ - Figure out how to benchmark detection results vs. manual labels?
 """
-import torch
 import argparse
 import cv2
 import json
-# import groundingdino.datasets.transforms as T
+from groundingdino.util.inference import load_model, predict, annotate
+import groundingdino.datasets.transforms as T
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
-def load_model():
-    model_id = "IDEA-Research/grounding-dino-base"
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
-
-    return (model, processor)
 
 # This function is used to convert from the bbox format used
 # by the model (percentual cxcywh) to the format used by the COCO dataset (xywh)
 # TODO: Use torch.transform functions (see torchvision.ops.box_convert)
 def convert_bbox_format(bbox, shape):
     h, w, _ = shape
-    cx, cy, cw, ch = bbox.cpu().numpy()
+    cx, cy, cw, ch = bbox.numpy()
     return [
         (cx * w) - (cw * w) / 2,
         (cy * h) - (ch * h) / 2,
@@ -33,29 +41,27 @@ def convert_bbox_format(bbox, shape):
         ch * h
     ]
 
-# Converts from Pascal VOC bbox format (x_min, y_min, x_max, y_max)
-# to COCO bbox format (x, y, width, height)
-def convert_bbox_format_2(bbox, shape):
-    x0, y0, x1, y1 = bbox
-    return [ x0, y0, x1 - x0, y1 - y0 ]
+def prepare_frame(frame):
+    transform = T.Compose([
+        T.RandomResize([800], max_size=1333),
+        T.ToTensor(),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+    prepared_frame, _ = transform(frame, None)
+    return prepared_frame
 
-def detect_objects(model, processor, frame):
+def detect_objects(model, frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     pil_frame = Image.fromarray(frame)
-
-    inputs = processor(images=pil_frame, text="rabbit.", return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        outputs = model(**inputs)
-
-    results = processor.post_process_grounded_object_detection(
-        outputs,
-        inputs.input_ids,
+    frame_tensor = prepare_frame(pil_frame)
+    boxes, logits, phrases = predict(
+        model=model,
+        image=frame_tensor,
+        caption="rabbit",
         box_threshold=0.15,
-        text_threshold=0.15,
-        target_sizes=[pil_frame.size[::-1]],
+        text_threshold=0.15
     )
-
-    return map(lambda bbox: convert_bbox_format_2(bbox, frame.shape), results[0].get('boxes', []).cpu())
+    return map(lambda bbox: convert_bbox_format(bbox, frame.shape), boxes)
 
 def test_model(video_path, annotation_path):
     # Open video file
@@ -65,7 +71,7 @@ def test_model(video_path, annotation_path):
     annotations = []
 
     # Load model
-    (model, processor) = load_model()
+    model = load_model("external/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "models/weights/groundingdino_swint_ogc.pth")
 
     # Process frames
     frame_count = 0
@@ -89,7 +95,7 @@ def test_model(video_path, annotation_path):
             preprocessed_frame = frame
 
             # Perform inference
-            bboxes = list(detect_objects(model, processor, preprocessed_frame))
+            bboxes = list(detect_objects(model, preprocessed_frame))
             keyframe = True
             print(f"Detected objects: {list(bboxes)}")
 
