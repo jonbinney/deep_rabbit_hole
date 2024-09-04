@@ -4,33 +4,33 @@ import json
 import numpy as np
 
 def compute_confusion_matrix(ground_truth: str, predictions: str, iou_threshold: float):
+    def group_annotations(annotations):
+        annotations_per_image = defaultdict(lambda: [])
+        for annotation in annotations:
+            image_id = annotation['image_id']
+            annotations_per_image[image_id].append(annotation)
+        return annotations_per_image
+
+
     with open(ground_truth, 'r') as f:
         ground_truth_data = json.load(f)
 
     with open(predictions, 'r') as f:
         predictions_data = json.load(f)
 
-    # print(len(ground_truth_data['images']))
-    # print(len(predictions_data['images']))
-    # TODO sanity check
+    if len(ground_truth_data['images']) != len(predictions_data['images']):
+        raise ValueError("Number of images in ground truth and predictions do not match")
 
-    
-    ground_truth_per_image = defaultdict(lambda: [])
-    for annotation in ground_truth_data['annotations']:
-        image_id = annotation['image_id']
-        ground_truth_per_image[image_id].append(annotation)
-    print(f"Total annotations in ground truth: {len(ground_truth_data['annotations'])}")
 
-    predictions_per_image = defaultdict(lambda: [])
-    for annotation in predictions_data['annotations']:
-        image_id = annotation['image_id']
-        predictions_per_image[image_id].append(annotation)
+    ground_truth_per_image = group_annotations(ground_truth_data['annotations'])
     print(f"Total annotations in predictions: {len(predictions_data['annotations'])}")
 
+    predictions_per_image = group_annotations(predictions_data['annotations'])
+    print(f"Total annotations in ground truth: {len(ground_truth_data['annotations'])}")
 
     ids = [gt['id'] for gt in ground_truth_data['images']]
     cm = np.zeros((2, 2), np.int32)
-    
+
     # this is for debugging purposes
     images_with_fp = []
     images_with_fn = []
@@ -42,7 +42,7 @@ def compute_confusion_matrix(ground_truth: str, predictions: str, iou_threshold:
         # For debugging purposes
         if cm_image[0, 1] > 0:
             images_with_fp.append(id)
-        
+
         if cm_image[1, 0] > 0:
             images_with_fn.append(id)
 
@@ -53,15 +53,16 @@ def compute_confusion_matrix(ground_truth: str, predictions: str, iou_threshold:
     return cm
 
 def compute_confusion_matrix_per_image(ground_truth: list, predictions: list, iou_threshold: float):
-    ground_truth_per_category = defaultdict(lambda: [])
-    for annotation in ground_truth:
-        category_id = annotation['category_id']
-        ground_truth_per_category[category_id].append(annotation)
+    def group_by_category(annotations):
+        annotations_per_category = defaultdict(lambda: [])
+        for annotation in annotations:
+            category_id = annotation['category_id']
+            annotations_per_category[category_id].append(annotation)
+        return annotations_per_category
 
-    predictions_per_category = defaultdict(lambda: [])
-    for annotation in predictions:
-        category_id = annotation['category_id']
-        predictions_per_category[category_id].append(annotation)
+
+    ground_truth_per_category = group_by_category(ground_truth)
+    predictions_per_category = group_by_category(predictions)
 
     all_categories = set(ground_truth_per_category.keys()) | set(predictions_per_category.keys())
     cm = np.zeros((2, 2), np.int32)
@@ -71,6 +72,7 @@ def compute_confusion_matrix_per_image(ground_truth: list, predictions: list, io
 
     return cm
 
+# Boxes must be in the format [x, y, width, height]
 def compute_iou(box1, box2):
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
@@ -89,6 +91,7 @@ def compute_iou(box1, box2):
 
 # returns a confusion matrix in the form: [[TP, FP], [FN, TN]] (TN is always 0)
 def compute_confusion_matrix_per_image_one_category(ground_truths: list, predictions: list, iou_threshold: float):
+    # Compute the IoU for every pair of ground truth and prediction, and store it in a map from (gt_id, pred_id) to IoU
     pair_to_iou = {}
     for gt in ground_truths:
         for pred in predictions:
@@ -99,9 +102,8 @@ def compute_confusion_matrix_per_image_one_category(ground_truths: list, predict
     gt_ids = set(gt['id'] for gt in ground_truths)
     pred_ids = set(pred['id'] for pred in predictions)
 
+    # Iterate through the pairs in descending order of IoU, and if both elements are still in the set of ids, it's a true positive.
     tp = 0
-    #print(pair_to_iou, pred_ids, gt_ids)
-
     sorted_pairs = sorted(pair_to_iou.keys(), key=lambda x: x[1], reverse=True)
     for gt, pred in sorted_pairs:
         if gt in gt_ids and pred in pred_ids:
@@ -111,8 +113,9 @@ def compute_confusion_matrix_per_image_one_category(ground_truths: list, predict
         pred_ids.discard(pred)
 
 
+    # The elements left in pred_ids are false positives, and the elements left in gt_ids are false negatives
     return np.array([[tp, len(pred_ids)], [len(gt_ids), 0]], np.int32)
-    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Object Tracker')
@@ -128,6 +131,6 @@ if __name__ == '__main__':
     precision = cm[0, 0] / (cm[0, 0] + cm[0, 1])
     recall = cm[0, 0] / (cm[0, 0] + cm[1, 0])
     f1 = 2 * precision * recall / (precision + recall)
-    print(f"Precision: {precision}")
-    print(f"Recall   : {recall}")
-    print(f"F1       : {f1}")
+    print(f"Precision: {precision:.2f}")
+    print(f"Recall   : {recall:.2f}")
+    print(f"F1       : {f1:.2f}")
