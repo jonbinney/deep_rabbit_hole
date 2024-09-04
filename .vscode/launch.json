@@ -38,7 +38,18 @@
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
             ],
             "cwd": "${workspaceFolder}/object_tracker_0"
-        }
+        },
+        {
+            "name": "Inference Metrics",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "object_tracker_0/src/inference_metrics.py",
+            "console": "integratedTerminal",
+            "args": [
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/manual_labeling_v1.json",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
+            ]
+        },
     ],
     "inputs": [
         {
