@@ -3,7 +3,7 @@ from collections import defaultdict
 import json
 import numpy as np
 
-def compute_confusion_matrix(ground_truth: str, predictions: str):
+def compute_confusion_matrix(ground_truth: str, predictions: str, iou_threshold: float):
     with open(ground_truth, 'r') as f:
         ground_truth_data = json.load(f)
 
@@ -36,7 +36,7 @@ def compute_confusion_matrix(ground_truth: str, predictions: str):
     images_with_fn = []
 
     for id in ids:
-        cm_image = compute_confusion_matrix_per_image(ground_truth_per_image[id], predictions_per_image[id])
+        cm_image = compute_confusion_matrix_per_image(ground_truth_per_image[id], predictions_per_image[id], iou_threshold)
         cm += cm_image
 
         # For debugging purposes
@@ -52,7 +52,7 @@ def compute_confusion_matrix(ground_truth: str, predictions: str):
 
     return cm
 
-def compute_confusion_matrix_per_image(ground_truth: list, predictions: list):
+def compute_confusion_matrix_per_image(ground_truth: list, predictions: list, iou_threshold: float):
     ground_truth_per_category = defaultdict(lambda: [])
     for annotation in ground_truth:
         category_id = annotation['category_id']
@@ -67,7 +67,7 @@ def compute_confusion_matrix_per_image(ground_truth: list, predictions: list):
     cm = np.zeros((2, 2), np.int32)
 
     for category in all_categories:
-        cm += compute_confusion_matrix_per_image_one_category(ground_truth_per_category[category], predictions_per_category[category])
+        cm += compute_confusion_matrix_per_image_one_category(ground_truth_per_category[category], predictions_per_category[category], iou_threshold)
 
     return cm
 
@@ -88,7 +88,7 @@ def compute_iou(box1, box2):
     return intersection / union
 
 # returns a confusion matrix in the form: [[TP, FP], [FN, TN]] (TN is always 0)
-def compute_confusion_matrix_per_image_one_category(ground_truths: list, predictions: list, iou_threshold=0.5):
+def compute_confusion_matrix_per_image_one_category(ground_truths: list, predictions: list, iou_threshold: float):
     pair_to_iou = {}
     for gt in ground_truths:
         for pred in predictions:
@@ -117,12 +117,13 @@ def compute_confusion_matrix_per_image_one_category(ground_truths: list, predict
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Object Tracker')
 
-    parser.add_argument('ground_truth', type=str, help='Path to the ground truth JSON file')
-    parser.add_argument('predictions', type=str, help='Path to the predictions JSON file')
+    parser.add_argument('-g', '--ground_truth', type=str, required=True, help='Path to the ground truth JSON file')
+    parser.add_argument('-p', '--predictions', type=str, required=True, help='Path to the predictions JSON file')
+    parser.add_argument('-t', '--iou_thresholds', type=float, default=0.5, help='IOU threshold for computing confusion matrix')
 
     args = parser.parse_args()
 
-    cm = compute_confusion_matrix(args.ground_truth, args.predictions)
+    cm = compute_confusion_matrix(args.ground_truth, args.predictions, args.iou_thresholds)
     print(f"Confusion matrix: \n{cm}")
     precision = cm[0, 0] / (cm[0, 0] + cm[0, 1])
     recall = cm[0, 0] / (cm[0, 0] + cm[1, 0])
