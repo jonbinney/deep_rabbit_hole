@@ -27,37 +27,37 @@ class DetectionControlWidget(QWidget):
         self.video_path = video_path
         self.frame_number = 0
 
-        self.layout = QVBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
         self.frame_number_label = QLabel("Frame: {self.frame_number:9d}", self)
-        self.layout.addWidget(self.frame_number_label)
+        self.main_layout.addWidget(self.frame_number_label)
         self.min_area_label = QLabel("Minimum area")
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 1000000)
         self.min_area_spinbox.setValue(default_parameters.min_area)
-        self.layout.addWidget(self.min_area_label)
-        self.layout.addWidget(self.min_area_spinbox)
+        self.main_layout.addWidget(self.min_area_label)
+        self.main_layout.addWidget(self.min_area_spinbox)
         self.blur_size_label = QLabel("Blur size")
         self.blur_size_spinbox = QSpinBox()
         self.blur_size_spinbox.setRange(1, 1000)
         self.blur_size_spinbox.setValue(default_parameters.blur_size)
-        self.layout.addWidget(self.blur_size_label)
-        self.layout.addWidget(self.blur_size_spinbox)
+        self.main_layout.addWidget(self.blur_size_label)
+        self.main_layout.addWidget(self.blur_size_spinbox)
         self.bgs_method_label = QLabel("Background subtraction method")
         self.bgs_method_combobox = QComboBox()
         self.bgs_method_combobox.addItems(["MOG2", "KNN"])
-        self.layout.addWidget(self.bgs_method_label)
-        self.layout.addWidget(self.bgs_method_combobox)
+        self.main_layout.addWidget(self.bgs_method_label)
+        self.main_layout.addWidget(self.bgs_method_combobox)
         self.bgs_learning_rate_label = QLabel("Background subtraction learning rate")
         self.bgs_learning_rate_spinbox = QDoubleSpinBox()
         self.bgs_learning_rate_spinbox.setRange(0.0, 1.0)
         self.bgs_learning_rate_spinbox.setSingleStep(0.0001)
         self.bgs_learning_rate_spinbox.setDecimals(4)
         self.bgs_learning_rate_spinbox.setValue(default_parameters.background_subtraction_learning_rate)
-        self.layout.addWidget(self.bgs_learning_rate_label)
-        self.layout.addWidget(self.bgs_learning_rate_spinbox)
+        self.main_layout.addWidget(self.bgs_learning_rate_label)
+        self.main_layout.addWidget(self.bgs_learning_rate_spinbox)
         self.run_detection_button = QPushButton("Run detection", self)
         self.run_detection_button.clicked.connect(self.run_detection)
-        self.layout.addWidget(self.run_detection_button)
+        self.main_layout.addWidget(self.run_detection_button)
 
     def get_detection_parameters(self):
         return DetectionParameters(
@@ -126,13 +126,13 @@ class DetectionThread(QThread):
         height, width, num_channels = frame.shape
         bytes_per_line = num_channels * width
         bounding_boxes_q_img = QImage(
-            frame.data, width, height, bytes_per_line, QImage.Format_RGB888
+            frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
         )
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
         height, width, num_channels = mask.shape
         bytes_per_line = num_channels * width
         mask_q_img = QImage(
-            mask.data, width, height, bytes_per_line, QImage.Format_RGB888
+            mask.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
         )
         print(f"Ran detection with parameters: {self.detection_parameters}")
         print(f"Found {len(contours)} contours and {len(big_enough_contours)} contours with area > {self.detection_parameters.min_area}")
