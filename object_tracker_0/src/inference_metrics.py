@@ -39,6 +39,7 @@ def compute_confusion_matrix(ground_truth: str, predictions: str):
         cm_image = compute_confusion_matrix_per_image(ground_truth_per_image[id], predictions_per_image[id])
         cm += cm_image
 
+        # For debugging purposes
         if cm_image[0, 1] > 0:
             images_with_fp.append(id)
         
@@ -103,9 +104,11 @@ def compute_confusion_matrix_per_image_one_category(ground_truths: list, predict
 
     sorted_pairs = sorted(pair_to_iou.keys(), key=lambda x: x[1], reverse=True)
     for gt, pred in sorted_pairs:
+        if gt in gt_ids and pred in pred_ids:
+            tp += 1
+
         gt_ids.discard(gt)
         pred_ids.discard(pred)
-        tp += 1
 
 
     return np.array([[tp, len(pred_ids)], [len(gt_ids), 0]], np.int32)
