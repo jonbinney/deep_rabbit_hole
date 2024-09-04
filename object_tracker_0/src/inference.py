@@ -118,7 +118,7 @@ def test_model(video_path, annotation_path):
         'categories': [
             {'id': 1, 'name': 'rabbit'}
         ],
-        'images': list(map(lambda x: {'id': x['image_id'], 'file_name': f"frame_{x['image_id'] - 1:06d}.PNG" }, annotations)),
+        'images': [{'id': x + 1, 'file_name': f"frame_{x:06d}.PNG" } for x in range(frame_count)],
         'annotations': annotations
     }
     with open(annotation_path, 'w') as f:
