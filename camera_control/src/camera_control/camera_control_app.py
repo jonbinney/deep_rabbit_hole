@@ -61,17 +61,17 @@ class CameraControlApp(QMainWindow):
             raise ValueError(f"Failed to open video: {self.video_path}")
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        self.layout = QHBoxLayout(self.central_widget)
+        self.main_layout = QHBoxLayout(self.central_widget)
         self.video_layout = QVBoxLayout()
         self.video_tabs = QTabWidget(self)
         self.video_tabs.addTab(self.frame_display, "Input Video")
         self.video_tabs.addTab(self.detection_mask_display, "Detection Mask")
         self.video_layout.addWidget(self.video_tabs)
         self.video_layout.addWidget(self.seek_slider)
-        self.layout.addLayout(self.video_layout)
+        self.main_layout.addLayout(self.video_layout)
         self.side_panel_layout = QVBoxLayout()
         self.side_panel_layout.addWidget(self.detection_control_widget)
-        self.layout.addLayout(self.side_panel_layout)
+        self.main_layout.addLayout(self.side_panel_layout)
 
         self.seek_slider.setValue(0)
         # Manually trigger the first frame update.
@@ -87,7 +87,7 @@ class CameraControlApp(QMainWindow):
             height, width, num_channels = frame.shape
             bytes_per_line = num_channels * width
             q_img = QImage(
-                frame.data, width, height, bytes_per_line, QImage.Format_RGB888
+                frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
             )
             self.app_signals.frame_updated.emit(q_img)
             self.app_signals.frame_number_updated.emit(frame_number)
