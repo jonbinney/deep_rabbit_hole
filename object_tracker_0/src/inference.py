@@ -52,24 +52,29 @@ def calculate_croppings(pil_frame, sub_frame_height, sub_frame_width):
             croppings.append((left, top))
     return croppings
 
-def detect_objects(model, processor, frame):
+def detect_objects(model, processor, frame, tiling):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     pil_frame = Image.fromarray(frame)
 
-    # Split frame into subframes that match the default model input size
-    sub_frame_height = 800
-    sub_frame_width = 1200
+    if tiling:
 
-    croppings = calculate_croppings(pil_frame, sub_frame_height, sub_frame_width)
+        # Split frame into subframes that match the default model input size
+        sub_frame_height = 800
+        sub_frame_width = 1200
 
-    bboxes = []
-    for left, top in croppings:
-        sub_frame = pil_frame.crop((left, top, left + sub_frame_width, top + sub_frame_height))
-        more_boxes = do_detection_on_frame(model, processor, sub_frame)
-        more_boxes = list(map(lambda bbox: (bbox[0] + left, bbox[1] + top, bbox[2], bbox[3]), more_boxes))
-        # Remove duplicated boxes (from overlapping subframes)
-        more_boxes = filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in bboxes), more_boxes)
-        bboxes.extend(more_boxes)
+        croppings = calculate_croppings(pil_frame, sub_frame_height, sub_frame_width)
+
+        bboxes = []
+        for left, top in croppings:
+            sub_frame = pil_frame.crop((left, top, left + sub_frame_width, top + sub_frame_height))
+            more_boxes = do_detection_on_frame(model, processor, sub_frame)
+            more_boxes = list(map(lambda bbox: (bbox[0] + left, bbox[1] + top, bbox[2], bbox[3]), more_boxes))
+            # Remove duplicated boxes (from overlapping subframes)
+            more_boxes = filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in bboxes), more_boxes)
+            bboxes.extend(more_boxes)
+
+    else:
+        bboxes = do_detection_on_frame(model, processor, pil_frame)
 
     return bboxes
 
@@ -88,7 +93,7 @@ def do_detection_on_frame(model, processor, frame):
 
     return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu())
 
-def test_model(video_path, annotation_path):
+def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
     # Open video file
     video = cv2.VideoCapture(video_path)
 
@@ -114,18 +119,18 @@ def test_model(video_path, annotation_path):
 
         keyframe = False
 
-        # Run inference on one frame every 10
-        if frame_count % 10 == 0:
+        # Run inference only every skip_frame_count frames (default to 10)
+        if frame_count % skip_frame_count == 0:
             # Preprocess frame
             preprocessed_frame = frame
 
             # Perform inference
-            bboxes = list(detect_objects(model, processor, preprocessed_frame))
+            bboxes = list(detect_objects(model, processor, preprocessed_frame, tiling))
             keyframe = True
             print(f"Det 1: {list(bboxes)}")
 
         # Write annotations
-        if propagate_annotations or frame_count % 10 == 0:
+        if propagate_annotations or frame_count % skip_frame_count == 0:
             # NOTE: if propagate_annotations is true, we write the
             # annotation even if no detection was done, using the last produced one
             for bbox in bboxes:
