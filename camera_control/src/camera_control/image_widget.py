@@ -12,6 +12,8 @@ class ImageWidget(QLabel):
 
     def display_image(self, q_img):
         self.raw_pixmap = QPixmap.fromImage(q_img)
+        # trigger a paintevent
+        self.update()
 
     def paintEvent(self, event):
         if self.raw_pixmap is not None:

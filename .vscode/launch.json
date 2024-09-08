@@ -2,14 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Camera control App",
+            "name": "Camera control App (Live)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "camera_control/src/camera_control/camera_control_app.py",
+            "console": "integratedTerminal",
+            "redirectOutput": true,
+            "env": {"GST_DEBUG": "2"},
+            "args": [
+            ],
+        },
+        {
+            "name": "Camera control App (From file)",
             "type": "debugpy",
             "request": "launch",
             "program": "camera_control/src/camera_control/camera_control_app.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
             "args": [
-                "datasets/${input:dataset}/video/video.mp4"
+                "--video-path=datasets/${input:dataset}/video/video.mp4"
             ],
         },
         {
@@ -62,7 +73,7 @@
             "description": "Dataset",
             "options": [
                 "rabbits_2024_08_12_25_10min_div2",
-                "rabbits_2024_08_12_25_15sec"
+                "rabbits_2024_08_12_25_15sec",
             ]
         }
     ]

@@ -1,6 +1,7 @@
 import argparse
 import cv2
-import sys
+from pathlib import Path
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -11,19 +12,30 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from PySide6.QtCore import Qt
+import sys
+import yaml
 
 from camera_control.common import CameraControlSignals, cv_image_to_q_image
 from camera_control.detection_control_widget import DetectionControlWidget, DetectionParameters
 from camera_control.image_widget import ImageWidget
+from camera_control.gstreamer_camera_capture import GStreamerCameraCapture
 
 class CameraControlApp(QMainWindow):
-    def __init__(self, video_path):
+    def __init__(self, camera_uri, video_path):
         super().__init__()
+        self.camera_uri = camera_uri
         self.video_path = video_path
+
+        if self.video_path is not None:
+            self.from_video_file = True
+        elif self.camera_uri is not None:
+            self.from_video_file = False
+        else:
+            raise ValueError("Must provide either a camera URI or a video path")
 
         self.app_signals = CameraControlSignals()
 
-        self.setWindowTitle("Animal finder")
+        self.setWindowTitle("Camera Control")
         self.setGeometry(100, 100, 800, 600)
 
         self.central_widget = QWidget(self)
@@ -41,34 +53,37 @@ class CameraControlApp(QMainWindow):
         self.app_signals.detection_mask_updated.connect(self.detection_mask_display.display_image)
         self.app_signals.frame_number_updated.connect(self.detection_control_widget.set_frame_number)
 
-        self.running = True
-                
-        self.cap = cv2.VideoCapture(self.video_path)
-        if not self.cap.isOpened():
-            raise ValueError(f"Failed to open video: {self.video_path}")
-        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        self.seek_slider = QSlider(Qt.Horizontal, self)
-        self.seek_slider.setMinimum(0)
-        self.seek_slider.setMaximum(self.total_frames-1)
-        self.seek_slider.setValue(0)
-        self.seek_slider.valueChanged.connect(self.seek_frame)
-
         self.main_layout = QHBoxLayout(self.central_widget)
         self.video_layout = QVBoxLayout()
         self.video_tabs = QTabWidget(self)
         self.video_tabs.addTab(self.frame_display, "Input Video")
         self.video_tabs.addTab(self.detection_mask_display, "Detection Mask")
         self.video_layout.addWidget(self.video_tabs)
-        self.video_layout.addWidget(self.seek_slider)
+
         self.main_layout.addLayout(self.video_layout)
         self.side_panel_layout = QVBoxLayout()
         self.side_panel_layout.addWidget(self.detection_control_widget)
         self.main_layout.addLayout(self.side_panel_layout)
 
-        self.seek_slider.setValue(0)
-        # Manually trigger the first frame update.
-        self.seek_slider.valueChanged.emit(0)
+        if self.from_video_file:
+            self.cap = cv2.VideoCapture(self.video_path)
+            if not self.cap.isOpened():
+                raise ValueError(f"Failed to open video file: {self.video_path}")
+            self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+            self.seek_slider = QSlider(Qt.Horizontal, self)
+            self.seek_slider.setMinimum(0)
+            self.seek_slider.setMaximum(self.total_frames-1)
+            self.seek_slider.setValue(0)
+            self.seek_slider.valueChanged.connect(self.seek_frame)
+            self.video_layout.addWidget(self.seek_slider)
+
+            self.seek_slider.setValue(0)
+            # Manually trigger the first frame update.
+            self.seek_slider.valueChanged.emit(0)
+        else:
+            self.camera_capture_thread = CameraCaptureThread(self.app_signals, self.camera_uri)
+            self.camera_capture_thread.start()
 
     def seek_frame(self, frame_number):
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -81,17 +96,45 @@ class CameraControlApp(QMainWindow):
             print(f"Error reading frame {frame_number}")
 
     def closeEvent(self, event):
-        self.running = False
+        self.camera_capture_thread.requestInterruption()
+        self.camera_capture_thread.wait()
         super().closeEvent(event)
 
 
+class CameraCaptureThread(QThread):
+    def __init__(self, app_signals, camera_uri):
+        super().__init__()
+        self.app_signals = app_signals
+        self.camera_streamer = GStreamerCameraCapture(camera_uri)
+
+    def run(self):
+        while not self.isInterruptionRequested():
+            # Blocks until a new frame is available (I think).
+            frame = self.camera_streamer.read_next_frame()
+            self.app_signals.frame_updated.emit(cv_image_to_q_image(frame))
+
+        self.camera_streamer.release()
+           
+
 def main():
-    parser = argparse.ArgumentParser(description="Animal finder application")
-    parser.add_argument("video_path", help="Path to the video file")
+    parser = argparse.ArgumentParser(description="Camera control application")
+    parser.add_argument("--camera-uri", help="URI of the camera to use")
+    parser.add_argument("--video-path", help="Path to the video file (if not using a camera)")
     args = parser.parse_args()
 
+    # If a config file is found, use the camera_uri from it. This makes it easy to store
+    # the camera URI in a place that isn't checked into version control, which is nice since
+    # it may include the username and password for the camera.
+    config_file_path = Path.home() / ".config/camera_control.yml"
+    try:
+        with open(config_file_path) as yaml_file:
+            config_file_args = yaml.load(yaml_file, Loader=yaml.FullLoader)
+        args.camera_uri = config_file_args["camera_uri"]
+    except FileNotFoundError:
+        print(f"No config file found at {config_file_path}, using command line arguments only.")
+
     app = QApplication(sys.argv)
-    main_window = CameraControlApp(args.video_path)
+    main_window = CameraControlApp(args.camera_uri, args.video_path)
     main_window.show()
     sys.exit(app.exec())
 
