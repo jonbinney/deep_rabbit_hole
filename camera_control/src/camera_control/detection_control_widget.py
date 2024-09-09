@@ -2,7 +2,6 @@ import cv2
 from dataclasses import dataclass
 import imutils
 from PySide6.QtCore import QThread
-from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -12,6 +11,8 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
 )
+
+from common import cv_image_to_q_image
 
 @dataclass
 class DetectionParameters:
@@ -26,6 +27,7 @@ class DetectionControlWidget(QWidget):
         self.app_signals = app_signals
         self.video_path = video_path
         self.frame_number = 0
+        self.detection_thread = None
 
         self.main_layout = QVBoxLayout(self)
         self.frame_number_label = QLabel("Frame: {self.frame_number:9d}", self)
@@ -67,6 +69,9 @@ class DetectionControlWidget(QWidget):
             self.bgs_learning_rate_spinbox.value())
     
     def run_detection(self):
+        if self.detection_thread is not None:
+            self.detection_thread.requestInterruption()
+            self.detection_thread.wait()
         self.detection_thread = DetectionThread(self.app_signals, self.video_path, self.frame_number, self.get_detection_parameters())
         self.detection_thread.start()
 
@@ -101,7 +106,10 @@ class DetectionThread(QThread):
             raise ValueError(f"Unknown background subtraction method: {self.detection_parameters.background_subtraction_method}")
 
         for frame_i in range(start_frame, self.frame_number):
-            print(f"Reading frame {frame_i}")
+            if self.isInterruptionRequested():
+                cap.release()
+                return
+            
             ret, frame = cap.read()
             if not ret:
                 raise ValueError(f"Failed to read frame {frame_i}")
@@ -111,7 +119,7 @@ class DetectionThread(QThread):
                 grayscale_image, (self.detection_parameters.blur_size, self.detection_parameters.blur_size), 0
             )
             mask = self.background_subtracter.apply(grayscale_image, learningRate=self.detection_parameters.background_subtraction_learning_rate)
-        cap.release()
+
 
         contours = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = imutils.grab_contours(contours)
@@ -122,19 +130,7 @@ class DetectionThread(QThread):
             (x, y, w, h) = cv2.boundingRect(c)
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 4)
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        height, width, num_channels = frame.shape
-        bytes_per_line = num_channels * width
-        bounding_boxes_q_img = QImage(
-            frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
-        )
-        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
-        height, width, num_channels = mask.shape
-        bytes_per_line = num_channels * width
-        mask_q_img = QImage(
-            mask.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
-        )
         print(f"Ran detection with parameters: {self.detection_parameters}")
         print(f"Found {len(contours)} contours and {len(big_enough_contours)} contours with area > {self.detection_parameters.min_area}")
-        self.app_signals.detection_completed.emit(bounding_boxes_q_img)
-        self.app_signals.detection_mask_updated.emit(mask_q_img)
+        self.app_signals.detection_completed.emit(cv_image_to_q_image(frame))
+        self.app_signals.detection_mask_updated.emit(cv_image_to_q_image(mask))
