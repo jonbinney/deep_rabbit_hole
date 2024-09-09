@@ -23,7 +23,8 @@
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
                 "-a",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
-            ]
+            ],
+            "justMyCode": false,
         },
         {
             "name": "Visualize",
@@ -47,7 +48,7 @@
             "console": "integratedTerminal",
             "args": [
                 "-g",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/manual_labeling_v1.json",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/manual_labeling_v2.json",
                 "-p",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json",
                 "-t",
