@@ -1,6 +1,14 @@
 """
 Script to do object tracking on a video using object detection with Grounding DINO and then Object Tracking with SAM
 based on the boxes found.
+It takes a video as input.
+It first extracts frames from the video in a provided working directory. If the extraction was previously done, it uses the images from there.
+Then it goes through the frames until it finds a rabbit. It uses the Grounding DINO model to detect objects in the frames.
+When it finds a rabbit, it uses SAM 2 to track the rabbit in the video.
+
+TODO:
+ - Make it work
+ - Convert the segment results into bboxes and save them in the COCO format
 """
 import math
 import os
@@ -12,6 +20,7 @@ from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from utils import Timer
 from datetime import datetime
+from sam2.sam2_video_predictor import SAM2VideoPredictor
 
 # Create timers as globals
 timer_inference = Timer()
@@ -24,6 +33,8 @@ def load_object_detection_model():
     #processor = AutoProcessor.from_pretrained(model_id, size={"shortest_edge": 1200, "longest_edge": 2000})
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
+
+    print(f"Using {device} for object detection with model: {model_id}")
 
     return (model, processor)
 
@@ -100,7 +111,7 @@ def _do_detection_on_frame(model, processor, frame):
     return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu().numpy())
 
 
-def do_create_frame_files(video_path, frame_images_dir, force=False):
+def do_create_frame_files(video_path, frame_images_dir, force=False, resize=(1200, 800)):
     # Check that the provided working directory exists and otherwise create it
     if not os.path.exists(frame_images_dir):
         os.makedirs(frame_images_dir)
@@ -117,7 +128,9 @@ def do_create_frame_files(video_path, frame_images_dir, force=False):
             ret, frame = video.read()
             if not ret:
                 break
-            file_name = f"{frame_images_dir}/frame_{frame_count:06d}.jpg"
+            file_name = f"{frame_images_dir}/{frame_count:06d}.jpg"
+            if resize is not None:
+                frame = cv2.resize(frame, resize)
             cv2.imwrite(file_name, frame)
             frame_count += 1
 
@@ -127,7 +140,33 @@ def do_create_frame_files(video_path, frame_images_dir, force=False):
     # Return a list of the frame file names
     return frame_file_names
 
-do_track_objects(working_dir, bboxes):
+def do_track_objects(frame_images_dir, bboxes, starting_frame=0):
+
+    # For now, manually convert bbox to x_min, y_min, x_max, y_max and assume a single object
+    (x, y, w, h) = bboxes[0]
+    box = [x, y, x + w, y + h]
+
+    predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        state = predictor.init_state(frame_images_dir)
+
+        _, _, masks = predictor.add_new_points_or_box(
+            inference_state=state,
+            frame_idx=starting_frame,
+            object_id=0,
+            box=box)
+
+        print(f"Initial masks: {masks}")
+
+        segments = {}
+        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(state):
+            segments[out_frame_idx] = {
+                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy() for i, out_obj_id in enumerate(out_obj_ids)
+            }
+
+        print(f"Segments: {segments}")
+
+        return segments
 
 def perform_object_tracking(video_path, annotation_path, working_dir, skip_frame_count=10, tiling=False):
     print(f"Performing object tracking on video: {video_path}")
@@ -148,7 +187,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, skip_frame
 
     print(f"Starting object tracking with {len(bboxes)} boxes at frame {frame_number}")
 
-    #do_track_objects(working_dir, bboxes)
+    do_track_objects(working_dir, bboxes, frame_number)
 
     return
 
