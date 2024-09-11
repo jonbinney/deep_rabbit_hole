@@ -128,8 +128,6 @@ def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
             break
 
         print(".", end="")
-        if frame_count > 30:
-            break
 
         keyframe = False
 
