@@ -65,6 +65,19 @@
                 "0.5"
             ]
         },
+        {
+            "name": "Describe Annotations",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "object_tracker_0/src/describe_annotations.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-a",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/manual_labeling.json",
+                "-d",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/annotation_description.txt",
+            ]
+        },
     ],
     "inputs": [
         {
