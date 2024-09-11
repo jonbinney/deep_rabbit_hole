@@ -4,6 +4,7 @@ This is the same as inference_gd.py, but with the groundingdino dependency remov
 the Hugging Face Transformer library instead.
 """
 import math
+import time
 import torch
 import argparse
 import cv2
@@ -11,11 +12,18 @@ import json
 # import groundingdino.datasets.transforms as T
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+from utils import Timer
+from datetime import datetime
+
+# Create timers as globals
+timer_inference = Timer()
+timer_total = Timer()
 
 def load_model():
     model_id = "IDEA-Research/grounding-dino-base"
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    #processor = AutoProcessor.from_pretrained(model_id, size={"shortest_edge": 1200, "longest_edge": 2000})
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
 
@@ -80,8 +88,11 @@ def detect_objects(model, processor, frame, tiling):
 
 def do_detection_on_frame(model, processor, frame):
     inputs = processor(images=frame, text="rabbit.", return_tensors="pt").to(model.device)
+
+    timer_inference.start()
     with torch.no_grad():
         outputs = model(**inputs)
+    timer_inference.stop()
 
     results = processor.post_process_grounded_object_detection(
         outputs,
@@ -94,6 +105,7 @@ def do_detection_on_frame(model, processor, frame):
     return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu())
 
 def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
+
     # Open video file
     video = cv2.VideoCapture(video_path)
 
@@ -125,7 +137,9 @@ def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
             preprocessed_frame = frame
 
             # Perform inference
+            timer_total.start()
             bboxes = list(detect_objects(model, processor, preprocessed_frame, tiling))
+            timer_total.stop()
             keyframe = True
             print(f"Det 1: {list(bboxes)}")
 
@@ -151,6 +165,11 @@ def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
 
     # Save results to JSON file
     coco = {
+        'info': {
+            "description": "Object detection results",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timings": f"Detection: {timer_total}, Inference: {timer_inference}"
+        },
         'categories': [
             {'id': 1, 'name': 'rabbit'}
         ],
@@ -159,6 +178,8 @@ def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
     }
     with open(annotation_path, 'w') as f:
         f.write(json.dumps(coco))
+
+    print(f"Timings => Detection: {timer_total}, Inference: {timer_inference}")
 
     # Release video file
     video.release()
