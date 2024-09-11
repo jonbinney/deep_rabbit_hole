@@ -1,6 +1,6 @@
 imutils
 numpy
+onvif_zeep
 opencv-python
 PySide6
 pyyaml
-

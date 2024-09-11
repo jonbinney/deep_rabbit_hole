@@ -20,7 +20,12 @@ If you want to capture live images from a camera using gstreamer, you must speci
 `~/.config` with the following content:
 ```yaml
 {
-  camera_uri: "rtsp://<username>:<password>@<camera_ip_address>:<camera_rtsp_ port>/<path_to_stream>
+  camera_address: ...,
+  camera_rtsp_port: ...,
+  camera_rtsp_path: ...,
+  camera_onvif_port: ...,
+  camera_username: ...,
+  camera_password: ...,
 }
 ```
 
