@@ -62,7 +62,8 @@ def describe_annotations(filename: str, output_filename: str):
     annotation_map = defaultdict(lambda: {})
 
     for annotation in data['annotations']:
-        annotation_map[annotation['image_id']][annotation['attributes']['track_id']] = {'category_id': annotation['category_id'], 'bbox': annotation['bbox']}
+        track_id = annotation.get('attributes', {}).get('track_id', 0)
+        annotation_map[annotation['image_id']][track_id] = {'category_id': annotation['category_id'], 'bbox': annotation['bbox']}
 
     min_image_id = min(annotation_map.keys())
     max_image_id = max(annotation_map.keys())
