@@ -33,7 +33,9 @@
                 "-v",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
                 "-a",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json",
+                "-w",
+                "/tmp/15sec"
             ],
             "justMyCode": false,
         },
