@@ -129,6 +129,7 @@ def do_create_frame_files(video_path, frame_images_dir, force=False, resize=None
             ret, frame = video.read()
             if not ret:
                 break
+            # SAM 2 requires the frames to be in JPG format and be named <frame_number>.jpg
             file_name = f"{frame_images_dir}/{frame_count:06d}.jpg"
             if resize is not None:
                 frame = cv2.resize(frame, resize)
@@ -141,6 +142,7 @@ def do_create_frame_files(video_path, frame_images_dir, force=False, resize=None
 
     # Read all the frame files available in the working directory
     frame_file_names = [f"{frame_images_dir}/{file_name}" for file_name in os.listdir(frame_images_dir) if file_name.endswith(".jpg")]
+    # Sort by file name, which should correspond to frame name
     frame_file_names.sort()
 
     # Return a list of the frame file names
@@ -230,7 +232,6 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_od_s
     # Turn the input video into a directory with a in image file per frame
     frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frame_end)
     print(f"We have {len(frame_file_names)} frames to process")
-    print(f"Frame files: {frame_file_names}")
 
     # Go through frames until we find a rabbit
     bboxes = []
@@ -251,6 +252,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_od_s
     annotations = do_create_annotations(bboxes)
 
     # Save results to JSON file
+    # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
     coco = {
         'info': {
             "description": "Object tracking results",
