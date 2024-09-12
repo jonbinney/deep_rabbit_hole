@@ -29,10 +29,10 @@ class Timer:
     def start(self):
         self.start_time = time.time()
 
-    def stop(self):
+    def stop(self, num_executions=1):
         end_time = time.time()
         self.total_time += (end_time - self.start_time)
-        self.num_executions += 1
+        self.num_executions += num_executions
 
     def get_average_time(self):
         return self.total_time / self.num_executions if self.num_executions > 0 else 0

@@ -190,6 +190,7 @@ def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
                 box=box)
 
         segments = {}
+        timer_inference.start()
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
                 state,
                 start_frame_idx=starting_frame,
@@ -197,6 +198,7 @@ def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
             segments[out_frame_idx] = {
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy() for i, out_obj_id in enumerate(out_obj_ids)
             }
+        timer_inference.stop(max_frames)
 
         bboxes = segments_to_bboxes(segments)
 
@@ -243,6 +245,8 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     frame_number = 0
     annotations = []
 
+    timer_total.start()
+
     # Do object detection and then tracking every frame_batch_size frames
     while frame_number < len(frame_file_names):
         obj_detect_bboxes = []
@@ -267,6 +271,8 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
 
         # Append the annotations with the new found ones
         annotations.extend(do_create_annotations(obj_track_bboxes))
+
+    timer_total.stop(len(frame_file_names))
 
     # Save results to JSON file
     # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
