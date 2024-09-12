@@ -165,35 +165,35 @@ def segments_to_bboxes(segments):
             # NOTE(adamantivm) I don't know what the first dimension in masks is. I noted by debugging
             # that it had only one value when I was testing, so I'm assuming it's always 0.
             contours, _ = cv2.findContours(mask[0].astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if len(contours) == 0:
+                continue
             x, y, w, h = cv2.boundingRect(contours[0])
             bboxes[frame_idx][obj_id] = (x, y, w, h)
     return bboxes
 
-def do_track_objects(frame_images_dir, bboxes, starting_frame=0, max_frames=10):
+def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
     """
     TODO:
      - Peek at and play with image size
     """
+    print(f"Tracking {len(bboxes)} boxes from frame {starting_frame} for {max_frames} frames")
 
-    # For now, manually convert bbox to x_min, y_min, x_max, y_max and track only the first object
-    (x, y, w, h) = bboxes[0]
-    box = [x, y, x + w, y + h]
-
-    predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-        state = predictor.init_state(frame_images_dir, async_loading_frames=True, offload_video_to_cpu=True)
+        for obj_id, bbox in enumerate(bboxes):
+            (x, y, w, h) = bbox
+            box = [x, y, x + w, y + h]
 
-        _, _, masks = predictor.add_new_points_or_box(
-            inference_state=state,
-            frame_idx=starting_frame,
-            obj_id=0,
-            box=box)
+            _, out_obj_ids, masks = predictor.add_new_points_or_box(
+                inference_state=state,
+                frame_idx=starting_frame,
+                obj_id=obj_id,
+                box=box)
 
         segments = {}
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
                 state,
                 start_frame_idx=starting_frame,
-                max_frame_num_to_track=starting_frame + max_frames):
+                max_frame_num_to_track=max_frames):
             segments[out_frame_idx] = {
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy() for i, out_obj_id in enumerate(out_obj_ids)
             }
@@ -224,31 +224,49 @@ def do_create_annotations(bboxes):
             annotation_id += 1
     return annotations
 
-def perform_object_tracking(video_path, annotation_path, working_dir, frame_od_skip=10, tiling=False, frame_end=None):
+
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=False, frames_max=None):
     print(f"Performing object tracking on video: {video_path}")
 
+    # 1- Preparation
+
     # Turn the input video into a directory with a in image file per frame
-    frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frame_end)
+    frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frames_max)
     print(f"We have {len(frame_file_names)} frames to process")
 
-    bboxes = []
+    # Load models for object detection and object tracking
+    obj_detect_model, obj_detect_processor = load_object_detection_model()
+    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True)
+
     frame_number = 0
+    annotations = []
 
-    # Go through frames until we find a rabbit
-    while len(bboxes) == 0 and frame_number < len(frame_file_names):
-        print(f"Looking for rabbits in frame {frame_number}")
-        model, processor = load_object_detection_model()
-        bboxes = list(do_object_detection(model, processor, Image.open(frame_file_names[frame_number]), tiling))
-        if len(bboxes) == 0:
-            frame_number += frame_od_skip
+    # Do object detection and then tracking every frame_batch_size frames
+    while frame_number < len(frame_file_names):
+        obj_detect_bboxes = []
+        obj_track_bboxes = {}
 
-    print(f"Starting object tracking with {len(bboxes)} boxes at frame {frame_number}")
+        # Try to find a rabbit in the current frame. If not found, try again in the next batch
+        while len(obj_detect_bboxes) == 0 and frame_number < len(frame_file_names):
+            print(f"Looking for rabbits in frame {frame_number}")
+            obj_detect_bboxes = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
+            if len(obj_detect_bboxes) == 0:
+                frame_number += frame_batch_size
 
-    bboxes = do_track_objects(working_dir, bboxes, frame_number)
+        # Remove the boxes that were already tracked in the last batch
+        last_track_bboxes = obj_track_bboxes.get(frame_number, {}).values()
+        obj_detect_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes), obj_detect_bboxes))
 
-    print(f"Boxes found: {bboxes}")
+        # Expand the bounding box to track the rabbit until the next batch
+        obj_track_bboxes = do_track_objects(obj_track_predictor, obj_track_state, obj_detect_bboxes, frame_number, frame_batch_size - 1)
+        frame_number += frame_batch_size
 
-    annotations = do_create_annotations(bboxes)
+        print(f"Boxes found: {obj_track_bboxes}")
+
+        # Append the annotations with the new found ones
+        annotations.extend(do_create_annotations(obj_track_bboxes))
 
     # Save results to JSON file
     # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
