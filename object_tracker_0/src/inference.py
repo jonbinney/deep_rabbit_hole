@@ -172,18 +172,16 @@ def segments_to_bboxes(segments):
 def do_track_objects(frame_images_dir, bboxes, starting_frame=0, max_frames=10):
     """
     TODO:
-     - Try lazy loader
-     - Try offload to CPU
      - Peek at and play with image size
     """
 
-    # For now, manually convert bbox to x_min, y_min, x_max, y_max and assume a single object
+    # For now, manually convert bbox to x_min, y_min, x_max, y_max and track only the first object
     (x, y, w, h) = bboxes[0]
     box = [x, y, x + w, y + h]
 
     predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-        state = predictor.init_state(frame_images_dir)
+        state = predictor.init_state(frame_images_dir, async_loading_frames=True, offload_video_to_cpu=True)
 
         _, _, masks = predictor.add_new_points_or_box(
             inference_state=state,
@@ -226,16 +224,17 @@ def do_create_annotations(bboxes):
             annotation_id += 1
     return annotations
 
-def perform_object_tracking(video_path, annotation_path, working_dir, frame_od_skip=10, tiling=False, frame_end=20):
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_od_skip=10, tiling=False, frame_end=None):
     print(f"Performing object tracking on video: {video_path}")
 
     # Turn the input video into a directory with a in image file per frame
     frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frame_end)
     print(f"We have {len(frame_file_names)} frames to process")
 
-    # Go through frames until we find a rabbit
     bboxes = []
     frame_number = 0
+
+    # Go through frames until we find a rabbit
     while len(bboxes) == 0 and frame_number < len(frame_file_names):
         print(f"Looking for rabbits in frame {frame_number}")
         model, processor = load_object_detection_model()
