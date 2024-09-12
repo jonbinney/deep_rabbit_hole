@@ -172,17 +172,17 @@ def segments_to_bboxes(segments):
     return bboxes
 
 def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
-    """
-    TODO:
-     - Peek at and play with image size
-    """
-    print(f"Tracking {len(bboxes)} boxes from frame {starting_frame} for {max_frames} frames")
+    print(f"Adding {len(bboxes)} boxes from tracking from frame {starting_frame} to {starting_frame + max_frames}")
 
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         for obj_id, bbox in enumerate(bboxes):
             (x, y, w, h) = bbox
             box = [x, y, x + w, y + h]
 
+            # TODO: When we want to add an additional rabbit, maybe we need to re-add them all
+            # and reset the state instead of adding the missing ones
+            # Also, we need to review how we're handling the object IDs to make sure
+            # they end up being consistnent
             _, out_obj_ids, masks = predictor.add_new_points_or_box(
                 inference_state=state,
                 frame_idx=starting_frame,
@@ -238,41 +238,50 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
 
     # Load models for object detection and object tracking
     obj_detect_model, obj_detect_processor = load_object_detection_model()
-    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
+    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-base-plus")
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True)
 
     frame_number = 0
-    annotations = []
+    obj_track_bboxes = {}
 
     timer_total.start()
 
     # Do object detection and then tracking every frame_batch_size frames
     while frame_number < len(frame_file_names):
         obj_detect_bboxes = []
-        obj_track_bboxes = {}
 
-        # Try to find a rabbit in the current frame. If not found, try again in the next batch
-        while len(obj_detect_bboxes) == 0 and frame_number < len(frame_file_names):
-            print(f"Looking for rabbits in frame {frame_number}")
-            obj_detect_bboxes = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
-            if len(obj_detect_bboxes) == 0:
-                frame_number += frame_batch_size
+        # Try to find a rabbits in the current frame.
+        print(f"Looking for rabbits in frame {frame_number}")
+        obj_detect_bboxes = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
 
-        # Remove the boxes that were already tracked in the last batch
+        # Compare with the rabbits from the last frame in the last object tracking batch
         last_track_bboxes = obj_track_bboxes.get(frame_number, {}).values()
-        obj_detect_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes), obj_detect_bboxes))
 
-        # Expand the bounding box to track the rabbit until the next batch
-        obj_track_bboxes = do_track_objects(obj_track_predictor, obj_track_state, obj_detect_bboxes, frame_number, frame_batch_size - 1)
+        # HACK: Only use the first detected rabbit
+        #obj_detect_bboxes = obj_detect_bboxes[:1] if len(obj_detect_bboxes) > 0 else []
+
+        # Skip and keep trying if we have no rabbits to track yet
+        if len(obj_detect_bboxes) + len(last_track_bboxes) == 0:
+            frame_number += frame_batch_size
+            continue
+
+        # Remove from the already known rabbits from the list of new rabbits to track
+        obj_detect_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes), obj_detect_bboxes))
+        if len(obj_detect_bboxes) > 0:
+            print(f"Found new rabbits: {obj_detect_bboxes}")
+
+        # Track the bbox rabbits until the next batch
+        tmp = do_track_objects(obj_track_predictor, obj_track_state, obj_detect_bboxes, frame_number, frame_batch_size)
+        #print(f"Boxes found: {tmp}")
         frame_number += frame_batch_size
 
-        print(f"Boxes found: {obj_track_bboxes}")
+        # NOTE: This returns frame_batch_size + 1 frame results, because it includes the starting frame and frame_batch_size additonal ones
+        # Every batch, we overlap between the last frame of the previous batch and the first frame of the current batch, which was also used
+        # for object detection.
+        obj_track_bboxes.update(tmp)
 
-        # Append the annotations with the new found ones
-        annotations.extend(do_create_annotations(obj_track_bboxes))
-
-    timer_total.stop(len(frame_file_names))
+    timer_total.stop(len(frame_file_names) + int(len(frame_file_names) / frame_batch_size))
 
     # Save results to JSON file
     # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
@@ -286,7 +295,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
             {'id': 1, 'name': 'rabbit'}
         ],
         'images': [{'id': i + 1, 'file_name': f"frame_{i:06d}.png" } for i, file_name in enumerate(frame_file_names)],
-        'annotations': annotations
+        'annotations': do_create_annotations(obj_track_bboxes)
     }
     with open(annotation_path, 'w') as f:
         f.write(json.dumps(coco))
