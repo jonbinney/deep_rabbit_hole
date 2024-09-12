@@ -3,3 +3,8 @@ pycocotools
 opencv-python
 huggingface-hub==0.24.6
 pytest
+transformers
+Pillow
+
+# install this one manually
+# -e ../external/segment-anything-2

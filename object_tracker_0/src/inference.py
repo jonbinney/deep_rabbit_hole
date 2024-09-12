@@ -1,31 +1,41 @@
 """
-Script to run inference on a video file and generate annotations for detected objects.
-This is the same as inference_gd.py, but with the groundingdino dependency removed and using
-the Hugging Face Transformer library instead.
+Script to do object tracking on a video using object detection with Grounding DINO and then Object Tracking with SAM
+based on the boxes found.
+It takes a video as input.
+It first extracts frames from the video in a provided working directory. If the extraction was previously done, it uses the images from there.
+Then it goes through the frames until it finds a rabbit. It uses the Grounding DINO model to detect objects in the frames.
+When it finds a rabbit, it uses SAM 2 to track the rabbit in the video.
+
+TODO:
+ - Make it work
+ - Convert the segment results into bboxes and save them in the COCO format
 """
 import math
-import time
+import os
 import torch
 import argparse
 import cv2
 import json
-# import groundingdino.datasets.transforms as T
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from utils import Timer
 from datetime import datetime
+from sam2.sam2_video_predictor import SAM2VideoPredictor
+import numpy as np
 
 # Create timers as globals
 timer_inference = Timer()
 timer_total = Timer()
 
-def load_model():
+def load_object_detection_model():
     model_id = "IDEA-Research/grounding-dino-base"
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     #processor = AutoProcessor.from_pretrained(model_id, size={"shortest_edge": 1200, "longest_edge": 2000})
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
+
+    print(f"Using {device} for object detection with model: {model_id}")
 
     return (model, processor)
 
@@ -60,10 +70,7 @@ def calculate_croppings(pil_frame, sub_frame_height, sub_frame_width):
             croppings.append((left, top))
     return croppings
 
-def detect_objects(model, processor, frame, tiling):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    pil_frame = Image.fromarray(frame)
-
+def do_object_detection(model, processor, pil_frame, tiling = False):
     if tiling:
 
         # Split frame into subframes that match the default model input size
@@ -75,18 +82,18 @@ def detect_objects(model, processor, frame, tiling):
         bboxes = []
         for left, top in croppings:
             sub_frame = pil_frame.crop((left, top, left + sub_frame_width, top + sub_frame_height))
-            more_boxes = do_detection_on_frame(model, processor, sub_frame)
+            more_boxes = _do_detection_on_frame(model, processor, sub_frame)
             more_boxes = list(map(lambda bbox: (bbox[0] + left, bbox[1] + top, bbox[2], bbox[3]), more_boxes))
             # Remove duplicated boxes (from overlapping subframes)
             more_boxes = filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in bboxes), more_boxes)
             bboxes.extend(more_boxes)
 
     else:
-        bboxes = do_detection_on_frame(model, processor, pil_frame)
+        bboxes = _do_detection_on_frame(model, processor, pil_frame)
 
     return bboxes
 
-def do_detection_on_frame(model, processor, frame):
+def _do_detection_on_frame(model, processor, frame):
     inputs = processor(images=frame, text="rabbit.", return_tensors="pt").to(model.device)
 
     timer_inference.start()
@@ -102,78 +109,183 @@ def do_detection_on_frame(model, processor, frame):
         target_sizes=[frame.size[::-1]],
     )
 
-    return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu())
+    return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu().numpy())
 
-def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
 
-    # Open video file
-    video = cv2.VideoCapture(video_path)
+def do_create_frame_files(video_path, frame_images_dir, force=False, resize=None, frame_end=None):
+    # Check that the provided working directory exists and otherwise create it
+    if not os.path.exists(frame_images_dir):
+        os.makedirs(frame_images_dir)
+        force = True
 
-    # Open annotation file
+    # If the directory was just created or the force flag is set, create the frame files
+    # from the video - otherwise, the existing frame files will be returned
+    if force:
+        print(f"Creating frame files from video: {video_path} into directory: {frame_images_dir}")
+        # Open video file and save each frame as a jpg file
+        video = cv2.VideoCapture(video_path)
+        frame_count = 0
+        while video.isOpened():
+            ret, frame = video.read()
+            if not ret:
+                break
+            # SAM 2 requires the frames to be in JPG format and be named <frame_number>.jpg
+            file_name = f"{frame_images_dir}/{frame_count:06d}.jpg"
+            if resize is not None:
+                frame = cv2.resize(frame, resize)
+            cv2.imwrite(file_name, frame)
+            frame_count += 1
+            if frame_end is not None and frame_count >= frame_end:
+                break
+    else:
+        print(f"Reusing existing frame files from directory: {frame_images_dir}")
+
+    # Read all the frame files available in the working directory
+    frame_file_names = [f"{frame_images_dir}/{file_name}" for file_name in os.listdir(frame_images_dir) if file_name.endswith(".jpg")]
+    # Sort by file name, which should correspond to frame name
+    frame_file_names.sort()
+
+    # Return a list of the frame file names
+    return frame_file_names
+
+def segments_to_bboxes(segments):
+    """
+    Converts the segments from the SAM2 model into bounding boxes.
+    The return type is an object with the following structure:
+    {
+        frame_idx: {
+            obj_id: bbox (x, y, w, h)
+        }
+    }
+    """
+    bboxes = {}
+    for frame_idx, frame_segments in segments.items():
+        bboxes[frame_idx] = {}
+        for obj_id, mask in frame_segments.items():
+            # NOTE(adamantivm) I don't know what the first dimension in masks is. I noted by debugging
+            # that it had only one value when I was testing, so I'm assuming it's always 0.
+            contours, _ = cv2.findContours(mask[0].astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if len(contours) == 0:
+                continue
+            x, y, w, h = cv2.boundingRect(contours[0])
+            bboxes[frame_idx][obj_id] = (x, y, w, h)
+    return bboxes
+
+def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
+    """
+    TODO:
+     - Peek at and play with image size
+    """
+    print(f"Tracking {len(bboxes)} boxes from frame {starting_frame} for {max_frames} frames")
+
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        for obj_id, bbox in enumerate(bboxes):
+            (x, y, w, h) = bbox
+            box = [x, y, x + w, y + h]
+
+            _, out_obj_ids, masks = predictor.add_new_points_or_box(
+                inference_state=state,
+                frame_idx=starting_frame,
+                obj_id=obj_id,
+                box=box)
+
+        segments = {}
+        timer_inference.start()
+        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+                state,
+                start_frame_idx=starting_frame,
+                max_frame_num_to_track=max_frames):
+            segments[out_frame_idx] = {
+                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy() for i, out_obj_id in enumerate(out_obj_ids)
+            }
+        timer_inference.stop(max_frames)
+
+        bboxes = segments_to_bboxes(segments)
+
+        return bboxes
+
+def do_create_annotations(bboxes):
+    annotations = []
+    annotation_id = 1
+    for frame_idx, objects in bboxes.items():
+        for obj_id, bbox in objects.items():
+            x, y, w, h = bbox
+            annotations.append({
+                'id': annotation_id,
+                'image_id': frame_idx + 1,
+                'category_id': 1,  # Hardcoded to rabbit
+                'bbox': [float(x), float(y), float(w), float(h)],
+                'area': float(w * h),
+                'attributes': {
+                    'track_id': obj_id,
+                    'keyframe': True
+                },
+                'iscrowd': 0,
+                'segmentation': []
+            })
+            annotation_id += 1
+    return annotations
+
+
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=False, frames_max=None):
+    print(f"Performing object tracking on video: {video_path}")
+
+    # 1- Preparation
+
+    # Turn the input video into a directory with a in image file per frame
+    frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frames_max)
+    print(f"We have {len(frame_file_names)} frames to process")
+
+    # Load models for object detection and object tracking
+    obj_detect_model, obj_detect_processor = load_object_detection_model()
+    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-small")
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True)
+
+    frame_number = 0
     annotations = []
 
-    # Load model
-    (model, processor) = load_model()
+    timer_total.start()
 
-    # Process frames
-    frame_count = 0
-    coco_id = 1
-    bboxes = []
-    propagate_annotations = True  # Whether to propagate annotations to subsequent frames
+    # Do object detection and then tracking every frame_batch_size frames
+    while frame_number < len(frame_file_names):
+        obj_detect_bboxes = []
+        obj_track_bboxes = {}
 
-    while video.isOpened():
-        # Read frame
-        ret, frame = video.read()
-        if not ret:
-            break
+        # Try to find a rabbit in the current frame. If not found, try again in the next batch
+        while len(obj_detect_bboxes) == 0 and frame_number < len(frame_file_names):
+            print(f"Looking for rabbits in frame {frame_number}")
+            obj_detect_bboxes = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
+            if len(obj_detect_bboxes) == 0:
+                frame_number += frame_batch_size
 
-        print(".", end="")
+        # Remove the boxes that were already tracked in the last batch
+        last_track_bboxes = obj_track_bboxes.get(frame_number, {}).values()
+        obj_detect_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes), obj_detect_bboxes))
 
-        keyframe = False
+        # Expand the bounding box to track the rabbit until the next batch
+        obj_track_bboxes = do_track_objects(obj_track_predictor, obj_track_state, obj_detect_bboxes, frame_number, frame_batch_size - 1)
+        frame_number += frame_batch_size
 
-        # Run inference only every skip_frame_count frames (default to 10)
-        if frame_count % skip_frame_count == 0:
-            # Preprocess frame
-            preprocessed_frame = frame
+        print(f"Boxes found: {obj_track_bboxes}")
 
-            # Perform inference
-            timer_total.start()
-            bboxes = list(detect_objects(model, processor, preprocessed_frame, tiling))
-            timer_total.stop()
-            keyframe = True
-            print(f"Det 1: {list(bboxes)}")
+        # Append the annotations with the new found ones
+        annotations.extend(do_create_annotations(obj_track_bboxes))
 
-        # Write annotations
-        if propagate_annotations or frame_count % skip_frame_count == 0:
-            # NOTE: if propagate_annotations is true, we write the
-            # annotation even if no detection was done, using the last produced one
-            for bbox in bboxes:
-                x, y, width, height = bbox
-                coco_annotation = {
-                    'image_id': frame_count + 1,
-                    'id': coco_id,
-                    'category_id': 1,
-                    'bbox': [float(x), float(y), float(width), float(height)],
-                    'attributes': { 'keyframe': keyframe },
-                    'iscrowd': 0,
-                    'segmentation': []
-                }
-                annotations.append(coco_annotation)
-                coco_id += 1
-
-        frame_count += 1
+    timer_total.stop(len(frame_file_names))
 
     # Save results to JSON file
+    # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
     coco = {
         'info': {
-            "description": "Object detection results",
+            "description": "Object tracking results",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "timings": f"Detection: {timer_total}, Inference: {timer_inference}"
         },
         'categories': [
             {'id': 1, 'name': 'rabbit'}
         ],
-        'images': [{'id': x + 1, 'file_name': f"frame_{x:06d}.PNG" } for x in range(frame_count)],
+        'images': [{'id': i + 1, 'file_name': f"frame_{i:06d}.png" } for i, file_name in enumerate(frame_file_names)],
         'annotations': annotations
     }
     with open(annotation_path, 'w') as f:
@@ -181,20 +293,19 @@ def test_model(video_path, annotation_path, skip_frame_count=10, tiling=False):
 
     print(f"Timings => Detection: {timer_total}, Inference: {timer_inference}")
 
-    # Release video file
-    video.release()
-
 if __name__ == '__main__':
     # Create argument parser
     parser = argparse.ArgumentParser(description='Object Tracker')
 
     # Add video path argument
-    parser.add_argument('-v', '--video', type=str, required=True, help='Path to the video file')
+    parser.add_argument('-v', '--video_path', type=str, required=True, help='Path to the video file')
     # Add annotations json path argument
-    parser.add_argument('-a', '--annotations', type=str, required=True, help='Path to the output annotations JSON file')
+    parser.add_argument('-a', '--annotation_path', type=str, required=True, help='Path to the output annotations JSON file')
+    # Add working directory argument
+    parser.add_argument('-w', '--working_dir', type=str, default='.', help='Path to the working directory')
 
     # Parse arguments
     args = parser.parse_args()
 
     # Call test_model function with video_path and json_path arguments
-    test_model(args.video, args.annotations)
+    perform_object_tracking(**vars(args))
