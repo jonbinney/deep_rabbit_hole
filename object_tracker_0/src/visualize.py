@@ -9,6 +9,7 @@ Usage:
 Arguments:
   -v, --video: Path to the video file
   -a, --annotations: Path to the annotation file in JSON format
+  -d, --description: Path to the description file in text format (optional)
 
 Output:
   An annotated video file named 'annotated_video.mp4' will be created in the
@@ -20,6 +21,7 @@ Example:
 from pycocotools.coco import COCO
 import cv2
 import argparse
+from collections import defaultdict
 
 # Create an argument parser
 parser = argparse.ArgumentParser(description='Object Tracker Visualizer')
@@ -28,6 +30,7 @@ parser.add_argument('-v', '--video', type=str, required=True, help='Path to the 
 # Add the annotation path argument
 parser.add_argument('-a', '--annotations', type=str, required=True, help='Path to the annotation file in JSON format')
 # Parse the command line arguments
+parser.add_argument('-d', '--description', type=str, required=False, help='Path to the description file in text format')
 args = parser.parse_args()
 
 # Get the video path from the command line arguments
@@ -37,6 +40,7 @@ annotation_path = args.annotations
 # Define the output video path
 # TODO: Make this also an argument
 output_path = 'annotated_video.mp4'
+SUBTITLE_DURATION = 90
 
 # Load the video
 video = cv2.VideoCapture(video_path)
@@ -46,6 +50,8 @@ coco = COCO(annotation_path)
 
 print(f"Video Path: {video_path}")
 
+# get the fps from video
+fps = int(video.get(cv2.CAP_PROP_FPS))
 
 # Get the video width and height
 width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -55,8 +61,19 @@ height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
 # Create the VideoWriter object
-output_video = cv2.VideoWriter(output_path, fourcc, 30.0, (width, height))
+output_video = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
+descriptions_per_frame = defaultdict(lambda: [])
+if args.description:
+  with open(args.description, 'r') as f:
+    for line in f.read().split("\n"):
+      if line.strip() == "":
+        continue
+
+      frame, actor, action = line.split(";")
+      descriptions_per_frame[int(frame)].append((actor, action))
+
+current_descriptions_per_actor = {}
 # Iterate over each frame in the video
 while True:
   # Read the next frame
@@ -67,7 +84,7 @@ while True:
     break
 
   # Get the frame number
-  frame_number = int(video.get(cv2.CAP_PROP_POS_FRAMES))
+  frame_number = int(video.get(cv2.CAP_PROP_POS_FRAMES))  
 
   # Get the annotations for the current frame
   frame_annotations = coco.loadAnns(coco.getAnnIds(imgIds=frame_number))
@@ -85,6 +102,17 @@ while True:
 
     # Draw the bounding box on the frame
     cv2.rectangle(frame, (x, y), ((x + w), (y + h)), (0, 255, 0), 2)
+
+  # Add new descriptions (may override existing one if it's the same actor)
+  for actor, action in descriptions_per_frame[frame_number]:
+    current_descriptions_per_actor[actor] = (f"{actor} {action}", frame_number + SUBTITLE_DURATION)
+
+  # Remove expired descriptions
+  current_descriptions_per_actor = dict(filter(lambda x: x[1][1] > frame_number, current_descriptions_per_actor.items()))
+
+  description = ". ".join(map(lambda x: x[0], current_descriptions_per_actor.values()))
+  if description:
+    cv2.putText(frame, f"{description}", (100, height - 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255), 4)
 
   # Write the annotated frame to the output video
   output_video.write(frame)
