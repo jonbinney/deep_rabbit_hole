@@ -21,9 +21,11 @@ from camera_control.image_widget import ImageWidget
 from camera_control.gstreamer_camera_capture import GStreamerCameraCapture
 
 class CameraControlApp(QMainWindow):
-    def __init__(self, camera_uri, video_path):
+    def __init__(self, camera_config, video_path):
         super().__init__()
-        self.camera_uri = camera_uri
+        self.camera_uri = f"rtsp://{camera_config['camera_username']}:{camera_config['camera_password']}@" + \
+            f"{camera_config['camera_address']}:{camera_config['camera_rtsp_port']}" + \
+            f"/{camera_config['camera_rtsp_path']}"
         self.video_path = video_path
 
         if self.video_path is not None:
@@ -118,23 +120,22 @@ class CameraCaptureThread(QThread):
 
 def main():
     parser = argparse.ArgumentParser(description="Camera control application")
-    parser.add_argument("--camera-uri", help="URI of the camera to use")
     parser.add_argument("--video-path", help="Path to the video file (if not using a camera)")
     args = parser.parse_args()
 
-    # If a config file is found, use the camera_uri from it. This makes it easy to store
-    # the camera URI in a place that isn't checked into version control, which is nice since
-    # it may include the username and password for the camera.
-    config_file_path = Path.home() / ".config/camera_control.yml"
-    try:
-        with open(config_file_path) as yaml_file:
-            config_file_args = yaml.load(yaml_file, Loader=yaml.FullLoader)
-        args.camera_uri = config_file_args["camera_uri"]
-    except FileNotFoundError:
-        print(f"No config file found at {config_file_path}, using command line arguments only.")
+    camera_config = None
+    if args.video_path is None:
+        # Load camera configuration from a YAML file.
+        config_file_path = Path.home() / ".config/camera_control.yml"
+        try:
+            with open(config_file_path) as yaml_file:
+                camera_config = yaml.load(yaml_file, Loader=yaml.FullLoader)
+        except FileNotFoundError:
+            print(f"No config file found at {config_file_path}.")
+            sys.exit(-1)
 
     app = QApplication(sys.argv)
-    main_window = CameraControlApp(args.camera_uri, args.video_path)
+    main_window = CameraControlApp(camera_config, args.video_path)
     main_window.show()
     sys.exit(app.exec())
 
