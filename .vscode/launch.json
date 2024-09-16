@@ -8,7 +8,7 @@
             "program": "camera_control/src/camera_control/camera_control_app.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
-            "env": {"GST_DEBUG": "2"},
+            "env": {"GST_DEBUG": "1"},
             "args": [
             ],
         },

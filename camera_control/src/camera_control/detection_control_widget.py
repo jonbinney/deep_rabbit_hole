@@ -30,7 +30,7 @@ class DetectionControlWidget(QWidget):
         self.detection_thread = None
 
         self.main_layout = QVBoxLayout(self)
-        self.frame_number_label = QLabel("Frame: {self.frame_number:9d}", self)
+        self.frame_number_label = QLabel(f"Frame: {self.frame_number:9d}", self)
         self.main_layout.addWidget(self.frame_number_label)
         self.min_area_label = QLabel("Minimum area")
         self.min_area_spinbox = QSpinBox()
