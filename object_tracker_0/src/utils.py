@@ -21,6 +21,9 @@ def load_model(filepath):
     model.load_state_dict(torch.load(filepath))
     return model
 
+def my_device():
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
 class Timer:
     def __init__(self):
         self.total_time = 0
