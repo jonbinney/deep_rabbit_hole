@@ -1,5 +1,6 @@
 import argparse
 import cv2
+from enum import Enum
 from pathlib import Path
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
@@ -14,28 +15,30 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import sys
 import yaml
+import time
 
 from camera_control.common import CameraControlSignals, cv_image_to_q_image
 from camera_control.detection_control_widget import DetectionControlWidget, DetectionParameters
 from camera_control.image_widget import ImageWidget
 from camera_control.gstreamer_camera_capture import GStreamerCameraCapture
+from camera_control.onvif_camera_controller import OnvifCameraController
 
 class CameraControlApp(QMainWindow):
     def __init__(self, camera_config, video_path):
         super().__init__()
-        self.camera_uri = f"rtsp://{camera_config['camera_username']}:{camera_config['camera_password']}@" + \
-            f"{camera_config['camera_address']}:{camera_config['camera_rtsp_port']}" + \
-            f"/{camera_config['camera_rtsp_path']}"
-        self.video_path = video_path
+        self.app_signals = CameraControlSignals()
 
+        self.video_path = video_path
+        self.live_mode = True
         if self.video_path is not None:
-            self.from_video_file = True
-        elif self.camera_uri is not None:
+            self.live_mode = False
+
+        if self.live_mode:
+            self.camera_capture_thread = CameraCaptureThread(self.app_signals, camera_config)
+
             self.from_video_file = False
         else:
             raise ValueError("Must provide either a camera URI or a video path")
-
-        self.app_signals = CameraControlSignals()
 
         self.setWindowTitle("Camera Control")
         self.setGeometry(100, 100, 800, 600)
@@ -83,8 +86,9 @@ class CameraControlApp(QMainWindow):
             self.seek_slider.setValue(0)
             # Manually trigger the first frame update.
             self.seek_slider.valueChanged.emit(0)
-        else:
-            self.camera_capture_thread = CameraCaptureThread(self.app_signals, self.camera_uri)
+    
+        if self.live_mode:
+            self.frame_display.image_clicked_signal.connect(self.camera_capture_thread.focus_on_point)
             self.camera_capture_thread.start()
 
     def seek_frame(self, frame_number):
@@ -104,18 +108,91 @@ class CameraControlApp(QMainWindow):
 
 
 class CameraCaptureThread(QThread):
-    def __init__(self, app_signals, camera_uri):
+    class PTZState(Enum):
+        IDLE = 1
+        TURNING = 2
+        ZOOMING = 3
+        FILMING_CLOSEUP = 4
+        RETURNING_TO_HOME = 5
+
+    def __init__(self, app_signals, camera_config):
         super().__init__()
         self.app_signals = app_signals
+        camera_uri = f"rtsp://{camera_config['camera_username']}:{camera_config['camera_password']}@" + \
+            f"{camera_config['camera_address']}:{camera_config['camera_rtsp_port']}" + \
+            f"/{camera_config['camera_rtsp_path']}"
         self.camera_streamer = GStreamerCameraCapture(camera_uri)
+        self.camera_controller = OnvifCameraController(
+            camera_config["camera_address"],
+            camera_config["camera_onvif_port"],
+            camera_config["camera_username"],
+            camera_config["camera_password"])
+        
+        self.ptz_state = self.PTZState.IDLE
+        self.ptz_state_start_time = time.time()
+        self.focus_point = None
 
     def run(self):
+        ptz_turn_duration = 2.0  # seconds
+        ptz_zoom_duration = 1.0  # seconds
+        ptz_filming_closeup_duration = 1.0  # seconds
+        ptz_returning_to_home_duration = 4.0  # seconds
+        x_speed_factor = 0.0008
+        y_speed_factor = -0.0008
+        zoom_speed_factor = 0.01
+
+        previous_state = None
         while not self.isInterruptionRequested():
             # Blocks until a new frame is available (I think).
             frame = self.camera_streamer.read_next_frame()
+            image_height, image_width, _ = frame.shape
             self.app_signals.frame_updated.emit(cv_image_to_q_image(frame))
 
+            if self.ptz_state != previous_state:
+                print(f"PTZ State: {self.ptz_state.name}")
+                previous_state = self.ptz_state
+            if self.ptz_state == self.PTZState.IDLE:
+                if self.focus_point is not None:
+                    x, y = self.focus_point
+                    x_speed = ((x - image_width / 2) / ptz_turn_duration) * x_speed_factor
+                    y_speed = ((y - image_height / 2) / ptz_turn_duration ) * y_speed_factor
+                    zoom_speed = ptz_turn_duration * zoom_speed_factor
+                    print("Setting speed to ", x_speed, y_speed, zoom_speed)
+                    self.camera_controller.relative_move(x_speed, y_speed, 0.0)
+                    self.ptz_state = self.PTZState.TURNING
+                    self.ptz_state_start_time = time.time()
+            elif self.ptz_state == self.PTZState.TURNING:
+                if time.time() - self.ptz_state_start_time >= ptz_turn_duration:
+                    # self.camera_controller.stop()
+                    self.camera_controller.relative_move(0.0001, 0.0001, 1.0)
+                    self.ptz_state = self.PTZState.ZOOMING
+                    self.ptz_state_start_time = time.time()
+            elif self.ptz_state == self.PTZState.ZOOMING:
+                if time.time() - self.ptz_state_start_time >= ptz_zoom_duration:
+                    self.camera_controller.stop()
+                    self.ptz_state = self.PTZState.FILMING_CLOSEUP
+                    self.ptz_state_start_time = time.time()
+            elif self.ptz_state == self.PTZState.FILMING_CLOSEUP:
+                if time.time() - self.ptz_state_start_time >= ptz_filming_closeup_duration:
+                    self.camera_controller.goto_preset("1")
+                    self.ptz_state = self.PTZState.RETURNING_TO_HOME
+                    self.ptz_state_start_time = time.time()
+            elif self.ptz_state == self.PTZState.RETURNING_TO_HOME:
+                if time.time() - self.ptz_state_start_time >= ptz_returning_to_home_duration:
+                    self.focus_point = None
+                    self.ptz_state = self.PTZState.IDLE
+                    self.ptz_state_start_time = time.time()
+
+        self.camera_controller.stop()
         self.camera_streamer.release()
+
+    def focus_on_point(self, x, y):
+        if self.focus_point is None:
+            print(f"Setting focus point: ({x}, {y})")
+            self.focus_point = (x, y)
+        else:
+            print("Ignoring focus point, already working on one.")
+
            
 
 def main():

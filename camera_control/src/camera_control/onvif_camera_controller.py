@@ -4,7 +4,7 @@ import sys
 import time
 import yaml
 
-class OnvifCameraControl:
+class OnvifCameraController:
     def __init__(self, host, port, user, password):
         """
         Simple interface for controlling a camera using the ONVIF protocol.
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         print(f"No config file found at {config_file_path}.")
         sys.exit(-1)
 
-    cam = OnvifCameraControl(
+    cam = OnvifCameraController(
         camera_config["camera_address"],
         camera_config["camera_onvif_port"],
         camera_config["camera_username"],
