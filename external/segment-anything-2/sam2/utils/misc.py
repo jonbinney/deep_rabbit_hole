@@ -141,8 +141,14 @@ class AsyncVideoFrameLoader:
             except Exception as e:
                 self.exception = e
 
-        self.thread = Thread(target=_load_frames, daemon=True)
-        self.thread.start()
+        # === Lazy Learning Lair ===
+        # Don't load all the frames!
+        # This quick hack to process long videos was kindly stolen from: https://github.com/facebookresearch/segment-anything-2/issues/288
+        # While we impatiently wait for SAM to support long videos nativelly and without doing dumb stuff.
+        # E.g., hopefully in the future something like this will be available: https://github.com/facebookresearch/segment-anything-2/pull/46/files
+
+        # self.thread = Thread(target=_load_frames, daemon=True)
+        # self.thread.start()
 
     def __getitem__(self, index):
         if self.exception is not None:
@@ -162,7 +168,10 @@ class AsyncVideoFrameLoader:
         img /= self.img_std
         if not self.offload_video_to_cpu:
             img = img.to(self.compute_device, non_blocking=True)
-        self.images[index] = img
+
+        # === Lazy Learning Lair ===
+        # Don't cache the loaded image, otherwise we run out of memory for large videos! Same Hack than above.
+        # self.images[index] = img
         return img
 
     def __len__(self):

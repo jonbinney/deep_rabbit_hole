@@ -18,7 +18,7 @@ import cv2
 import json
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
-from utils import Timer
+from utils import Timer, my_device
 from datetime import datetime
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 import numpy as np
@@ -29,13 +29,12 @@ timer_total = Timer()
 
 def load_object_detection_model():
     model_id = "IDEA-Research/grounding-dino-base"
-    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     #processor = AutoProcessor.from_pretrained(model_id, size={"shortest_edge": 1200, "longest_edge": 2000})
     processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
+    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(my_device())
 
-    print(f"Using {device} for object detection with model: {model_id}")
+    print(f"Using {my_device()} for object detection with model: {model_id}")
 
     return (model, processor)
 
@@ -228,7 +227,7 @@ def do_create_annotations(bboxes):
 
 
 def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=False, frames_max=None):
-    print(f"Performing object tracking on video: {video_path}")
+    print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
 
     # 1- Preparation
 
@@ -238,9 +237,9 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
 
     # Load models for object detection and object tracking
     obj_detect_model, obj_detect_processor = load_object_detection_model()
-    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-base-plus")
+    obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-base-plus", device=my_device())
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-        obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True)
+        obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True, async_loading_frames=True)
 
     frame_number = 0
     obj_track_bboxes = {}
@@ -318,3 +317,4 @@ if __name__ == '__main__':
 
     # Call test_model function with video_path and json_path arguments
     perform_object_tracking(**vars(args))
+    
