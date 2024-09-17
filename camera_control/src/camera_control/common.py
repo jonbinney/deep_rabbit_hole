@@ -12,5 +12,5 @@ def cv_image_to_q_image(cv_image):
     cv_image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
     height, width, channels = cv_image_rgb.shape
     bytes_per_line = channels * width
-    q_image = QImage(cv_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+    q_image = QImage(cv_image_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
     return q_image
