@@ -17,5 +17,12 @@
     "python.envFile": "${workspaceFolder}/.env",
     "python.testing.pytestArgs": [
         "."
+    ],
+    "remote.SSH.defaultExtensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-python.black-formatter",
+        "github.copilot",
+        "github.copilot-chat"
     ]
 }

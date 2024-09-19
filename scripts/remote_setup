@@ -1,0 +1,32 @@
+#!/usr/bin/sh
+
+# Copies this repo to a remote machine and installs dependencies.
+
+set -e
+
+if [ "$#" -ne 2 ]
+then
+    echo "Usage: $0 <cloud_user> <cloud_address>"
+    exit 1
+fi
+
+CLOUD_USER=$1
+CLOUD_ADDRESS=$2
+
+echo "Setting up remote machine at $CLOUD_USER@$CLOUD_ADDRESS"
+
+start_time=`date +%s.%N`
+
+# First time we connect, we need to accept the host key
+ssh -o StrictHostKeyChecking=no -l $CLOUD_USER $CLOUD_ADDRESS "echo Accepted host key"
+
+# Copy local repo to machine
+echo "Transferring files..."
+rsync -a --info=progress2 --exclude .venv $PWD $CLOUD_USER@$CLOUD_ADDRESS:
+
+# Setup environment on remote machine
+ssh -l $CLOUD_USER $CLOUD_ADDRESS "cd deep_rabbit_hole; ./scripts/local_setup"
+
+end_time=`date +%s.%N`
+run_duration=$( echo "$end_time - $start_time" | bc -l )
+echo "Setup completed in $run_duration seconds"
