@@ -30,7 +30,7 @@ def directions_of_movement(prev_x, prev_y, x, y, THRESHOLD = 1):
     else:
         horizontal = ""
 
-    return (horizontal, vertical)    
+    return (horizontal, vertical)
 
 def describe_movement(h, v):
     d = []
@@ -47,16 +47,16 @@ def describe_movement(h, v):
     return " and ".join(d)
 
 
-    
+
 def describe_annotations(filename: str, output_filename: str):
 
     def log(file: TextIOWrapper, image_id: int, actor: str, message: str):
         file.write(f"{image_id:5};{actor};{message}\n")
-    
+
 
     with open(filename, 'r') as f:
         data = json.load(f)
-    
+
     categories_map = {category['id']: category['name'] for category in data['categories']}
 
     annotation_map = defaultdict(lambda: {})
@@ -68,7 +68,7 @@ def describe_annotations(filename: str, output_filename: str):
     min_image_id = min(annotation_map.keys())
     max_image_id = max(annotation_map.keys())
 
-    
+
     position_map = {}
     last_seen = {}
 
@@ -102,13 +102,17 @@ def describe_annotations(filename: str, output_filename: str):
                     # TODO: give more information of where it appeared, e.g. "appeared in the top left corner" or if it just popped up in the middle of the screen
                     log(output_file, image_id, name, "appeared")
 
+            removed_tracks = []
             for track_id, image_id_last_seen in last_seen.items():
                 if image_id - image_id_last_seen > 32:
-                    name = f"{categories_map[annotation_map[image_id][track_id]['category_id']]}_{track_id}"
+                    name = f"{categories_map[annotation_map[image_id_last_seen][track_id]['category_id']]}_{track_id}"
                     # TODO: give more information of where it dissapeared
                     log(output_file, image_id, name,"disappeared")
-                    last_seen.pop(track_id)
-        
+                    removed_tracks.append(track_id)
+
+            for removed_track in removed_tracks:
+                last_seen.pop(removed_track)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Object Tracker')
 
