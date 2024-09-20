@@ -266,6 +266,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
         # Remove from the already known rabbits from the list of new rabbits to track
         current_bboxes = last_track_bboxes
         new_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes.values()), obj_detect_bboxes))
+        # If any new rabbits were found, reset the tracker state and restart tracking from here with the new boxes
         if len(new_bboxes) > 0:
             print(f"Found new rabbits: {new_bboxes}")
             for new_bbox in new_bboxes:
