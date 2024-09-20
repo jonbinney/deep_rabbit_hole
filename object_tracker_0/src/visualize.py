@@ -93,6 +93,7 @@ while True:
   for annotation in frame_annotations:
     # Extract the bounding box coordinates
     x, y, w, h = annotation['bbox']
+    track_id = annotation['attributes']['track_id']
 
     # Cast x and y to integer
     x = int(x)
@@ -102,6 +103,7 @@ while True:
 
     # Draw the bounding box on the frame
     cv2.rectangle(frame, (x, y), ((x + w), (y + h)), (0, 255, 0), 2)
+    cv2.putText(frame, f"{track_id}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
   # Add new descriptions (may override existing one if it's the same actor)
   for actor, action in descriptions_per_frame[frame_number]:
