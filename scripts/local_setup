@@ -1,0 +1,8 @@
+#!/usr/bin/sh
+
+# Installs our dependencies in a virtual environment.
+
+virtualenv .venv
+. .venv/bin/activate
+pip install -r object_tracker_0/requirements.txt
+pip install -e external/segment-anything-2/
