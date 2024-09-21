@@ -24,7 +24,10 @@ python object_tracker_0/src/inference.py -v datasets/rabbits_2024_08_12_25_15sec
 
 ### Using VSCode to edit and run code remotely
 
+In VSCode, click the `><` icon in the bottom left and then click the "SSH" option in the menu that
+appears. Enter the `ubuntu@<ip_address>` for the machine you created on the lambdalabs site. Once
+connected, choose "Open Folder" in the VSCode "File" menu, and open the "deep_rabbit_hole" folder.
+
 Some useful extensions including "Python" and "debugpy" are automatically installed on by vscode on the server
 which runs on the remote host. This may take a minute to finish installing before you can use them. Once they
 are ready, you should be able to run and debug our scripts just like you would locally.
-
