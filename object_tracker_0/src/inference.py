@@ -227,7 +227,7 @@ def do_create_annotations(bboxes):
     return annotations
 
 
-def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=False, frames_max=None):
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=None):
     print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
 
     # 1- Preparation

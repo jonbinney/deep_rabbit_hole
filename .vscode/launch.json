@@ -31,9 +31,9 @@
             "console": "integratedTerminal",
             "args": [
                 "-v",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/video/video.mp4",
                 "-a",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/test_v1.json",
                 "-w",
                 "/tmp/15sec"
             ],
@@ -77,6 +77,17 @@
             "args": [
                 "-a",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/manual_labeling.json",
+                "-d",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/annotation_description.txt",
+            ]
+        },
+        {
+            "name": "Narration",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "object_tracker_0/src/narration.py",
+            "console": "integratedTerminal",
+            "args": [
                 "-d",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/annotation_description.txt",
             ]

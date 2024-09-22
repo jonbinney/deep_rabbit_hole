@@ -5,6 +5,7 @@ huggingface-hub==0.24.6
 pytest
 transformers
 Pillow
+accelerate
 
 # install this one manually
 # -e ../external/segment-anything-2
