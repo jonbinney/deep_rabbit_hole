@@ -165,3 +165,7 @@ cython_debug/
 
 # Models
 /models/**/*
+
+# MLFlow logging directories
+mlartifacts
+mlruns

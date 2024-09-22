@@ -11,6 +11,8 @@ TODO:
  - Convert the segment results into bboxes and save them in the COCO format
 """
 import math
+import mlflow
+from mlflow.models import infer_signature
 import os
 import torch
 import argparse
@@ -229,6 +231,9 @@ def do_create_annotations(bboxes):
 
 def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=None):
     print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
+    params = dict(locals())
+    mlflow.log_params(params)
+    mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
 
     # 1- Preparation
 
@@ -305,6 +310,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     with open(annotation_path, 'w') as f:
         f.write(json.dumps(coco))
 
+    mlflow.log_artifact(annotation_path)
     print(f"Timings => Detection: {timer_total}, Inference: {timer_inference}")
 
 if __name__ == '__main__':
@@ -321,5 +327,11 @@ if __name__ == '__main__':
     # Parse arguments
     args = parser.parse_args()
 
-    # Call test_model function with video_path and json_path arguments
-    perform_object_tracking(**vars(args))
+    mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
+    print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
+    mlflow.set_tracking_uri(uri=mlflow_tracking_uri)
+    mlflow.set_experiment("Deep rabbit hole inference")
+
+    with mlflow.start_run():
+        # Call test_model function with video_path and json_path arguments
+        perform_object_tracking(**vars(args))
