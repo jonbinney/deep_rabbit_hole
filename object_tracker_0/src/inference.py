@@ -268,12 +268,15 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
         new_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes.values()), obj_detect_bboxes))
         # If any new rabbits were found, reset the tracker state and restart tracking from here with the new boxes
         if len(new_bboxes) > 0:
-            print(f"Found new rabbits: {new_bboxes}")
+            print(f"Found {len(new_bboxes)} new rabbits (total: {len(new_bboxes) + len(current_bboxes)}): {new_bboxes}")
             for new_bbox in new_bboxes:
                 current_bboxes[track_id] = new_bbox
                 track_id += 1
 
             obj_track_predictor.reset_state(obj_track_state)
+        else:
+            # No new rabbits, so we don't reset the state, so no need to pass again the boxes
+            current_bboxes = {}
 
 
         # Track the bbox rabbits until the next batch
