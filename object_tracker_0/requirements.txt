@@ -6,6 +6,9 @@ pytest
 transformers
 Pillow
 accelerate
+mlflow
+psutil # So that mlflow can log system metrics
+pynvml # So that mlflow can log GPU metrics
 
 # install this one manually
 # -e ../external/segment-anything-2
