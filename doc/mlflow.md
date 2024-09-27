@@ -8,6 +8,11 @@ In a terminal that has the virtual environment active, start the mlflow server.
 mlflow server --host 127.0.0.1 --port 8080
 ```
 
+Alternatively, you can run the "Start local MLflow server" task in vscode by
+pressing `Ctrl+Shift+P`, searching for "Run Task", then search for "Start local
+MLflow server". This will create a new terminal inside of VSCode running the
+local server.
+
 Note: By default, the server creates `mlartifacts/` and `mlruns/` in the current
 directory for storing data about runs.
 

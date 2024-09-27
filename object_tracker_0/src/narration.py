@@ -13,12 +13,15 @@ Next steps
  - Use location, time and wheather at this time to enrich the content
 """
 import argparse
+import mlflow
 import transformers
 import torch
 
 
-def narrate(description_path):
+def narrate(description_path, narration_output_path):
     model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+    params = {f'narrate/{param}': value for param, value in locals().items()}
+    mlflow.log_params(params)
 
 
     pipeline = transformers.pipeline(
@@ -33,7 +36,7 @@ def narrate(description_path):
 
     messages = [
         {"role": "system", "content": "You are David Attenborough."},
-        {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleight, NC using a descriptive and imaginative way: {actions}."}
+        {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleigh, NC using a descriptive and imaginative way: {actions}."}
     ]
 
     outputs = pipeline(
@@ -41,7 +44,12 @@ def narrate(description_path):
         max_new_tokens=1024,
     )
 
-    print(outputs[0]["generated_text"][-1]['content'])
+    generated_text = outputs[0]["generated_text"][-1]['content']
+    with open(narration_output_path, "w") as f:
+        f.write(generated_text)
+    mlflow.log_artifact(narration_output_path)
+    print(generated_text)
+    return generated_text
 
 if __name__ == "__main__":
     # Create argument parser
@@ -49,6 +57,7 @@ if __name__ == "__main__":
 
     # Add video path argument
     parser.add_argument('-d', '--description_path', type=str, required=True, help='Path to the descriptions file')
+    parser.add_argument('--narration_output_path', type=str, required=True, help='Path for the output narration file')
 
     # Parse arguments
     args = parser.parse_args()

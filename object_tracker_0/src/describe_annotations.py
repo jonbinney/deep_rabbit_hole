@@ -2,6 +2,7 @@ import argparse
 from io import TextIOWrapper
 import json
 from collections import defaultdict
+import mlflow
 
 def directions_of_movement(prev_x, prev_y, x, y, THRESHOLD = 1):
     dx = x - prev_x
@@ -49,6 +50,9 @@ def describe_movement(h, v):
 
 
 def describe_annotations(filename: str, output_filename: str):
+    params = {f'describe_annotations/{param}': value for param, value in locals().items()}
+    mlflow.log_params(params)
+    mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
 
     def log(file: TextIOWrapper, image_id: int, actor: str, message: str):
         file.write(f"{image_id:5};{actor};{message}\n")
@@ -112,6 +116,8 @@ def describe_annotations(filename: str, output_filename: str):
 
             for removed_track in removed_tracks:
                 last_seen.pop(removed_track)
+
+    mlflow.log_artifact(output_filename)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Object Tracker')

@@ -7,6 +7,15 @@ e.g. Lambda Labs. It assumes that the remote machine comes with a relatively rec
 python, pip, and virtualenv, and has CUDA libraries installed already. All commands below are
 assumed to be run from the root directory of this repo.
 
+If you want to use the narration script, you will also need to login to
+huggingface. If you run this locally before the remote_setup script, it will
+automatically copy your access token across to the remote machine.
+
+```
+. .venv/bin/activate
+huggingface-cli login
+```
+
 The `remote_setup` script copies our repo to the remote machine and installs dependencies in a
 virtual environment.
 

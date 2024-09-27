@@ -13,12 +13,25 @@ fi
 CLOUD_USER=$1
 CLOUD_ADDRESS=$2
 
+# Relative to home directory on each machine.
+HF_TOKEN_FILE=.cache/huggingface/token
+
 echo "Setting up remote machine at $CLOUD_USER@$CLOUD_ADDRESS"
 
 start_time=`date +%s.%N`
 
 # First time we connect, we need to accept the host key
 ssh -o StrictHostKeyChecking=no -l $CLOUD_USER $CLOUD_ADDRESS "echo Accepted host key"
+
+# Accessing some Hugging Face models requires authentication via an access token.
+if [ -e ~/$HF_TOKEN_FILE ]
+then
+    echo "Copying Hugging Face access token to remote machine"
+    ssh -l $CLOUD_USER $CLOUD_ADDRESS "mkdir -p ~/.cache/huggingface"
+    rsync -a ~/$HF_TOKEN_FILE $CLOUD_USER@$CLOUD_ADDRESS:$HF_TOKEN_FILE
+else
+    echo "No Hugging Face access token found, skipping"
+fi
 
 # Copy local repo to machine
 echo "Transferring files..."
