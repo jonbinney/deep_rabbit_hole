@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+import argparse
+import mlflow
+import os
+from pathlib import Path
+
+from describe_annotations import describe_annotations
+from inference import perform_object_tracking
+from inference_metrics import compute_confusion_matrix, compute_metrics
+from narration import narrate
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Top level script for creating a documentary from a raw video of animals')
+
+    parser.add_argument('-v', '--video-path', type=Path, required=True, help='Path to the video file')
+    parser.add_argument('-w', '--working-dir', type=Path, default=Path('.'),
+                        help='Where to put files created by each step in the process.' +
+                        'Most of these files are also stored in the MLFlow tracking server')
+    parser.add_argument('-g', '--ground-truth', type=Path, default=None, help='Path to the ground truth JSON file')
+    parser.add_argument('--iou-thresholds', type=float, default=0.5, help='IOU threshold for computing confusion matrix')
+    args = parser.parse_args()
+
+    annotation_path = args.working_dir / 'annotations.json'
+    description_path = args.working_dir / 'description.json'
+    narration_path = args.working_dir / 'narration.json'
+
+    mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
+    print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
+    mlflow.set_tracking_uri(uri=mlflow_tracking_uri)
+    mlflow.set_experiment("Create Documentary")
+    mlflow.enable_system_metrics_logging()
+
+    with mlflow.start_run():
+        perform_object_tracking(video_path=args.video_path, annotation_path=annotation_path, working_dir=args.working_dir)
+        if args.ground_truth is not None:
+            confusion_matrix = compute_confusion_matrix(args.ground_truth, annotation_path, args.iou_thresholds)
+            mlflow.log_metrics(compute_metrics(confusion_matrix))
+        describe_annotations(annotation_path, description_path)
+        narrate(description_path, narration_path)

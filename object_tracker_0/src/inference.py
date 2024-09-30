@@ -12,7 +12,6 @@ TODO:
 """
 import math
 import mlflow
-from mlflow.models import infer_signature
 import os
 import torch
 import argparse
@@ -231,7 +230,7 @@ def do_create_annotations(bboxes):
 
 def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=None):
     print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
-    params = dict(locals())
+    params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
     mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
 
@@ -245,7 +244,8 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     obj_detect_model, obj_detect_processor = load_object_detection_model()
     obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-base-plus", device=my_device())
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-        obj_track_state = obj_track_predictor.init_state(working_dir, offload_video_to_cpu=True, async_loading_frames=True)
+        # We convert the path to a string (it might be a pathlib.Path) because Sam2 doesn't like Path objects.
+        obj_track_state = obj_track_predictor.init_state(str(working_dir), offload_video_to_cpu=True, async_loading_frames=True)
 
     frame_number = 0
     obj_track_bboxes = {}

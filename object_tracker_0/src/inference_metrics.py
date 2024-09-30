@@ -116,6 +116,11 @@ def compute_confusion_matrix_per_image_one_category(ground_truths: list, predict
     # The elements left in pred_ids are false positives, and the elements left in gt_ids are false negatives
     return np.array([[tp, len(pred_ids)], [len(gt_ids), 0]], np.int32)
 
+def compute_metrics(confusion_matrix):
+    precision = confusion_matrix[0, 0] / (confusion_matrix[0, 0] + confusion_matrix[0, 1])
+    recall = confusion_matrix[0, 0] / (confusion_matrix[0, 0] + confusion_matrix[1, 0])
+    f1 = 2 * precision * recall / (precision + recall)
+    return dict(precision=precision, recall=recall, f1=f1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Object Tracker')

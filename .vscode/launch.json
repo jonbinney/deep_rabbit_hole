@@ -2,6 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Create Documentary",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "object_tracker_0/scripts/create_documentary",
+            "console": "integratedTerminal",
+            "args": [
+                "--video-path=datasets/${input:dataset}/video/video.mp4",
+                "--working-dir=/tmp/${input:dataset}",
+                "--ground-truth=datasets/${input:dataset}/annotations/manual_labeling.json",
+            ],
+            "justMyCode": false,
+        },
+        {
             "name": "Camera control App (Live)",
             "type": "debugpy",
             "request": "launch",
@@ -90,6 +103,8 @@
             "args": [
                 "-d",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/annotation_description.txt",
+                "--narration_output_path",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/narration.txt",
             ]
         },
     ],
