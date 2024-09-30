@@ -1,4 +1,4 @@
-#!/usr/bin/sh
+#!/bin/sh
 
 # Copies this repo to a remote machine and installs dependencies.
 
@@ -35,7 +35,7 @@ fi
 
 # Copy local repo to machine
 echo "Transferring files..."
-rsync -a --info=progress2 --exclude .venv $PWD $CLOUD_USER@$CLOUD_ADDRESS:
+rsync -a --progress --exclude .venv $PWD $CLOUD_USER@$CLOUD_ADDRESS:
 
 # Setup environment on remote machine
 ssh -l $CLOUD_USER $CLOUD_ADDRESS "cd deep_rabbit_hole; ./scripts/local_setup"
