@@ -24,6 +24,12 @@ if __name__ == '__main__':
     description_path = args.working_dir / 'description.json'
     narration_path = args.working_dir / 'narration.json'
 
+    # Check that the provided video and ground truth files exist
+    if not args.video_path.exists():
+        raise FileNotFoundError(f"Video file {args.video_path} does not exist")
+    if args.ground_truth is not None and not args.ground_truth.exists():
+        raise FileNotFoundError(f"Ground truth file {args.ground_truth} does not exist")
+
     mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
     print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
     mlflow.set_tracking_uri(uri=mlflow_tracking_uri)

@@ -105,8 +105,8 @@ def _do_detection_on_frame(model, processor, frame):
     results = processor.post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
-        box_threshold=0.15,
-        text_threshold=0.15,
+        box_threshold=0.35,
+        text_threshold=0.35,
         target_sizes=[frame.size[::-1]],
     )
 
