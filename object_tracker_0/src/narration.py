@@ -19,7 +19,13 @@ import torch
 
 
 def narrate(description_path, narration_output_path):
-    model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+    # Meta llama 3.2 model family
+    model_id = "meta-llama/Llama-3.2-1B-Instruct"
+
+    # Alibaba Qwen 2.5 model family
+    #model_id = "Qwen/Qwen2.5-0.5B-Instruct"
+    #model_id = "Qwen/Qwen2.5-1.5B-Instruct"
+
     params = {f'narrate/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
 
@@ -36,7 +42,7 @@ def narrate(description_path, narration_output_path):
 
     messages = [
         {"role": "system", "content": "You are David Attenborough."},
-        {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleigh, NC using a descriptive and imaginative way: {actions}."}
+        {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleigh, NC using a descriptive and imaginative way. Name each rabbit that appears with a cute rabbit name: {actions}."}
     ]
 
     outputs = pipeline(
