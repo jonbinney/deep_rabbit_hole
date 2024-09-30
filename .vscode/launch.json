@@ -10,7 +10,7 @@
             "args": [
                 "--video-path=datasets/${input:dataset}/video/video.mp4",
                 "--working-dir=/tmp/${input:dataset}",
-                "--ground-truth=datasets/${input:dataset}/annotations/manual_labeling.json",
+                "--ground-truth=datasets/${input:dataset}/annotations/manual_labeling_v2.json",
             ],
             "justMyCode": false,
         },
