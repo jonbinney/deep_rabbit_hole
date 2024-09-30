@@ -1,3 +1,2 @@
-
 - [Logging runs with mlflow](doc/mlflow.md)
 - [Running on a cloud machine](doc/cloud_machine.md)
