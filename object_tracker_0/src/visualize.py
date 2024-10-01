@@ -8,7 +8,8 @@ Usage:
 
 Arguments:
   -v, --video: Path to the video file
-  -a, --annotations: Path to the annotation file in JSON format
+  -a, --annotations: Path to the annotation file in JSON format.  Appears in green in the video
+  -g, --ground_truth_annotations: Path to the ground truth annotation file in JSON format (optional). Appears in red in the video
   -d, --description: Path to the description file in text format (optional)
 
 Output:
@@ -23,12 +24,23 @@ import cv2
 import argparse
 from collections import defaultdict
 
+def draw_annotations(frame, frame_annotations, color):
+  for annotation in frame_annotations:
+    # Extract the bounding box coordinates
+    x, y, w, h = [int(val) for val in annotation['bbox']]
+    track_id = annotation['attributes']['track_id']
+
+    # Draw the bounding box on the frame
+    cv2.rectangle(frame, (x, y), ((x + w), (y + h)), color, 2)
+    cv2.putText(frame, f"{track_id}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
 # Create an argument parser
 parser = argparse.ArgumentParser(description='Object Tracker Visualizer')
 # Add the video path argument
 parser.add_argument('-v', '--video', type=str, required=True, help='Path to the video file')
 # Add the annotation path argument
 parser.add_argument('-a', '--annotations', type=str, required=True, help='Path to the annotation file in JSON format')
+parser.add_argument('-g', '--ground_truth_annotations', type=str, required=False, help='Path to the ground truth annotation file in JSON format')
 # Parse the command line arguments
 parser.add_argument('-d', '--description', type=str, required=False, help='Path to the description file in text format')
 args = parser.parse_args()
@@ -37,6 +49,10 @@ args = parser.parse_args()
 video_path = args.video
 # Get the annotation path from the command line arguments
 annotation_path = args.annotations
+
+gt_annotation_path = args.ground_truth_annotations
+
+
 # Define the output video path
 # TODO: Make this also an argument
 output_path = 'annotated_video.mp4'
@@ -47,6 +63,10 @@ video = cv2.VideoCapture(video_path)
 
 # Load the annotations from the JSON file
 coco = COCO(annotation_path)
+
+coco_gt = None
+if gt_annotation_path:
+  coco_gt = COCO(gt_annotation_path)
 
 print(f"Video Path: {video_path}")
 
@@ -84,26 +104,16 @@ while True:
     break
 
   # Get the frame number
-  frame_number = int(video.get(cv2.CAP_PROP_POS_FRAMES))  
+  frame_number = int(video.get(cv2.CAP_PROP_POS_FRAMES))
 
   # Get the annotations for the current frame
   frame_annotations = coco.loadAnns(coco.getAnnIds(imgIds=frame_number))
 
-  # Draw the annotations on the frame
-  for annotation in frame_annotations:
-    # Extract the bounding box coordinates
-    x, y, w, h = annotation['bbox']
-    track_id = annotation['attributes']['track_id']
+  draw_annotations(frame, frame_annotations, (0, 255, 0)) # green
 
-    # Cast x and y to integer
-    x = int(x)
-    y = int(y)
-    w = int(w)
-    h = int(h)
-
-    # Draw the bounding box on the frame
-    cv2.rectangle(frame, (x, y), ((x + w), (y + h)), (0, 255, 0), 2)
-    cv2.putText(frame, f"{track_id}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+  if coco_gt:
+    frame_annotations = coco_gt.loadAnns(coco_gt.getAnnIds(imgIds=frame_number))
+    draw_annotations(frame, frame_annotations, (0, 0, 255)) # red
 
   # Add new descriptions (may override existing one if it's the same actor)
   for actor, action in descriptions_per_frame[frame_number]:
