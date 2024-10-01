@@ -44,9 +44,9 @@
             "console": "integratedTerminal",
             "args": [
                 "-v",
-                "${workspaceFolder}/datasets/datasets/rabbits_2024_08_12_25_10min_div2/video.mp4",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/video/video.mp4",
                 "-a",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/manual_labeling.json",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/test_v1.json",
                 "-w",
                 "/tmp/15sec"
             ],
@@ -60,11 +60,9 @@
             "console": "integratedTerminal",
             "args": [
                 "-v",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/video/video.mp4",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/video/rabbits_2024_08_12_15sec.mp4",
                 "-a",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/labeling.json",
-                "-g",
-                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/manual_labeling.json",
+                "${workspaceFolder}/datasets/rabbits_2024_08_12_25_15sec/annotations/test_v1.json"
             ],
             "cwd": "${workspaceFolder}/object_tracker_0"
         },
