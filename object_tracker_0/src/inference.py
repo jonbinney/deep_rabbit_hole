@@ -17,6 +17,7 @@ import torch
 import argparse
 import cv2
 import json
+import ffmpeg
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from utils import Timer, my_device
@@ -113,7 +114,7 @@ def _do_detection_on_frame(model, processor, frame):
     return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu().numpy())
 
 
-def do_create_frame_files(video_path, frame_images_dir, force=False, resize=None, frame_end=None):
+def do_create_frame_files(video_path: str, frame_images_dir: str, force: bool=False, resize=None, frame_end=None):
     # Check that the provided working directory exists and otherwise create it
     if not os.path.exists(frame_images_dir):
         os.makedirs(frame_images_dir)
@@ -240,6 +241,15 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frames_max)
     print(f"We have {len(frame_file_names)} frames to process")
 
+    # Get the timestamp from when the recording starts from the video, if possible
+    try:
+        media_details = ffmpeg.probe(video_path)
+        video_timestamp = media_details["streams"][0]["tags"]["creation_time"]
+        print(f"Video timestamp: {video_timestamp}")
+    except Exception as e:
+        video_timestamp = None
+        print(f"Could not get recording start time: {e}")
+
     # Load models for object detection and object tracking
     obj_detect_model, obj_detect_processor = load_object_detection_model()
     obj_track_predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-base-plus", device=my_device())
@@ -300,8 +310,9 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
     coco = {
         'info': {
+            "video_timestamp": video_timestamp,
             "description": "Object tracking results",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "inference_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "timings": f"Detection: {timer_total}, Inference: {timer_inference}"
         },
         'categories': [
