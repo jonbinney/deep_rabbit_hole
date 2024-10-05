@@ -1,0 +1,31 @@
+#!/usr/bin/env python
+"""
+ffmpeg_stats_file should be the output of:
+
+    ffmpeg -i rabbits_2024_08_12_22_33_UTC_01.mp4 -vf showinfo -f null frame_info 2> frame_info
+"""
+import argparse
+from matplotlib import pyplot as plt
+import numpy as np
+import re
+
+
+parser = argparse.ArgumentParser(description='Print timing statistics for a video file')
+parser.add_argument('ffmpeg_stats_file', type=str, help='Path to the stats file that ffmpeg generated')
+args = parser.parse_args()
+
+with open(args.ffmpeg_stats_file, 'r') as f:
+    lines = f.readlines()
+    stats = []
+    for line in lines:
+        kv_list = re.findall('([_a-zA-Z]+):([.0-9]+)', line)
+        kv_dict = {k: v for k, v in kv_list}
+        if 'n' in kv_dict:
+            stats.append((int(kv_dict['n']), float(kv_dict['pts_time'])))
+    stats = np.array(stats)
+
+plt.plot(stats[:-1, 0], stats[1:, 1]-stats[:-1, 1])
+plt.xlabel('Frame number')
+plt.ylabel('pts delta (s)')
+plt.title(f'Frame timing')
+plt.show()
