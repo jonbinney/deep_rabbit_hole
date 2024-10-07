@@ -104,7 +104,10 @@ class ThingsOfInterestDetector:
         return bounding_boxes
     
     def reset(self):
-        self.background_subtractor.clear()
+        if self.detection_parameters.background_subtraction_method == "MOG2":
+            self.background_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
+        elif self.detection_parameters.background_subtraction_method == "KNN":
+            self.background_subtractor = cv2.createBackgroundSubtractorKNN()
 
 class DetectionThread(QThread):
     def __init__(self, app_signals, video_path, frame_number, detection_parameters):
