@@ -233,7 +233,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
     mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
-
+    mlflow.log_param("hardware/gpu", torch.cuda.get_device_name())
     # 1- Preparation
 
     # Turn the input video into a directory with a in image file per frame
