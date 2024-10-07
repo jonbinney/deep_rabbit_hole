@@ -20,7 +20,7 @@ import json
 import ffmpeg
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
-from utils import Timer, my_device
+from utils import Timer, my_device, start_experiment
 from datetime import datetime
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 import numpy as np
@@ -341,10 +341,7 @@ if __name__ == '__main__':
     # Parse arguments
     args = parser.parse_args()
 
-    mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
-    print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
-    mlflow.set_tracking_uri(uri=mlflow_tracking_uri)
-    mlflow.set_experiment("Deep rabbit hole inference")
+    start_experiment("Rabbit Inference")
 
     with mlflow.start_run():
         # Call test_model function with video_path and json_path arguments

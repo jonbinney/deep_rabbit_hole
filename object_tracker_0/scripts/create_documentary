@@ -4,6 +4,7 @@ import mlflow
 import os
 from pathlib import Path
 
+from utils import start_experiment
 from describe_annotations import describe_annotations
 from inference import perform_object_tracking
 from inference_metrics import compute_confusion_matrix, compute_metrics
@@ -30,11 +31,7 @@ if __name__ == '__main__':
     if args.ground_truth is not None and not args.ground_truth.exists():
         raise FileNotFoundError(f"Ground truth file {args.ground_truth} does not exist")
 
-    mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
-    print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
-    mlflow.set_tracking_uri(uri=mlflow_tracking_uri)
-    mlflow.set_experiment("Create Documentary")
-    mlflow.enable_system_metrics_logging()
+    start_experiment("Rabbit Documentary")
 
     with mlflow.start_run():
         perform_object_tracking(video_path=args.video_path, annotation_path=annotation_path, working_dir=args.working_dir)
