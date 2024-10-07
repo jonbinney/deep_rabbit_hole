@@ -1,4 +1,5 @@
-# Simple script to update the default MLFlow admin password
+#!/bin/env python3
+# Simple python script to update the default MLFlow admin password
 import requests
 from getpass import getpass
 
