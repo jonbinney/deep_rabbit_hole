@@ -22,7 +22,6 @@ import time
 from camera_control.common import CameraControlSignals, cv_image_to_q_image
 from camera_control.detection_control_widget import DetectionControlWidget, DetectionParameters, ThingsOfInterestDetector
 from camera_control.image_widget import ImageWidget
-from camera_control.gstreamer_camera_capture import GStreamerCameraCapture
 from camera_control.onvif_camera_controller import OnvifCameraController
 
 class CameraControlApp(QMainWindow):
@@ -127,7 +126,9 @@ class CameraCaptureThread(QThread):
         camera_uri = f"rtsp://{camera_config['camera_username']}:{camera_config['camera_password']}@" + \
             f"{camera_config['camera_address']}:{camera_config['camera_rtsp_port']}" + \
             f"/{camera_config['camera_rtsp_path']}"
-        self.camera_streamer = GStreamerCameraCapture(camera_uri)
+        self.camera_capture = cv2.VideoCapture(camera_uri)
+        if not self.camera_capture.isOpened():
+            raise ValueError(f"Failed to open camera stream: {camera_uri}")
         self.camera_controller = OnvifCameraController(
             camera_config["camera_address"],
             camera_config["camera_onvif_port"],
@@ -153,7 +154,9 @@ class CameraCaptureThread(QThread):
         frame_number = -1
         while not self.isInterruptionRequested():
             # Blocks until a new frame is available (I think).
-            frame = self.camera_streamer.read_next_frame()
+            ret, frame = self.camera_capture.read()
+            if not ret:
+                raise ValueError("Failed to read frame from camera stream")
             frame_number += 1
             self.app_signals.frame_number_updated.emit(frame_number)
             image_height, image_width, _ = frame.shape
@@ -219,8 +222,7 @@ class CameraCaptureThread(QThread):
                     self.ptz_state = self.PTZState.IDLE
                     self.ptz_state_start_time = time.time()
 
-        self.camera_controller.stop()
-        self.camera_streamer.release()
+        self.camera_capture.release()
 
     def focus_on_point(self, x, y):
         if self.focus_point is None:
