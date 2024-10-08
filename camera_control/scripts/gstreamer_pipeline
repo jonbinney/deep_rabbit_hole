@@ -1,0 +1,24 @@
+#!/bin/bash
+CONFIG_FILE="$HOME/.config/camera_control.yml"
+
+if ! [ -f "$CONFIG_FILE" ]; then
+    echo "Configuration file not found: $CONFIG_FILE"
+    exit 1
+fi
+
+if ! command -v jq &> /dev/null; then
+    echo "jq is not installed. Please install jq to use this script."
+    exit 1
+fi
+
+CAMERA_ADDRESS=$(jq -r '.camera_address' "$CONFIG_FILE")
+CAMERA_RTSP_PORT=$(jq -r '.camera_rtsp_port' "$CONFIG_FILE")
+CAMERA_RTSP_PATH=$(jq -r '.camera_rtsp_path' "$CONFIG_FILE")
+CAMERA_USERNAME=$(jq -r '.camera_username' "$CONFIG_FILE")
+CAMERA_PASSWORD=$(jq -r '.camera_password' "$CONFIG_FILE")
+
+RTSP_URI=rtsp://${CAMERA_USERNAME}:${CAMERA_PASSWORD}@${CAMERA_ADDRESS}:${CAMERA_RTSP_PORT}/${CAMERA_RTSP_PATH}
+echo Camera RTSP URI: $RTSP_URI
+
+gst-launch-1.0 -e rtspsrc location=$RTSP_URI latency=30 ! rtph265depay ! h265parse \
+ !  splitmuxsink max-size-time=3600000000000 location=~/Downloads/rabbits_$(date -u +"%Y_%m_%d_%H_%M_%Z")_%02d.mp4
