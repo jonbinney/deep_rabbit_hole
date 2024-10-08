@@ -52,6 +52,7 @@ class DetectionControlWidget(QWidget):
         self.run_detection_button = QPushButton("Set parameters", self)
         self.run_detection_button.clicked.connect(self.emit_detection_parameters)
         self.main_layout.addWidget(self.run_detection_button)
+        self.main_layout.addStretch(1)
 
     def emit_detection_parameters(self):
         self.app_signals.detection_parameters_updated.emit(self.get_detection_parameters())

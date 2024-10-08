@@ -83,6 +83,7 @@ class CameraControlApp(QMainWindow):
             # Manually trigger the first frame update.
             self.seek_slider.valueChanged.emit(0)
     
+        self.camera_capture_thread = None
         if self.live_mode:
             self.camera_capture_thread = CameraCaptureThread(self.app_signals, camera_config, default_detection_parameters)
             self.autozoom_button = QCheckBox("Autozoom", self)
@@ -103,8 +104,9 @@ class CameraControlApp(QMainWindow):
             print(f"Error reading frame {frame_number}")
 
     def closeEvent(self, event):
-        self.camera_capture_thread.requestInterruption()
-        self.camera_capture_thread.wait()
+        if self.camera_capture_thread is not None:
+            self.camera_capture_thread.requestInterruption()
+            self.camera_capture_thread.wait()
         super().closeEvent(event)
 
 
@@ -206,7 +208,7 @@ class CameraCaptureThread(QThread):
 
             elif self.ptz_state == self.PTZState.FILMING_CLOSEUP:
                 if time.time() - self.ptz_state_start_time >= ptz_filming_closeup_duration:
-                    self.camera_controller.goto_preset("2")
+                    self.camera_controller.goto_preset("1")
                     self.ptz_state = self.PTZState.RETURNING_TO_HOME
                     self.ptz_state_start_time = time.time()
 
