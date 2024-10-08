@@ -1,5 +1,4 @@
 import cv2
-from dataclasses import dataclass
 import imutils
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
@@ -12,14 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from common import cv_image_to_q_image
-
-@dataclass
-class DetectionParameters:
-    min_area: int
-    blur_size: int
-    background_subtraction_method: str
-    background_subtraction_learning_rate: float
+from common import cv_image_to_q_image, DetectionParameters
 
 class DetectionControlWidget(QWidget):
     def __init__(self, app_signals, video_path, default_parameters):
@@ -57,10 +49,14 @@ class DetectionControlWidget(QWidget):
         self.bgs_learning_rate_spinbox.setValue(default_parameters.background_subtraction_learning_rate)
         self.main_layout.addWidget(self.bgs_learning_rate_label)
         self.main_layout.addWidget(self.bgs_learning_rate_spinbox)
-        self.run_detection_button = QPushButton("Run detection", self)
-        self.run_detection_button.clicked.connect(self.run_detection)
+        self.run_detection_button = QPushButton("Set parameters", self)
+        self.run_detection_button.clicked.connect(self.emit_detection_parameters)
         self.main_layout.addWidget(self.run_detection_button)
+        self.main_layout.addStretch(1)
 
+    def emit_detection_parameters(self):
+        self.app_signals.detection_parameters_updated.emit(self.get_detection_parameters())
+    
     def get_detection_parameters(self):
         return DetectionParameters(
             self.min_area_spinbox.value(),
@@ -79,6 +75,40 @@ class DetectionControlWidget(QWidget):
         self.frame_number = frame_number
         self.frame_number_label.setText(f"Frame: {self.frame_number:9d}")
 
+class ThingsOfInterestDetector:
+    def __init__(self, detection_parameters):
+        self.detection_parameters = detection_parameters
+
+        if self.detection_parameters.background_subtraction_method == "MOG2":
+            self.background_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
+        elif self.detection_parameters.background_subtraction_method == "KNN":
+            self.background_subtractor = cv2.createBackgroundSubtractorKNN()
+
+    def detect(self, frame):
+        grayscale_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        grayscale_image = cv2.GaussianBlur(
+            grayscale_image, (self.detection_parameters.blur_size, self.detection_parameters.blur_size), 0
+        )
+        mask = self.background_subtractor.apply(grayscale_image, learningRate=self.detection_parameters.background_subtraction_learning_rate)
+
+
+        contours = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = imutils.grab_contours(contours)
+        big_enough_contours = [c for c in contours if cv2.contourArea(c) > self.detection_parameters.min_area]
+
+        # Draw bounding boxes for each contour on the frame.
+        bounding_boxes = []
+        for c in big_enough_contours:
+            (x, y, w, h) = cv2.boundingRect(c)
+            bounding_boxes.append((x, y, w, h))
+
+        return bounding_boxes
+    
+    def reset(self):
+        if self.detection_parameters.background_subtraction_method == "MOG2":
+            self.background_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
+        elif self.detection_parameters.background_subtraction_method == "KNN":
+            self.background_subtractor = cv2.createBackgroundSubtractorKNN()
 
 class DetectionThread(QThread):
     def __init__(self, app_signals, video_path, frame_number, detection_parameters):
