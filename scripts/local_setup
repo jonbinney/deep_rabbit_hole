@@ -9,4 +9,4 @@ pip install -e external/segment-anything-2/
 
 # Log-in to Google Cloud using user's credentials
 # TODO(adamantivm) Replace with file-based credential access
-gcloud auth application-default-login
+gcloud auth application-default login

@@ -10,6 +10,7 @@ mlflow
 psutil # So that mlflow can log system metrics
 pynvml # So that mlflow can log GPU metrics
 ffmpeg-python  # To extract video recording time from mp4 file
+google-cloud-storage # For logging mlflow artifacts on GCS
 
 # install this one manually
 # -e ../external/segment-anything-2
