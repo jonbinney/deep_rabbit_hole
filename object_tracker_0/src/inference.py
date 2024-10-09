@@ -228,8 +228,30 @@ def do_create_annotations(bboxes):
             annotation_id += 1
     return annotations
 
+def get_video_info(video_path: str) -> dict:
+    # Get the timestamp from when the recording starts from the video, if possible
+    media_details = ffmpeg.probe(video_path)
+    media_details = media_details.get("streams", [{}])[0]
 
-def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=None):
+    def get_creation_time(details):
+        date_string = media_details.get("tags", {}).get("creation_time", None)
+        if date_string is None:
+            return None
+        return datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%S.%fZ")
+
+    video_info = {
+        # Creation time, can be None if not available, otherwise we'll try to convert it to a timestamp
+        'creation_time': get_creation_time(media_details),
+        # Frames per second, as a floating point number
+        'fps': float(eval(media_details.get("avg_frame_rate", "0/1"))),
+        # Number of frames
+        'frames': int(media_details.get("nb_frames", 0)),
+    }
+
+    return video_info
+
+
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=20):
     print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
     params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
@@ -237,18 +259,12 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     mlflow.log_param("hardware/gpu", torch.cuda.get_device_name())
     # 1- Preparation
 
+    # Get video information
+    video_info = get_video_info(video_path)
+
     # Turn the input video into a directory with a in image file per frame
     frame_file_names = do_create_frame_files(video_path, working_dir, frame_end=frames_max)
     print(f"We have {len(frame_file_names)} frames to process")
-
-    # Get the timestamp from when the recording starts from the video, if possible
-    try:
-        media_details = ffmpeg.probe(video_path)
-        video_timestamp = media_details["streams"][0]["tags"]["creation_time"]
-        print(f"Video timestamp: {video_timestamp}")
-    except Exception as e:
-        video_timestamp = None
-        print(f"Could not get recording start time: {e}")
 
     # Load models for object detection and object tracking
     obj_detect_model, obj_detect_processor = load_object_detection_model()
@@ -310,9 +326,10 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     # NOTE: Only to be able to upload to CVAT, we need to name images frame_<number>.png, without any path
     coco = {
         'info': {
-            "video_timestamp": video_timestamp,
+            "video_timestamp": video_info['creation_time'].isoformat() if video_info['creation_time'] is not None else None,
+            "fps": video_info['fps'],
             "description": "Object tracking results",
-            "inference_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "inference_timestamp": datetime.now(tz=datetime.timezone.utc).isoformat(),
             "timings": f"Detection: {timer_total}, Inference: {timer_inference}"
         },
         'categories': [
