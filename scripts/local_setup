@@ -6,3 +6,7 @@ virtualenv .venv
 . .venv/bin/activate
 pip install -r object_tracker_0/requirements.txt
 pip install -e external/segment-anything-2/
+
+# Log-in to Google Cloud using user's credentials
+# TODO(adamantivm) Replace with file-based credential access
+gcloud auth application-default-login

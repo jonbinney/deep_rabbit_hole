@@ -2,6 +2,8 @@
 
 import torch
 import time
+import mlflow
+import os
 
 def preprocess_data(data):
     # Preprocess the data here
@@ -48,3 +50,12 @@ class Timer:
 
     def __str__(self) -> str:
         return f"Total: {self.total_time:.2f}s ({self.num_executions} x {self.get_average_time():.2f}s)"
+
+def start_experiment(experiment_name: str):
+    mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:///tmp/mlruns")
+    print(f"Using MLFlow tracking URI: {mlflow_tracking_uri}")
+    mlflow.set_tracking_uri(uri=mlflow_tracking_uri)
+    if mlflow.get_experiment_by_name(experiment_name) is None:
+        mlflow.create_experiment(experiment_name, artifact_location="gs://deep-rabbit-hole/mlflow")
+    mlflow.set_experiment(experiment_name)
+    mlflow.enable_system_metrics_logging()
