@@ -237,7 +237,7 @@ def get_video_info(video_path: str) -> dict:
         date_string = media_details.get("tags", {}).get("creation_time", None)
         if date_string is None:
             return None
-        return datetime.fromisoformat(date_string)
+        return datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%S.%f%z")
 
     video_info = {
         # Creation time, can be None if not available, otherwise we'll try to convert it to a timestamp
@@ -251,7 +251,7 @@ def get_video_info(video_path: str) -> dict:
     return video_info
 
 
-def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=20):
+def perform_object_tracking(video_path, annotation_path, working_dir, frame_batch_size=15, tiling=True, frames_max=None):
     print(f"Performing object tracking on video: {video_path}, tiling={tiling}")
     params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
