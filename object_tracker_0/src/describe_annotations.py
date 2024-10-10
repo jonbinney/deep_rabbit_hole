@@ -13,9 +13,18 @@ class TimestampConverter:
     def __init__(self, start_time, fps):
         self.start_time = start_time
         self.fps = fps
+        self.last_time = None
 
     def to_timestamp(self, image_id):
-        return (self.start_time + datetime.timedelta(image_id / self.fps)).isoformat()
+        this_time = self.start_time + datetime.timedelta(seconds=(image_id / self.fps))
+        # If the date is different or it's the first time, then print the whole date
+        timestamp_string = ""
+        if self.last_time is None or self.last_time.date() != this_time.date():
+            timestamp_string = this_time.strftime("%B %d at ")
+        # But always print the time
+        timestamp_string += this_time.strftime("%H:%M:%S")
+        self.last_time = this_time
+        return timestamp_string
 
 def directions_of_movement(prev_x, prev_y, x, y, THRESHOLD = 1):
     dx = x - prev_x
@@ -94,7 +103,8 @@ def describe_annotations(filename: str, output_filename: str):
     tsc = TimestampConverter(video_timestap, fps)
 
     def log(file: TextIOWrapper, image_id: int, actor: str, message: str):
-        file.write(f"{image_id:6};{tsc.to_timestamp(image_id)};{actor};{message}\n")
+        #file.write(f"{image_id:6};{tsc.to_timestamp(image_id)};{actor};{message}\n")
+        file.write(f"At {tsc.to_timestamp(image_id)}, {actor} {message}\n")
 
     with open(output_filename, 'w') as output_file:
 
