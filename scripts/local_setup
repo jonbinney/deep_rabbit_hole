@@ -1,7 +1,8 @@
 #!/usr/bin/sh
 
 # Installs our dependencies in a virtual environment.
-sudo apt update && sudo apt install -y python3-virtualenv
+sudo apt update && sudo apt install -y python3-virtualenv ffmpeg
+sudo snap install google-cloud-cli --classic
 virtualenv .venv
 . .venv/bin/activate
 pip install -r object_tracker_0/requirements.txt
@@ -10,3 +11,5 @@ pip install -e external/segment-anything-2/
 # Log-in to Google Cloud using user's credentials
 # TODO(adamantivm) Replace with file-based credential access
 gcloud auth application-default login
+# Set-up default project
+gcloud config set project deep-learning-focus

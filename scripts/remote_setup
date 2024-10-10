@@ -35,7 +35,7 @@ fi
 
 # Copy local repo to machine
 echo "Transferring files..."
-rsync -a --progress --exclude=.venv,.git $PWD $CLOUD_USER@$CLOUD_ADDRESS:
+rsync -a --progress --exclude='.venv' --exclude='.git' $PWD $CLOUD_USER@$CLOUD_ADDRESS:
 
 # Setup environment on remote machine
 ssh -l $CLOUD_USER $CLOUD_ADDRESS "cd deep_rabbit_hole; ./scripts/local_setup"
