@@ -304,6 +304,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
         current_bboxes = last_track_bboxes
         new_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes.values()), obj_detect_bboxes))
 
+        # Match the new detections with the existing ones to get the track_ids and store the scores
         for idx, newbox in enumerate(obj_detect_bboxes):
             for old_track_id, oldbox in last_track_bboxes.items():
                 if is_similar(newbox, oldbox):
