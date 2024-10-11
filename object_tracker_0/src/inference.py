@@ -174,8 +174,6 @@ def segments_to_bboxes(segments):
     return bboxes
 
 def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
-    print(f"Adding {len(bboxes)} boxes from tracking from frame {starting_frame} to {starting_frame + max_frames}")
-
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         for obj_id, bbox in bboxes.items():
             (x, y, w, h) = bbox
@@ -256,7 +254,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
     mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
-    mlflow.log_param("hardware/gpu", torch.cuda.get_device_name())
+    mlflow.log_param("hardware/gpu", torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
     # 1- Preparation
 
     # Get video information
@@ -289,11 +287,6 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
         # Compare with the rabbits from the last frame in the last object tracking batch
         last_track_bboxes = obj_track_bboxes.get(frame_number, {})
 
-        # Skip and keep trying if we have no rabbits to track yet
-        if len(obj_detect_bboxes) + len(last_track_bboxes) == 0:
-            frame_number += frame_batch_size
-            continue
-
         # Remove from the already known rabbits from the list of new rabbits to track
         current_bboxes = last_track_bboxes
         new_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes.values()), obj_detect_bboxes))
@@ -305,14 +298,21 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
                 track_id += 1
 
             obj_track_predictor.reset_state(obj_track_state)
+            rabbit_count = len(current_bboxes)
+
         else:
             # No new rabbits, so we don't reset the state, so no need to pass again the boxes
+            rabbit_count = len(current_bboxes)
             current_bboxes = {}
 
+        # Skip and keep trying if we have no rabbits to track yet
+        if rabbit_count == 0:
+            frame_number += frame_batch_size
+            continue
 
         # Track the bbox rabbits until the next batch
+        print(f"Tracking {rabbit_count} boxes from tracking from frame {frame_number} to {frame_number + frame_batch_size}")
         tmp = do_track_objects(obj_track_predictor, obj_track_state, current_bboxes, frame_number, frame_batch_size)
-        #print(f"Boxes found: {tmp}")
         frame_number += frame_batch_size
 
         # NOTE: This returns frame_batch_size + 1 frame results, because it includes the starting frame and frame_batch_size additonal ones
