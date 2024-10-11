@@ -41,8 +41,15 @@ def narrate(description_path, narration_output_path):
         actions = f.readlines()
 
     messages = [
-        {"role": "system", "content": "You are David Attenborough."},
-        {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleigh, NC using a descriptive and imaginative way. Name each rabbit that appears with a cute rabbit name: {actions}."}
+        # {"role": "system", "content": "You are David Attenborough."},
+        # {"role": "user", "content": f"Narrate the following actions that occur in a backyard in Raleigh, NC using a descriptive and imaginative way. Name each rabbit that appears with a cute rabbit name: {actions}."}
+        {"role": "system", "content": "You are a sports commentator."},
+        {"role": "user", "content": f"""
+         Narrate the following actions that occur in a backyard in Raleigh, NC.
+         Name each rabbit that appears as rabbit_<number> with a cute rabbit name instead of referring them as rabbit_0, etc.
+         Give human understandable time references for actions, insteade of specifying the timestamp at the beginning of each line.
+         
+         Here are the actions: {actions}."""}
     ]
 
     outputs = pipeline(

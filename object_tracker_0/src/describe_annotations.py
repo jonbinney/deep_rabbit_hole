@@ -3,6 +3,28 @@ from io import TextIOWrapper
 import json
 from collections import defaultdict
 import mlflow
+import datetime
+
+# Helper class that converts from an image ID to a timestamp in ISO format
+# It is instantiated with a start_time and fps values and then
+# the method to_timestamp can be called passing the image ID as an argument
+# to get the timestamp in ISO format
+class TimestampConverter:
+    def __init__(self, start_time, fps):
+        self.start_time = start_time
+        self.fps = fps
+        self.last_time = None
+
+    def to_timestamp(self, image_id):
+        this_time = self.start_time + datetime.timedelta(seconds=(image_id / self.fps))
+        # If the date is different or it's the first time, then print the whole date
+        timestamp_string = ""
+        if self.last_time is None or self.last_time.date() != this_time.date():
+            timestamp_string = this_time.strftime("%B %d at ")
+        # But always print the time
+        timestamp_string += this_time.strftime("%H:%M:%S")
+        self.last_time = this_time
+        return timestamp_string
 
 def directions_of_movement(prev_x, prev_y, x, y, THRESHOLD = 1):
     dx = x - prev_x
@@ -47,16 +69,10 @@ def describe_movement(h, v):
 
     return " and ".join(d)
 
-
-
 def describe_annotations(filename: str, output_filename: str):
     params = {f'describe_annotations/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
     mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
-
-    def log(file: TextIOWrapper, image_id: int, actor: str, message: str):
-        file.write(f"{image_id:5};{actor};{message}\n")
-
 
     with open(filename, 'r') as f:
         data = json.load(f)
@@ -72,9 +88,23 @@ def describe_annotations(filename: str, output_filename: str):
     min_image_id = min(annotation_map.keys())
     max_image_id = max(annotation_map.keys())
 
-
     position_map = {}
     last_seen = {}
+
+    # Get video information and create timestamp converter with it
+    video_timestap = data['info'].get('video_timestamp', None)
+    if video_timestap is None:
+        print(f"WARNING: No video_timestamp found in {filename}")
+        video_timestap = datetime.datetime.now()
+    fps = data['info'].get('fps', None)
+    if fps is None:
+        print(f"WARNING: No fps found in {filename}")
+        fps = 30
+    tsc = TimestampConverter(video_timestap, fps)
+
+    def log(file: TextIOWrapper, image_id: int, actor: str, message: str):
+        #file.write(f"{image_id:6};{tsc.to_timestamp(image_id)};{actor};{message}\n")
+        file.write(f"At {tsc.to_timestamp(image_id)}, {actor} {message}\n")
 
     with open(output_filename, 'w') as output_file:
 
