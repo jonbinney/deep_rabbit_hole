@@ -10,6 +10,7 @@ TODO:
  - Make it work
  - Convert the segment results into bboxes and save them in the COCO format
 """
+from collections import defaultdict
 import math
 import mlflow
 import os
@@ -55,7 +56,7 @@ def convert_bbox_format(bbox, shape):
 
 # Converts from Pascal VOC bbox format (x_min, y_min, x_max, y_max)
 # to COCO bbox format (x, y, width, height)
-def convert_bbox_format_2(bbox, shape):
+def convert_bbox_format_2(bbox):
     x0, y0, x1, y1 = bbox
     return [ x0, y0, x1 - x0, y1 - y0 ]
 
@@ -85,9 +86,9 @@ def do_object_detection(model, processor, pil_frame, tiling = True):
         for left, top in croppings:
             sub_frame = pil_frame.crop((left, top, left + sub_frame_width, top + sub_frame_height))
             more_boxes = _do_detection_on_frame(model, processor, sub_frame)
-            more_boxes = list(map(lambda bbox: (bbox[0] + left, bbox[1] + top, bbox[2], bbox[3]), more_boxes))
+            more_boxes = list(map(lambda bbox: (bbox[0] + left, bbox[1] + top, bbox[2], bbox[3], bbox[4]), more_boxes))
             # Remove duplicated boxes (from overlapping subframes)
-            more_boxes = filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in bboxes), more_boxes)
+            more_boxes = filter(lambda newbbox: not any(is_similar(newbbox[:4], oldbbox[:4]) for oldbbox in bboxes), more_boxes)
             bboxes.extend(more_boxes)
 
     else:
@@ -95,6 +96,7 @@ def do_object_detection(model, processor, pil_frame, tiling = True):
 
     return bboxes
 
+# Returns a list of bounding boxes found in the frame.  Each box is a tuple of (x, y, w, h, score)
 def _do_detection_on_frame(model, processor, frame):
     inputs = processor(images=frame, text="rabbit.", return_tensors="pt").to(model.device)
 
@@ -111,7 +113,9 @@ def _do_detection_on_frame(model, processor, frame):
         target_sizes=[frame.size[::-1]],
     )
 
-    return map(lambda bbox: convert_bbox_format_2(bbox, frame.size), results[0].get('boxes', []).cpu().numpy())
+    boxes = results[0].get('boxes', []).cpu().numpy()
+    scores = results[0].get('scores', []).cpu().numpy()
+    return map(lambda bbox_score: convert_bbox_format_2(bbox_score[0]) + [bbox_score[1]], zip(boxes, scores))
 
 
 def do_create_frame_files(video_path: str, frame_images_dir: str, force: bool=False, resize=None, frame_end=None):
@@ -174,8 +178,6 @@ def segments_to_bboxes(segments):
     return bboxes
 
 def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
-    print(f"Adding {len(bboxes)} boxes from tracking from frame {starting_frame} to {starting_frame + max_frames}")
-
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         for obj_id, bbox in bboxes.items():
             (x, y, w, h) = bbox
@@ -206,13 +208,13 @@ def do_track_objects(predictor, state, bboxes, starting_frame=0, max_frames=10):
 
         return bboxes
 
-def do_create_annotations(bboxes):
+def do_create_annotations(bboxes, scores):
     annotations = []
     annotation_id = 1
     for frame_idx, objects in bboxes.items():
         for obj_id, bbox in objects.items():
             x, y, w, h = bbox
-            annotations.append({
+            annotation = {
                 'id': annotation_id,
                 'image_id': frame_idx + 1,
                 'category_id': 1,  # Hardcoded to rabbit
@@ -224,7 +226,11 @@ def do_create_annotations(bboxes):
                 },
                 'iscrowd': 0,
                 'segmentation': []
-            })
+            }
+            score = scores.get(frame_idx, {}).get(obj_id, -1)
+            if score > 0:
+                annotation['attributes']['score'] = float(int(score * 100) / 100)
+            annotations.append(annotation)
             annotation_id += 1
     return annotations
 
@@ -256,7 +262,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
     params = {f'perform_inference/{param}': value for param, value in locals().items()}
     mlflow.log_params(params)
     mlflow.set_tag("Inference Info", "Find rabbits in video and track them using Grounding DINO and SAM2")
-    mlflow.log_param("hardware/gpu", torch.cuda.get_device_name())
+    mlflow.log_param("hardware/gpu", torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
     # 1- Preparation
 
     # Get video information
@@ -275,44 +281,60 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
 
     frame_number = 0
     obj_track_bboxes = {}
+    # frame_number -> {track_id -> bbox}
+    scores = defaultdict(lambda: {})
 
     timer_total.start()
 
     track_id = 1
 
+
     # Do object detection and then tracking every frame_batch_size frames
     while frame_number < len(frame_file_names):
         # Try to find a rabbits in the current frame.
         print(f"Looking for rabbits in frame {frame_number}")
-        obj_detect_bboxes = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
+        obj_detect_bboxes_with_scores = list(do_object_detection(obj_detect_model, obj_detect_processor, Image.open(frame_file_names[frame_number]), tiling))
+        obj_detect_bboxes = [bbox[:4] for bbox in obj_detect_bboxes_with_scores]
+        obj_detect_scores = [bbox[4] for bbox in obj_detect_bboxes_with_scores]
 
         # Compare with the rabbits from the last frame in the last object tracking batch
         last_track_bboxes = obj_track_bboxes.get(frame_number, {})
 
-        # Skip and keep trying if we have no rabbits to track yet
-        if len(obj_detect_bboxes) + len(last_track_bboxes) == 0:
-            frame_number += frame_batch_size
-            continue
-
         # Remove from the already known rabbits from the list of new rabbits to track
         current_bboxes = last_track_bboxes
         new_bboxes = list(filter(lambda newbbox: not any(is_similar(newbbox, oldbbox) for oldbbox in last_track_bboxes.values()), obj_detect_bboxes))
+
+        # Match the new detections with the existing ones to get the track_ids and store the scores
+        for idx, newbox in enumerate(obj_detect_bboxes):
+            for old_track_id, oldbox in last_track_bboxes.items():
+                if is_similar(newbox, oldbox):
+                    scores[frame_number][old_track_id] = obj_detect_scores[idx]
+
+
         # If any new rabbits were found, reset the tracker state and restart tracking from here with the new boxes
         if len(new_bboxes) > 0:
             print(f"Found {len(new_bboxes)} new rabbits (total: {len(new_bboxes) + len(current_bboxes)}): {new_bboxes}")
             for new_bbox in new_bboxes:
                 current_bboxes[track_id] = new_bbox
+                scores[frame_number][track_id] = obj_detect_scores[obj_detect_bboxes.index(new_bbox)]
                 track_id += 1
 
             obj_track_predictor.reset_state(obj_track_state)
+            rabbit_count = len(current_bboxes)
+
         else:
             # No new rabbits, so we don't reset the state, so no need to pass again the boxes
+            rabbit_count = len(current_bboxes)
             current_bboxes = {}
 
+        # Skip and keep trying if we have no rabbits to track yet
+        if rabbit_count == 0:
+            frame_number += frame_batch_size
+            continue
 
         # Track the bbox rabbits until the next batch
+        print(f"Tracking {rabbit_count} boxes from frame {frame_number} to {frame_number + frame_batch_size}")
         tmp = do_track_objects(obj_track_predictor, obj_track_state, current_bboxes, frame_number, frame_batch_size)
-        #print(f"Boxes found: {tmp}")
         frame_number += frame_batch_size
 
         # NOTE: This returns frame_batch_size + 1 frame results, because it includes the starting frame and frame_batch_size additonal ones
@@ -336,7 +358,7 @@ def perform_object_tracking(video_path, annotation_path, working_dir, frame_batc
             {'id': 1, 'name': 'rabbit'}
         ],
         'images': [{'id': i + 1, 'file_name': f"frame_{i:06d}.png" } for i, file_name in enumerate(frame_file_names)],
-        'annotations': do_create_annotations(obj_track_bboxes)
+        'annotations': do_create_annotations(obj_track_bboxes, scores)
     }
     with open(annotation_path, 'w') as f:
         f.write(json.dumps(coco))
