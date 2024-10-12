@@ -24,15 +24,19 @@ import cv2
 import argparse
 from collections import defaultdict
 
-def draw_annotations(frame, frame_annotations, color):
+def draw_annotations(frame, frame_annotations, score_per_track, color):
   for annotation in frame_annotations:
     # Extract the bounding box coordinates
     x, y, w, h = [int(val) for val in annotation['bbox']]
     track_id = annotation['attributes']['track_id']
 
+    # Get the score for the track_id, and if not found (since we don't get it when doing tracking, only detection), use the last known one
+    score = annotation['attributes'].get('score', score_per_track.get(track_id, None))
+    score_per_track[track_id] = score
+
     # Draw the bounding box on the frame
     cv2.rectangle(frame, (x, y), ((x + w), (y + h)), color, 2)
-    cv2.putText(frame, f"{track_id}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+    cv2.putText(frame, f"{track_id} {score if score else ''}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
 # Create an argument parser
 parser = argparse.ArgumentParser(description='Object Tracker Visualizer')
@@ -94,6 +98,8 @@ if args.description:
       descriptions_per_frame[int(frame)].append((actor, action))
 
 current_descriptions_per_actor = {}
+score_per_track = {}
+
 # Iterate over each frame in the video
 while True:
   # Read the next frame
@@ -109,11 +115,11 @@ while True:
   # Get the annotations for the current frame
   frame_annotations = coco.loadAnns(coco.getAnnIds(imgIds=frame_number))
 
-  draw_annotations(frame, frame_annotations, (0, 255, 0)) # green
+  draw_annotations(frame, score_per_track, frame_annotations, (0, 255, 0)) # green
 
   if coco_gt:
     frame_annotations = coco_gt.loadAnns(coco_gt.getAnnIds(imgIds=frame_number))
-    draw_annotations(frame, frame_annotations, (0, 0, 255)) # red
+    draw_annotations(frame, frame_annotations, {}, (0, 0, 255)) # red
 
   # Add new descriptions (may override existing one if it's the same actor)
   for actor, action in descriptions_per_frame[frame_number]:
