@@ -2,6 +2,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Merge Coco Annotations",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "object_tracker_0/annotation_utils/merge.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--coco1=${workspaceFolder}/deep_water_level/data/annotations1.json",
+                "--coco2=${workspaceFolder}/deep_water_level/data/annotations.json",
+                "--coco_merge=${workspaceFolder}/deep_water_level/data/annotations_merged.json",
+            ]
+        },
+        {
             "name": "Create Documentary",
             "type": "debugpy",
             "request": "launch",
@@ -21,9 +33,10 @@
             "program": "camera_control/src/camera_control/camera_control_app.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
-            "env": {"GST_DEBUG": "1"},
-            "args": [
-            ],
+            "env": {
+                "GST_DEBUG": "1"
+            },
+            "args": [],
         },
         {
             "name": "Camera control App (From file)",
