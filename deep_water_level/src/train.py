@@ -9,7 +9,7 @@ import mlflow
 import torch
 import torch.nn as nn
 from model import BasicCnnRegression
-from data import get_data_loader
+from data import get_data_loaders
 from utils import start_experiment
 
 def create_model():
@@ -32,7 +32,7 @@ def do_training(
     print(f"Using device: {device}")
 
     # TODO(adamantivm) Load the data
-    data_loader = get_data_loader(dataset_dir + '/annotations/' + annotations_file, dataset_dir + '/images')
+    (train_data, test_data) = get_data_loaders(dataset_dir + '/annotations/' + annotations_file, dataset_dir + '/images')
 
     # Train the model
     model = create_model()
@@ -45,7 +45,9 @@ def do_training(
     n_epochs = 10
 
     for epoch in range(n_epochs):
-        for i, (inputs, labels) in enumerate(data_loader):
+        # Train for the epoch
+        model.train()
+        for i, (inputs, labels) in enumerate(train_data):
             optimizer.zero_grad()
 
             inputs = inputs.to(device)
@@ -56,9 +58,26 @@ def do_training(
             loss.backward()
             optimizer.step()
 
-            print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(data_loader)}], Loss: {loss.item():.4f}')
+            # NOTE This is very verbose. Remove when we get serious
+            print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(train_data)}], Loss: {loss.item():.4f}')
+        
+        # Test for this epoch
+        model.eval()
+        test_loss = 0
+        with torch.no_grad():
+            for i, (inputs, labels) in enumerate(test_data):
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                test_loss += loss.item()
+
+        test_loss /= len(test_data)
+        print(f'Test loss: {test_loss:.4f}')
 
         mlflow.log_metric('loss', loss.item(), step=epoch)
+        mlflow.log_metric('test_loss', test_loss, step=epoch)
+
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")

@@ -4,6 +4,7 @@ from PIL import Image
 from torchvision import transforms
 import torch
 from torch.utils.data import Dataset
+from typing import Tuple
 
 class WaterDataset(Dataset):
     def __init__(self, annotations_file, images_dir, transform=None):
@@ -39,12 +40,23 @@ class WaterDataset(Dataset):
         depth = torch.tensor(depth, dtype=torch.float32)
         return image, depth
 
-def get_data_loader(annotations_file: str, images_dir: str, batch_size: int = 32):
+def get_data_loaders(
+    annotations_file: str,
+    images_dir: str,
+    batch_size: int = 32,
+    train_test_split: Tuple[int, int] = [0.8, 0.2],
+):
     # Define a transform to apply to the data
     transform = transforms.Compose([transforms.ToTensor()])
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transform=transform)
 
-    # Create a PyTorch DataLoader
-    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Split dataset into train and test sets
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, train_test_split)
+
+    # Create PyTorch DataLoaders for train and test splits
+    return (
+        torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True),
+        torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False),
+    )
