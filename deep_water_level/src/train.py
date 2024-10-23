@@ -5,10 +5,12 @@
 # - Train the model
 # - Set-up
 import argparse
+import mlflow
 import torch
 import torch.nn as nn
 from model import BasicCnnRegression
 from data import get_data_loader
+from utils import start_experiment
 
 def create_model():
     # Create the model
@@ -20,14 +22,17 @@ def load_data():
     data = None
     return data
 
-def do_training(annotations_file: str, images_dir: str):
+def do_training(
+        dataset_dir: str,
+        annotations_file: str,
+        ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     # torch.set_default_device(device)
     print(f"Using device: {device}")
 
     # TODO(adamantivm) Load the data
-    data_loader = get_data_loader(annotations_file, images_dir)
+    data_loader = get_data_loader(dataset_dir + '/annotations/' + annotations_file, dataset_dir + '/images')
 
     # Train the model
     model = create_model()
@@ -53,12 +58,22 @@ def do_training(annotations_file: str, images_dir: str):
 
             print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(data_loader)}], Loss: {loss.item():.4f}')
 
+        mlflow.log_metric('loss', loss.item(), step=epoch)
+
+    # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
+    #mlflow.pytorch.log_model(model, "model")
+
     return model
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
-    parser.add_argument('--annotations_file', type=str, default='datasets/water_2024_10_19_set1/annotations/manual_annotations.json', help='Path to a JSON file containing annotations')
-    parser.add_argument('--images_dir', type=str, default='datasets/water_2024_10_19_set1/images', help='Path to a directory containing images')
+    parser.add_argument('--dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the dataset directory')
+    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
     args = parser.parse_args()
 
-    model = do_training(args.annotations_file, args.images_dir)
+    start_experiment("Deep Water Level Training")
+
+    with mlflow.start_run():
+        mlflow.log_params(vars(args))
+        mlflow.log_param("hardware/gpu", torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
+        model = do_training(**vars(args))
