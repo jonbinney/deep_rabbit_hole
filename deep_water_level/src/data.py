@@ -23,7 +23,9 @@ class WaterDataset(Dataset):
                 image_file = images[image_id]['file_name']
                 image_path = os.path.join(self.images_dir, image_file)
                 depth = annotation.get('attributes', {})['depth']
-                data.append((image_path, depth))
+                # NOTE: The second item [depth] is the lable. It's an array because it could
+                # include many labels
+                data.append((image_path, [depth]))
         return data
 
     def __len__(self):

@@ -51,8 +51,7 @@ def do_training(annotations_file: str, images_dir: str):
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 10 == 0:
-                print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(data_loader)}], Loss: {loss.item():.4f}')
+            print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(data_loader)}], Loss: {loss.item():.4f}')
 
     return model
 
