@@ -39,6 +39,13 @@ class WaterDataset(Dataset):
             image = self.transforms(image)
         depth = torch.tensor(depth, dtype=torch.float32)
         return image, depth
+    
+def get_transforms():
+    return v2.Compose(
+    [
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True), # convert to float32 and normalize to 0, 1
+    ])
 
 def get_data_loaders(
     annotations_file: str,
@@ -46,11 +53,7 @@ def get_data_loaders(
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
 ):
-    transforms = v2.Compose(
-    [
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale=True), # convert to float32 and normalize to 0, 1
-    ])
+    transforms = get_transforms() 
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)

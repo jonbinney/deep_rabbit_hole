@@ -8,8 +8,8 @@
 import gradio as gr
 import torch
 from PIL import Image
-from torchvision import transforms
 from model import BasicCnnRegression
+from data import get_transforms
 
 # Load the pre-trained model
 model = BasicCnnRegression()
@@ -18,11 +18,8 @@ model.eval()
 
 # Define a function to preprocess the image
 def preprocess_image(image):
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    return transform(image)
+    transforms = get_transforms() 
+    return transforms(image)
 
 def run_inference(image):
     input = preprocess_image(image)
