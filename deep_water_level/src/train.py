@@ -25,6 +25,8 @@ def load_data():
 def do_training(
         dataset_dir: str,
         annotations_file: str,
+        n_epochs: int,
+        learning_rate: float,
         ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -39,10 +41,8 @@ def do_training(
     model.to(device)
     print(f"Model summary: {model}")
 
-    learning_rate = 0.001
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    n_epochs = 10
 
     for epoch in range(n_epochs):
         # Train for the epoch
@@ -78,6 +78,8 @@ def do_training(
         mlflow.log_metric('loss', loss.item(), step=epoch)
         mlflow.log_metric('test_loss', test_loss, step=epoch)
 
+    # Save model to disk, locally
+    torch.save(model.state_dict(), 'model.pth')
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
@@ -88,6 +90,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
     parser.add_argument('--dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the dataset directory')
     parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
+    parser.add_argument('--n_epochs', type=int, default=50, help='Number of epochs to train the model')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training the model')
     args = parser.parse_args()
 
     start_experiment("Deep Water Level Training")
