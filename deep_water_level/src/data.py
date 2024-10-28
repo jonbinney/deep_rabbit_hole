@@ -1,5 +1,6 @@
 import os
 import json
+import mlflow
 from PIL import Image
 from torchvision.transforms import v2
 import torch
@@ -60,6 +61,13 @@ def get_data_loaders(
 
     # Split dataset into train and test sets
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, train_test_split)
+    train_files = [dataset.data[i][0] for i in train_dataset.indices]
+    test_files = [dataset.data[i][0] for i in train_dataset.indices]
+    mlflow.log_param("train_files", train_files)
+    mlflow.log_param("test_files", test_files)
+
+    mlflow.log_param("transforms", repr(transforms))
+    mlflow.log_param("transforms", transforms)
 
     # Create PyTorch DataLoaders for train and test splits
     return (
