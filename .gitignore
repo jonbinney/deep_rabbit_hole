@@ -162,6 +162,7 @@ cython_debug/
 
 # Training data 
 /datasets/*/
+/raw_data/*/
 
 # Models
 /models/**/*
