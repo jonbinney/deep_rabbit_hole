@@ -49,8 +49,8 @@ def get_transforms():
     ])
 
 def get_data_loaders(
-    annotations_file: str,
     images_dir: str,
+    annotations_file: str,
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
 ):
@@ -74,3 +74,15 @@ def get_data_loaders(
         torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True),
         torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False),
     )
+
+def get_data_loader(
+    images_dir: str,
+    annotations_file: str,
+    batch_size: int = 32,
+    shuffle: bool = True,
+):
+    transforms = get_transforms() 
+
+    # Load dataset from directory
+    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
