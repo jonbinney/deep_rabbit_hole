@@ -46,7 +46,7 @@ class WaterDataset(Dataset):
         if self.transforms is not None:
             image = self.transforms(image)
         depth = torch.tensor(depth, dtype=torch.float32)
-        return image, depth
+        return image, depth, image_path
     
 def get_transforms():
     return v2.Compose(

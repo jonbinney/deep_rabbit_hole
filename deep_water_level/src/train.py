@@ -48,7 +48,7 @@ def do_training(
     for epoch in range(n_epochs):
         # Train for the epoch
         model.train()
-        for i, (inputs, labels) in enumerate(train_data):
+        for i, (inputs, labels, filenames) in enumerate(train_data):
             optimizer.zero_grad()
 
             inputs = inputs.to(device)
@@ -66,7 +66,7 @@ def do_training(
         model.eval()
         test_loss = 0
         with torch.no_grad():
-            for i, (inputs, labels) in enumerate(test_data):
+            for i, (inputs, labels, filenames) in enumerate(test_data):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)

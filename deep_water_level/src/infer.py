@@ -56,18 +56,20 @@ def run_dataset_inference(model, dataset_dir, annotations_file):
 
     # Run inference
     loss = 0
-    for i, (images, depths) in enumerate(dataset):
+    n_images = 0
+    for i, (images, depths, filenames) in enumerate(dataset):
         mse = 0
-        for image, depth in zip(images, depths):
+        for image, depth, filename in zip(images, depths, filenames):
             output = run_inference(model, image)
             error = abs(output - depth.item())
-            print(f"Infered: {output:.2f} Actual: {depth.item():.2f}, Error: {error:.2f}")
+            print(f"Filename: {filename}, Infered: {output:.2f}, Actual: {depth.item():.2f}, Error: {error:.2f}")
             mse += error**2
         mse /= len(images)
-        print("MSE: ", mse)
+        print(f"MSE ({i}): {mse}")
         loss += mse
+        n_images += len(images)
 
-    print("Average loss: ", loss / len(dataset))
+    print(f"Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}")
 
 if __name__ == "__main__":
     # Parse program arguments
