@@ -18,16 +18,23 @@ class WaterDataset(Dataset):
         with open(self.annotations_file, 'r') as f:
             annotations = json.load(f)
         data = []
+        # Create a map of image_id to image - IMPORTANT: image_id might not match index in the images array
         images = annotations.get('images', [])
+        images_by_id = {}
+        for image in images:
+            images_by_id[image['id']] = image
+        # Go through annotations to get image_path and depth for each annotation
         for annotation in annotations['annotations']:
             image_id = annotation['image_id']
-            if image_id < len(images):
-                image_file = images[image_id]['file_name']
+            image_file = images_by_id.get(image_id, {}).get('file_name', None)
+            if image_file is not None:
                 image_path = os.path.join(self.images_dir, image_file)
                 depth = annotation.get('attributes', {})['depth']
                 # NOTE: The second item [depth] is the lable. It's an array because it could
                 # include many labels
                 data.append((image_path, [depth]))
+            else:
+                print(f"WARN: No image found for annotation. image_id: {image_id}")
         return data
 
     def __len__(self):
