@@ -1,0 +1,1 @@
+This folder contains scripts and helper functions to work with COCO annotations.

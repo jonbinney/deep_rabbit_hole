@@ -17,6 +17,7 @@ from PIL import Image
 from model import BasicCnnRegression
 from data import get_transforms, get_data_loader
 import argparse
+import cv2
 
 def load_model(model_path):
     # Load the pre-trained model
@@ -62,7 +63,15 @@ def run_dataset_inference(model, dataset_dir, annotations_file):
         for image, depth, filename in zip(images, depths, filenames):
             output = run_inference(model, image)
             error = abs(output - depth.item())
-            print(f"Filename: {filename}, Infered: {output:.2f}, Actual: {depth.item():.2f}, Error: {error:.2f}")
+
+            # use OpenCV to display the image and wait for a key
+            img = cv2.imread(filename)
+            # Convert to grayscale and normalize
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) / 255.0
+            # Calculate mean and standard deviation
+            (means, stds) = cv2.meanStdDev(img)
+ 
+            print(f"Filename: {filename}, Infered: {output:.2f}, Actual: {depth.item():.2f}, Error: {error:.2f}, mean: {means[0][0]:.2f}, std: {stds[0][0]:.2f}")
             mse += error**2
         mse /= len(images)
         print(f"MSE ({i}): {mse}")
