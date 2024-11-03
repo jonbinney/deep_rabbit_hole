@@ -8,10 +8,11 @@ from torch.utils.data import Dataset
 from typing import Tuple
 
 class WaterDataset(Dataset):
-    def __init__(self, annotations_file, images_dir, transforms=None):
+    def __init__(self, annotations_file, images_dir, transforms=None, normalize_output=False):
         self.annotations_file = annotations_file
         self.images_dir = images_dir
         self.transforms = transforms
+        self.normalize_output = normalize_output
         self.data = self.load_annotations()
 
     def load_annotations(self):
@@ -30,6 +31,9 @@ class WaterDataset(Dataset):
             if image_file is not None:
                 image_path = os.path.join(self.images_dir, image_file)
                 depth = annotation.get('attributes', {})['depth']
+                if self.normalize_output:
+                    # See https://docs.google.com/document/d/1_h3u6VsC2pquxDMW0ZL5JwdQC6ZxJw4-CwmKrUR303M/edit?tab=t.0#heading=h.9uh6m7e2o2to
+                    depth = (depth - 7.5) / 7.5
                 # NOTE: The second item [depth] is the lable. It's an array because it could
                 # include many labels
                 data.append((image_path, [depth]))
@@ -60,6 +64,7 @@ def get_data_loaders(
     annotations_file: str,
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
+    normalize_output: bool = False,
 ):
     transforms = get_transforms() 
 
@@ -78,8 +83,8 @@ def get_data_loaders(
 
     # Create PyTorch DataLoaders for train and test splits
     return (
-        torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True),
-        torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False),
+        torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, normalize_output=normalize_output),
+        torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, normalize_output=normalize_output),
     )
 
 def get_data_loader(
@@ -87,9 +92,10 @@ def get_data_loader(
     annotations_file: str,
     batch_size: int = 32,
     shuffle: bool = True,
+    normalize_output: bool = False,
 ):
     transforms = get_transforms() 
 
     # Load dataset from directory
-    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
+    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, normalize_output=normalize_output)
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)

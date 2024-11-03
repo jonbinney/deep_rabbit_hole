@@ -50,10 +50,10 @@ def run_gradio_app(model):
     # Launch the app
     demo.launch()
 
-def run_dataset_inference(model, dataset_dir, annotations_file):
+def run_dataset_inference(model, dataset_dir, annotations_file, normalize_output):
 
     # Load the dataset
-    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False)
+    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, normalize_output=normalize_output)
 
     # Run inference
     loss = 0
@@ -83,11 +83,12 @@ def run_dataset_inference(model, dataset_dir, annotations_file):
 if __name__ == "__main__":
     # Parse program arguments
     parser = argparse.ArgumentParser(description='Deep Water Level')
-    parser.add_argument('-m', '--model_path', type=str, default='model1.pth', help='Path to the model file')
+    parser.add_argument('-m', '--model_path', type=str, default='model.pth', help='Path to the model file')
+    parser.add_argument('--normalized_output', type=bool, default=False, help='Set to true if the model was trained with depth values normalized to [-1, 1] range')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
-    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
-    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
+    # parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
+    # parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
 
     args = parser.parse_args()
 
@@ -95,6 +96,6 @@ if __name__ == "__main__":
 
     # Load the model
     if 'dataset_dir' in args and 'annotations_file' in args:
-        run_dataset_inference(model, args.dataset_dir, args.annotations_file)
+        run_dataset_inference(model, args.dataset_dir, args.annotations_file, args.normalized_output)
     else:
         run_gradio_app(model)
