@@ -59,9 +59,9 @@ def do_training(
             loss.backward()
             optimizer.step()
 
-            # NOTE This is very verbose. Remove when we get serious
-            print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(train_data)}], Loss: {loss.item():.4f}')
-        
+        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}', end='')
+        mlflow.log_metric('loss', loss.item(), step=epoch)
+
         # Test for this epoch
         model.eval()
         test_loss = 0
@@ -74,9 +74,8 @@ def do_training(
                 test_loss += loss.item()
 
         test_loss /= len(test_data)
-        print(f'Test loss: {test_loss:.4f}')
 
-        mlflow.log_metric('loss', loss.item(), step=epoch)
+        print(f', Test loss: {test_loss:.4f}')
         mlflow.log_metric('test_loss', test_loss, step=epoch)
 
     # Save model to disk, locally
@@ -90,7 +89,7 @@ def do_training(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
     parser.add_argument('--train_dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the train dataset directory')
-    parser.add_argument('--test_dataset_dir', type=str, default='datasets/water_2024_11_01_set2', help='Path to the test dataset directory')
+    parser.add_argument('--test_dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the test dataset directory')
     parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations within a dataset')
     parser.add_argument('--n_epochs', type=int, default=40, help='Number of epochs to train the model')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training the model')

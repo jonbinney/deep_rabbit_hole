@@ -77,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, default='model1.pth', help='Path to the model file')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
-    parser.add_argument('--dataset_dir', type=str, default='datasets/water_2024_11_01_set2', help='Path to the dataset directory')
+    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
     parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
 
     args = parser.parse_args()
