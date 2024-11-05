@@ -18,16 +18,23 @@ class WaterDataset(Dataset):
         with open(self.annotations_file, 'r') as f:
             annotations = json.load(f)
         data = []
+        # Create a map of image_id to image - IMPORTANT: image_id might not match index in the images array
         images = annotations.get('images', [])
+        images_by_id = {}
+        for image in images:
+            images_by_id[image['id']] = image
+        # Go through annotations to get image_path and depth for each annotation
         for annotation in annotations['annotations']:
             image_id = annotation['image_id']
-            if image_id < len(images):
-                image_file = images[image_id]['file_name']
+            image_file = images_by_id.get(image_id, {}).get('file_name', None)
+            if image_file is not None:
                 image_path = os.path.join(self.images_dir, image_file)
                 depth = annotation.get('attributes', {})['depth']
                 # NOTE: The second item [depth] is the lable. It's an array because it could
                 # include many labels
                 data.append((image_path, [depth]))
+            else:
+                print(f"WARN: No image found for annotation. image_id: {image_id}")
         return data
 
     def __len__(self):
@@ -39,7 +46,7 @@ class WaterDataset(Dataset):
         if self.transforms is not None:
             image = self.transforms(image)
         depth = torch.tensor(depth, dtype=torch.float32)
-        return image, depth
+        return image, depth, image_path
     
 def get_transforms():
     return v2.Compose(
@@ -49,8 +56,8 @@ def get_transforms():
     ])
 
 def get_data_loaders(
-    annotations_file: str,
     images_dir: str,
+    annotations_file: str,
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
 ):
@@ -74,3 +81,15 @@ def get_data_loaders(
         torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True),
         torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False),
     )
+
+def get_data_loader(
+    images_dir: str,
+    annotations_file: str,
+    batch_size: int = 32,
+    shuffle: bool = True,
+):
+    transforms = get_transforms() 
+
+    # Load dataset from directory
+    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)

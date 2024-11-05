@@ -1,15 +1,10 @@
 # Script that trains a network model for deep water level detection
-# TODO:
-# - Create the network model using CNN
-# - Load the data
-# - Train the model
-# - Set-up
 import argparse
 import mlflow
 import torch
 import torch.nn as nn
 from model import BasicCnnRegression
-from data import get_data_loaders
+from data import get_data_loader, get_data_loaders
 from utils import start_experiment
 
 def create_model():
@@ -23,7 +18,8 @@ def load_data():
     return data
 
 def do_training(
-        dataset_dir: str,
+        train_dataset_dir: str,
+        test_dataset_dir: str,
         annotations_file: str,
         n_epochs: int,
         learning_rate: float,
@@ -33,8 +29,13 @@ def do_training(
     # torch.set_default_device(device)
     print(f"Using device: {device}")
 
-    # TODO(adamantivm) Load the data
-    (train_data, test_data) = get_data_loaders(dataset_dir + '/annotations/' + annotations_file, dataset_dir + '/images')
+    # Load the data
+    if train_dataset_dir is None or test_dataset_dir == train_dataset_dir:
+        # Split the train dataset in test and train datasets
+        (train_data, test_data) = get_data_loaders(train_dataset_dir + '/images', train_dataset_dir + '/annotations/' + annotations_file)
+    else:
+        train_data = get_data_loader(train_dataset_dir + '/images', train_dataset_dir + '/annotations/' + annotations_file)
+        test_data = get_data_loader(test_dataset_dir + '/images', test_dataset_dir + '/annotations/' + annotations_file, shuffle=False)
 
     # Train the model
     model = create_model()
@@ -47,7 +48,7 @@ def do_training(
     for epoch in range(n_epochs):
         # Train for the epoch
         model.train()
-        for i, (inputs, labels) in enumerate(train_data):
+        for i, (inputs, labels, filenames) in enumerate(train_data):
             optimizer.zero_grad()
 
             inputs = inputs.to(device)
@@ -58,14 +59,14 @@ def do_training(
             loss.backward()
             optimizer.step()
 
-            # NOTE This is very verbose. Remove when we get serious
-            print(f'Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{len(train_data)}], Loss: {loss.item():.4f}')
-        
+        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}', end='')
+        mlflow.log_metric('loss', loss.item(), step=epoch)
+
         # Test for this epoch
         model.eval()
         test_loss = 0
         with torch.no_grad():
-            for i, (inputs, labels) in enumerate(test_data):
+            for i, (inputs, labels, filenames) in enumerate(test_data):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
@@ -73,9 +74,8 @@ def do_training(
                 test_loss += loss.item()
 
         test_loss /= len(test_data)
-        print(f'Test loss: {test_loss:.4f}')
 
-        mlflow.log_metric('loss', loss.item(), step=epoch)
+        print(f', Test loss: {test_loss:.4f}')
         mlflow.log_metric('test_loss', test_loss, step=epoch)
 
     # Save model to disk, locally
@@ -88,9 +88,10 @@ def do_training(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
-    parser.add_argument('--dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the dataset directory')
-    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
-    parser.add_argument('--n_epochs', type=int, default=50, help='Number of epochs to train the model')
+    parser.add_argument('--train_dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the train dataset directory')
+    parser.add_argument('--test_dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the test dataset directory')
+    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations within a dataset')
+    parser.add_argument('--n_epochs', type=int, default=40, help='Number of epochs to train the model')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training the model')
     args = parser.parse_args()
 
