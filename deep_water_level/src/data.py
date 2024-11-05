@@ -1,3 +1,4 @@
+import functools
 import os
 import json
 import mlflow
@@ -65,8 +66,13 @@ def get_data_loaders(
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
     normalize_output: bool = False,
+    crop_box = None, # [top, left, height, width]
 ):
     transforms = get_transforms() 
+    if crop_box is not None:
+        top, left, height, width = crop_box
+        crop_function = functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width)
+        transforms = v2.Compose([transforms, crop_function])
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
@@ -93,8 +99,13 @@ def get_data_loader(
     batch_size: int = 32,
     shuffle: bool = True,
     normalize_output: bool = False,
+    crop_box = None, # [top, left, height, width]
 ):
     transforms = get_transforms() 
+    if crop_box is not None:
+        top, left, height, width = crop_box
+        crop_function = functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width)
+        transforms = v2.Compose([transforms, crop_function])
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, normalize_output=normalize_output)
