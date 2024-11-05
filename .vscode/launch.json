@@ -2,6 +2,20 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Train water level model",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_water_level/src/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--train_dataset_dir", "datasets/water_2024_10_19_set1",
+                "--test_dataset_dir", "datasets/water_test_set3",
+                "--annotations_file", "manual_annotations.json",
+                "--crop_box", "130", "275", "140", "140",
+                "--log_transformed_images", "True",
+            ]
+        },
+        {
             "name": "Merge Coco Annotations",
             "type": "debugpy",
             "request": "launch",
