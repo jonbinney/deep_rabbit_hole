@@ -53,12 +53,17 @@ class WaterDataset(Dataset):
         depth = torch.tensor(depth, dtype=torch.float32)
         return image, depth, image_path
     
-def get_transforms():
-    return v2.Compose(
-    [
+def get_transforms(crop_box=None):
+    transforms_array = []
+    if crop_box is not None:
+        top, left, height, width = crop_box
+        transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
+    transforms_array.extend([
         v2.ToImage(),
         v2.ToDtype(torch.float32, scale=True), # convert to float32 and normalize to 0, 1
     ])
+
+    return v2.Compose(transforms_array)
 
 def get_data_loaders(
     images_dir: str,
@@ -68,11 +73,7 @@ def get_data_loaders(
     normalize_output: bool = False,
     crop_box = None, # [top, left, height, width]
 ):
-    transforms = get_transforms() 
-    if crop_box is not None:
-        top, left, height, width = crop_box
-        crop_function = functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width)
-        transforms = v2.Compose([transforms, crop_function])
+    transforms = get_transforms(crop_box=crop_box) 
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
@@ -101,11 +102,7 @@ def get_data_loader(
     normalize_output: bool = False,
     crop_box = None, # [top, left, height, width]
 ):
-    transforms = get_transforms() 
-    if crop_box is not None:
-        top, left, height, width = crop_box
-        crop_function = functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width)
-        transforms = v2.Compose([transforms, crop_function])
+    transforms = get_transforms(crop_box=crop_box) 
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, normalize_output=normalize_output)
