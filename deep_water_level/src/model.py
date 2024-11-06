@@ -21,7 +21,8 @@ class BasicCnnRegression(nn.Module):
         self.linear_size = self.calculate_linear_size(image_size)
 
         self.fcn1 = nn.Linear(in_features=self.linear_size, out_features=120)
-        self.dropout = nn.Dropout(p=0.2)
+        # TODO(adamantivm) Add dropout as a parameter
+        # self.dropout = nn.Dropout(p=0.2)
         self.fcn2 = nn.Linear(in_features=120, out_features=1)
     
     def calculate_linear_size(self, image_size):
@@ -44,7 +45,8 @@ class BasicCnnRegression(nn.Module):
         x = self.aux_conv_forward(x)
         x = self.fcn1(x)
         x = nn.functional.relu(x)
-        x = self.dropout(x)
+        # TODO(adamantivm) Add dropout as a parameter
+        # x = self.dropout(x)
         x = self.fcn2(x)
         return x
 
