@@ -2,6 +2,30 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Test water level model (dataset)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_water_level/src/infer.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--crop_box", "130", "275", "140", "140",
+                "--model_path", "model.pth",
+                "--dataset_dir", "datasets/water_test_set3",
+                "--annotations_file", "filtered.json",
+            ]
+        },
+        {
+            "name": "Test water level model (single image)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_water_level/src/infer.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--crop_box", "130", "275", "140", "140",
+                "--model_path", "model.pth",
+            ]
+        },
+         {
             "name": "Train water level model",
             "type": "debugpy",
             "request": "launch",
@@ -12,7 +36,7 @@
                 "--test_dataset_dir", "datasets/water_test_set3",
                 "--annotations_file", "manual_annotations.json",
                 "--crop_box", "130", "275", "140", "140",
-                "--log_transformed_images", "True",
+                "--log_transformed_images", "False",
             ]
         },
         {

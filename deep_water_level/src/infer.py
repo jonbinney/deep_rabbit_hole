@@ -19,28 +19,29 @@ from data import get_transforms, get_data_loader
 import argparse
 import cv2
 
-def load_model(model_path):
+def load_model(model_path, crop_box = None):
     # Load the pre-trained model
-    model = BasicCnnRegression()
+    if crop_box is not None:
+        model = BasicCnnRegression([3, crop_box[2], crop_box[3]])
+    else:
+        model = BasicCnnRegression()
     model.load_state_dict(torch.load(model_path, weights_only=True))
     model.eval()
     return model
 
-# Define a function to preprocess the image
-def preprocess_image(image):
-    transforms = get_transforms() 
-    return transforms(image)
-
-def run_inference(model, image):
-    input = preprocess_image(image)
+def run_inference(model, input, transforms = None):
+    if transforms is not None:
+        input = transforms(input)
     with torch.no_grad():
         output = model(input.unsqueeze(0))
     return output.item()
 
-def run_gradio_app(model):
+def run_gradio_app(model, crop_box = None):
+    transforms = get_transforms(crop_box)
+
     # Define the Gradio app
     demo = gr.Interface(
-        fn=lambda image: run_inference(model, image),
+        fn=lambda image: run_inference(model, image, transforms),
         inputs=gr.Image(type="pil"),
         outputs=gr.Number(label="Output"),
         title="Image Regression App",
@@ -50,10 +51,10 @@ def run_gradio_app(model):
     # Launch the app
     demo.launch()
 
-def run_dataset_inference(model, dataset_dir, annotations_file):
+def run_dataset_inference(model, model_path, dataset_dir, annotations_file, normalized_output, crop_box = None):
 
     # Load the dataset
-    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False)
+    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, crop_box=crop_box, normalize_output=normalized_output)
 
     # Run inference
     loss = 0
@@ -83,7 +84,9 @@ def run_dataset_inference(model, dataset_dir, annotations_file):
 if __name__ == "__main__":
     # Parse program arguments
     parser = argparse.ArgumentParser(description='Deep Water Level')
-    parser.add_argument('-m', '--model_path', type=str, default='model1.pth', help='Path to the model file')
+    parser.add_argument('-m', '--model_path', type=str, default='model.pth', help='Path to the model file')
+    parser.add_argument('--normalized_output', type=bool, default=False, help='Set to true if the model was trained with depth values normalized to [-1, 1] range')
+    parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
     parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
@@ -91,10 +94,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    model = load_model(args.model_path)
+    model = load_model(args.model_path, args.crop_box)
 
     # Load the model
     if 'dataset_dir' in args and 'annotations_file' in args:
-        run_dataset_inference(model, args.dataset_dir, args.annotations_file)
+        run_dataset_inference(model, **(vars(args)))
     else:
-        run_gradio_app(model)
+        run_gradio_app(model, args.crop_box)

@@ -1,5 +1,6 @@
 from typing import Tuple
 import torch.nn as nn
+import torch
 
 class BasicCnnRegression(nn.Module):
     """
@@ -9,31 +10,43 @@ class BasicCnnRegression(nn.Module):
         super().__init__()
 
         self.image_size = image_size
-        # Calculate the target parameter size after the convolutions and poolings
-        self.linear_line_size = (image_size[1] // 4 // 4) * (image_size[2] // 4 // 4) * 12
 
         self.conv1 = nn.Conv2d(in_channels=image_size[0], out_channels=6, kernel_size=4, stride=2, padding=1)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=1)
         self.conv2 = nn.Conv2d(in_channels=6, out_channels=12, kernel_size=4, stride=2, padding=1)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=1)
         self.flatten = nn.Flatten()
-        self.fcn1 = nn.Linear(in_features=self.linear_line_size, out_features=120)
-        self.fcn2 = nn.Linear(in_features=120, out_features=1)
 
-    def forward(self, x):
-        # print(f'start {x.size()}')
+        # Calculate linear size assuming fixed image size
+        self.linear_size = self.calculate_linear_size(image_size)
+
+        self.fcn1 = nn.Linear(in_features=self.linear_size, out_features=120)
+        # TODO(adamantivm) Add dropout as a parameter
+        # self.dropout = nn.Dropout(p=0.2)
+        self.fcn2 = nn.Linear(in_features=120, out_features=1)
+    
+    def calculate_linear_size(self, image_size):
+        dummy_input = torch.randn(1, *image_size)
+        output = self.aux_conv_forward(dummy_input)
+        return output.shape[1:][0]
+
+    
+    def aux_conv_forward(self, x):
         x = self.conv1(x)
-        # print(f'conv1 {x.size()}')
         x = nn.functional.relu(x)
         x = self.pool1(x)
-        # print(f'pool1 {x.size()}')
         x = self.conv2(x)
         x = nn.functional.relu(x)
-        # print(f'conv2 {x.size()}')
         x = self.pool2(x)
         x = self.flatten(x)
+        return x
+
+    def forward(self, x):
+        x = self.aux_conv_forward(x)
         x = self.fcn1(x)
         x = nn.functional.relu(x)
+        # TODO(adamantivm) Add dropout as a parameter
+        # x = self.dropout(x)
         x = self.fcn2(x)
         return x
 

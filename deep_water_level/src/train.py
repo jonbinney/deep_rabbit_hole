@@ -28,6 +28,7 @@ def do_training(
         learning_rate: float,
         crop_box: list,
         log_transformed_images,
+        normalize_output: bool = False
         ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -48,12 +49,14 @@ def do_training(
             train_dataset_dir + '/images',
             train_dataset_dir + '/annotations/' + annotations_file,
             crop_box=crop_box,
+            normalize_output=normalize_output
         )
         test_data = get_data_loader(
             test_dataset_dir + '/images',
             test_dataset_dir + '/annotations/' + annotations_file,
             shuffle=False,
             crop_box=crop_box,
+            normalize_output=normalize_output
         )
 
     if log_transformed_images:
@@ -124,11 +127,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
     parser.add_argument('--train_dataset_dir', type=str, default='datasets/water_2024_10_19_set1', help='Path to the train dataset directory')
     parser.add_argument('--test_dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the test dataset directory')
-    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations within a dataset')
+    parser.add_argument('--annotations_file', type=str, default='filtered.json', help='File name of the JSON file containing annotations within a dataset')
     parser.add_argument('--n_epochs', type=int, default=40, help='Number of epochs to train the model')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training the model')
     parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
     parser.add_argument('--log_transformed_images', type=bool, default=False, help='Log transformed images using mlflow')
+    parser.add_argument('--normalize_output', type=bool, default=False, help='Normalize depth value to [-1, 1] range')
     args = parser.parse_args()
 
     start_experiment("Deep Water Level Training")
