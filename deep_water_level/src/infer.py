@@ -89,8 +89,8 @@ if __name__ == "__main__":
     parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
-    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
-    parser.add_argument('--annotations_file', type=str, default='manual_annotations.json', help='File name of the JSON file containing annotations')
+    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set5', help='Path to the dataset directory')
+    parser.add_argument('--annotations_file', type=str, default='filtered.csv', help='File name of the JSON file containing annotations')
 
     args = parser.parse_args()
 
