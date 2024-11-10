@@ -52,18 +52,21 @@ def filter_images(eval_fn: callable=bad_name):
 
     print(f"Filtered {len(delete_ids)} images")
 
-def to_csv():
+def to_csv(
+        input_json_path: str = 'deep_water_level/data/annotations.json',
+        output_csv_path: str = 'deep_water_level/data/annotations.csv'
+    ):
     """
     Dumps some annotations details to a CSV for easy inspection.
     Includes: file_name, timestamp, depth and transparency
     """
-    with open('deep_water_level/data/annotations_filtered.json', 'r') as f:
+    with open(input_json_path, 'r') as f:
         data = json.load(f)
     
     # Create a map of image_id to annotation
     image_id_to_annotation = {annotation['image_id']: annotation for annotation in data['annotations']}
 
-    with open('deep_water_level/data/annotations.csv', 'w') as f:
+    with open(output_csv_path, 'w') as f:
         for image in data['images']:
             filename = image['file_name']
             timestamp_epoch = int(filename.split('/')[-1].split('.')[0].split('-')[-1])
@@ -127,6 +130,9 @@ def explore_images():
 
 if __name__ == '__main__':
     # remove_bad_images()
-    #to_csv()
-    filter_images(too_little_contrast)
+    to_csv(
+        'datasets/water_test_set3/annotations/filtered.json',
+        'datasets/water_test_set3/annotations/filtered.csv'
+        )
+    # filter_images(too_little_contrast)
     #explore_images()
