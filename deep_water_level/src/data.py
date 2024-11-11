@@ -7,6 +7,7 @@ from torchvision.transforms import v2
 import torch
 from torch.utils.data import Dataset
 from typing import Tuple
+from pathlib import Path
 
 class WaterDataset(Dataset):
     def __init__(self, annotations_file, images_dir, transforms=None, normalize_output=False):
@@ -16,7 +17,17 @@ class WaterDataset(Dataset):
         self.normalize_output = normalize_output
         self.data = self.load_annotations()
 
+
     def load_annotations(self):
+        suffix = Path(self.annotations_file).suffix
+        if suffix == '.json':
+            return self.load_coco()
+        elif suffix == '.csv':
+            return self.load_csv()
+        else:
+            raise ValueError(f"Unsupported annotations file format: {self.annotations_file}")
+
+    def load_coco(self):
         with open(self.annotations_file, 'r') as f:
             annotations = json.load(f)
         data = []
@@ -41,7 +52,18 @@ class WaterDataset(Dataset):
             else:
                 print(f"WARN: No image found for annotation. image_id: {image_id}")
         return data
-
+    
+    def load_csv(self):
+        def parse_line(line):
+            fields = line.split(',')
+            image_path = str(Path(self.images_dir) / fields[0])
+            depth = float(fields[2])
+            return (image_path, [depth])
+        with open(self.annotations_file, 'r') as f:
+            lines = f.readlines()
+        data = [parse_line(line) for line in lines]
+        return data
+    
     def __len__(self):
         return len(self.data)
 

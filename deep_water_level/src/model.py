@@ -6,10 +6,15 @@ class BasicCnnRegression(nn.Module):
     """
     Basic model which includes two CNN layers and a single linear layer.
     """
-    def __init__(self, image_size: Tuple[int, int, int] = (3, 810, 510)):
+    def __init__(
+            self,
+            image_size: Tuple[int, int, int] = (3, 810, 510),
+            dropout_p: float = None,
+        ):
         super().__init__()
 
         self.image_size = image_size
+        self.dropout_p = dropout_p
 
         self.conv1 = nn.Conv2d(in_channels=image_size[0], out_channels=6, kernel_size=4, stride=2, padding=1)
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=1)
@@ -21,8 +26,8 @@ class BasicCnnRegression(nn.Module):
         self.linear_size = self.calculate_linear_size(image_size)
 
         self.fcn1 = nn.Linear(in_features=self.linear_size, out_features=120)
-        # TODO(adamantivm) Add dropout as a parameter
-        # self.dropout = nn.Dropout(p=0.2)
+        if dropout_p is not None and dropout_p > 0:
+            self.dropout = nn.Dropout(p=self.dropout_p)
         self.fcn2 = nn.Linear(in_features=120, out_features=1)
     
     def calculate_linear_size(self, image_size):
@@ -45,8 +50,8 @@ class BasicCnnRegression(nn.Module):
         x = self.aux_conv_forward(x)
         x = self.fcn1(x)
         x = nn.functional.relu(x)
-        # TODO(adamantivm) Add dropout as a parameter
-        # x = self.dropout(x)
+        if self.dropout_p is not None and self.dropout_p > 0:
+            x = self.dropout(x)
         x = self.fcn2(x)
         return x
 
