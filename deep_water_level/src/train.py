@@ -10,9 +10,9 @@ from model import BasicCnnRegression
 from data import get_data_loader, get_data_loaders
 from utils import start_experiment
 
-def create_model(image_size):
+def create_model(**kwargs):
     # Create the model
-    model = BasicCnnRegression(image_size)
+    model = BasicCnnRegression(**kwargs)
     return model
 
 def load_data():
@@ -28,7 +28,8 @@ def do_training(
         learning_rate: float,
         crop_box: list,
         log_transformed_images,
-        normalize_output: bool = False
+        normalize_output: bool = False,
+        dropout_p: float = None,
         ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -75,7 +76,7 @@ def do_training(
     first_image = train_data.dataset[0][0]
 
     # Train the model
-    model = create_model(first_image.shape)
+    model = create_model(image_size=first_image.shape, dropout_p=dropout_p)
     model.to(device)
     print(f"Model summary: {model}")
 
@@ -131,6 +132,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_epochs', type=int, default=40, help='Number of epochs to train the model')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for training the model')
     parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
+    parser.add_argument('--dropout_p', type=float, default=0.1, help='Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.')
     parser.add_argument('--log_transformed_images', type=bool, default=False, help='Log transformed images using mlflow')
     parser.add_argument('--normalize_output', type=bool, default=False, help='Normalize depth value to [-1, 1] range')
     args = parser.parse_args()
