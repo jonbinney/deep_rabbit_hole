@@ -1,5 +1,7 @@
+matplotlib
 mlflow
 psutil # for mlflow
 pynvml # for mlflow
+pytz
 torch
 torchvision
