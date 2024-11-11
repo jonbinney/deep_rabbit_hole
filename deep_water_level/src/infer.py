@@ -19,15 +19,13 @@ from data import get_transforms, get_data_loader
 import argparse
 import cv2
 
-def load_model(model_path, crop_box = None):
-    # Load the pre-trained model
-    if crop_box is not None:
-        model = BasicCnnRegression([3, crop_box[2], crop_box[3]])
-    else:
-        model = BasicCnnRegression()
-    model.load_state_dict(torch.load(model_path, weights_only=True))
+def load_model(model_path):
+    checkpoint = torch.load(model_path, weights_only=False)
+    model_args = checkpoint['model_args']
+    model = BasicCnnRegression(**model_args)
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    return model
+    return (model, model_args)
 
 def run_inference(model, input, transforms = None):
     if transforms is not None:
@@ -51,7 +49,7 @@ def run_gradio_app(model, crop_box = None):
     # Launch the app
     demo.launch()
 
-def run_dataset_inference(model, model_path, dataset_dir, annotations_file, normalized_output, crop_box = None):
+def run_dataset_inference(model, dataset_dir, annotations_file, normalized_output, crop_box = None, **kwargs):
 
     # Load the dataset
     dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, crop_box=crop_box, normalize_output=normalized_output)
@@ -94,10 +92,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    model = load_model(args.model_path, args.crop_box)
+    (model, model_args) = load_model(args.model_path)
 
     # Load the model
     if 'dataset_dir' in args and 'annotations_file' in args:
-        run_dataset_inference(model, **(vars(args)))
+        run_dataset_inference(model, **vars(args))
     else:
-        run_gradio_app(model, args.crop_box)
+        run_gradio_app(model, model_args['crop_box'])

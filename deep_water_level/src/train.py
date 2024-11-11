@@ -13,7 +13,7 @@ from utils import start_experiment
 def create_model(**kwargs):
     # Create the model
     model = BasicCnnRegression(**kwargs)
-    return model
+    return (model, kwargs)
 
 def load_data():
     # TODO(adamantivm) Normalization? Resizing?
@@ -76,7 +76,7 @@ def do_training(
     first_image = train_data.dataset[0][0]
 
     # Train the model
-    model = create_model(image_size=first_image.shape, dropout_p=dropout_p)
+    (model, model_args) = create_model(image_size=first_image.shape, dropout_p=dropout_p)
     model.to(device)
     print(f"Model summary: {model}")
 
@@ -117,7 +117,10 @@ def do_training(
         mlflow.log_metric('test_loss', test_loss, step=epoch)
 
     # Save model to disk, locally
-    torch.save(model.state_dict(), 'model.pth')
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'model_args': model_args,
+    }, 'model.pth')
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
