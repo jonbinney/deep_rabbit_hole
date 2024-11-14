@@ -1,3 +1,15 @@
+"""
+GUI Tool for labeling water level data
+
+Hotkeys:
+  l - move forward one image
+  h - move backward one image
+  w - move forward one day
+  b - move backward one day
+  i - interpolate depths for selected image or region
+  ctrl+s - save new annotations as new file
+  ctrl+(left click and drag) - select region
+"""
 import argparse
 import json
 from matplotlib import pyplot as plt
@@ -6,6 +18,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import re
+import time
 
 from data import WaterDataset
 
@@ -76,10 +89,8 @@ class LabelingTool:
         self.data = pd.merge(raw_images_dataframe, annotations_dataframe, on='timestamp', how='outer', sort=True)
         self.new_annotations_path = new_annotations_path
 
-        self.displayed_image = 0 # Index of displayed image in data dataframe
-        self.selection = [None, None] # Selection of the form [start, end]
+        self.selection = [0, 1] # Selection of the form [start_index, end_index]
         self.ctrl_active = False
-        self.drawn_selection = None
 
         # Set all NaN depths to 0.0 to make plotting easier
         self.data['depth'] = self.data['depth'].fillna(0.0)
@@ -92,33 +103,68 @@ class LabelingTool:
         self.fig.canvas.mpl_connect('key_release_event', self.on_key_release)
         self.fig.canvas.mpl_connect('pick_event', self.on_pick)
 
+        # Disable matplotlib keyboard shortcuts that interfere with our own
+        reserved_keys = set(['h', 'l', 'w', 'b', 'i', 'ctrl+s'])
+        for param in plt.rcParams.keys():
+            if param.startswith('keymap.'):
+                for key in reserved_keys.intersection(plt.rcParams[param]):
+                    plt.rcParams[param].remove(key)
+
         # Plot the depths vs time
-        self.plot_artist, = self.plot_ax.plot(
+        self.plot_artist = self.plot_ax.scatter(
             self.data["timestamp"].dt.tz_convert('America/Argentina/Buenos_Aires'),
             self.data["depth"],
-            'bo',
+            color=['b']*len(self.data),
             picker=5)
         self.plot_ax.set_xlabel('Datetime (Argentina TZ)')
         self.plot_ax.set_ylabel('Depth')
 
-        self.draw()
+        self.update_selection()
+
+    def update_selection(self):
+        """
+        Display the currently selected image.
+        """
+        print(f'Updating selection to {self.selection[0]} to {self.selection[1]}')
+        image_index = self.selection[0]
+        if self.data['raw_image_path'].isnull().iloc[image_index]:
+            image_filename = self.data['labeled_image_path'].iloc[image_index]
+        else:
+            image_filename = self.data['raw_image_path'].iloc[image_index]
+        stamp_utc = self.data["timestamp"].iloc[image_index]
+        stamp_argentina = stamp_utc.tz_convert('America/Argentina/Buenos_Aires')
+        self.image_ax.set_title(f'Image {image_index}:    {stamp_argentina}')
+        image = plt.imread(image_filename)
+        self.image_ax.imshow(image)
+        self.image_ax.figure.canvas.draw()
+
+        t0 = time.time()
+        colors_array = np.tile((0.0, 0.0, 1.0, 1.0), (len(self.data), 1))
+        colors_array[self.selection[0]:self.selection[1]] = (1.0, 0.0, 0.0, 1.0)
+        sizes_array = np.tile(5, len(self.data))
+        sizes_array[self.selection[0]:self.selection[1]] = 100
+        t1 = time.time()
+
+        self.plot_artist.set_color(colors_array)
+        self.plot_artist.set_sizes(sizes_array)
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+        t2 = time.time()
+        print(f'Updating selection took {t1-t0} seconds, drawing took {t2-t1} seconds')
     
     def interpolate_depths(self):
         # Find all datapoints within the selected region and set their depth to an interpolation
         # of the previous and next datapoints which have depths set.
         if self.selection[0] is not None and self.selection[1] is not None:
             print("Interpolating selected region")
-            start_dt = matplotlib.dates.num2date(self.selection[0])
-            end_dt = matplotlib.dates.num2date(self.selection[1])
-            selection_start_ind = self.data['timestamp'].searchsorted(start_dt)
-            selection_end_ind = self.data['timestamp'].searchsorted(end_dt)
             previous_known_datapoint = None
             next_known_datapoint = None
-            for ind in range(selection_start_ind, 0, -1):
+            for ind in range(self.selection[0], 0, -1):
                 if self.data['depth'][ind] != 0.0:
                     previous_known_datapoint = self.data.loc[ind]
                     break
-            for ind in range(selection_end_ind, len(self.data), 1):
+            for ind in range(self.selection[1], len(self.data), 1):
                 if self.data['depth'][ind] != 0.0:
                     next_known_datapoint = self.data.loc[ind]
                     break
@@ -132,53 +178,69 @@ class LabelingTool:
 
             slope = ((next_known_datapoint['depth'] - previous_known_datapoint['depth'])
                 / (next_known_datapoint['timestamp'] - previous_known_datapoint['timestamp']).total_seconds())
-            for ind in range(selection_start_ind, selection_end_ind):
+            for ind in range(self.selection[0], self.selection[1]):
                 if self.data['depth'][ind] == 0.0:
                     self.data.loc[ind, 'depth'] = previous_known_datapoint['depth'] + (slope * 
                         (self.data.loc[ind, 'timestamp'] - previous_known_datapoint['timestamp']).total_seconds())
             
-            self.plot_artist.set_ydata(self.data['depth'])
-            self.draw()
+            # Update depths in plot
+            offsets = self.plot_artist.get_offsets()
+            offsets[:,1] = self.data['depth'].to_numpy()
+            self.plot_artist.set_offsets(offsets)
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
     
-    def draw(self):
-        print(self.selection)
-        self.image_ax.figure.canvas.draw()
-
     def on_button_press(self, event):
-        print(f'click: button={event.button}, x={event.x}, y={event.y}, xdata={event.xdata}, ydata={event.ydata}')
-
-        # Start selection when right mouse button is pressed
         if self.ctrl_active and event.button == 1:
-            if self.drawn_selection is not None:
-                self.drawn_selection.remove()
-            self.selection = [event.xdata, None]
-
-        self.draw()
+            start_dt = matplotlib.dates.num2date(event.xdata)
+            start_ind = self.data['timestamp'].searchsorted(start_dt)
+            self.selection = [start_ind, start_ind+1]
+            self.update_selection()
 
     def on_button_release(self, event):
-        print(f'click: button={event.button}, x={event.x}, y={event.y}, xdata={event.xdata}, ydata={event.ydata}')
-
         # Start selection when right mouse button is pressed
         if self.ctrl_active and event.button == 1:
-            self.selection[1] = event.xdata
-
-        if self.selection[0] is not None and self.selection[1] is not None:
             print("Drawing selected region")
-            start = self.selection[0]
-            end = self.selection[1]
-            self.drawn_selection = self.plot_ax.axvspan(start, end, facecolor='green', alpha=0.2)
+            end_dt = matplotlib.dates.num2date(event.xdata)
+            end_ind = self.data['timestamp'].searchsorted(end_dt)
+            self.selection[1] = end_ind
+            self.update_selection()
         
-        self.draw()
-    
     def on_key_press(self, event):
         if event.key == "control":
             self.ctrl_active = True
         elif event.key == 'i':
             print('Interpolating depths for selected region')
             self.interpolate_depths()
-        if event.key == 'w':
+        elif event.key == 'ctrl+s':
             print(f'Saving new annotations to {self.new_annotations_path}')
             save_new_annotations(self.data, self.new_annotations_path)
+        elif event.key == 'l':
+            # Move forward one image
+            image_index = min(self.selection[0] + 1, len(self.data) - 1)
+            self.selection = [image_index, image_index+1]
+            self.update_selection()
+        elif event.key == 'h':
+            # Move back one image
+            image_index = max(self.selection[0] - 1, 0)
+            self.selection = [image_index, image_index+1]
+            self.update_selection()
+        elif event.key == 'w':
+            # Move forward one day
+            new_stamp = self.data.loc[self.selection[0], 'timestamp'] + pd.Timedelta(1, unit='days')
+            image_index = min(
+                self.data['timestamp'].searchsorted(new_stamp, side='left'),
+                len(self.data) - 1)
+            self.selection = [image_index, image_index+1]
+            self.update_selection()
+        elif event.key == 'b':
+            # Move back one day
+            new_stamp = self.data.loc[self.selection[0], 'timestamp'] - pd.Timedelta(1, unit='days')
+            image_index = max(
+                self.data['timestamp'].searchsorted(new_stamp, side='left'),
+                0)
+            self.selection = [image_index, image_index+1]
+            self.update_selection()
 
     def on_key_release(self, event):
         if event.key == "control":
@@ -190,22 +252,14 @@ class LabelingTool:
         y = event.mouseevent.ydata
 
         # Convert xdata and ydata of line section from datetimes to float positions on the axis
-        line = event.artist
-        xdata, ydata = line.get_data()
-        xdata = matplotlib.dates.date2num(xdata)
-        ydata = matplotlib.dates.date2num(ydata)
+        offsets = event.artist.get_offsets()
+        xdata = matplotlib.dates.date2num(offsets[:,0])
+        ydata = matplotlib.dates.date2num(offsets[:,1])
 
-        # Choose the closeset point to the clicked location
-        self.displayed_image = event.ind[np.argmin((xdata[event.ind] - x)**2 + (ydata[event.ind] - y)**2)]
-
-        # Display the image
-        if self.data['raw_image_path'].isnull().iloc[self.displayed_image]:
-            image_filename = self.data['labeled_image_path'].iloc[self.displayed_image]
-        else:
-            image_filename = self.data['raw_image_path'].iloc[self.displayed_image]
-        image = plt.imread(image_filename)
-        self.image_ax.imshow(image)
-        self.draw()
+        # Choose the closest point to the clicked location
+        image_index = event.ind[np.argmin((xdata[event.ind] - x)**2 + (ydata[event.ind] - y)**2)]
+        self.selection = [image_index, image_index+1]
+        self.update_selection()
     
     def spin(self):
         plt.show()
