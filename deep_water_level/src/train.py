@@ -27,9 +27,10 @@ def do_training(
         n_epochs: int,
         learning_rate: float,
         crop_box: list,
-        log_transformed_images,
+        log_transformed_images: bool = False,
         normalize_output: bool = False,
         dropout_p: float = None,
+        report_fn: callable = lambda *args, **kwargs: None
         ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -97,9 +98,6 @@ def do_training(
             loss.backward()
             optimizer.step()
 
-        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}', end='')
-        mlflow.log_metric('loss', loss.item(), step=epoch)
-
         # Test for this epoch
         model.eval()
         test_loss = 0
@@ -113,8 +111,16 @@ def do_training(
 
         test_loss /= len(test_data)
 
-        print(f', Test loss: {test_loss:.4f}')
+        # TODO: Abstract this into a reporting function
+        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}, Test loss: {test_loss:.4f}')
         mlflow.log_metric('test_loss', test_loss, step=epoch)
+        mlflow.log_metric('loss', loss.item(), step=epoch)
+        report_fn({
+            'epoch': epoch,
+            'loss': loss.item(),
+            'test_loss': test_loss
+        })
+
 
     # Save model to disk, locally
     torch.save({
@@ -125,7 +131,7 @@ def do_training(
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
 
-    return model
+    return { 'loss': loss.item(), 'test_loss': test_loss }
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
