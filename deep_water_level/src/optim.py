@@ -3,7 +3,6 @@ Performs hyperparameter optimization to train the model according to train.py
 It uses Ray Tune
 
 TODO:
- - Commuication back to Ray Tune to help guide the experiments
  - Implement actual interesting parameters
  - Implement early termination
 """
