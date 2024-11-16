@@ -131,9 +131,10 @@ class LabelingTool:
             image_filename = self.data['labeled_image_path'].iloc[image_index]
         else:
             image_filename = self.data['raw_image_path'].iloc[image_index]
+        image_name = Path(image_filename).parts[-1]
         stamp_utc = self.data["timestamp"].iloc[image_index]
         stamp_argentina = stamp_utc.tz_convert('America/Argentina/Buenos_Aires')
-        self.image_ax.set_title(f'Image {image_index}:    {stamp_argentina}')
+        self.image_ax.set_title(f'Image {image_index} ({image_name}):    {stamp_argentina}')
         image = plt.imread(image_filename)
         self.image_ax.imshow(image)
         self.image_ax.figure.canvas.draw()
