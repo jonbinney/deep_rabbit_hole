@@ -21,15 +21,25 @@ def load_data():
     return data
 
 def do_training(
+        # Dataset parameters
         train_dataset_dir: str,
         test_dataset_dir: str,
         annotations_file: str,
+        # Training parameters (to fine tune)
         n_epochs: int,
         learning_rate: float,
         crop_box: list,
+        dropout_p: float = None,
+        conv_layers: int = 2,
+        channel_multiplier: float = 2.0,
+        conv_kernel_size: int = 4,
+        conv_stride: int = 2,
+        conv_padding: int = 1,
+        max_pool_kernel_size: int = 2,
+        max_pool_stride: int = 1,
+        # Configuration parameters
         log_transformed_images: bool = False,
         normalize_output: bool = False,
-        dropout_p: float = None,
         report_fn: callable = lambda *args, **kwargs: None
         ):
     # Set-up environment
@@ -77,7 +87,16 @@ def do_training(
     first_image = train_data.dataset[0][0]
 
     # Train the model
-    (model, model_args) = create_model(image_size=first_image.shape, dropout_p=dropout_p)
+    (model, model_args) = create_model(
+        image_size=first_image.shape,
+        dropout_p=dropout_p,
+        conv_layers=conv_layers, 
+        channel_multiplier=channel_multiplier,
+        conv_kernel_size=conv_kernel_size,
+        conv_stride=conv_stride,
+        conv_padding=conv_padding,
+        max_pool_kernel_size=max_pool_kernel_size,
+        max_pool_stride=max_pool_stride)
     model.to(device)
     print(f"Model summary: {model}")
 
@@ -144,6 +163,9 @@ if __name__ == '__main__':
     parser.add_argument('--dropout_p', type=float, default=0.1, help='Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.')
     parser.add_argument('--log_transformed_images', type=bool, default=False, help='Log transformed images using mlflow')
     parser.add_argument('--normalize_output', type=bool, default=False, help='Normalize depth value to [-1, 1] range')
+    parser.add_argument('--conv_layers', type=int, default=2, help='Number of convolutional layers in the model (2 or 3)')
+    parser.add_argument('--channel_multiplier', type=float, default=2.0, help='Multiplier for the number of channels in each convolutional layer')
+    parser.add_argument('--conv_kernel_size', type=int, default=4, help='Convolutional kernel size, for all layers')
     args = parser.parse_args()
 
     start_experiment("Deep Water Level Training")

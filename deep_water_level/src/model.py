@@ -10,16 +10,37 @@ class BasicCnnRegression(nn.Module):
             self,
             image_size: Tuple[int, int, int] = (3, 810, 510),
             dropout_p: float = None,
+            conv_layers: int = 2,  # Only up to 5 supported
+            channel_multiplier: int = 2,  # On each conv layer, number of channels is increased by this factor
+            conv_kernel_size: int = 4,
+            conv_stride: int = 2,
+            conv_padding: int = 1,
+            max_pool_kernel_size: int = 2,
+            max_pool_stride: int = 1
         ):
         super().__init__()
 
+        if conv_layers not in [2, 3, 4, 5]:
+            raise ValueError("conv_layers must an integer between 2 and 5")
+
+        self.conv_layers = conv_layers
         self.image_size = image_size
         self.dropout_p = dropout_p
+        self.channel_multiplier = channel_multiplier
+        self.conv_kernel_size = conv_kernel_size
+        self.conv_stride = conv_stride
+        self.conv_padding = conv_padding
+        self.max_pool_kernel_size = max_pool_kernel_size
+        self.max_pool_stride = max_pool_stride
 
-        self.conv1 = nn.Conv2d(in_channels=image_size[0], out_channels=6, kernel_size=4, stride=2, padding=1)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=1)
-        self.conv2 = nn.Conv2d(in_channels=6, out_channels=12, kernel_size=4, stride=2, padding=1)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=1)
+        self.conv = nn.ModuleList()
+        self.pool = nn.ModuleList()
+        next_channels = image_size[0]
+        for _ in range(self.conv_layers):
+            (conv, pool, next_channels) = self.make_cnn_layer(next_channels)
+            self.conv.append(conv)
+            self.pool.append(pool)
+
         self.flatten = nn.Flatten()
 
         # Calculate linear size assuming fixed image size
@@ -30,19 +51,25 @@ class BasicCnnRegression(nn.Module):
             self.dropout = nn.Dropout(p=self.dropout_p)
         self.fcn2 = nn.Linear(in_features=120, out_features=1)
     
+    def make_cnn_layer(
+        self,
+        in_channels
+    ):
+        out_channels = int(in_channels * self.channel_multiplier)
+        conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=self.conv_kernel_size, stride=self.conv_stride, padding=self.conv_padding)
+        pool = nn.MaxPool2d(kernel_size=self.max_pool_kernel_size, stride=self.max_pool_stride)
+        return conv, pool, out_channels
+    
     def calculate_linear_size(self, image_size):
         dummy_input = torch.randn(1, *image_size)
         output = self.aux_conv_forward(dummy_input)
         return output.shape[1:][0]
-
     
     def aux_conv_forward(self, x):
-        x = self.conv1(x)
-        x = nn.functional.relu(x)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = nn.functional.relu(x)
-        x = self.pool2(x)
+        for i in range(self.conv_layers):
+            x = self.conv[i](x)
+            x = nn.functional.relu(x)
+            x = self.pool[i](x)
         x = self.flatten(x)
         return x
 

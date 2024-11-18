@@ -14,14 +14,21 @@ from train import do_training
 
 params = {
     # Some parameters are variable, for searching optimization
-    "n_epochs": tune.grid_search([2, 5]),
-    "dropout_p": tune.grid_search([0.1, 0.2]),
+    "dropout_p": tune.grid_search([0, 0.2, 0.3, 0.5]),
+    "crop_box": tune.grid_search([
+        None,  # The whole image
+        [130, 275, 140, 140], # A small square around the skimmer sink hole
+        [112, 16, 180, 790]   # A rectangle taking most of the pool edge
+        ]),
+    "conv_layers": tune.grid_search([2, 3]),
+    "channel_multiplier": tune.grid_search([1.5, 2, 3, 4]),
+    "conv_kernel_size": tune.grid_search([4, 5, 7, 9]),
     # Others are fixed
+    "n_epochs": 40,
     "train_dataset_dir": "/home/julian/aaae/deep-rabbit-hole/code/deep_rabbit_hole/datasets/water_train_set4",
     "test_dataset_dir": "/home/julian/aaae/deep-rabbit-hole/code/deep_rabbit_hole/datasets/water_test_set5",
     "annotations_file": "filtered.csv",
     "learning_rate": 1e-3,
-    "crop_box": None,
     "report_fn": train.report
 }
 
