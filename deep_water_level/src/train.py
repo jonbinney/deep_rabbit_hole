@@ -15,21 +15,28 @@ def create_model(**kwargs):
     model = BasicCnnRegression(**kwargs)
     return (model, kwargs)
 
-def load_data():
-    # TODO(adamantivm) Normalization? Resizing?
-    data = None
-    return data
-
 def do_training(
+        # Dataset parameters
         train_dataset_dir: str,
         test_dataset_dir: str,
         annotations_file: str,
-        n_epochs: int,
-        learning_rate: float,
-        crop_box: list,
-        log_transformed_images,
+        # Training parameters
+        n_epochs: int = 40,
+        learning_rate: float = 1e-3,
         normalize_output: bool = False,
+        crop_box: list = None,
+        # Model parameters
         dropout_p: float = None,
+        n_conv_layers: int = 2,
+        channel_multiplier: float = 2.0,
+        conv_kernel_size: int = 4,
+        conv_stride: int = 2,
+        conv_padding: int = 1,
+        max_pool_kernel_size: int = 2,
+        max_pool_stride: int = 1,
+        # Configuration parameters
+        log_transformed_images: bool = False,
+        report_fn: callable = lambda *args, **kwargs: None
         ):
     # Set-up environment
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -76,7 +83,16 @@ def do_training(
     first_image = train_data.dataset[0][0]
 
     # Train the model
-    (model, model_args) = create_model(image_size=first_image.shape, dropout_p=dropout_p)
+    (model, model_args) = create_model(
+        image_size=first_image.shape,
+        dropout_p=dropout_p,
+        n_conv_layers=n_conv_layers,
+        channel_multiplier=channel_multiplier,
+        conv_kernel_size=conv_kernel_size,
+        conv_stride=conv_stride,
+        conv_padding=conv_padding,
+        max_pool_kernel_size=max_pool_kernel_size,
+        max_pool_stride=max_pool_stride)
     model.to(device)
     print(f"Model summary: {model}")
 
@@ -96,9 +112,8 @@ def do_training(
 
             loss.backward()
             optimizer.step()
-
-        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}', end='')
-        mlflow.log_metric('loss', loss.item(), step=epoch)
+ 
+        train_loss = loss.item()
 
         # Test for this epoch
         model.eval()
@@ -113,8 +128,16 @@ def do_training(
 
         test_loss /= len(test_data)
 
-        print(f', Test loss: {test_loss:.4f}')
+        # TODO: Abstract this into a reporting function
+        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {train_loss:.4f}, Test loss: {test_loss:.4f}')
+        mlflow.log_metric('loss', train_loss, step=epoch)
         mlflow.log_metric('test_loss', test_loss, step=epoch)
+        report_fn({
+            'epoch': epoch,
+            'loss': train_loss,
+            'test_loss': test_loss
+        })
+
 
     # Save model to disk, locally
     torch.save({
@@ -125,7 +148,7 @@ def do_training(
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
 
-    return model
+    return { 'loss': train_loss, 'test_loss': test_loss }
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
@@ -138,6 +161,9 @@ if __name__ == '__main__':
     parser.add_argument('--dropout_p', type=float, default=0.1, help='Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.')
     parser.add_argument('--log_transformed_images', type=bool, default=False, help='Log transformed images using mlflow')
     parser.add_argument('--normalize_output', type=bool, default=False, help='Normalize depth value to [-1, 1] range')
+    parser.add_argument('--n_conv_layers', type=int, default=2, help='Number of convolutional layers in the model (2 or 3)')
+    parser.add_argument('--channel_multiplier', type=float, default=2.0, help='Multiplier for the number of channels in each convolutional layer')
+    parser.add_argument('--conv_kernel_size', type=int, default=4, help='Convolutional kernel size, for all layers')
     args = parser.parse_args()
 
     start_experiment("Deep Water Level Training")

@@ -267,9 +267,9 @@ class LabelingTool:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
-    parser.add_argument('--dataset-dir', type=Path, default='datasets/water_2024_10_19_set1',
+    parser.add_argument('--dataset-dir', type=Path, default='datasets/water_train_set4',
                         help='Path to the dataset directory')
-    parser.add_argument('--annotations-file', type=str, default='manual_annotations.json',
+    parser.add_argument('--annotations-file', type=str, default='filtered.csv',
                         help='File name of the JSON file containing annotations')
     parser.add_argument('--new-annotations-path', type=Path, default=Path('/tmp/new_annotations.json'),
                          help='Where to store (just the new) annotations')

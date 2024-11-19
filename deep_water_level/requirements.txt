@@ -5,3 +5,4 @@ pynvml # for mlflow
 pytz
 torch
 torchvision
+ray[tune]
