@@ -94,14 +94,23 @@ class LabelingTool:
 
         # Set all NaN depths to 0.0 to make plotting easier
         self.data['depth'] = self.data['depth'].fillna(0.0)
+
+        # Load all the images into memory
+        self.images = []
+        for _, datapoint in self.data.iterrows():
+            if pd.isnull(datapoint['raw_image_path']):
+                image_filename = datapoint['labeled_image_path']
+            else:
+                image_filename = datapoint['raw_image_path']
+            self.images.append(plt.imread(image_filename))
                         
-        self.fig, self.axes = plt.subplots(2, 1)
+        self.figure, self.axes = plt.subplots(2, 1)
         self.image_ax, self.plot_ax = self.axes
-        self.fig.canvas.mpl_connect('button_press_event', self.on_button_press)
-        self.fig.canvas.mpl_connect('button_release_event', self.on_button_release)
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
-        self.fig.canvas.mpl_connect('key_release_event', self.on_key_release)
-        self.fig.canvas.mpl_connect('pick_event', self.on_pick)
+        self.figure.canvas.mpl_connect('button_press_event', self.on_button_press)
+        self.figure.canvas.mpl_connect('button_release_event', self.on_button_release)
+        self.figure.canvas.mpl_connect('key_press_event', self.on_key_press)
+        self.figure.canvas.mpl_connect('key_release_event', self.on_key_release)
+        self.figure.canvas.mpl_connect('pick_event', self.on_pick)
 
         # Disable matplotlib keyboard shortcuts that interfere with our own
         reserved_keys = set(['h', 'l', 'w', 'b', 'i', 'ctrl+s'])
@@ -115,44 +124,53 @@ class LabelingTool:
             self.data["timestamp"].dt.tz_convert('America/Argentina/Buenos_Aires'),
             self.data["depth"],
             color=['b']*len(self.data),
+            s=5,
             picker=5)
         self.plot_ax.set_xlabel('Datetime (Argentina TZ)')
         self.plot_ax.set_ylabel('Depth')
 
+        self.image_artist = None
+        self.selection_artist = None
         self.update_selection()
 
     def update_selection(self):
         """
         Display the currently selected image.
         """
+        
+        t0 = time.time()
+
         print(f'Updating selection to {self.selection[0]} to {self.selection[1]}')
         image_index = self.selection[0]
-        if self.data['raw_image_path'].isnull().iloc[image_index]:
-            image_filename = self.data['labeled_image_path'].iloc[image_index]
-        else:
-            image_filename = self.data['raw_image_path'].iloc[image_index]
-        image_name = Path(image_filename).parts[-1]
         stamp_utc = self.data["timestamp"].iloc[image_index]
         stamp_argentina = stamp_utc.tz_convert('America/Argentina/Buenos_Aires')
-        self.image_ax.set_title(f'Image {image_index} ({image_name}):    {stamp_argentina}')
-        image = plt.imread(image_filename)
-        self.image_ax.imshow(image)
-        self.image_ax.figure.canvas.draw()
+        self.image_ax.set_title(f'Image {image_index}:    {stamp_argentina}')
+        if self.image_artist is None:
+            self.image_artist = self.image_ax.imshow(self.images[image_index])
+        else:
+            self.image_artist.set_data(self.images[image_index])
 
-        t0 = time.time()
-        colors_array = np.tile((0.0, 0.0, 1.0, 1.0), (len(self.data), 1))
-        colors_array[self.selection[0]:self.selection[1]] = (1.0, 0.0, 0.0, 1.0)
-        sizes_array = np.tile(5, len(self.data))
-        sizes_array[self.selection[0]:self.selection[1]] = 100
         t1 = time.time()
-
-        self.plot_artist.set_color(colors_array)
-        self.plot_artist.set_sizes(sizes_array)
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+        
+        selection_stamps = self.data["timestamp"][self.selection[0]:self.selection[1]].dt.tz_convert('America/Argentina/Buenos_Aires')
+        selection_depths = self.data["depth"][self.selection[0]:self.selection[1]]
+        if self.selection_artist is None:
+            self.selection_artist = self.plot_ax.scatter(
+                selection_stamps,
+                selection_depths,
+                s=100,
+                color='r')
+        else:
+            # Update the selection artist
+            self.selection_artist.set_offsets(np.column_stack((selection_stamps, selection_depths)))
 
         t2 = time.time()
-        print(f'Updating selection took {t1-t0} seconds, drawing took {t2-t1} seconds')
+
+        self.figure.canvas.draw()
+
+        t3 = time.time()
+
+        print(f'Updating image took {t1-t0} s, updating selection took {t2-t1} seconds, drawing took {t3-t2} seconds')
     
     def interpolate_depths(self):
         # Find all datapoints within the selected region and set their depth to an interpolation
@@ -188,8 +206,8 @@ class LabelingTool:
             offsets = self.plot_artist.get_offsets()
             offsets[:,1] = self.data['depth'].to_numpy()
             self.plot_artist.set_offsets(offsets)
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
+            self.figure.canvas.draw()
+            self.figure.canvas.flush_events()
     
     def on_button_press(self, event):
         if self.ctrl_active and event.button == 1:
