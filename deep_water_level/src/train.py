@@ -116,6 +116,8 @@ def do_training(
 
             loss.backward()
             optimizer.step()
+        
+        train_loss = loss.item()
 
         # Test for this epoch
         model.eval()
@@ -131,12 +133,12 @@ def do_training(
         test_loss /= len(test_data)
 
         # TODO: Abstract this into a reporting function
-        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {loss.item():.4f}, Test loss: {test_loss:.4f}')
+        print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {train_loss:.4f}, Test loss: {test_loss:.4f}')
         mlflow.log_metric('test_loss', test_loss, step=epoch)
-        mlflow.log_metric('loss', loss.item(), step=epoch)
+        mlflow.log_metric('loss', train_loss, step=epoch)
         report_fn({
             'epoch': epoch,
-            'loss': loss.item(),
+            'loss': train_loss,
             'test_loss': test_loss
         })
 
@@ -150,7 +152,7 @@ def do_training(
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
 
-    return { 'loss': loss.item(), 'test_loss': test_loss }
+    return { 'loss': train_loss, 'test_loss': test_loss }
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
