@@ -10,8 +10,8 @@ class BasicCnnRegression(nn.Module):
             self,
             image_size: Tuple[int, int, int] = (3, 810, 510),
             dropout_p: float = None,
-            conv_layers: int = 2,  # Only up to 5 supported
-            channel_multiplier: int = 2,  # On each conv layer, number of channels is increased by this factor
+            n_conv_layers: int = 2,  # Number of convolutional layers
+            channel_multiplier: float = 2.0,  # On each conv layer, number of channels is increased by this factor
             conv_kernel_size: int = 4,
             conv_stride: int = 2,
             conv_padding: int = 1,
@@ -20,10 +20,10 @@ class BasicCnnRegression(nn.Module):
         ):
         super().__init__()
 
-        if conv_layers not in [2, 3, 4, 5]:
+        if n_conv_layers not in [2, 3, 4, 5]:
             raise ValueError("conv_layers must an integer between 2 and 5")
 
-        self.conv_layers = conv_layers
+        self.n_conv_layers = n_conv_layers
         self.image_size = image_size
         self.dropout_p = dropout_p
         self.channel_multiplier = channel_multiplier
@@ -33,13 +33,12 @@ class BasicCnnRegression(nn.Module):
         self.max_pool_kernel_size = max_pool_kernel_size
         self.max_pool_stride = max_pool_stride
 
-        self.conv = nn.ModuleList()
-        self.pool = nn.ModuleList()
+        self.conv_list = nn.ModuleList()
         next_channels = image_size[0]
-        for _ in range(self.conv_layers):
+        for _ in range(self.n_conv_layers):
             (conv, pool, next_channels) = self.make_cnn_layer(next_channels)
-            self.conv.append(conv)
-            self.pool.append(pool)
+            self.conv_list.append(conv)
+            self.conv_list.append(pool)
 
         self.flatten = nn.Flatten()
 
@@ -66,10 +65,10 @@ class BasicCnnRegression(nn.Module):
         return output.shape[1:][0]
     
     def aux_conv_forward(self, x):
-        for i in range(self.conv_layers):
-            x = self.conv[i](x)
+        for i in range(self.n_conv_layers):
+            x = self.conv_list[i*2](x)
             x = nn.functional.relu(x)
-            x = self.pool[i](x)
+            x = self.conv_list[i*2+1](x)
         x = self.flatten(x)
         return x
 

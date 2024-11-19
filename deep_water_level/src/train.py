@@ -15,22 +15,19 @@ def create_model(**kwargs):
     model = BasicCnnRegression(**kwargs)
     return (model, kwargs)
 
-def load_data():
-    # TODO(adamantivm) Normalization? Resizing?
-    data = None
-    return data
-
 def do_training(
         # Dataset parameters
         train_dataset_dir: str,
         test_dataset_dir: str,
         annotations_file: str,
-        # Training parameters (to fine tune)
-        n_epochs: int,
-        learning_rate: float,
-        crop_box: list,
+        # Training parameters
+        n_epochs: int = 40,
+        learning_rate: float = 1e-3,
+        normalize_output: bool = False,
+        crop_box: list = None,
+        # Model parameters
         dropout_p: float = None,
-        conv_layers: int = 2,
+        n_conv_layers: int = 2,
         channel_multiplier: float = 2.0,
         conv_kernel_size: int = 4,
         conv_stride: int = 2,
@@ -39,7 +36,6 @@ def do_training(
         max_pool_stride: int = 1,
         # Configuration parameters
         log_transformed_images: bool = False,
-        normalize_output: bool = False,
         report_fn: callable = lambda *args, **kwargs: None
         ):
     # Set-up environment
@@ -90,7 +86,7 @@ def do_training(
     (model, model_args) = create_model(
         image_size=first_image.shape,
         dropout_p=dropout_p,
-        conv_layers=conv_layers, 
+        n_conv_layers=n_conv_layers,
         channel_multiplier=channel_multiplier,
         conv_kernel_size=conv_kernel_size,
         conv_stride=conv_stride,
@@ -116,7 +112,7 @@ def do_training(
 
             loss.backward()
             optimizer.step()
-        
+ 
         train_loss = loss.item()
 
         # Test for this epoch
@@ -134,8 +130,8 @@ def do_training(
 
         # TODO: Abstract this into a reporting function
         print(f'Epoch [{epoch + 1}/{n_epochs}], Loss: {train_loss:.4f}, Test loss: {test_loss:.4f}')
-        mlflow.log_metric('test_loss', test_loss, step=epoch)
         mlflow.log_metric('loss', train_loss, step=epoch)
+        mlflow.log_metric('test_loss', test_loss, step=epoch)
         report_fn({
             'epoch': epoch,
             'loss': train_loss,
@@ -165,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout_p', type=float, default=0.1, help='Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.')
     parser.add_argument('--log_transformed_images', type=bool, default=False, help='Log transformed images using mlflow')
     parser.add_argument('--normalize_output', type=bool, default=False, help='Normalize depth value to [-1, 1] range')
-    parser.add_argument('--conv_layers', type=int, default=2, help='Number of convolutional layers in the model (2 or 3)')
+    parser.add_argument('--n_conv_layers', type=int, default=2, help='Number of convolutional layers in the model (2 or 3)')
     parser.add_argument('--channel_multiplier', type=float, default=2.0, help='Multiplier for the number of channels in each convolutional layer')
     parser.add_argument('--conv_kernel_size', type=int, default=4, help='Convolutional kernel size, for all layers')
     args = parser.parse_args()
