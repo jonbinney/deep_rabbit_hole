@@ -19,7 +19,7 @@ params = {
         [130, 275, 140, 140], # A small square around the skimmer sink hole
         [112, 16, 180, 790]   # A rectangle taking most of the pool edge
         ]),
-    "conv_layers": tune.grid_search([2, 3]),
+    "n_conv_layers": tune.grid_search([2, 3, 5]),
     "channel_multiplier": tune.grid_search([1.5, 2, 3, 4]),
     "conv_kernel_size": tune.grid_search([4, 5, 7, 9]),
     # Others are fixed
@@ -37,7 +37,9 @@ def train_adapter(config):
 if __name__ == '__main__':
     analysis = tune.run(
         train_adapter,
-        resources_per_trial={"gpu": 1},  # Ray Tune will run as many parallel experiments as <avaliable GPUs> / <gplus per experiment>
+        # Ray Tune will run as many parallel experiments as <avaliable GPUs> / <GPUs per trial>
+        # Fractional values are valid
+        resources_per_trial={"gpu": 0.5},
         config=params,
         mode="min",
         num_samples=3,
