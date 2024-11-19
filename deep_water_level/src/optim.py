@@ -41,6 +41,7 @@ if __name__ == '__main__':
         # Fractional values are valid
         resources_per_trial={"gpu": 0.5},
         config=params,
+        metric="test_loss", # Important! Specify that we're optimizing for the test loss, not the training loss
         mode="min",
         num_samples=3,
     )
