@@ -49,7 +49,7 @@ def run_gradio_app(model, crop_box = None):
     # Launch the app
     demo.launch()
 
-def run_dataset_inference(model, dataset_dir, annotations_file, normalized_output, crop_box = None, **kwargs):
+def run_dataset_inference(model, dataset_dir, annotations_file, normalized_output, crop_box = None, scatter_plot = None, **kwargs):
 
     # Load the dataset
     dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, crop_box=crop_box, normalize_output=normalized_output)
@@ -57,10 +57,14 @@ def run_dataset_inference(model, dataset_dir, annotations_file, normalized_outpu
     # Run inference
     loss = 0
     n_images = 0
+    outputs = []
+    labeled_depths = []
     for i, (images, depths, filenames) in enumerate(dataset):
         mse = 0
         for image, depth, filename in zip(images, depths, filenames):
             output = run_inference(model, image)
+            outputs.append(output)
+            labeled_depths.append(depth.item())
             error = abs(output - depth.item())
 
             # use OpenCV to display the image and wait for a key
@@ -77,6 +81,12 @@ def run_dataset_inference(model, dataset_dir, annotations_file, normalized_outpu
         loss += mse
         n_images += len(images)
 
+    if scatter_plot:
+        from matplotlib import pyplot as plt
+        plt.title(f'Predicted vs Actual Depths for {dataset_dir}')
+        plt.scatter(labeled_depths, outputs)
+        plt.plot([0, max(labeled_depths)], [0, max(labeled_depths)], color='red')
+        plt.show()
     print(f"Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}")
 
 if __name__ == "__main__":
@@ -87,8 +97,9 @@ if __name__ == "__main__":
     parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
-    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set5', help='Path to the dataset directory')
+    parser.add_argument('--dataset_dir', type=str, default='datasets/fake_water_images_test1', help='Path to the dataset directory')
     parser.add_argument('--annotations_file', type=str, default='filtered.csv', help='File name of the JSON file containing annotations')
+    parser.add_argument('--scatter_plot', type=bool, default=True, help='Show a scatter plot of actual vs predicted values')
 
     args = parser.parse_args()
 
