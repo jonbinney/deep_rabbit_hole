@@ -19,7 +19,7 @@ params = {
         [130, 275, 140, 140], # A small square around the skimmer sink hole
         [112, 16, 180, 790]   # A rectangle taking most of the pool edge
         ]),
-    "n_conv_layers": tune.grid_search([2, 3, 5]),
+    "n_conv_layers": tune.grid_search([3, 5, 2]),
     "channel_multiplier": tune.grid_search([1.5, 2, 3, 4]),
     "conv_kernel_size": tune.grid_search([4, 5, 7, 9]),
     # Others are fixed
@@ -39,9 +39,10 @@ if __name__ == '__main__':
         train_adapter,
         # Ray Tune will run as many parallel experiments as <avaliable GPUs> / <GPUs per trial>
         # Fractional values are valid
-        resources_per_trial={"gpu": 0.5},
+        resources_per_trial={"cpu": 2},
         config=params,
         metric="test_loss", # Important! Specify that we're optimizing for the test loss, not the training loss
         mode="min",
         num_samples=3,
+        resume=True
     )

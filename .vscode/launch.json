@@ -37,7 +37,9 @@
                 "--annotations_file", "filtered.csv",
                 "--crop_box", "130", "275", "140", "140",
                 "--log_transformed_images", "False",
-                "--dropout_p", "0.3",
+                "--n_conf_layers", "3",
+                "--conv_kernel_size", "7",
+                "--dropout_p", "0",
                 "--n_epochs", "100",
             ]
         },
