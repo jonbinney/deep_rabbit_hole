@@ -1,5 +1,7 @@
+gradio
 matplotlib
 mlflow
+opencv-python
 psutil # for mlflow
 pynvml # for mlflow
 pytz
