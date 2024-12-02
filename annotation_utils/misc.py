@@ -42,15 +42,56 @@ def filter_images(eval_fn: callable=bad_name):
     for image in data['images']:
         if eval_fn(dataset_dir,image):
             delete_ids.append(image['id'])
-    
+
     # Remove the images if the ID is in delete_ids
     data['annotations'] = [ann for ann in data['annotations'] if ann['image_id'] not in delete_ids]
     data['images'] = [image for image in data['images'] if image['id'] not in delete_ids]
-    
+
     with open(output_annotations, 'w') as f:
         json.dump(data, f, indent=2)
 
     print(f"Filtered {len(delete_ids)} images")
+
+def get_coordinates_from_segmentation(segmentation):
+    """
+    Function to extract the leftmost and rightmost x and y coordinates from a segmentation
+    """
+    counts = segmentation.get('counts', None)
+    size = segmentation.get('size', None)
+
+    if counts is None or size is None:
+        return None, None, None, None
+
+    height, width = size
+    in_mask = False
+    current = counts.pop(0)
+    x0, y0, x1, y1 = None, None, None, None
+
+    # The RLE is going from top to bottom first, then left to right.  That's weird, not sure if it's a CVAT bug or it's
+    # supposed to be like that.
+    for x in range(width):
+        for y in range(height):
+            if current == 0:
+                in_mask = not in_mask
+                if counts:
+                    current = counts.pop(0)
+                else:
+                    print("Warning: RLE is not complete")
+                    break
+
+            if in_mask:
+                # Leftmost
+                if x0 is None or x < x0:
+                    x0, y0 = x, y
+
+                # Topmost
+                if y1 is None or y < y1:
+                    x1, y1 = x, y
+
+            current -= 1
+
+    return x0, y0, x1, y1
+
 
 def to_csv(
         input_json_path: str = 'deep_water_level/data/annotations.json',
@@ -62,11 +103,12 @@ def to_csv(
     """
     with open(input_json_path, 'r') as f:
         data = json.load(f)
-    
+
     # Create a map of image_id to annotation
     image_id_to_annotation = {annotation['image_id']: annotation for annotation in data['annotations']}
 
     with open(output_csv_path, 'w') as f:
+        # f.write("filename,timestamp,depth,transparency,x0,y0,x1,y1\n")
         for image in data['images']:
             filename = image['file_name']
             timestamp_epoch = int(filename.split('/')[-1].split('.')[0].split('-')[-1])
@@ -74,7 +116,9 @@ def to_csv(
             timestamp = datetime.datetime.fromtimestamp(timestamp_epoch).isoformat(sep=" ")
             attr = image_id_to_annotation.get(image['id'],{}).get('attributes', {})
 
-            f.write(f"{filename},{timestamp},{attr.get('depth',-1)},{attr.get('transparency','n/a')}\n")
+            x0, y0, x1, y1 = get_coordinates_from_segmentation(image_id_to_annotation.get(image['id'],{}).get('segmentation', {}))
+
+            f.write(f"{filename},{timestamp},{attr.get('depth',-1)},{attr.get('transparency','n/a')},{x0},{y0},{x1},{y1}\n")
 
 def filter_annotations():
     """
@@ -104,7 +148,7 @@ def explore_images():
     dataset_dir = 'datasets/water_test_set3'
     with open(f'{dataset_dir}/annotations/manual_annotations.json', 'r') as f:
         data = json.load(f)
-    
+
     # Create a map of image_id to filename
     image_id_to_filename = {image['id']: image['file_name'] for image in data['images']}
 

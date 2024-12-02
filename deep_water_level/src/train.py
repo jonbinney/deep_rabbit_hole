@@ -6,13 +6,16 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torchvision
-from model import BasicCnnRegression
+from model import BasicCnnRegression, BasicCnnRegressionWaterLine
 from data import get_data_loader, get_data_loaders
 from utils import start_experiment
 
-def create_model(**kwargs):
+def create_model(train_water_line, **kwargs):
     # Create the model
-    model = BasicCnnRegression(**kwargs)
+    if train_water_line:
+        model = BasicCnnRegressionWaterLine(**kwargs)
+    else:
+        model = BasicCnnRegression(**kwargs)
     return (model, kwargs)
 
 def do_training(
@@ -36,6 +39,7 @@ def do_training(
         max_pool_stride: int = 1,
         # Configuration parameters
         log_transformed_images: bool = False,
+        train_water_line: bool = False,
         report_fn: callable = lambda *args, **kwargs: None
         ):
     # Set-up environment
@@ -50,6 +54,7 @@ def do_training(
             train_dataset_dir + '/images',
             train_dataset_dir + '/annotations/' + annotations_file,
             crop_box=crop_box,
+            use_water_line=train_water_line,
         )
 
     else:
@@ -57,14 +62,16 @@ def do_training(
             train_dataset_dir + '/images',
             train_dataset_dir + '/annotations/' + annotations_file,
             crop_box=crop_box,
-            normalize_output=normalize_output
+            normalize_output=normalize_output,
+            use_water_line=train_water_line,
         )
         test_data = get_data_loader(
             test_dataset_dir + '/images',
             test_dataset_dir + '/annotations/' + annotations_file,
             shuffle=False,
             crop_box=crop_box,
-            normalize_output=normalize_output
+            normalize_output=normalize_output,
+            use_water_line=train_water_line,
         )
 
     if log_transformed_images:
@@ -84,6 +91,7 @@ def do_training(
 
     # Train the model
     (model, model_args) = create_model(
+        train_water_line,
         image_size=first_image.shape,
         dropout_p=dropout_p,
         n_conv_layers=n_conv_layers,
@@ -112,7 +120,7 @@ def do_training(
 
             loss.backward()
             optimizer.step()
- 
+
         train_loss = loss.item()
 
         # Test for this epoch
@@ -143,7 +151,7 @@ def do_training(
     torch.save({
         'model_state_dict': model.state_dict(),
         'model_args': model_args,
-    }, 'model.pth')
+    }, model.default_model_filename())
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     #mlflow.pytorch.log_model(model, "model")
@@ -164,6 +172,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_conv_layers', type=int, default=2, help='Number of convolutional layers in the model (2 or 3)')
     parser.add_argument('--channel_multiplier', type=float, default=2.0, help='Multiplier for the number of channels in each convolutional layer')
     parser.add_argument('--conv_kernel_size', type=int, default=4, help='Convolutional kernel size, for all layers')
+    parser.add_argument('--train_water_line', type=bool, default=False, help='If set, the model is trained with the water line coordinates as output instead of depth')
     args = parser.parse_args()
 
     start_experiment("Deep Water Level Training")

@@ -14,15 +14,24 @@
 import gradio as gr
 import torch
 from PIL import Image
-from model import BasicCnnRegression
+from model import BasicCnnRegression, BasicCnnRegressionWaterLine
 from data import get_transforms, get_data_loader
 import argparse
 import cv2
 
-def load_model(model_path):
+def load_model(model_path, train_water_line):
+    if model_path is None:
+        if train_water_line:
+            model_path = BasicCnnRegressionWaterLine.DEFAULT_MODEL_FILENAME
+        else:
+            model_path = BasicCnnRegression.DEFAULT_MODEL_FILENAME
+
     checkpoint = torch.load(model_path, weights_only=False)
     model_args = checkpoint['model_args']
-    model = BasicCnnRegression(**model_args)
+    if train_water_line:
+        model = BasicCnnRegressionWaterLine(**model_args)
+    else:
+        model = BasicCnnRegression(**model_args)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     return (model, model_args)
@@ -32,7 +41,7 @@ def run_inference(model, input, transforms = None):
         input = transforms(input)
     with torch.no_grad():
         output = model(input.unsqueeze(0))
-    return output.item()
+    return output
 
 def run_gradio_app(model, crop_box = None):
     transforms = get_transforms(crop_box)
@@ -49,10 +58,17 @@ def run_gradio_app(model, crop_box = None):
     # Launch the app
     demo.launch()
 
-def run_dataset_inference(model, dataset_dir, annotations_file, normalized_output, crop_box = None, scatter_plot = None, **kwargs):
+def run_dataset_inference(model, dataset_dir, annotations_file, normalized_output, crop_box = None, scatter_plot = None, use_water_line=False, **kwargs):
+    # tensor to string
+    def t2s(t):
+        t = t.squeeze()
+        if len(t.shape) == 0 or t.shape[0] == 1:
+            return f"{t.item():.2f}"
+
+        return "[" + ", ".join([f"{x:.2f}" for x in t]) +"]"
 
     # Load the dataset
-    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, crop_box=crop_box, normalize_output=normalized_output)
+    dataset = get_data_loader(dataset_dir + '/images', dataset_dir + '/annotations/' + annotations_file, shuffle=False, crop_box=crop_box, normalize_output=normalized_output, use_water_line=use_water_line)
 
     # Run inference
     loss = 0
@@ -64,8 +80,9 @@ def run_dataset_inference(model, dataset_dir, annotations_file, normalized_outpu
         for image, depth, filename in zip(images, depths, filenames):
             output = run_inference(model, image)
             outputs.append(output)
-            labeled_depths.append(depth.item())
-            error = abs(output - depth.item())
+            if not use_water_line:
+               labeled_depths.append(depth.item())
+            error = abs(output - depth)
 
             # use OpenCV to display the image and wait for a key
             img = cv2.imread(filename)
@@ -73,15 +90,15 @@ def run_dataset_inference(model, dataset_dir, annotations_file, normalized_outpu
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) / 255.0
             # Calculate mean and standard deviation
             (means, stds) = cv2.meanStdDev(img)
- 
-            print(f"Filename: {filename}, Infered: {output:.2f}, Actual: {depth.item():.2f}, Error: {error:.2f}, mean: {means[0][0]:.2f}, std: {stds[0][0]:.2f}")
+
+            print(f"Filename: {filename}, Infered: {t2s(output)}, Actual: {t2s(depth)}, Error: {t2s(error)}, mean: {means[0][0]:.2f}, std: {stds[0][0]:.2f}")
             mse += error**2
         mse /= len(images)
         print(f"MSE ({i}): {mse}")
         loss += mse
         n_images += len(images)
 
-    if scatter_plot:
+    if scatter_plot and not use_water_line:
         from matplotlib import pyplot as plt
         plt.title(f'Predicted vs Actual Depths for {dataset_dir}')
         plt.scatter(labeled_depths, outputs)
@@ -92,18 +109,19 @@ def run_dataset_inference(model, dataset_dir, annotations_file, normalized_outpu
 if __name__ == "__main__":
     # Parse program arguments
     parser = argparse.ArgumentParser(description='Deep Water Level')
-    parser.add_argument('-m', '--model_path', type=str, default='model.pth', help='Path to the model file')
+    parser.add_argument('-m', '--model_path', type=str, default=None, help='Path to the model file')
     parser.add_argument('--normalized_output', type=bool, default=False, help='Set to true if the model was trained with depth values normalized to [-1, 1] range')
     parser.add_argument('--crop_box', nargs=4, type=int, default=None, help='Box with which to crop images, of form: top left height width')
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
-    parser.add_argument('--dataset_dir', type=str, default='datasets/fake_water_images_test1', help='Path to the dataset directory')
+    parser.add_argument('--dataset_dir', type=str, default='datasets/water_test_set3', help='Path to the dataset directory')
     parser.add_argument('--annotations_file', type=str, default='filtered.csv', help='File name of the JSON file containing annotations')
     parser.add_argument('--scatter_plot', type=bool, default=True, help='Show a scatter plot of actual vs predicted values')
+    parser.add_argument('--use_water_line', type=bool, default=False, help='If set, do inference of the water level coordinates as output instead of depth')
 
     args = parser.parse_args()
 
-    (model, model_args) = load_model(args.model_path)
+    (model, model_args) = load_model(args.model_path, args.use_water_line)
 
     # Load the model
     if 'dataset_dir' in args and 'annotations_file' in args:
