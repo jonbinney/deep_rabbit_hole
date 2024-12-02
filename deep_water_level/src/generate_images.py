@@ -79,63 +79,6 @@ def generate_data(
                 count += 1
 
 
-def generate_mirrored_data(
-    dir: Path,
-    levels: list[float],
-    min_images_per_level=1,
-    max_images_per_level=1,
-    box_height=50,
-    max_top_level_offset=100,
-    max_water_color_variation=0,
-    pixels_per_level=20,
-):
-    (dir / "images").mkdir(parents=True, exist_ok=True)
-    (dir / "annotations").mkdir(parents=True, exist_ok=True)
-
-    for folder in ["images", "annotations"]:
-        folder_path = dir / folder
-        for filename in folder_path.iterdir():
-            if filename.is_file():
-                filename.unlink()
-
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with (dir / "annotations" / "filtered.csv").open("w", newline="") as file:
-        count = 0
-        writer = csv.writer(file)
-        for true_level in levels:
-            num_img = np.random.randint(min_images_per_level, max_images_per_level + 1)
-            for _ in range(num_img):
-                # Simulate error in the labeling
-                labeled_level = true_level
-                mirror_row = int(round(IMG_HEIGHT / 2 - pixels_per_level * true_level))
-
-                box_height = box_height
-                box_top_row = np.random.randint(0, max_top_level_offset + 1)
-                box_bottom_row = box_top_row + box_height
-
-                blue = (
-                    np.random.randint(
-                        -max_water_color_variation, max_water_color_variation + 1
-                    )
-                    + 128
-                )
-                not_blue = np.random.randint(0, max_water_color_variation + 1)
-
-                image = np.tile(np.array((255, 255, 255), dtype=np.uint8), (IMG_HEIGHT, IMG_WIDTH, 1))
-
-                # Draw first rectangle, which represents some object above the water (like the shed)
-                image[box_top_row:box_bottom_row, 0:IMG_WIDTH] = (blue, not_blue, not_blue)
-
-                # Draw another rectangle which is the same as the first, but mirrored around mirror_row
-                mirror_box_top_row = mirror_row + (mirror_row - box_bottom_row)
-                mirror_box_bottom_row = mirror_row + (mirror_row - box_top_row)
-                image[mirror_box_top_row:mirror_box_bottom_row, 0:IMG_WIDTH] = (blue, not_blue, not_blue)
-
-                cv2.imwrite(f"{dir}/images/img_{count:03}.jpg", image)
-                writer.writerow([f"img_{count:03}.jpg", timestamp, labeled_level, "n/a"])
-                count += 1
-
-
 if __name__ == "__main__":
     # Very simple training dataset with 50 different levels.  It uses a lot of levels because since
     # there are no noise or other variations, there's only 1 possible image for each level
@@ -214,22 +157,8 @@ if __name__ == "__main__":
         "datasets/fake_water_images_test3", test_levels, pixels_per_level=5, **args
     )
 
-    args = {
-        "min_images_per_level": 5,
-        "max_images_per_level": 30,
-        "max_top_level_offset": 20,
-        "max_water_color_variation": 60,
-        "pixels_per_level": 5,
-    }
-    generate_mirrored_data(
-        Path("datasets/fake_water_images_train4"), train_levels, **args
-    )
-    generate_mirrored_data(
-        Path("datasets/fake_water_images_test4"), test_levels, **args
-    )
-
     # Just show an image to see how it looks like
     cv2.imshow(
-        "image", cv2.imread("datasets/fake_water_images_train4/images/img_000.jpg")
+        "image", cv2.imread("datasets/fake_water_images_train3/images/img_000.jpg")
     )
     cv2.waitKey(0)
