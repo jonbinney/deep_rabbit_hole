@@ -9,21 +9,22 @@ from torch.utils.data import Dataset
 from typing import Tuple
 from pathlib import Path
 
+
 class WaterDataset(Dataset):
-    def __init__(self, annotations_file, images_dir, transforms=None, normalize_output=False):
+    def __init__(self, annotations_file, images_dir, transforms=None, normalize_output=False, use_water_line=None):
         self.annotations_file = annotations_file
         self.images_dir = images_dir
         self.transforms = transforms
         self.normalize_output = normalize_output
-        self.data = self.load_annotations()
+        self.data = self.load_annotations(use_water_line)
 
 
-    def load_annotations(self):
+    def load_annotations(self, use_water_line=None):
         suffix = Path(self.annotations_file).suffix
         if suffix == '.json':
             return self.load_coco()
         elif suffix == '.csv':
-            return self.load_csv()
+            return self.load_csv(use_water_line)
         else:
             raise ValueError(f"Unsupported annotations file format: {self.annotations_file}")
 
@@ -52,18 +53,32 @@ class WaterDataset(Dataset):
             else:
                 print(f"WARN: No image found for annotation. image_id: {image_id}")
         return data
-    
-    def load_csv(self):
+
+    def load_csv(self, use_water_line):
         def parse_line(line):
             fields = line.split(',')
             image_path = str(Path(self.images_dir) / fields[0])
             depth = float(fields[2])
-            return (image_path, [depth])
+            x0, y0, x1, y1 = None, None, None, None
+
+            if len(fields) > 7 and fields[4] != 'None':
+                x0, y0, x1, y1 = float(fields[4]), float(fields[5]), float(fields[6]), float(fields[7])
+
+            if use_water_line is True:
+                return (image_path, [x0, y0, x1, y1])
+            elif use_water_line is False:
+                return (image_path, [depth])
+            else:
+                return (image_path, [depth, x0, y0, x1, y1])
+
         with open(self.annotations_file, 'r') as f:
             lines = f.readlines()
         data = [parse_line(line) for line in lines]
+
+        # Remove any data points with None values
+        data = [d for d in data if d[1][0] is not None]
+
         return data
-    
     def __len__(self):
         return len(self.data)
 
@@ -74,7 +89,7 @@ class WaterDataset(Dataset):
             image = self.transforms(image)
         depth = torch.tensor(depth, dtype=torch.float32)
         return image, depth, image_path
-    
+
 def get_transforms(crop_box=None):
     transforms_array = []
     if crop_box is not None:
@@ -94,11 +109,12 @@ def get_data_loaders(
     train_test_split: Tuple[int, int] = [0.8, 0.2],
     normalize_output: bool = False,
     crop_box = None, # [top, left, height, width]
+    use_water_line: bool | None = None,
 ):
-    transforms = get_transforms(crop_box=crop_box) 
+    transforms = get_transforms(crop_box=crop_box)
 
     # Load dataset from directory
-    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms)
+    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, use_water_line=use_water_line)
 
     # Split dataset into train and test sets
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, train_test_split)
@@ -123,9 +139,10 @@ def get_data_loader(
     shuffle: bool = True,
     normalize_output: bool = False,
     crop_box = None, # [top, left, height, width]
+    use_water_line: bool | None = None,
 ):
-    transforms = get_transforms(crop_box=crop_box) 
+    transforms = get_transforms(crop_box=crop_box)
 
     # Load dataset from directory
-    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, normalize_output=normalize_output)
+    dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, normalize_output=normalize_output, use_water_line=use_water_line)
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)

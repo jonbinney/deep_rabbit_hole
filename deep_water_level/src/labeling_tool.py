@@ -48,12 +48,19 @@ def load_annotations(dataset_dir: Path, annotations_file_name: str):
     timestamps = []
     image_paths = []
     depths = []
-    for image_path, [depth] in data:
+    x0s, y0s, x1s, y1s = [], [], [], []
+
+    for image_path, [depth, x0, y0, x1, y1] in data:
         camera_id, utc_dt = parse_image_filename(Path(image_path).parts[-1])
         timestamps.append(utc_dt)
         image_paths.append(image_path)
         depths.append(depth)
-    return pd.DataFrame({'timestamp': timestamps, 'labeled_image_path': image_paths, 'depth': depths})
+        x0s.append(x0)
+        y0s.append(y0)
+        x1s.append(x1)
+        y1s.append(y1)
+
+    return pd.DataFrame({'timestamp': timestamps, 'labeled_image_path': image_paths, 'depth': depths, 'x0': x0s, 'y0': y0s, 'x1': x1s, 'y1': y1s})
 
 def save_new_annotations(data: pd.DataFrame, new_annotations_path: Path):
     """
@@ -103,7 +110,7 @@ class LabelingTool:
             else:
                 image_filename = datapoint['raw_image_path']
             self.images.append(plt.imread(image_filename))
-                        
+
         self.figure, self.axes = plt.subplots(2, 1)
         self.image_ax, self.plot_ax = self.axes
         self.figure.canvas.mpl_connect('button_press_event', self.on_button_press)
@@ -131,13 +138,14 @@ class LabelingTool:
 
         self.image_artist = None
         self.selection_artist = None
+        self.water_line_artist = None
         self.update_selection()
 
     def update_selection(self):
         """
         Display the currently selected image.
         """
-        
+
         t0 = time.time()
 
         print(f'Updating selection to {self.selection[0]} to {self.selection[1]}')
@@ -150,8 +158,17 @@ class LabelingTool:
         else:
             self.image_artist.set_data(self.images[image_index])
 
+         # Clear previous water line plot
+        if self.water_line_artist is not None:
+            self.water_line_artist.remove()
+            self.water_line_artist = None
+
+        x0, y0, x1, y1 = self.data["x0"][image_index], self.data["y0"][image_index], self.data["x1"][image_index], self.data["y1"][image_index]
+        if x0 is not None:
+            self.water_line_artist, = self.image_ax.plot([x0, x1], [y0, y1], 'r-')
+
         t1 = time.time()
-        
+
         selection_stamps = self.data["timestamp"][self.selection[0]:self.selection[1]].dt.tz_convert('America/Argentina/Buenos_Aires')
         selection_depths = self.data["depth"][self.selection[0]:self.selection[1]]
         if self.selection_artist is None:
@@ -171,7 +188,7 @@ class LabelingTool:
         t3 = time.time()
 
         print(f'Updating image took {t1-t0} s, updating selection took {t2-t1} seconds, drawing took {t3-t2} seconds')
-    
+
     def interpolate_depths(self):
         # Find all datapoints within the selected region and set their depth to an interpolation
         # of the previous and next datapoints which have depths set.
@@ -199,16 +216,16 @@ class LabelingTool:
                 / (next_known_datapoint['timestamp'] - previous_known_datapoint['timestamp']).total_seconds())
             for ind in range(self.selection[0], self.selection[1]):
                 if self.data['depth'][ind] == 0.0:
-                    self.data.loc[ind, 'depth'] = previous_known_datapoint['depth'] + (slope * 
+                    self.data.loc[ind, 'depth'] = previous_known_datapoint['depth'] + (slope *
                         (self.data.loc[ind, 'timestamp'] - previous_known_datapoint['timestamp']).total_seconds())
-            
+
             # Update depths in plot
             offsets = self.plot_artist.get_offsets()
             offsets[:,1] = self.data['depth'].to_numpy()
             self.plot_artist.set_offsets(offsets)
             self.figure.canvas.draw()
             self.figure.canvas.flush_events()
-    
+
     def on_button_press(self, event):
         if self.ctrl_active and event.button == 1:
             start_dt = matplotlib.dates.num2date(event.xdata)
@@ -224,7 +241,7 @@ class LabelingTool:
             end_ind = self.data['timestamp'].searchsorted(end_dt)
             self.selection[1] = end_ind
             self.update_selection()
-        
+
     def on_key_press(self, event):
         if event.key == "control":
             self.ctrl_active = True
@@ -279,13 +296,13 @@ class LabelingTool:
         image_index = event.ind[np.argmin((xdata[event.ind] - x)**2 + (ydata[event.ind] - y)**2)]
         self.selection = [image_index, image_index+1]
         self.update_selection()
-    
+
     def spin(self):
         plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model on the Deep Water Level dataset')
-    parser.add_argument('--dataset-dir', type=Path, default='datasets/water_train_set4',
+    parser.add_argument('--dataset-dir', type=Path, default='datasets/water_test_set3',
                         help='Path to the dataset directory')
     parser.add_argument('--annotations-file', type=str, default='filtered.csv',
                         help='File name of the JSON file containing annotations')
