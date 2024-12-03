@@ -92,6 +92,9 @@ def get_coordinates_from_segmentation(segmentation):
 
     return x0, y0, x1, y1
 
+def filename_to_datetime(filename):
+    epoch = int(filename.split('/')[-1].split('.')[0].split('-')[-1])
+    return datetime.datetime.fromtimestamp(epoch).isoformat(sep=" ")
 
 def to_csv(
         input_json_path: str = 'deep_water_level/data/annotations.json',
@@ -111,9 +114,8 @@ def to_csv(
         # f.write("filename,timestamp,depth,transparency,x0,y0,x1,y1\n")
         for image in data['images']:
             filename = image['file_name']
-            timestamp_epoch = int(filename.split('/')[-1].split('.')[0].split('-')[-1])
             # Convert to a date string in ISO format
-            timestamp = datetime.datetime.fromtimestamp(timestamp_epoch).isoformat(sep=" ")
+            timestamp = filename_to_datetime(filename)
             attr = image_id_to_annotation.get(image['id'],{}).get('attributes', {})
 
             x0, y0, x1, y1 = get_coordinates_from_segmentation(image_id_to_annotation.get(image['id'],{}).get('segmentation', {}))
