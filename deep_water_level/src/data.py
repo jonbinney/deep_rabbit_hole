@@ -92,13 +92,25 @@ class WaterDataset(Dataset):
 
 def get_transforms(crop_box=None):
     transforms_array = []
+
+    # TODO:
+    # - Normalization
+    # - Randomize crop (within reason)
+    # - Color jitter
+    # - Make most effective use of dtypes
+
     if crop_box is not None:
         top, left, height, width = crop_box
         transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
+
     transforms_array.extend([
         v2.ToImage(),
         v2.ToDtype(torch.float32, scale=True), # convert to float32 and normalize to 0, 1
+        v2.Normalize(mean=[0.18653404, 0.20722116, 0.19524723], std=[0.15864415, 0.13673791, 0.12532181]),
     ])
+
+    # From water_train_set4:
+    # Mean: [0.18653404 0.20722116 0.19524723], std: [0.15864415 0.13673791 0.12532181]
 
     return v2.Compose(transforms_array)
 
