@@ -21,5 +21,6 @@
         "ms-python.black-formatter",
         "github.copilot",
         "github.copilot-chat"
-    ]
+    ],
+    "ruff.trace.server": "messages"
 }
