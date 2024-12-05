@@ -9,6 +9,7 @@ import numpy as np
 IMAGE_WIDTH = 810
 IMAGE_HEIGHT = 510
 
+
 def generate_mirrored_image(
     level: float,
     box_height: int = 0.1,
@@ -40,6 +41,7 @@ def generate_mirrored_image(
 
     return image
 
+
 def generate_dataset(
     dir: Path,
     num_images: int,
@@ -68,10 +70,6 @@ if __name__ == "__main__":
     num_test_images = 200
     image_generator = functools.partial(generate_mirrored_image, box_height=0.1, max_top_level_offset=0.25)
 
-    generate_dataset(
-        Path("datasets/fake_water_images_train4"), num_train_images, image_generator
-    )
+    generate_dataset(Path("datasets/fake_water_images_train4"), num_train_images, image_generator)
 
-    generate_dataset(
-        Path("datasets/fake_water_images_test4"), num_test_images, image_generator
-    )
+    generate_dataset(Path("datasets/fake_water_images_test4"), num_test_images, image_generator)

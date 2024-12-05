@@ -57,21 +57,12 @@ def generate_data(
                     IMG_WIDTH - 1,
                     top_left[1] + int(level * pixels_per_level),
                 )
-                blue = (
-                    np.random.randint(
-                        -max_water_color_variation, max_water_color_variation + 1
-                    )
-                    + 128
-                )
+                blue = np.random.randint(-max_water_color_variation, max_water_color_variation + 1) + 128
                 not_blue = np.random.randint(0, max_water_color_variation + 1)
-                cv2.rectangle(
-                    image, top_left, bottom_right, (blue, not_blue, not_blue), -1
-                )
+                cv2.rectangle(image, top_left, bottom_right, (blue, not_blue, not_blue), -1)
 
                 if max_noise > 0:
-                    noise = np.random.randint(
-                        -max_noise, max_noise, (IMG_HEIGHT, IMG_WIDTH, 3)
-                    )
+                    noise = np.random.randint(-max_noise, max_noise, (IMG_HEIGHT, IMG_WIDTH, 3))
                     image = np.clip(image + noise, 0, 255)
 
                 cv2.imwrite(f"{dir}/images/img_{count:03}.jpg", image)
@@ -103,9 +94,7 @@ if __name__ == "__main__":
         47,
     }
     all_levels = [float(level) for level in range(0, 50)]
-    train_levels = [
-        level for i, level in enumerate(all_levels) if i not in levels_not_to_train
-    ]
+    train_levels = [level for i, level in enumerate(all_levels) if i not in levels_not_to_train]
     generate_data("datasets/fake_water_images_train1", train_levels, pixels_per_level=5)
     generate_data("datasets/fake_water_images_test1", all_levels, pixels_per_level=5)
 
@@ -135,12 +124,8 @@ if __name__ == "__main__":
         "max_top_level_offset": 10,
         "max_water_color_variation": 30,
     }
-    generate_data(
-        "datasets/fake_water_images_train2", train_levels, pixels_per_level=5, **args
-    )
-    generate_data(
-        "datasets/fake_water_images_test2", test_levels, pixels_per_level=5, **args
-    )
+    generate_data("datasets/fake_water_images_train2", train_levels, pixels_per_level=5, **args)
+    generate_data("datasets/fake_water_images_test2", test_levels, pixels_per_level=5, **args)
 
     # Similar to the above but with more variability
     args = {
@@ -150,15 +135,9 @@ if __name__ == "__main__":
         "max_top_level_offset": 20,
         "max_water_color_variation": 60,
     }
-    generate_data(
-        "datasets/fake_water_images_train3", train_levels, pixels_per_level=5, **args
-    )
-    generate_data(
-        "datasets/fake_water_images_test3", test_levels, pixels_per_level=5, **args
-    )
+    generate_data("datasets/fake_water_images_train3", train_levels, pixels_per_level=5, **args)
+    generate_data("datasets/fake_water_images_test3", test_levels, pixels_per_level=5, **args)
 
     # Just show an image to see how it looks like
-    cv2.imshow(
-        "image", cv2.imread("datasets/fake_water_images_train3/images/img_000.jpg")
-    )
+    cv2.imshow("image", cv2.imread("datasets/fake_water_images_train3/images/img_000.jpg"))
     cv2.waitKey(0)
