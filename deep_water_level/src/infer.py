@@ -11,14 +11,17 @@
 # - Run training or get a model, save it as model.pth at the root of the project
 # - Run this script, then open the Gradio app at http://127.0.0.1:7860/
 # - Add and image and click Submit to get the predicted water level
-import gradio as gr
-import torch
-from model import BasicCnnRegression, BasicCnnRegressionWaterLine
-from data import get_transforms, get_data_loader
 import argparse
-from misc import filename_to_datetime
+
+import gradio as gr
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
+from data import get_data_loader, get_transforms
+from misc import filename_to_datetime
+from model import BasicCnnRegression, BasicCnnRegressionWaterLine
+
+VERBOSE = False
 
 
 def load_model(model_path, train_water_line):
@@ -69,10 +72,7 @@ def run_dataset_inference(
     annotations_file,
     normalized_output,
     crop_box=None,
-    scatter_plot=None,
-    annotations_out_filename=None,
     use_water_line=False,
-    **kwargs,
 ):
     # tensor to string
     def t2s(t):
@@ -109,10 +109,16 @@ def run_dataset_inference(
                 labeled_depths.append(depth.item())
             error = abs(output - depth)
 
-            print(f"Filename: {filename}, Infered: {t2s(output)}, Actual: {t2s(depth)}, Error: {t2s(error)}")
+            if VERBOSE:
+                print(f"Filename: {filename}, Infered: {t2s(output)}, Actual: {t2s(depth)}, Error: {t2s(error)}")
+            try:
+                timestamp =  filename_to_datetime(filename)
+            except ValueError:
+                # For some synthetic datasets, the filename is not a timestamp
+                timestamp = None
             data.append(
                 {
-                    "timestamp": filename_to_datetime(filename),
+                    "timestamp": timestamp,
                     "filename": filename,
                     "predicted": output.item(),
                     "actual": depth.item(),
@@ -120,35 +126,42 @@ def run_dataset_inference(
             )
             mse += error**2
         mse /= len(images)
-        print(f"MSE ({i}): {mse}")
+        if VERBOSE:
+            print(f"MSE ({i}): {mse}")
         loss += mse
         n_images += len(images)
+
+    print(f"Dataset: {dataset_dir}, Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}")
 
     df = pd.DataFrame(data)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df.set_index("timestamp", inplace=True)
-    if annotations_out_filename is not None:
-        df.to_csv(annotations_out_filename, index=False)
+    return df
 
-    if scatter_plot and not use_water_line:
-        fig, ax = plt.subplots(3, 1, figsize=(10, 12))
-        ax[0].plot(df.index, df["predicted"], "o", label="predicted", linestyle="None")
-        ax[0].plot(df.index, df["actual"], "o", label="actual", linestyle="None")
-        ax[0].legend()
-        ax[0].set_title("Predicted vs Actual Depths (Time)")
 
-        ax[1].plot(range(len(df)), df["predicted"], "o", label="predicted", linestyle="None")
-        ax[1].plot(range(len(df)), df["actual"], "o", label="actual", linestyle="None")
-        ax[1].legend()
-        ax[1].set_title("Predicted vs Actual Depths (Consecutive)")
+def plot_inference_results(inference_df, training_df=None):
+    fig, ax = plt.subplots(3, 1, figsize=(10, 12))
+    ax[0].plot(inference_df.index, inference_df["predicted"], "o", label="predicted", linestyle="None")
+    ax[0].plot(inference_df.index, inference_df["actual"], "o", label="actual", linestyle="None")
+    ax[0].legend()
+    ax[0].set_title("Depth vs Time")
 
-        ax[2].scatter(labeled_depths, outputs)
-        ax[2].plot([0, max(labeled_depths)], [0, max(labeled_depths)], color="red")
-        ax[2].set_title("Predicted vs Actual Depths")
-        plt.tight_layout()
-        plt.show()
+    ax[1].plot(range(len(inference_df)), inference_df["predicted"], "o", label="predicted", linestyle="None")
+    ax[1].plot(range(len(inference_df)), inference_df["actual"], "o", label="actual", linestyle="None")
+    ax[1].legend()
+    ax[1].set_title("Depth vs Index")
 
-    print(f"Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}")
+    ax[2].scatter(inference_df["actual"], inference_df["predicted"], label="test set")
+    min_val = min(inference_df["actual"].min(), inference_df["predicted"].min())
+    max_val = max(inference_df["actual"].max(), inference_df["predicted"].max())
+    if training_df is not None:
+        ax[2].scatter(training_df["actual"], training_df["predicted"], label="training set", c="magenta", s=10)
+        min_val = min(min_val, training_df["actual"].min(), training_df["predicted"].min())
+        max_val = max(max_val, training_df["actual"].max(), training_df["predicted"].max())
+    ax[2].plot([min_val, max_val], [min_val, max_val], color='grey')
+    ax[2].legend()
+    ax[2].set_title("Predicted vs Actual Depths")
+    plt.tight_layout()
 
 
 if __name__ == "__main__":
@@ -176,6 +189,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--annotations_file", type=str, default="filtered.csv", help="File name of the JSON file containing annotations"
     )
+
+    # If these arguments are provided, then the model will also be run against the training dataset, and the
+    # results will be added to the scatterplot (if scatter_plot is set to True)
+    parser.add_argument("--train_dataset_dir", type=str, default=None, help="Path to the training dataset directory")
+    parser.add_argument(
+        "--train_annotations_file",
+        type=str,
+        default="filtered.csv",
+        help="File name of the JSON file containing annotations used during training",
+    )
+
     parser.add_argument(
         "--annotations_out_filename",
         type=str,
@@ -192,12 +216,40 @@ if __name__ == "__main__":
         help="If set, do inference of the water level coordinates as output instead of depth",
     )
 
+    parser.add_argument(
+        "--verbose", type=bool, default=False, help="Print error for each image in the dataset"
+    )
+
     args = parser.parse_args()
 
     (model, model_args) = load_model(args.model_path, args.use_water_line)
 
     # Load the model
     if "dataset_dir" in args and "annotations_file" in args:
-        run_dataset_inference(model, **vars(args))
+        test_df = run_dataset_inference(
+            model,
+            dataset_dir=args.dataset_dir,
+            annotations_file=args.annotations_file,
+            normalized_output=args.normalized_output,
+            crop_box=args.crop_box,
+            use_water_line=args.use_water_line,
+        )
+        if args.annotations_out_filename is not None:
+            test_df.to_csv(args.annotations_out_filename, index=False)
+
+        train_df = None
+        if args.train_dataset_dir is not None and args.train_annotations_file is not None:
+            train_df = run_dataset_inference(
+                model,
+                dataset_dir=args.train_dataset_dir,
+                annotations_file=args.train_annotations_file,
+                normalized_output=args.normalized_output,
+                crop_box=args.crop_box,
+                use_water_line=args.use_water_line,
+            )
+
+        if args.scatter_plot and not args.use_water_line:
+            plot_inference_results(test_df, train_df)
+            plt.show()
     else:
         run_gradio_app(model, model_args["crop_box"])
