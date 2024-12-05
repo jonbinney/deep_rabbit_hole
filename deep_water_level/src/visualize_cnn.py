@@ -10,6 +10,7 @@ from infer import load_model
 from model import BasicCnnRegression
 import argparse
 
+
 def get_conv_layers(model):
     model_children = list(model.children())
     counter = 0
@@ -32,6 +33,7 @@ def get_conv_layers(model):
 
     return conv_layers
 
+
 def visualize_tensor(tensor, title, ch=0, allkernels=False, nrow=8, padding=1):
     n, c, w, h = tensor.shape
 
@@ -43,7 +45,7 @@ def visualize_tensor(tensor, title, ch=0, allkernels=False, nrow=8, padding=1):
     rows = np.min((tensor.shape[0] // nrow + 1, 64))
     grid = utils.make_grid(tensor, nrow=nrow, normalize=True, padding=padding)
     plt.figure(title, figsize=(nrow, rows))
-    plt.axis('off')
+    plt.axis("off")
     plt.imshow(grid.numpy().transpose((1, 2, 0)))
 
 
@@ -52,10 +54,12 @@ def visualize_feature_map(conv_layers, filename):
     img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     # plt.imshow(img)
     # plt.show()
-    transform = transforms.Compose([
+    transform = transforms.Compose(
+        [
             v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True), # convert to float32 and normalize to 0, 1
-        ])
+            v2.ToDtype(torch.float32, scale=True),  # convert to float32 and normalize to 0, 1
+        ]
+    )
 
     img = np.array(img)
     img = transform(img)
@@ -74,20 +78,26 @@ def visualize_feature_map(conv_layers, filename):
         layer_viz = outputs[num_layer][0, :, :, :]
         layer_viz = layer_viz.data
         for i, filter in enumerate(layer_viz):
-            if i == 64: # we will visualize up to 8x8 blocks from each layer
+            if i == 64:  # we will visualize up to 8x8 blocks from each layer
                 break
             plt.subplot(4, 4, i + 1)
-            plt.imshow(filter, cmap='gray')
+            plt.imshow(filter, cmap="gray")
             plt.axis("off")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Deep Water Level')
-    parser.add_argument('-m', '--model_path', type=str, default='model.pth', help='Path to the model file')
-    parser.add_argument('-f', '--file_path', type=str, default='datasets/water_2024_10_19_set1/images/pilenew/images/2024-10-09/0-1728486001.jpg', help='Path to a sampe image file')
+    parser = argparse.ArgumentParser(description="Deep Water Level")
+    parser.add_argument("-m", "--model_path", type=str, default="model.pth", help="Path to the model file")
+    parser.add_argument(
+        "-f",
+        "--file_path",
+        type=str,
+        default="datasets/water_2024_10_19_set1/images/pilenew/images/2024-10-09/0-1728486001.jpg",
+        help="Path to a sampe image file",
+    )
     args = parser.parse_args()
 
-    model,_ = load_model(args.model_path)
+    model, _ = load_model(args.model_path)
     conv_layers = get_conv_layers(model)
 
     for layer in conv_layers:
@@ -96,4 +106,3 @@ if __name__ == "__main__":
     visualize_feature_map(conv_layers, args.file_path)
 
     plt.show()
-
