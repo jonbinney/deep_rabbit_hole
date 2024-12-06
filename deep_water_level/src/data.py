@@ -63,19 +63,17 @@ class WaterDataset(Dataset):
             if len(fields) > 7 and fields[4] != "None":
                 x0, y0, x1, y1 = float(fields[4]), float(fields[5]), float(fields[6]), float(fields[7])
 
-            if use_water_line is True:
-                return (image_path, [x0, y0, x1, y1])
-            elif use_water_line is False:
+            if use_water_line is False:
                 return (image_path, [depth])
-            else:
-                return (image_path, [depth, x0, y0, x1, y1])
+
+            return (image_path, [depth, x0, y0, x1, y1])
 
         with open(self.annotations_file, "r") as f:
             lines = f.readlines()
         data = [parse_line(line) for line in lines]
 
         # Remove any data points with None values
-        data = [d for d in data if d[1][0] is not None]
+        data = [d for d in data if all(d[1])]
 
         return data
 

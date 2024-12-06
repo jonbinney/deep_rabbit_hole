@@ -19,7 +19,7 @@ import mplcursors
 import pandas as pd
 import torch
 from data import get_data_loader, get_transforms
-from misc import filename_to_datetime
+from misc import filename_to_datetime, my_device
 from model import BasicCnnRegression, BasicCnnRegressionWaterLine
 
 VERBOSE = False
@@ -32,7 +32,7 @@ def load_model(model_path, train_water_line):
         else:
             model_path = BasicCnnRegression.DEFAULT_MODEL_FILENAME
 
-    checkpoint = torch.load(model_path, weights_only=False)
+    checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
     if train_water_line:
         model = BasicCnnRegressionWaterLine(**model_args)
@@ -113,7 +113,7 @@ def run_dataset_inference(
             if VERBOSE:
                 print(f"Filename: {filename}, Infered: {t2s(output)}, Actual: {t2s(depth)}, Error: {t2s(error)}")
             try:
-                timestamp =  filename_to_datetime(filename)
+                timestamp = filename_to_datetime(filename)
             except ValueError:
                 # For some synthetic datasets, the filename is not a timestamp
                 timestamp = None
@@ -121,8 +121,8 @@ def run_dataset_inference(
                 {
                     "timestamp": timestamp,
                     "filename": filename,
-                    "predicted": output.item(),
-                    "actual": depth.item(),
+                    "predicted": t2s(output),
+                    "actual": t2s(depth),
                 }
             )
             mse += error**2
@@ -132,7 +132,9 @@ def run_dataset_inference(
         loss += mse
         n_images += len(images)
 
-    print(f"Dataset: {dataset_dir}, Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}")
+    print(
+        f"Dataset: {dataset_dir}, Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}"
+    )
 
     df = pd.DataFrame(data)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -153,18 +155,21 @@ def plot_inference_results(test_df, training_df=None):
     ax[1].set_title("Depth vs Index")
 
     artist_to_df = {}
-    test_artist = ax[2].plot(test_df["actual"], test_df["predicted"], 'o', label="test set")
+    test_artist = ax[2].plot(test_df["actual"], test_df["predicted"], "o", label="test set")
     artist_to_df[test_artist[0]] = test_df
     min_val = min(test_df["actual"].min(), test_df["predicted"].min())
     max_val = max(test_df["actual"].max(), test_df["predicted"].max())
     if training_df is not None:
-        train_artist = ax[2].plot(training_df["actual"], training_df["predicted"], 'o', label="training set", c="magenta")
+        train_artist = ax[2].plot(
+            training_df["actual"], training_df["predicted"], "o", label="training set", c="magenta"
+        )
         artist_to_df[train_artist[0]] = training_df
         min_val = min(min_val, training_df["actual"].min(), training_df["predicted"].min())
         max_val = max(max_val, training_df["actual"].max(), training_df["predicted"].max())
-    ax[2].plot([min_val, max_val], [min_val, max_val], color='grey')
+    ax[2].plot([min_val, max_val], [min_val, max_val], color="grey")
     # Add interactive tooltips to show filename on mouseover
     cursor = mplcursors.cursor(ax[2], hover=True)
+
     @cursor.connect("add")
     def on_add(sel):
         if sel.artist in artist_to_df:
@@ -226,12 +231,10 @@ if __name__ == "__main__":
         "--use_water_line",
         type=bool,
         default=False,
-        help="If set, do inference of the water level coordinates as output instead of depth",
+        help="If set, do inference of the water level coordinates as well as depth",
     )
 
-    parser.add_argument(
-        "--verbose", type=bool, default=False, help="Print error for each image in the dataset"
-    )
+    parser.add_argument("--verbose", type=bool, default=False, help="Print error for each image in the dataset")
 
     args = parser.parse_args()
 
