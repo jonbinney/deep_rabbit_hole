@@ -1,14 +1,17 @@
 # Script that trains a network model for deep water level detection
 import argparse
-import mlflow
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
+from misc import my_device
 from model import BasicCnnRegression, BasicCnnRegressionWaterLine
-from data import get_data_loader, get_data_loaders
 from utils import start_experiment
+
+import mlflow
+from data import get_data_loader, get_data_loaders
 
 
 def create_model(train_water_line, **kwargs):
@@ -44,8 +47,7 @@ def do_training(
     train_water_line: bool = False,
     report_fn: callable = lambda *args, **kwargs: None,
 ):
-    # Set-up environment
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = my_device()
     # torch.set_default_device(device)
     print(f"Using device: {device}")
 
@@ -207,7 +209,7 @@ if __name__ == "__main__":
         "--train_water_line",
         type=bool,
         default=False,
-        help="If set, the model is trained with the water line coordinates as output instead of depth",
+        help="If set, the model is trained with the water line coordinates as well as the depth",
     )
 
     args = parser.parse_args()
@@ -216,5 +218,5 @@ if __name__ == "__main__":
 
     with mlflow.start_run():
         mlflow.log_params(vars(args))
-        mlflow.log_param("hardware/gpu", torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
+        mlflow.log_param("hardware/gpu", my_device())
         model = do_training(**vars(args))
