@@ -73,7 +73,7 @@ class WaterDataset(Dataset):
         data = [parse_line(line) for line in lines]
 
         # Remove any data points with None values
-        data = [d for d in data if all(d[1])]
+        data = [d for d in data if (None not in d[1])]
 
         return data
 
@@ -131,10 +131,10 @@ def get_data_loaders(
     # Create PyTorch DataLoaders for train and test splits
     return (
         torch.utils.data.DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, normalize_output=normalize_output
+            train_dataset, batch_size=batch_size, shuffle=True,
         ),
         torch.utils.data.DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False, normalize_output=normalize_output
+            test_dataset, batch_size=batch_size, shuffle=False,
         ),
     )
 
