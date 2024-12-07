@@ -12,15 +12,17 @@
 # - Run this script, then open the Gradio app at http://127.0.0.1:7860/
 # - Add and image and click Submit to get the predicted water level
 import argparse
+from pathlib import Path
 
 import gradio as gr
 import matplotlib.pyplot as plt
 import mplcursors
 import pandas as pd
 import torch
-from data import get_data_loader, get_transforms
+from data import WaterDataset, get_transforms
 from misc import filename_to_datetime, my_device
 from model import BasicCnnRegression, BasicCnnRegressionWaterLine
+import numpy as np
 
 VERBOSE = False
 
@@ -69,116 +71,128 @@ def run_gradio_app(model, crop_box=None):
 
 def run_dataset_inference(
     model,
-    dataset_dir,
-    annotations_file,
+    dataset_dir: Path,
+    annotations_file: str,
     normalized_output,
     crop_box=None,
     use_water_line=False,
 ):
-    # tensor to string
-    def t2s(t):
-        t = t.squeeze()
-        if len(t.shape) == 0 or t.shape[0] == 1:
-            return f"{t.item():.2f}"
+    # Convert numpy array to string for printing
+    def a2s(a):
+        assert len(a.shape) <= 1
+        if len(a.shape) == 0 or a.shape[0] == 1:
+            return f"{a.item():.4f}"
+        else:
+            return "[" + ", ".join([f"{x:.4f}" for x in a]) + "]"
 
-        return "[" + ", ".join([f"{x:.2f}" for x in t]) + "]"
-
-    # Load the dataset
-    dataset = get_data_loader(
-        dataset_dir + "/images",
-        dataset_dir + "/annotations/" + annotations_file,
-        shuffle=False,
-        crop_box=crop_box,
+    transforms = get_transforms(crop_box=crop_box)
+    dataset = WaterDataset(
+        dataset_dir / "annotations" / annotations_file,
+        dataset_dir / "images",
+        transforms=transforms,
         normalize_output=normalized_output,
         use_water_line=use_water_line,
     )
 
-    # Run inference
-    loss = 0
-    n_images = 0
-    outputs = []
-    labeled_depths = []
-
+    # Run inference on each image in the dataset
     data = []
+    for i, (image, depth, filename) in enumerate(dataset):
+        output = run_inference(model, image)
 
-    for i, (images, depths, filenames) in enumerate(dataset):
-        mse = 0
-        for image, depth, filename in zip(images, depths, filenames):
-            output = run_inference(model, image)
-            outputs.append(output)
-            if not use_water_line:
-                labeled_depths.append(depth.item())
-            error = abs(output - depth)
+        # Convert tensors to 1d numpy arrays
+        depth = depth.cpu().detach().numpy().squeeze()
+        output = output.cpu().detach().numpy().squeeze()
 
-            if VERBOSE:
-                print(f"Filename: {filename}, Infered: {t2s(output)}, Actual: {t2s(depth)}, Error: {t2s(error)}")
-            try:
-                timestamp = filename_to_datetime(filename)
-            except ValueError:
-                # For some synthetic datasets, the filename is not a timestamp
-                timestamp = None
-            data.append(
-                {
-                    "timestamp": timestamp,
-                    "filename": filename,
-                    "predicted": t2s(output),
-                    "actual": t2s(depth),
-                }
-            )
-            mse += error**2
-        mse /= len(images)
+        error = abs(output - depth)
+
         if VERBOSE:
-            print(f"MSE ({i}): {mse}")
-        loss += mse
-        n_images += len(images)
+            print(f"Filename: {filename}, Infered: {a2s(output)}, Actual: {a2s(depth)}, Error: {a2s(error)}")
 
-    print(
-        f"Dataset: {dataset_dir}, Average loss: {loss / len(dataset)}, images: {n_images}, dataset size: {len(dataset)}"
-    )
+        try:
+            timestamp =  filename_to_datetime(filename)
+        except ValueError:
+            # For some synthetic datasets, the filename is not a timestamp
+            timestamp = None
+        data.append(
+            {
+                "timestamp": timestamp,
+                "filename": filename,
+                "predicted": output,
+                "actual": depth,
+            }
+        )
 
+    # Load into a pandas dataframe
     df = pd.DataFrame(data)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df.set_index("timestamp", inplace=True)
+
+    mse = ((df['predicted'] - df['actual'])**2).mean() / len(df)
+    print(f"Dataset: {dataset_dir}, MSE: {a2s(mse)}, Images: {len(dataset)}")
+
     return df
 
 
-def plot_inference_results(test_df, training_df=None):
-    fig, ax = plt.subplots(3, 1, figsize=(10, 12))
-    ax[0].plot(test_df.index, test_df["predicted"], "o", label="predicted", linestyle="None")
-    ax[0].plot(test_df.index, test_df["actual"], "o", label="actual", linestyle="None")
-    ax[0].legend()
-    ax[0].set_title("Depth vs Time")
+def plot_inference_results(test_df, train_df=None):
+    all_test_predictions = np.vstack(test_df["predicted"].values)
+    all_test_labels = np.vstack(test_df["actual"].values)
+    assert all_test_predictions.shape == all_test_labels.shape
+    num_outputs = all_test_predictions.shape[1]
 
-    ax[1].plot(range(len(test_df)), test_df["predicted"], "o", label="predicted", linestyle="None")
-    ax[1].plot(range(len(test_df)), test_df["actual"], "o", label="actual", linestyle="None")
-    ax[1].legend()
-    ax[1].set_title("Depth vs Index")
+    if train_df is not None:
+        all_train_labels = np.vstack(train_df["actual"].values)
+        all_train_predictions = np.vstack(train_df["predicted"].values)
+        assert all_train_predictions.shape == all_train_labels.shape
+        num_outputs = all_train_predictions.shape[1]
 
-    artist_to_df = {}
-    test_artist = ax[2].plot(test_df["actual"], test_df["predicted"], "o", label="test set")
-    artist_to_df[test_artist[0]] = test_df
-    min_val = min(test_df["actual"].min(), test_df["predicted"].min())
-    max_val = max(test_df["actual"].max(), test_df["predicted"].max())
-    if training_df is not None:
-        train_artist = ax[2].plot(
-            training_df["actual"], training_df["predicted"], "o", label="training set", c="magenta"
+    # Sanity check so that we don't try make thousands of plots
+    assert num_outputs <= 10
+
+    fig, ax = plt.subplots(3, num_outputs, squeeze=False, figsize=(10, 12))
+
+    for output_i in range(num_outputs):
+        test_predictions = all_test_predictions[:, output_i]
+        test_labels = all_test_labels[:, output_i]
+        values_vs_time_ax = ax[0, output_i]
+        values_vs_index_ax = ax[1, output_i]
+        scatter_ax = ax[2, output_i]
+
+        test_timestamps = test_df.index
+        values_vs_time_ax.plot(
+            test_timestamps, test_predictions, "o", label="predicted", linestyle="None"
         )
-        artist_to_df[train_artist[0]] = training_df
-        min_val = min(min_val, training_df["actual"].min(), training_df["predicted"].min())
-        max_val = max(max_val, training_df["actual"].max(), training_df["predicted"].max())
-    ax[2].plot([min_val, max_val], [min_val, max_val], color="grey")
-    # Add interactive tooltips to show filename on mouseover
-    cursor = mplcursors.cursor(ax[2], hover=True)
+        values_vs_time_ax.plot(test_timestamps, test_labels, "o", label="actual", linestyle="None")
+        values_vs_time_ax.legend()
+        values_vs_time_ax.set_title("Depth vs Time")
 
-    @cursor.connect("add")
-    def on_add(sel):
-        if sel.artist in artist_to_df:
-            sel.annotation.set_text(artist_to_df[sel.artist].iloc[sel.index]["filename"])
-        else:
-            sel.annotation.set_text("")
+        values_vs_index_ax.plot(test_predictions, "o", label="predicted", linestyle="None")
+        values_vs_index_ax.plot(test_labels, "o", label="actual", linestyle="None")
+        values_vs_index_ax.legend()
+        values_vs_index_ax.set_title("Depth vs Index")
 
-    ax[2].legend()
-    ax[2].set_title("Predicted vs Actual Depths")
+        artist_to_df = {}
+        test_artist = scatter_ax.plot(test_labels, test_predictions, 'o', label="test set")
+        artist_to_df[test_artist[0]] = test_df
+        min_val = min(test_labels.min(), test_predictions.min())
+        max_val = max(test_labels.max(), test_predictions.max())
+        if train_df is not None:
+            train_predictions = all_train_predictions[:, output_i]
+            train_labels = all_train_labels[:, output_i]
+            train_artist = scatter_ax.plot(train_labels, train_predictions, 'o', label="training set", c="magenta")
+            artist_to_df[train_artist[0]] = train_df
+            min_val = min(min_val, train_labels.min(), train_predictions.min())
+            max_val = max(max_val, train_labels.max(), train_predictions.max())
+        scatter_ax.plot([min_val, max_val], [min_val, max_val], color='grey')
+        # Add interactive tooltips to show filename on mouseover
+        cursor = mplcursors.cursor(ax[2], hover=True)
+        @cursor.connect("add")
+        def on_add(sel):
+            if sel.artist in artist_to_df:
+                sel.annotation.set_text(artist_to_df[sel.artist].iloc[sel.index]["filename"])
+            else:
+                sel.annotation.set_text("")
+        scatter_ax.legend()
+        scatter_ax.set_title("Predicted vs Actual Depths")
     plt.tight_layout()
 
 
@@ -202,7 +216,7 @@ if __name__ == "__main__":
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
     parser.add_argument(
-        "--dataset_dir", type=str, default="datasets/water_test_set5", help="Path to the dataset directory"
+        "--dataset_dir", type=Path, default="datasets/water_test_set5", help="Path to the dataset directory"
     )
     parser.add_argument(
         "--annotations_file", type=str, default="filtered.csv", help="File name of the JSON file containing annotations"
@@ -210,7 +224,7 @@ if __name__ == "__main__":
 
     # If these arguments are provided, then the model will also be run against the training dataset, and the
     # results will be added to the scatterplot (if scatter_plot is set to True)
-    parser.add_argument("--train_dataset_dir", type=str, default=None, help="Path to the training dataset directory")
+    parser.add_argument("--train_dataset_dir", type=Path, default=None, help="Path to the training dataset directory")
     parser.add_argument(
         "--train_annotations_file",
         type=str,
@@ -231,12 +245,17 @@ if __name__ == "__main__":
         "--use_water_line",
         type=bool,
         default=False,
-        help="If set, do inference of the water level coordinates as well as depth",
+        help="If set, do inference of the water level coordinates as output instead of depth",
     )
 
-    parser.add_argument("--verbose", type=bool, default=False, help="Print error for each image in the dataset")
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print error for each image in the dataset"
+    )
 
     args = parser.parse_args()
+
+    if args.verbose:
+        VERBOSE = True
 
     (model, model_args) = load_model(args.model_path, args.use_water_line)
 
@@ -264,7 +283,7 @@ if __name__ == "__main__":
                 use_water_line=args.use_water_line,
             )
 
-        if args.scatter_plot and not args.use_water_line:
+        if args.scatter_plot:
             plot_inference_results(test_df, train_df)
             plt.show()
     else:
