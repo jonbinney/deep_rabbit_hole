@@ -1,6 +1,7 @@
 gradio
 matplotlib
 mlflow
+mplcursors
 opencv-python
 psutil # for mlflow
 pynvml # for mlflow

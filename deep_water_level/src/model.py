@@ -2,24 +2,26 @@ from typing import Tuple
 import torch.nn as nn
 import torch
 
+
 class BasicCnnRegression(nn.Module):
     DEFAULT_MODEL_FILENAME = "model.pth"
 
     """
     Basic model which includes two CNN layers and a single linear layer.
     """
+
     def __init__(
-            self,
-            image_size: Tuple[int, int, int] = (3, 810, 510),
-            dropout_p: float = None,
-            n_conv_layers: int = 2,  # Number of convolutional layers
-            channel_multiplier: float = 2.0,  # On each conv layer, number of channels is increased by this factor
-            conv_kernel_size: int = 4,
-            conv_stride: int = 2,
-            conv_padding: int = 1,
-            max_pool_kernel_size: int = 2,
-            max_pool_stride: int = 1
-        ):
+        self,
+        image_size: Tuple[int, int, int] = (3, 810, 510),
+        dropout_p: float = None,
+        n_conv_layers: int = 2,  # Number of convolutional layers
+        channel_multiplier: float = 2.0,  # On each conv layer, number of channels is increased by this factor
+        conv_kernel_size: int = 4,
+        conv_stride: int = 2,
+        conv_padding: int = 1,
+        max_pool_kernel_size: int = 2,
+        max_pool_stride: int = 1,
+    ):
         super().__init__()
 
         if n_conv_layers not in [2, 3, 4, 5]:
@@ -52,12 +54,15 @@ class BasicCnnRegression(nn.Module):
             self.dropout = nn.Dropout(p=self.dropout_p)
         self.fcn2 = nn.Linear(in_features=120, out_features=1)
 
-    def make_cnn_layer(
-        self,
-        in_channels
-    ):
+    def make_cnn_layer(self, in_channels):
         out_channels = int(in_channels * self.channel_multiplier)
-        conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=self.conv_kernel_size, stride=self.conv_stride, padding=self.conv_padding)
+        conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=self.conv_kernel_size,
+            stride=self.conv_stride,
+            padding=self.conv_padding,
+        )
         pool = nn.MaxPool2d(kernel_size=self.max_pool_kernel_size, stride=self.max_pool_stride)
         return conv, pool, out_channels
 
@@ -68,9 +73,9 @@ class BasicCnnRegression(nn.Module):
 
     def aux_conv_forward(self, x):
         for i in range(self.n_conv_layers):
-            x = self.conv_list[i*2](x)
+            x = self.conv_list[i * 2](x)
             x = nn.functional.relu(x)
-            x = self.conv_list[i*2+1](x)
+            x = self.conv_list[i * 2 + 1](x)
         x = self.flatten(x)
         return x
 
@@ -86,23 +91,25 @@ class BasicCnnRegression(nn.Module):
     def default_model_filename(self):
         return self.DEFAULT_MODEL_FILENAME
 
+
 class BasicCnnRegressionWaterLine(nn.Module):
     DEFAULT_MODEL_FILENAME = "model_water_line.pth"
     """
     Basic model which includes two CNN layers and a single linear layer, and the output is the coordinates for the water line.
     """
+
     def __init__(
-            self,
-            image_size: Tuple[int, int, int] = (3, 810, 510),
-            dropout_p: float = None,
-            n_conv_layers: int = 2,  # Number of convolutional layers
-            channel_multiplier: float = 2.0,  # On each conv layer, number of channels is increased by this factor
-            conv_kernel_size: int = 4,
-            conv_stride: int = 2,
-            conv_padding: int = 1,
-            max_pool_kernel_size: int = 2,
-            max_pool_stride: int = 1
-        ):
+        self,
+        image_size: Tuple[int, int, int] = (3, 810, 510),
+        dropout_p: float = None,
+        n_conv_layers: int = 2,  # Number of convolutional layers
+        channel_multiplier: float = 2.0,  # On each conv layer, number of channels is increased by this factor
+        conv_kernel_size: int = 4,
+        conv_stride: int = 2,
+        conv_padding: int = 1,
+        max_pool_kernel_size: int = 2,
+        max_pool_stride: int = 1,
+    ):
         super().__init__()
 
         if n_conv_layers not in [2, 3, 4, 5]:
@@ -133,14 +140,17 @@ class BasicCnnRegressionWaterLine(nn.Module):
         self.fcn1 = nn.Linear(in_features=self.linear_size, out_features=120)
         if dropout_p is not None and dropout_p > 0:
             self.dropout = nn.Dropout(p=self.dropout_p)
-        self.fcn2 = nn.Linear(in_features=120, out_features=4)
+        self.fcn2 = nn.Linear(in_features=120, out_features=5)
 
-    def make_cnn_layer(
-        self,
-        in_channels
-    ):
+    def make_cnn_layer(self, in_channels):
         out_channels = int(in_channels * self.channel_multiplier)
-        conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=self.conv_kernel_size, stride=self.conv_stride, padding=self.conv_padding)
+        conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=self.conv_kernel_size,
+            stride=self.conv_stride,
+            padding=self.conv_padding,
+        )
         pool = nn.MaxPool2d(kernel_size=self.max_pool_kernel_size, stride=self.max_pool_stride)
         return conv, pool, out_channels
 
@@ -151,9 +161,9 @@ class BasicCnnRegressionWaterLine(nn.Module):
 
     def aux_conv_forward(self, x):
         for i in range(self.n_conv_layers):
-            x = self.conv_list[i*2](x)
+            x = self.conv_list[i * 2](x)
             x = nn.functional.relu(x)
-            x = self.conv_list[i*2+1](x)
+            x = self.conv_list[i * 2 + 1](x)
         x = self.flatten(x)
         return x
 
