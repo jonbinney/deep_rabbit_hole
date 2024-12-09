@@ -176,7 +176,7 @@ if __name__ == "__main__":
         default="filtered.csv",
         help="File name of the JSON file containing annotations within a dataset",
     )
-    parser.add_argument("--n_epochs", type=int, default=100, help="Number of epochs to train the model")
+    parser.add_argument("--n_epochs", type=int, default=60, help="Number of epochs to train the model")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for training the model")
     parser.add_argument(
         "--crop_box",
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--channel_multiplier",
         type=float,
-        default=2.0,
+        default=3.0,
         help="Multiplier for the number of channels in each convolutional layer",
     )
     parser.add_argument("--conv_kernel_size", type=int, default=7, help="Convolutional kernel size, for all layers")
