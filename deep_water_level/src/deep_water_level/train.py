@@ -2,16 +2,15 @@
 import argparse
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
-from misc import my_device
-from model import BasicCnnRegression, BasicCnnRegressionWaterLine
-from utils import start_experiment
+from utils import start_experiment  # From object_tracker_0 package
 
 import mlflow
-from data import get_data_loader, get_data_loaders
+from annotation_utils.misc import my_device
+from deep_water_level.data import get_data_loader, get_data_loaders
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine
 
 
 def create_model(train_water_line, **kwargs):
@@ -25,9 +24,9 @@ def create_model(train_water_line, **kwargs):
 
 def do_training(
     # Dataset parameters
-    train_dataset_dir: str,
-    test_dataset_dir: str,
-    annotations_file: str,
+    train_dataset_dir: Path,
+    test_dataset_dir: Path,
+    annotations_file: Path,
     # Training parameters
     n_epochs: int = 40,
     learning_rate: float = 1e-3,
@@ -46,7 +45,13 @@ def do_training(
     log_transformed_images: bool = False,
     train_water_line: bool = False,
     report_fn: callable = lambda *args, **kwargs: None,
+    output_model_path: Path = None,
 ):
+    # In case people pass in strings for paths
+    train_dataset_dir = Path(train_dataset_dir)
+    test_dataset_dir = Path(test_dataset_dir)
+    annotations_file = Path(annotations_file)
+
     device = my_device()
     # torch.set_default_device(device)
     print(f"Using device: {device}")
@@ -55,23 +60,23 @@ def do_training(
     if train_dataset_dir is None or test_dataset_dir == train_dataset_dir:
         # Split the train dataset in test and train datasets
         (train_data, test_data) = get_data_loaders(
-            train_dataset_dir + "/images",
-            train_dataset_dir + "/annotations/" + annotations_file,
+            train_dataset_dir / "images",
+            train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
             use_water_line=train_water_line,
         )
 
     else:
         train_data = get_data_loader(
-            train_dataset_dir + "/images",
-            train_dataset_dir + "/annotations/" + annotations_file,
+            train_dataset_dir / "images",
+            train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
         )
         test_data = get_data_loader(
-            test_dataset_dir + "/images",
-            test_dataset_dir + "/annotations/" + annotations_file,
+            test_dataset_dir / "images",
+            test_dataset_dir / "annotations" / annotations_file,
             shuffle=False,
             crop_box=crop_box,
             normalize_output=normalize_output,
@@ -148,12 +153,14 @@ def do_training(
         report_fn({"epoch": epoch, "loss": train_loss, "test_loss": test_loss})
 
     # Save model to disk, locally
+    if output_model_path is None:
+        output_model_path = model.default_model_filename()
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "model_args": model_args,
         },
-        model.default_model_filename(),
+        output_model_path,
     )
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
@@ -165,14 +172,14 @@ def do_training(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model on the Deep Water Level dataset")
     parser.add_argument(
-        "--train_dataset_dir", type=str, default="datasets/water_train_set4", help="Path to the train dataset directory"
+        "--train_dataset_dir", type=Path, default="datasets/water_train_set4", help="Path to the train dataset directory"
     )
     parser.add_argument(
-        "--test_dataset_dir", type=str, default="datasets/water_test_set5", help="Path to the test dataset directory"
+        "--test_dataset_dir", type=Path, default="datasets/water_test_set5", help="Path to the test dataset directory"
     )
     parser.add_argument(
         "--annotations_file",
-        type=str,
+        type=Path,
         default="filtered.csv",
         help="File name of the JSON file containing annotations within a dataset",
     )

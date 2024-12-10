@@ -17,17 +17,18 @@ from pathlib import Path
 import gradio as gr
 import matplotlib.pyplot as plt
 import mplcursors
+import numpy as np
 import pandas as pd
 import torch
-from data import WaterDataset, get_transforms
-from misc import filename_to_datetime, my_device
-from model import BasicCnnRegression, BasicCnnRegressionWaterLine
-import numpy as np
+
+from annotation_utils.misc import filename_to_datetime, my_device
+from deep_water_level.data import WaterDataset, get_transforms
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine
 
 VERBOSE = False
 
 
-def load_model(model_path, train_water_line):
+def load_model(model_path: Path, train_water_line: bool = False):
     if model_path is None:
         if train_water_line:
             model_path = BasicCnnRegressionWaterLine.DEFAULT_MODEL_FILENAME
@@ -109,7 +110,7 @@ def run_dataset_inference(
             print(f"Filename: {filename}, Infered: {a2s(output)}, Actual: {a2s(depth)}, Error: {a2s(error)}")
 
         try:
-            timestamp =  filename_to_datetime(filename)
+            timestamp = filename_to_datetime(filename)
         except ValueError:
             # For some synthetic datasets, the filename is not a timestamp
             timestamp = None
@@ -127,7 +128,7 @@ def run_dataset_inference(
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df.set_index("timestamp", inplace=True)
 
-    mse = ((df['predicted'] - df['actual'])**2).mean() / len(df)
+    mse = ((df["predicted"] - df["actual"]) ** 2).mean() / len(df)
     print(f"Dataset: {dataset_dir}, MSE: {a2s(mse)}, Images: {len(dataset)}")
 
     return df
@@ -158,9 +159,7 @@ def plot_inference_results(test_df, train_df=None):
         scatter_ax = ax[2, output_i]
 
         test_timestamps = test_df.index
-        values_vs_time_ax.plot(
-            test_timestamps, test_predictions, "o", label="predicted", linestyle="None"
-        )
+        values_vs_time_ax.plot(test_timestamps, test_predictions, "o", label="predicted", linestyle="None")
         values_vs_time_ax.plot(test_timestamps, test_labels, "o", label="actual", linestyle="None")
         values_vs_time_ax.legend()
         values_vs_time_ax.set_title("Depth vs Time")
@@ -171,26 +170,28 @@ def plot_inference_results(test_df, train_df=None):
         values_vs_index_ax.set_title("Depth vs Index")
 
         artist_to_df = {}
-        test_artist = scatter_ax.plot(test_labels, test_predictions, 'o', label="test set")
+        test_artist = scatter_ax.plot(test_labels, test_predictions, "o", label="test set")
         artist_to_df[test_artist[0]] = test_df
         min_val = min(test_labels.min(), test_predictions.min())
         max_val = max(test_labels.max(), test_predictions.max())
         if train_df is not None:
             train_predictions = all_train_predictions[:, output_i]
             train_labels = all_train_labels[:, output_i]
-            train_artist = scatter_ax.plot(train_labels, train_predictions, 'o', label="training set", c="magenta")
+            train_artist = scatter_ax.plot(train_labels, train_predictions, "o", label="training set", c="magenta")
             artist_to_df[train_artist[0]] = train_df
             min_val = min(min_val, train_labels.min(), train_predictions.min())
             max_val = max(max_val, train_labels.max(), train_predictions.max())
-        scatter_ax.plot([min_val, max_val], [min_val, max_val], color='grey')
+        scatter_ax.plot([min_val, max_val], [min_val, max_val], color="grey")
         # Add interactive tooltips to show filename on mouseover
         cursor = mplcursors.cursor(ax[2], hover=True)
+
         @cursor.connect("add")
         def on_add(sel):
             if sel.artist in artist_to_df:
                 sel.annotation.set_text(artist_to_df[sel.artist].iloc[sel.index]["filename"])
             else:
                 sel.annotation.set_text("")
+
         scatter_ax.legend()
         scatter_ax.set_title("Predicted vs Actual Depths")
     plt.tight_layout()
@@ -248,9 +249,7 @@ if __name__ == "__main__":
         help="If set, do inference of the water level coordinates as output instead of depth",
     )
 
-    parser.add_argument(
-        "--verbose", action="store_true", help="Print error for each image in the dataset"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Print error for each image in the dataset")
 
     args = parser.parse_args()
 
