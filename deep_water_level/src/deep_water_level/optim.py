@@ -6,11 +6,8 @@ TODO:
  - Implement early termination
 """
 
-from functools import partial
-from ray import tune
-from ray import train
+from ray import train, tune
 from train import do_training
-
 
 params = {
     # Some parameters are variable, for searching optimization

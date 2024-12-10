@@ -1,25 +1,29 @@
 import functools
-import os
 import json
-import mlflow
-from PIL import Image
-from torchvision.transforms import v2
-import torch
-from torch.utils.data import Dataset
-from typing import Tuple
+import os
 from pathlib import Path
+from typing import Tuple
+
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision.transforms import v2
+
+import mlflow
 
 
 class WaterDataset(Dataset):
-    def __init__(self, annotations_file, images_dir, transforms=None, normalize_output=False, use_water_line=None):
-        self.annotations_file = annotations_file
-        self.images_dir = images_dir
+    def __init__(
+        self, annotations_file: Path, images_dir: Path, transforms=None, normalize_output=False, use_water_line=None
+    ):
+        self.annotations_file = Path(annotations_file)
+        self.images_dir = Path(images_dir)
         self.transforms = transforms
         self.normalize_output = normalize_output
         self.data = self.load_annotations(use_water_line)
 
     def load_annotations(self, use_water_line=None):
-        suffix = Path(self.annotations_file).suffix
+        suffix = self.annotations_file.suffix
         if suffix == ".json":
             return self.load_coco()
         elif suffix == ".csv":
@@ -28,7 +32,7 @@ class WaterDataset(Dataset):
             raise ValueError(f"Unsupported annotations file format: {self.annotations_file}")
 
     def load_coco(self):
-        with open(self.annotations_file, "r") as f:
+        with self.annotations_file.open("r") as f:
             annotations = json.load(f)
         data = []
         # Create a map of image_id to image - IMPORTANT: image_id might not match index in the images array
@@ -105,8 +109,8 @@ def get_transforms(crop_box=None):
 
 
 def get_data_loaders(
-    images_dir: str,
-    annotations_file: str,
+    images_dir: Path,
+    annotations_file: Path,
     batch_size: int = 32,
     train_test_split: Tuple[int, int] = [0.8, 0.2],
     normalize_output: bool = False,
@@ -131,17 +135,21 @@ def get_data_loaders(
     # Create PyTorch DataLoaders for train and test splits
     return (
         torch.utils.data.DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True,
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
         ),
         torch.utils.data.DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False,
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
         ),
     )
 
 
 def get_data_loader(
-    images_dir: str,
-    annotations_file: str,
+    images_dir: Path,
+    annotations_file: Path,
     batch_size: int = 32,
     shuffle: bool = True,
     normalize_output: bool = False,

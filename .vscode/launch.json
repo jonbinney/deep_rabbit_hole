@@ -5,7 +5,7 @@
             "name": "Test water level model (dataset)",
             "type": "debugpy",
             "request": "launch",
-            "program": "deep_water_level/src/infer.py",
+            "program": "deep_water_level/src/deep_water_level/infer.py",
             "console": "integratedTerminal",
             "args": [
                 "--crop_box", "130", "275", "140", "140",
@@ -18,7 +18,7 @@
             "name": "Test water level model (single image)",
             "type": "debugpy",
             "request": "launch",
-            "program": "deep_water_level/src/infer.py",
+            "program": "deep_water_level/src/deep_water_level/infer.py",
             "console": "integratedTerminal",
             "args": [
                 "--crop_box", "130", "275", "140", "140",
@@ -29,7 +29,7 @@
             "name": "Train water level model",
             "type": "debugpy",
             "request": "launch",
-            "program": "deep_water_level/src/train.py",
+            "program": "deep_water_level/src/deep_water_level/train.py",
             "console": "integratedTerminal",
             "args": [
                 "--train_dataset_dir", "datasets/water_train_set4",

@@ -1,14 +1,15 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import torch
-from torchvision import utils
-import torch.nn as nn
-import cv2 as cv
-from torchvision.transforms import v2
-from torchvision import transforms
-from infer import load_model
-from model import BasicCnnRegression
 import argparse
+
+import cv2 as cv
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn as nn
+from torchvision import transforms, utils
+from torchvision.transforms import v2
+
+from deep_water_level.infer import load_model
+from deep_water_level.model import BasicCnnRegression
 
 
 def get_conv_layers(model):
