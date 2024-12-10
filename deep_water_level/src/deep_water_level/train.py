@@ -172,7 +172,10 @@ def do_training(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model on the Deep Water Level dataset")
     parser.add_argument(
-        "--train_dataset_dir", type=Path, default="datasets/water_train_set4", help="Path to the train dataset directory"
+        "--train_dataset_dir",
+        type=Path,
+        default="datasets/water_train_set4",
+        help="Path to the train dataset directory",
     )
     parser.add_argument(
         "--test_dataset_dir", type=Path, default="datasets/water_test_set5", help="Path to the test dataset directory"

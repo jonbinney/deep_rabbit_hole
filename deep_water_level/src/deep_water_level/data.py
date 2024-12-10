@@ -131,10 +131,14 @@ def get_data_loaders(
     # Create PyTorch DataLoaders for train and test splits
     return (
         torch.utils.data.DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True,
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
         ),
         torch.utils.data.DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False,
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
         ),
     )
 
