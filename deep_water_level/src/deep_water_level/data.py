@@ -1,13 +1,15 @@
 import functools
-import os
 import json
-import mlflow
-from PIL import Image
-from torchvision.transforms import v2
-import torch
-from torch.utils.data import Dataset
-from typing import Tuple
+import os
 from pathlib import Path
+from typing import Tuple
+
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision.transforms import v2
+
+import mlflow
 
 
 class WaterDataset(Dataset):

@@ -13,13 +13,14 @@ Hotkeys:
 
 import argparse
 import json
-from matplotlib import pyplot as plt
+import re
+import time
+from pathlib import Path
+
 import matplotlib.dates
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import re
-import time
+from matplotlib import pyplot as plt
 
 from deep_water_level.data import WaterDataset
 
