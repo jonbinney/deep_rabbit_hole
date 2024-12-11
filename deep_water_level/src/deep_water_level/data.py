@@ -106,6 +106,8 @@ def get_transforms(crop_box=None, equalization:bool=True, is_trainig: bool=True)
         transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
 
     if equalization:
+        # Apply histogram equalization to each image
+        # IMPORTANT: This works with input in the range [0, 255]
         transforms_array.append(v2.functional.equalize)
 
     transforms_array.extend(
