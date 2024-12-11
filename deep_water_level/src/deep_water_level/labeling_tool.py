@@ -13,15 +13,16 @@ Hotkeys:
 
 import argparse
 import json
-from matplotlib import pyplot as plt
+import re
+import time
+from pathlib import Path
+
 import matplotlib.dates
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import re
-import time
+from matplotlib import pyplot as plt
 
-from data import WaterDataset
+from deep_water_level.data import WaterDataset
 
 
 def parse_image_filename(image_filename: Path):
@@ -322,10 +323,13 @@ class LabelingTool:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model on the Deep Water Level dataset")
     parser.add_argument(
-        "--dataset-dir", type=Path, default="datasets/water_test_set3", help="Path to the dataset directory"
+        "--dataset-dir", type=Path, default="datasets/water_test_set5", help="Path to the dataset directory"
     )
     parser.add_argument(
-        "--annotations-file", type=str, default="filtered.csv", help="File name of the JSON file containing annotations"
+        "--annotations-file",
+        type=Path,
+        default="filtered.csv",
+        help="File name of the JSON file containing annotations",
     )
     parser.add_argument(
         "--new-annotations-path",
