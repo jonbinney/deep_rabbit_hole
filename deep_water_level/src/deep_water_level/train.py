@@ -30,8 +30,10 @@ def do_training(
     # Training parameters
     n_epochs: int = 40,
     learning_rate: float = 1e-3,
+    # Pre-processing parameters
     normalize_output: bool = False,
     crop_box: list = None,
+    equalization: bool = True,
     # Model parameters
     dropout_p: float = None,
     n_conv_layers: int = 2,
@@ -56,6 +58,12 @@ def do_training(
     # torch.set_default_device(device)
     print(f"Using device: {device}")
 
+    preprocessing_args = {
+        "normalize_output": normalize_output,
+        "crop_box": crop_box,
+        "equalization": equalization,
+    }
+
     # Load the data
     if train_dataset_dir is None or test_dataset_dir == train_dataset_dir:
         # Split the train dataset in test and train datasets
@@ -63,6 +71,7 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            equalization=equalization,
             use_water_line=train_water_line,
         )
 
@@ -71,6 +80,7 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
         )
@@ -79,6 +89,7 @@ def do_training(
             test_dataset_dir / "annotations" / annotations_file,
             shuffle=False,
             crop_box=crop_box,
+            equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
         )
@@ -155,10 +166,12 @@ def do_training(
     # Save model to disk, locally
     if output_model_path is None:
         output_model_path = model.default_model_filename()
+
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "model_args": model_args,
+            "preprocessing_args": preprocessing_args,
         },
         output_model_path,
     )
@@ -186,7 +199,7 @@ if __name__ == "__main__":
         default="filtered.csv",
         help="File name of the JSON file containing annotations within a dataset",
     )
-    parser.add_argument("--n_epochs", type=int, default=100, help="Number of epochs to train the model")
+    parser.add_argument("--n_epochs", type=int, default=10, help="Number of epochs to train the model")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for training the model")
     parser.add_argument(
         "--crop_box",
@@ -202,7 +215,7 @@ if __name__ == "__main__":
         help="Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.",
     )
     parser.add_argument(
-        "--log_transformed_images", type=bool, default=False, help="Log transformed images using mlflow"
+        "--log_transformed_images", type=bool, default=False, help="Log transformed images to /tmp/deep_water_level"
     )
     parser.add_argument("--normalize_output", type=bool, default=False, help="Normalize depth value to [-1, 1] range")
     parser.add_argument(
@@ -211,10 +224,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--channel_multiplier",
         type=float,
-        default=2.0,
+        default=3.0,
         help="Multiplier for the number of channels in each convolutional layer",
     )
     parser.add_argument("--conv_kernel_size", type=int, default=7, help="Convolutional kernel size, for all layers")
+    parser.add_argument(
+        "--equalization",
+        type=bool,
+        default=True,
+        help="Perform histogram equalization on the input images to make them more uniform",
+    )
+
     parser.add_argument(
         "--train_water_line",
         type=bool,

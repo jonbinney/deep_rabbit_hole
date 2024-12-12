@@ -37,13 +37,14 @@ def load_model(model_path: Path, train_water_line: bool = False):
 
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
+    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else None
     if train_water_line:
         model = BasicCnnRegressionWaterLine(**model_args)
     else:
         model = BasicCnnRegression(**model_args)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    return (model, model_args)
+    return (model, model_args, preprocessing_args)
 
 
 def run_inference(model, input, transforms=None):
@@ -75,8 +76,9 @@ def run_dataset_inference(
     dataset_dir: Path,
     annotations_file: str,
     normalized_output,
-    crop_box=None,
-    use_water_line=False,
+    crop_box = None,
+    use_water_line = False,
+    equalization: bool = False
 ):
     # Convert numpy array to string for printing
     def a2s(a):
@@ -86,7 +88,7 @@ def run_dataset_inference(
         else:
             return "[" + ", ".join([f"{x:.4f}" for x in a]) + "]"
 
-    transforms = get_transforms(crop_box=crop_box)
+    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
     dataset = WaterDataset(
         dataset_dir / "annotations" / annotations_file,
         dataset_dir / "images",
@@ -207,13 +209,6 @@ if __name__ == "__main__":
         default=False,
         help="Set to true if the model was trained with depth values normalized to [-1, 1] range",
     )
-    parser.add_argument(
-        "--crop_box",
-        nargs=4,
-        type=int,
-        default=[130, 275, 140, 140],
-        help="Box with which to crop images, of form: top left height width",
-    )
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
     parser.add_argument(
@@ -256,7 +251,10 @@ if __name__ == "__main__":
     if args.verbose:
         VERBOSE = True
 
-    (model, model_args) = load_model(args.model_path, args.use_water_line)
+    (model, model_args, preprocessing_args) = load_model(args.model_path, args.use_water_line)
+
+    equalization = preprocessing_args["equalization"] if "equalization" in preprocessing_args else True
+    crop_box = preprocessing_args["crop_box"] if "crop_box" in preprocessing_args else None
 
     # Load the model
     if "dataset_dir" in args and "annotations_file" in args:
@@ -265,8 +263,9 @@ if __name__ == "__main__":
             dataset_dir=args.dataset_dir,
             annotations_file=args.annotations_file,
             normalized_output=args.normalized_output,
-            crop_box=args.crop_box,
+            crop_box=crop_box,
             use_water_line=args.use_water_line,
+            equalization=equalization,
         )
         if args.annotations_out_filename is not None:
             test_df.to_csv(args.annotations_out_filename, index=False)
@@ -278,12 +277,13 @@ if __name__ == "__main__":
                 dataset_dir=args.train_dataset_dir,
                 annotations_file=args.train_annotations_file,
                 normalized_output=args.normalized_output,
-                crop_box=args.crop_box,
+                crop_box=crop_box,
                 use_water_line=args.use_water_line,
+                equalization=equalization,
             )
 
         if args.scatter_plot:
             plot_inference_results(test_df, train_df)
             plt.show()
     else:
-        run_gradio_app(model, model_args["crop_box"])
+        run_gradio_app(model, crop_box=crop_box)

@@ -93,17 +93,44 @@ class WaterDataset(Dataset):
         return image, depth, image_path
 
 
-def get_transforms(crop_box=None):
+def get_transforms(crop_box=None, equalization:bool=True, is_trainig: bool=True):
     transforms_array = []
+
+    # TODO:
+    # - Randomize crop (within reason)
+    # - Color jitter
+    # - Make most effective use of dtypes
+
     if crop_box is not None:
         top, left, height, width = crop_box
         transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
+
+    if equalization:
+        # Apply histogram equalization to each image
+        # IMPORTANT: This works with input in the range [0, 255]
+        transforms_array.append(v2.functional.equalize)
+
     transforms_array.extend(
         [
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),  # convert to float32 and normalize to 0, 1
+            # TODO(adamantivm) Enable normalization. Make it work with equalization, which requires
+            # moving equalization to later and including the necessary dtype conversions back and forth
+            # v2.Normalize(mean=[0.10391959, 0.1423446, 0.13618265], std=[0.05138122, 0.04945769, 0.045432]),
         ]
     )
+
+    # Only add data augmentation transforms for training
+    if is_trainig:
+        # Add data augmentation
+        pass
+
+
+    # Pre-calculated mean and std values for water_train_set4:
+    # - Without cropping:
+    # Mean: [0.18653404 0.20722116 0.19524723], std: [0.15864415 0.13673791 0.12532181]
+    # - With Binney cropping:
+    # Mean: [0.10391959 0.1423446  0.13618265], std: [0.05138122 0.04945769 0.045432  ]
 
     return v2.Compose(transforms_array)
 
@@ -116,8 +143,9 @@ def get_data_loaders(
     normalize_output: bool = False,
     crop_box=None,  # [top, left, height, width]
     use_water_line: bool | None = None,
+    equalization: bool = True
 ):
-    transforms = get_transforms(crop_box=crop_box)
+    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, use_water_line=use_water_line)
@@ -155,8 +183,9 @@ def get_data_loader(
     normalize_output: bool = False,
     crop_box=None,  # [top, left, height, width]
     use_water_line: bool | None = None,
+    equalization: bool = True,
 ):
-    transforms = get_transforms(crop_box=crop_box)
+    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
 
     # Load dataset from directory
     dataset = WaterDataset(
