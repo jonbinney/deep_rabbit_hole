@@ -75,10 +75,10 @@ def run_dataset_inference(
     model,
     dataset_dir: Path,
     annotations_file: str,
-    normalized_output,
-    crop_box = None,
-    use_water_line = False,
-    equalization: bool = False
+    normalize_output,
+    crop_box=None,
+    use_water_line=False,
+    equalization: bool = False,
 ):
     # Convert numpy array to string for printing
     def a2s(a):
@@ -93,13 +93,13 @@ def run_dataset_inference(
         dataset_dir / "annotations" / annotations_file,
         dataset_dir / "images",
         transforms=transforms,
-        normalize_output=normalized_output,
+        normalize_output=normalize_output,
         use_water_line=use_water_line,
     )
 
     # Run inference on each image in the dataset
     data = []
-    for i, (image, depth, filename) in enumerate(dataset):
+    for image, depth, filename in dataset:
         output = run_inference(model, image)
 
         # Convert tensors to 1d numpy arrays
