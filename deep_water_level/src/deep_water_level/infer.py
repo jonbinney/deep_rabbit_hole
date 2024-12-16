@@ -75,10 +75,10 @@ def run_dataset_inference(
     model,
     dataset_dir: Path,
     annotations_file: str,
-    normalized_output,
-    crop_box = None,
-    use_water_line = False,
-    equalization: bool = False
+    normalize_output,
+    crop_box=None,
+    use_water_line=False,
+    equalization: bool = False,
 ):
     # Convert numpy array to string for printing
     def a2s(a):
@@ -93,7 +93,7 @@ def run_dataset_inference(
         dataset_dir / "annotations" / annotations_file,
         dataset_dir / "images",
         transforms=transforms,
-        normalize_output=normalized_output,
+        normalize_output=normalize_output,
         use_water_line=use_water_line,
     )
 
@@ -204,10 +204,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Water Level")
     parser.add_argument("-m", "--model_path", type=str, default=None, help="Path to the model file")
     parser.add_argument(
-        "--normalized_output",
+        "--normalize_output",
         type=bool,
         default=False,
-        help="Set to true if the model was trained with depth values normalized to [-1, 1] range",
+        help="Set to true if the model was trained with depth values normalize to [-1, 1] range",
     )
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
@@ -262,7 +262,7 @@ if __name__ == "__main__":
             model,
             dataset_dir=args.dataset_dir,
             annotations_file=args.annotations_file,
-            normalized_output=args.normalized_output,
+            normalize_output=args.normalize_output,
             crop_box=crop_box,
             use_water_line=args.use_water_line,
             equalization=equalization,
@@ -276,7 +276,7 @@ if __name__ == "__main__":
                 model,
                 dataset_dir=args.train_dataset_dir,
                 annotations_file=args.train_annotations_file,
-                normalized_output=args.normalized_output,
+                normalize_output=args.normalize_output,
                 crop_box=crop_box,
                 use_water_line=args.use_water_line,
                 equalization=equalization,

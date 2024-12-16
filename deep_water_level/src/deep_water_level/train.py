@@ -34,6 +34,7 @@ def do_training(
     normalize_output: bool = False,
     crop_box: list = None,
     equalization: bool = True,
+    crop_box_jitter: list = None,
     # Model parameters
     dropout_p: float = None,
     n_conv_layers: int = 2,
@@ -71,6 +72,7 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             use_water_line=train_water_line,
         )
@@ -80,6 +82,7 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
@@ -89,6 +92,7 @@ def do_training(
             test_dataset_dir / "annotations" / annotations_file,
             shuffle=False,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
@@ -207,6 +211,13 @@ if __name__ == "__main__":
         type=int,
         default=[130, 275, 140, 140],
         help="Box with which to crop images, of form: top left height width",
+    )
+    parser.add_argument(
+        "--crop_box_jitter",
+        nargs=2,
+        type=int,
+        default=[4, 20],
+        help="Randomize crop box by [H, W] pixels, for data augmentation",
     )
     parser.add_argument(
         "--dropout_p",

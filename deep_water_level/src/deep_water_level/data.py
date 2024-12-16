@@ -1,8 +1,9 @@
 import functools
+import random
 import json
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
 from PIL import Image
@@ -92,18 +93,36 @@ class WaterDataset(Dataset):
         depth = torch.tensor(depth, dtype=torch.float32)
         return image, depth, image_path
 
+class JitterCrop(torch.nn.Module):
+    """
+    Module that implements a random jitter of the crop box.
+    
+    Args:
+        crop_box (list): [top, left, height, width]
+        jitter (list): [H, W] How much to jitter the crop box
+    """
+    def __init__(self, crop_box, jitter = [10, 10]):
+        super().__init__()
+        self.crop_box = crop_box
+        self.jitter = jitter
+    
+    def forward(self, img):
+        horiz = random.randint(-self.jitter[1], self.jitter[1])
+        vert = random.randint(-self.jitter[0], self.jitter[0])
+        return v2.functional.crop(img, self.crop_box[0] + vert, self.crop_box[1] + horiz, self.crop_box[2], self.crop_box[3])
 
-def get_transforms(crop_box=None, equalization:bool=True, is_trainig: bool=True):
+def get_transforms(crop_box=None, equalization:bool=True, is_trainig: bool=True, crop_box_jitter: List[int] = None):
     transforms_array = []
 
     # TODO:
-    # - Randomize crop (within reason)
-    # - Color jitter
     # - Make most effective use of dtypes
 
     if crop_box is not None:
-        top, left, height, width = crop_box
-        transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
+        if is_trainig and crop_box_jitter is not None:
+            transforms_array.append(JitterCrop(crop_box, crop_box_jitter))
+        else:
+            top, left, height, width = crop_box
+            transforms_array.append(functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width))
 
     if equalization:
         # Apply histogram equalization to each image
@@ -123,8 +142,10 @@ def get_transforms(crop_box=None, equalization:bool=True, is_trainig: bool=True)
     # Only add data augmentation transforms for training
     if is_trainig:
         # Add data augmentation
-        pass
-
+        transforms_array.extend([
+            v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
+            v2.RandomRotation(degrees=5),
+        ])
 
     # Pre-calculated mean and std values for water_train_set4:
     # - Without cropping:
@@ -143,9 +164,10 @@ def get_data_loaders(
     normalize_output: bool = False,
     crop_box=None,  # [top, left, height, width]
     use_water_line: bool | None = None,
-    equalization: bool = True
+    equalization: bool = True,
+    crop_box_jitter: List[int] = None,
 ):
-    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
+    transforms = get_transforms(crop_box=crop_box, equalization=equalization, crop_box_jitter=crop_box_jitter)
 
     # Load dataset from directory
     dataset = WaterDataset(annotations_file, images_dir, transforms=transforms, use_water_line=use_water_line)
@@ -184,8 +206,9 @@ def get_data_loader(
     crop_box=None,  # [top, left, height, width]
     use_water_line: bool | None = None,
     equalization: bool = True,
+    crop_box_jitter: List[int] = None,
 ):
-    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
+    transforms = get_transforms(crop_box=crop_box, equalization=equalization, crop_box_jitter=crop_box_jitter)
 
     # Load dataset from directory
     dataset = WaterDataset(
