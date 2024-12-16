@@ -99,7 +99,7 @@ def run_dataset_inference(
 
     # Run inference on each image in the dataset
     data = []
-    for i, (image, depth, filename) in enumerate(dataset):
+    for image, depth, filename in dataset:
         output = run_inference(model, image)
 
         # Convert tensors to 1d numpy arrays
