@@ -143,6 +143,7 @@ def do_training(
     for epoch in range(n_epochs):
         # Train for the epoch
         model.train()
+        train_loss = 0
         for i, (inputs, labels, filenames) in enumerate(train_data):
             optimizer.zero_grad()
 
@@ -153,8 +154,9 @@ def do_training(
 
             loss.backward()
             optimizer.step()
+            train_loss += loss.item()
 
-        train_loss = loss.item()
+        train_loss /= len(train_data)
 
         # Test for this epoch
         model.eval()
