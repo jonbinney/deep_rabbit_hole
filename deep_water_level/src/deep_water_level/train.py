@@ -30,6 +30,9 @@ def do_training(
     # Training parameters
     n_epochs: int = 40,
     learning_rate: float = 1e-3,
+    crop_box_jitter: list = None,
+    random_rotation_degrees: int = 5,
+    color_jitter: float = 0.2,
     # Pre-processing parameters
     normalize_output: bool = False,
     crop_box: list = None,
@@ -71,8 +74,11 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             use_water_line=train_water_line,
+            random_rotation_degrees=random_rotation_degrees,
+            color_jitter=color_jitter,
         )
 
     else:
@@ -80,18 +86,24 @@ def do_training(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
+            random_rotation_degrees=random_rotation_degrees,
+            color_jitter=color_jitter,
         )
         test_data = get_data_loader(
             test_dataset_dir / "images",
             test_dataset_dir / "annotations" / annotations_file,
             shuffle=False,
             crop_box=crop_box,
+            crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
             use_water_line=train_water_line,
+            random_rotation_degrees=random_rotation_degrees,
+            color_jitter=color_jitter,
         )
 
     if log_transformed_images:
@@ -208,6 +220,26 @@ if __name__ == "__main__":
         default=[130, 275, 140, 140],
         help="Box with which to crop images, of form: top left height width",
     )
+    parser.add_argument(
+        "--crop_box_jitter",
+        nargs=2,
+        type=int,
+        default=[4, 20],
+        help="Randomize crop box by [H, W] pixels, for data augmentation",
+    )
+    parser.add_argument(
+        "--random_rotation_degrees",
+        type=int,
+        default=5,
+        help="Number of degrees to rotate images randomly for data augmentation",
+    )
+    parser.add_argument(
+        "--color_jitter",
+        type=float,
+        default=0.3,
+        help="color jittering for data augmentation, 0.0 means disabled",
+    )
+
     parser.add_argument(
         "--dropout_p",
         type=float,
