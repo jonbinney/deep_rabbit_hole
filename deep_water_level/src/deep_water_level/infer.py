@@ -37,7 +37,7 @@ def load_model(model_path: Path, train_water_line: bool = False):
 
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
-    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else None
+    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else {}
     if train_water_line:
         model = BasicCnnRegressionWaterLine(**model_args)
     else:
