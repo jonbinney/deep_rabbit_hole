@@ -136,7 +136,7 @@ def run_dataset_inference(
     return df
 
 
-def plot_inference_results(test_df, train_df=None):
+def plot_inference_results(test_df, train_df=None, plot_filename=None):
     all_test_predictions = np.vstack(test_df["predicted"].values)
     all_test_labels = np.vstack(test_df["actual"].values)
     assert all_test_predictions.shape == all_test_labels.shape
@@ -197,6 +197,8 @@ def plot_inference_results(test_df, train_df=None):
         scatter_ax.legend()
         scatter_ax.set_title("Predicted vs Actual Depths")
     plt.tight_layout()
+    if plot_filename is not None:
+        plt.savefig(plot_filename)
 
 
 if __name__ == "__main__":
