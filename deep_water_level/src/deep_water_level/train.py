@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 
+import signal
 import torch
 import torch.nn as nn
 import torchvision
@@ -11,6 +12,14 @@ import mlflow
 from annotation_utils.misc import my_device
 from deep_water_level.data import get_data_loader, get_data_loaders
 from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine
+
+shutdown_requested = False
+
+
+def signal_handler(signal, frame):
+    global shutdown_requested
+    shutdown_requested = True
+    print("Interrupt requested. Will finish this epoch, save the model and then exit")
 
 
 def create_model(train_water_line, **kwargs):
@@ -177,6 +186,11 @@ def do_training(
         mlflow.log_metric("test_loss", test_loss, step=epoch)
         report_fn({"epoch": epoch, "loss": train_loss, "test_loss": test_loss})
 
+        global shutdown_requested
+        if shutdown_requested:
+            print("Stopping now due to interrupt")
+            break
+
     # Save model to disk, locally
     if output_model_path is None:
         output_model_path = model.default_model_filename()
@@ -277,6 +291,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     start_experiment("Deep Water Level Training")
 
