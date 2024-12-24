@@ -137,8 +137,11 @@ def run_dataset_inference(
 
 
 def plot_inference_results(test_df, train_df=None, plot_filename=None):
-    all_test_predictions = np.vstack(test_df["predicted"].values)
+    predictions = np.vstack(test_df["predicted"].values)
     all_test_labels = np.vstack(test_df["actual"].values)
+    all_test_predictions = predictions[:, 0:1]
+    all_test_confidences = predictions[:, 1:2]
+    all_test_confidences = np.exp(all_test_confidences / 2.0) * 2.0
     assert all_test_predictions.shape == all_test_labels.shape
     num_outputs = all_test_predictions.shape[1]
 
@@ -168,6 +171,14 @@ def plot_inference_results(test_df, train_df=None, plot_filename=None):
 
         values_vs_index_ax.plot(test_predictions, "o", label="predicted", linestyle="None")
         values_vs_index_ax.plot(test_labels, "o", label="actual", linestyle="None")
+        values_vs_index_ax.vlines(
+            x=np.arange(len(test_predictions)),
+            ymin=test_predictions - all_test_confidences.squeeze(),
+            ymax=test_predictions + all_test_confidences.squeeze(),
+            color="blue",
+            alpha=0.5,
+            label="confidence interval",
+        )
         values_vs_index_ax.legend()
         values_vs_index_ax.set_title("Depth vs Index")
 
