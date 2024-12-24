@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from torch.optim.adamw import AdamW
 import torchvision
 from utils import start_experiment  # From object_tracker_0 package
 
@@ -125,25 +126,35 @@ def do_training(
     model.to(device)
     print(f"Model summary: {model}")
 
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
 
     for epoch in range(n_epochs):
         # Train for the epoch
         model.train()
+        train_loss = 0
         for i, (inputs, labels, filenames) in enumerate(train_data):
             optimizer.zero_grad()
 
             inputs = inputs.to(device)
             labels = labels.to(device)
             outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            # loss = criterion(outputs, labels)
+            mu, log_var = outputs[:, 0], outputs[:, 1]
+
+            loss = 0.5 * log_var + 0.5 * ((labels[:, 0] - mu) ** 2) / torch.exp(log_var)
+            # loss = 0.5 * (log_var + ((labels[:, 0] - mu) ** 2) / torch.exp(log_var)) + torch.exp(log_var / 2.0)  # last param to make it smaller
+
+            # loss = torch.mul(
+            #     0.5, torch.add(log_var, torch.div(torch.pow(torch.sub(labels[:, 0], mu), 2), torch.exp(log_var)))
+            # )
+            loss = torch.mean(loss)
 
             loss.backward()
             optimizer.step()
 
-        train_loss = loss.item()
+            train_loss += loss.item()
 
+        train_loss /= len(train_data)
         # Test for this epoch
         model.eval()
         test_loss = 0
@@ -152,7 +163,16 @@ def do_training(
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                mu, log_var = outputs[:, 0], outputs[:, 1]
+
+                # loss = torch.mul(
+                #     0.5, torch.add(log_var, torch.div(torch.pow(torch.sub(labels[:, 0], mu), 2), torch.exp(log_var)))
+                # )
+
+                loss = 0.5 * log_var + 0.5 * ((labels[:, 0] - mu) ** 2) / torch.exp(
+                    log_var
+                )  # + torch.exp(log_var / 2.0)
+                loss = torch.mean(loss)
                 test_loss += loss.item()
 
         test_loss /= len(test_data)
@@ -187,11 +207,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--train_dataset_dir",
         type=Path,
-        default="datasets/water_train_set4",
+        default="datasets/fake_water_images_train2",
         help="Path to the train dataset directory",
     )
     parser.add_argument(
-        "--test_dataset_dir", type=Path, default="datasets/water_test_set5", help="Path to the test dataset directory"
+        "--test_dataset_dir",
+        type=Path,
+        default="datasets/fake_water_images_test2",
+        help="Path to the test dataset directory",
     )
     parser.add_argument(
         "--annotations_file",
@@ -199,39 +222,39 @@ if __name__ == "__main__":
         default="filtered.csv",
         help="File name of the JSON file containing annotations within a dataset",
     )
-    parser.add_argument("--n_epochs", type=int, default=10, help="Number of epochs to train the model")
-    parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for training the model")
+    parser.add_argument("--n_epochs", type=int, default=200, help="Number of epochs to train the model")
+    parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate for training the model")
     parser.add_argument(
         "--crop_box",
         nargs=4,
         type=int,
-        default=[130, 275, 140, 140],
+        default=[50, 20, 250, 20],
         help="Box with which to crop images, of form: top left height width",
     )
     parser.add_argument(
         "--dropout_p",
         type=float,
-        default=0,
+        default=0.1,
         help="Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.",
     )
     parser.add_argument(
-        "--log_transformed_images", type=bool, default=False, help="Log transformed images to /tmp/deep_water_level"
+        "--log_transformed_images", type=bool, default=True, help="Log transformed images to /tmp/deep_water_level"
     )
     parser.add_argument("--normalize_output", type=bool, default=False, help="Normalize depth value to [-1, 1] range")
     parser.add_argument(
-        "--n_conv_layers", type=int, default=3, help="Number of convolutional layers in the model (2 or 3)"
+        "--n_conv_layers", type=int, default=2, help="Number of convolutional layers in the model (2 or 3)"
     )
     parser.add_argument(
         "--channel_multiplier",
         type=float,
-        default=3.0,
+        default=2.0,
         help="Multiplier for the number of channels in each convolutional layer",
     )
-    parser.add_argument("--conv_kernel_size", type=int, default=7, help="Convolutional kernel size, for all layers")
+    parser.add_argument("--conv_kernel_size", type=int, default=5, help="Convolutional kernel size, for all layers")
     parser.add_argument(
         "--equalization",
         type=bool,
-        default=True,
+        default=False,
         help="Perform histogram equalization on the input images to make them more uniform",
     )
 

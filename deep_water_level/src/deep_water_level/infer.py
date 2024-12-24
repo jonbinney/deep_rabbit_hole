@@ -37,7 +37,7 @@ def load_model(model_path: Path, train_water_line: bool = False):
 
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
-    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else None
+    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else {}
     if train_water_line:
         model = BasicCnnRegressionWaterLine(**model_args)
     else:
@@ -137,8 +137,11 @@ def run_dataset_inference(
 
 
 def plot_inference_results(test_df, train_df=None):
-    all_test_predictions = np.vstack(test_df["predicted"].values)
+    predictions = np.vstack(test_df["predicted"].values)
     all_test_labels = np.vstack(test_df["actual"].values)
+    all_test_predictions = predictions[:, 0:1]
+    all_test_confidences = predictions[:, 1:2]
+    all_test_confidences = np.exp(all_test_confidences / 2.0) * 2
     assert all_test_predictions.shape == all_test_labels.shape
     num_outputs = all_test_predictions.shape[1]
 
@@ -168,6 +171,14 @@ def plot_inference_results(test_df, train_df=None):
 
         values_vs_index_ax.plot(test_predictions, "o", label="predicted", linestyle="None")
         values_vs_index_ax.plot(test_labels, "o", label="actual", linestyle="None")
+        values_vs_index_ax.vlines(
+            x=np.arange(len(test_predictions)),
+            ymin=test_predictions - all_test_confidences.squeeze(),
+            ymax=test_predictions + all_test_confidences.squeeze(),
+            color="blue",
+            alpha=0.5,
+            label="confidence interval",
+        )
         values_vs_index_ax.legend()
         values_vs_index_ax.set_title("Depth vs Index")
 
@@ -212,7 +223,7 @@ if __name__ == "__main__":
 
     # If these arguments are provided, then the model will be run against the dataset, showing results.
     parser.add_argument(
-        "--dataset_dir", type=Path, default="datasets/water_test_set5", help="Path to the dataset directory"
+        "--dataset_dir", type=Path, default="datasets/fake_water_images_test3", help="Path to the dataset directory"
     )
     parser.add_argument(
         "--annotations_file", type=str, default="filtered.csv", help="File name of the JSON file containing annotations"
@@ -248,8 +259,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.verbose:
-        VERBOSE = True
+    VERBOSE = True
 
     (model, model_args, preprocessing_args) = load_model(args.model_path, args.use_water_line)
 
@@ -262,7 +272,7 @@ if __name__ == "__main__":
             model,
             dataset_dir=args.dataset_dir,
             annotations_file=args.annotations_file,
-            normalized_output=args.normalized_output,
+            normalize_output=args.normalized_output,
             crop_box=crop_box,
             use_water_line=args.use_water_line,
             equalization=equalization,
@@ -276,13 +286,14 @@ if __name__ == "__main__":
                 model,
                 dataset_dir=args.train_dataset_dir,
                 annotations_file=args.train_annotations_file,
-                normalized_output=args.normalized_output,
+                normalize_output=args.normalized_output,
                 crop_box=crop_box,
                 use_water_line=args.use_water_line,
                 equalization=equalization,
             )
 
         if args.scatter_plot:
+            print(test_df.shape)
             plot_inference_results(test_df, train_df)
             plt.show()
     else:
