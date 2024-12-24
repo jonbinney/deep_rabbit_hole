@@ -53,7 +53,7 @@ class BasicCnnRegression(nn.Module):
         self.fcn1 = nn.Linear(in_features=self.linear_size, out_features=120)
         if dropout_p is not None and dropout_p > 0:
             self.dropout = nn.Dropout(p=self.dropout_p)
-        self.fcn2 = nn.Linear(in_features=120, out_features=1)
+        self.fcn2 = nn.Linear(in_features=120, out_features=2)
 
     def make_cnn_layer(self, in_channels):
         out_channels = int(in_channels * self.channel_multiplier)

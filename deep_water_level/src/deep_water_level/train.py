@@ -137,7 +137,6 @@ def do_training(
     model.to(device)
     print(f"Model summary: {model}")
 
-    criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     for epoch in range(n_epochs):
@@ -150,7 +149,8 @@ def do_training(
             inputs = inputs.to(device)
             labels = labels.to(device)
             outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            mu, log_var = outputs[:, 0], outputs[:, 1]
+            loss = torch.mean(0.5 * log_var + 0.5 * ((labels[:, 0] - mu) ** 2) / torch.exp(log_var))
 
             loss.backward()
             optimizer.step()
@@ -166,7 +166,8 @@ def do_training(
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                mu, log_var = outputs[:, 0], outputs[:, 1]
+                loss = torch.mean(0.5 * log_var + 0.5 * ((labels[:, 0] - mu) ** 2) / torch.exp(log_var))
                 test_loss += loss.item()
 
         test_loss /= len(test_data)
@@ -213,8 +214,8 @@ if __name__ == "__main__":
         default="filtered.csv",
         help="File name of the JSON file containing annotations within a dataset",
     )
-    parser.add_argument("--n_epochs", type=int, default=10, help="Number of epochs to train the model")
-    parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for training the model")
+    parser.add_argument("--n_epochs", type=int, default=200, help="Number of epochs to train the model")
+    parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate for training the model")
     parser.add_argument(
         "--crop_box",
         nargs=4,
@@ -232,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--random_rotation_degrees",
         type=int,
-        default=5,
+        default=10,
         help="Number of degrees to rotate images randomly for data augmentation",
     )
     parser.add_argument(
@@ -245,7 +246,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dropout_p",
         type=float,
-        default=0,
+        default=0.05,
         help="Dropout probability to apply, from 0 to 1. None or 0.0 means disabled.",
     )
     parser.add_argument(
