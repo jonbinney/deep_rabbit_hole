@@ -4,6 +4,7 @@ from pathlib import Path
 
 import signal
 import torch
+import torch.profiler
 import torch.nn as nn
 import torchvision
 from utils import start_experiment  # From object_tracker_0 package
@@ -149,47 +150,59 @@ def do_training(
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    for epoch in range(n_epochs):
-        # Train for the epoch
-        model.train()
-        train_loss = 0
-        for i, (inputs, labels, filenames) in enumerate(train_data):
-            optimizer.zero_grad()
+    with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,  # If using GPU
+        ],
+        on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
+        record_shapes=False,
+        profile_memory=False,  # Track memory usage
+        with_stack=True,  # Include stack traces
+    ) as prof:
+        for epoch in range(n_epochs):
+            # Train for the epoch
+            model.train()
+            train_loss = 0
+            for i, (inputs, labels, filenames) in enumerate(train_data):
+                optimizer.zero_grad()
 
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-
-        train_loss /= len(train_data)
-
-        # Test for this epoch
-        model.eval()
-        test_loss = 0
-        with torch.no_grad():
-            for i, (inputs, labels, filenames) in enumerate(test_data):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
-                test_loss += loss.item()
 
-        test_loss /= len(test_data)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
 
-        # TODO: Abstract this into a reporting function
-        print(f"Epoch [{epoch + 1}/{n_epochs}], Loss: {train_loss:.4f}, Test loss: {test_loss:.4f}")
-        mlflow.log_metric("loss", train_loss, step=epoch)
-        mlflow.log_metric("test_loss", test_loss, step=epoch)
-        report_fn({"epoch": epoch, "loss": train_loss, "test_loss": test_loss})
+            train_loss /= len(train_data)
 
-        global shutdown_requested
-        if shutdown_requested:
-            print("Stopping now due to interrupt")
-            break
+            # Test for this epoch
+            model.eval()
+            test_loss = 0
+            with torch.no_grad():
+                for i, (inputs, labels, filenames) in enumerate(test_data):
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    test_loss += loss.item()
+
+            test_loss /= len(test_data)
+
+            # TODO: Abstract this into a reporting function
+            print(f"Epoch [{epoch + 1}/{n_epochs}], Loss: {train_loss:.4f}, Test loss: {test_loss:.4f}")
+            mlflow.log_metric("loss", train_loss, step=epoch)
+            mlflow.log_metric("test_loss", test_loss, step=epoch)
+            report_fn({"epoch": epoch, "loss": train_loss, "test_loss": test_loss})
+
+            global shutdown_requested
+            if shutdown_requested:
+                print("Stopping now due to interrupt")
+                break
+
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
     # Save model to disk, locally
     if output_model_path is None:
