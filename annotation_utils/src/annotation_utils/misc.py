@@ -100,21 +100,20 @@ def get_coordinates_from_segmentation(segmentation):
 
     return x0, y0, x1, y1
 
-def calculate_mean_std(dataset_dir: str = 'datasets/water_train_set4', annotations_file_name: str = 'filtered.csv'):
-    annotations_file = f'{dataset_dir}/annotations/{annotations_file_name}'
 
-    with open(annotations_file, 'r') as f:
+def calculate_mean_std(dataset_dir: str = "datasets/water_train_set4", annotations_file_name: str = "filtered.csv"):
+    annotations_file = f"{dataset_dir}/annotations/{annotations_file_name}"
+
+    with open(annotations_file, "r") as f:
         images_filenames = [f"{dataset_dir}/images/{line.split(',')[0]}" for line in f]
 
-    rgb_values = np.concatenate(
-        [Image.open(image_path).getdata() for image_path in images_filenames],
-        axis=0
-    ) / 255.0
+    rgb_values = np.concatenate([Image.open(image_path).getdata() for image_path in images_filenames], axis=0) / 255.0
 
     mean = np.mean(rgb_values, axis=0)
     std = np.std(rgb_values, axis=0)
 
     print(f"Mean: {mean}, std: {std}")
+
 
 def filename_to_datetime(filename):
     epoch = int(filename.split("/")[-1].split(".")[0].split("-")[-1])
@@ -223,5 +222,5 @@ if __name__ == "__main__":
     #     'datasets/water_test_set3/annotations/filtered.csv'
     #     )
     # filter_images(too_little_contrast)
-    #explore_images()
+    # explore_images()
     calculate_mean_std()
