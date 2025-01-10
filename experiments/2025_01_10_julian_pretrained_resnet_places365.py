@@ -1,7 +1,8 @@
+# TODO:
+#  - Adapt to the proper image input size, probably with cropping
+#  - Data augmentation
 from pathlib import Path
 import mlflow
-
-from matplotlib import pyplot as plt
 
 from deep_water_level.infer import load_model, plot_inference_results, run_dataset_inference
 from deep_water_level.train import do_training
@@ -29,7 +30,8 @@ args = {
     "normalize_output": False,
     "equalization": True,
     # Training parameters
-    "n_epochs": 3,
+    "batch_size": 4,
+    "n_epochs": 1,
     "learning_rate": 1e-4,
     "random_rotation_degrees": 0,
     "crop_box_jitter": None,
@@ -58,7 +60,7 @@ with mlflow.start_run():
     do_training(**args)
 
     # Load the model and run inference using it
-    model, model_args, preprocessing_args = load_model(output_model_path, train_water_line)
+    model, model_args, preprocessing_args = load_model(output_model_path, train_water_line, use_pretrained=True)
 
     train_df = run_dataset_inference(
         model,

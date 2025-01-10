@@ -52,6 +52,7 @@ def do_training(
     # Training parameters
     n_epochs: int = 40,
     learning_rate: float = 1e-3,
+    batch_size: int = 32,
     crop_box_jitter: list = None,
     random_rotation_degrees: int = 5,
     color_jitter: float = 0.2,
@@ -96,6 +97,7 @@ def do_training(
         (train_data, test_data) = get_data_loaders(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
@@ -108,6 +110,7 @@ def do_training(
         train_data = get_data_loader(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
@@ -119,6 +122,7 @@ def do_training(
         test_data = get_data_loader(
             test_dataset_dir / "images",
             test_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             shuffle=False,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
@@ -179,6 +183,8 @@ def do_training(
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            print(".", end="", flush=True)
+        print("")
 
         train_loss /= len(train_data)
 
@@ -192,6 +198,8 @@ def do_training(
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 test_loss += loss.item()
+                print(",", end="", flush=True)
+            print("")
 
         test_loss /= len(test_data)
 
