@@ -11,7 +11,7 @@ from utils import my_device, start_experiment
 annotations_file = Path("filtered.csv")
 train_dataset_path = Path("datasets/water_train_set4")
 test_dataset_path = Path("datasets/water_test_set5")
-crop_box = None
+crop_box = [88, 234, 224, 224]  # Cropping image to Resnet 50 input size. TODO: Verify
 train_water_line = False
 model_filename = Path("model.pth")
 parent_output_dir = Path("../dwl_output")
@@ -31,11 +31,11 @@ args = {
     "equalization": True,
     # Training parameters
     "batch_size": 4,
-    "n_epochs": 1,
+    "n_epochs": 30,
     "learning_rate": 1e-4,
-    "random_rotation_degrees": 0,
-    "crop_box_jitter": None,
-    "color_jitter": 0,
+    "random_rotation_degrees": 10,
+    "crop_box_jitter": [10, 30],
+    "color_jitter": 0.3,
     # Model parameters
     "use_pretrained": True,
     "dropout_p": 0.1,
