@@ -20,6 +20,8 @@ import mplcursors
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
+import torchvision
 
 from annotation_utils.misc import filename_to_datetime, my_device
 from deep_water_level.data import WaterDataset, get_transforms
@@ -28,7 +30,7 @@ from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLi
 VERBOSE = False
 
 
-def load_model(model_path: Path, train_water_line: bool = False):
+def load_model(model_path: Path, train_water_line: bool = False, use_pretrained: bool = False):
     if model_path is None:
         if train_water_line:
             model_path = BasicCnnRegressionWaterLine.DEFAULT_MODEL_FILENAME
@@ -38,10 +40,14 @@ def load_model(model_path: Path, train_water_line: bool = False):
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
     preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else {}
-    if train_water_line:
+    if use_pretrained:
+        model = torchvision.models.resnet50(num_classes=365, weights=None)
+        model.fc = nn.Linear(model.fc.in_features, 1)
+    elif train_water_line:
         model = BasicCnnRegressionWaterLine(**model_args)
     else:
         model = BasicCnnRegression(**model_args)
+
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return (model, model_args, preprocessing_args)
@@ -110,6 +116,8 @@ def run_dataset_inference(
 
         if VERBOSE:
             print(f"Filename: {filename}, Infered: {a2s(output)}, Actual: {a2s(depth)}, Error: {a2s(error)}")
+        else:
+            print(".", end="", flush=True)
 
         try:
             timestamp = filename_to_datetime(filename)
@@ -124,6 +132,8 @@ def run_dataset_inference(
                 "actual": depth,
             }
         )
+    if not VERBOSE:
+        print()
 
     # Load into a pandas dataframe
     df = pd.DataFrame(data)

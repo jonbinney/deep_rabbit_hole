@@ -22,9 +22,22 @@ def signal_handler(signal, frame):
     print("Interrupt requested. Will finish this epoch, save the model and then exit")
 
 
-def create_model(train_water_line, **kwargs):
+def create_model(train_water_line, use_pretrained=False, **kwargs):
     # Create the model
-    if train_water_line:
+    if use_pretrained:
+        # Instantiate the model
+        model = torchvision.models.resnet50(num_classes=365, weights=None)
+        # Load the pretrained weights
+        # TODO: Download from the Web if needed
+        checkpoint = torch.load(
+            "models/weights/resnet50_places365.pth.tar", map_location=my_device(), weights_only=True
+        )
+        # Load the pretrained weights in the model
+        state_dict = {k.replace("module.", ""): v for k, v in checkpoint["state_dict"].items()}
+        model.load_state_dict(state_dict)
+        # Replace the last fully connected layer
+        model.fc = nn.Linear(model.fc.in_features, 1)
+    elif train_water_line:
         model = BasicCnnRegressionWaterLine(**kwargs)
     else:
         model = BasicCnnRegression(**kwargs)
@@ -39,6 +52,7 @@ def do_training(
     # Training parameters
     n_epochs: int = 40,
     learning_rate: float = 1e-3,
+    batch_size: int = 32,
     crop_box_jitter: list = None,
     random_rotation_degrees: int = 5,
     color_jitter: float = 0.2,
@@ -47,6 +61,7 @@ def do_training(
     crop_box: list = None,
     equalization: bool = True,
     # Model parameters
+    use_pretrained: bool = False,
     dropout_p: float = None,
     n_conv_layers: int = 2,
     channel_multiplier: float = 2.0,
@@ -82,6 +97,7 @@ def do_training(
         (train_data, test_data) = get_data_loaders(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
@@ -94,6 +110,7 @@ def do_training(
         train_data = get_data_loader(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
@@ -105,6 +122,7 @@ def do_training(
         test_data = get_data_loader(
             test_dataset_dir / "images",
             test_dataset_dir / "annotations" / annotations_file,
+            batch_size=batch_size,
             shuffle=False,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
@@ -133,6 +151,7 @@ def do_training(
     # Train the model
     (model, model_args) = create_model(
         train_water_line,
+        use_pretrained=use_pretrained,
         image_size=first_image.shape,
         dropout_p=dropout_p,
         n_conv_layers=n_conv_layers,
@@ -164,6 +183,8 @@ def do_training(
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            print(".", end="", flush=True)
+        print("")
 
         train_loss /= len(train_data)
 
@@ -177,6 +198,8 @@ def do_training(
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 test_loss += loss.item()
+                print(",", end="", flush=True)
+            print("")
 
         test_loss /= len(test_data)
 
