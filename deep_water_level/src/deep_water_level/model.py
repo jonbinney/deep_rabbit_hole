@@ -1,7 +1,9 @@
-from typing import Tuple
+from typing import Tuple, Literal
 
 import torch
 import torch.nn as nn
+
+ModelNames = Literal["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNet50Pretrained"]
 
 
 class BasicCnnRegression(nn.Module):
