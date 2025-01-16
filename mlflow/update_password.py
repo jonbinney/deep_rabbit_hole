@@ -1,9 +1,9 @@
 #!/bin/env python3
 # Simple python script to update the default MLFlow admin password
+import os
 import requests
-from getpass import getpass
 
-host = "https://soft-pond-5082.ploomberapp.io"
+host = os.environ["MLFLOW_TRACKING_URI"]
 password_new = "W3AreLazy!"
 
 response = requests.patch(
