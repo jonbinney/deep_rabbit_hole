@@ -9,7 +9,6 @@ from torchvision import transforms, utils
 from torchvision.transforms import v2
 
 from deep_water_level.infer import load_model
-from deep_water_level.model import BasicCnnRegression
 
 
 def get_conv_layers(model):
@@ -98,7 +97,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    model, _ = load_model(args.model_path)
+    model, _, _ = load_model(args.model_path, "BasicCnnRegression")
     conv_layers = get_conv_layers(model)
 
     for layer in conv_layers:

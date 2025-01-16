@@ -25,28 +25,33 @@ import torchvision
 
 from annotation_utils.misc import filename_to_datetime, my_device
 from deep_water_level.data import WaterDataset, get_transforms
-from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames
 
 VERBOSE = False
 
 
-def load_model(model_path: Path, train_water_line: bool = False, use_pretrained: bool = False):
+def load_model(model_path: Path, model_name: ModelNames):
     if model_path is None:
-        if train_water_line:
+        if model_name == "ResNet50Pretrained":
+            model_path = "model_resnet50_pretrained.pth"
+        elif model_name == "BasicCnnRegressionWaterLine":
             model_path = BasicCnnRegressionWaterLine.DEFAULT_MODEL_FILENAME
-        else:
+        elif model_name == "BasicCnnRegression":
             model_path = BasicCnnRegression.DEFAULT_MODEL_FILENAME
 
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
     preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else {}
-    if use_pretrained:
+
+    if model_name == "ResNet50Pretrained":
         model = torchvision.models.resnet50(num_classes=365, weights=None)
         model.fc = nn.Linear(model.fc.in_features, 1)
-    elif train_water_line:
+    elif model_name == "BasicCnnRegressionWaterLine":
         model = BasicCnnRegressionWaterLine(**model_args)
-    else:
+    elif model_name == "BasicCnnRegression":
         model = BasicCnnRegression(**model_args)
+    else:
+        raise ValueError(f"Unsupported model name: {model_name}")
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -79,11 +84,11 @@ def run_gradio_app(model, crop_box=None):
 
 def run_dataset_inference(
     model,
+    model_name: ModelNames,
     dataset_dir: Path,
-    annotations_file: str,
+    annotations_file: Path,
     normalize_output,
     crop_box=None,
-    use_water_line=False,
     equalization: bool = False,
 ):
     # Convert numpy array to string for printing
@@ -98,9 +103,9 @@ def run_dataset_inference(
     dataset = WaterDataset(
         dataset_dir / "annotations" / annotations_file,
         dataset_dir / "images",
+        model_name,
         transforms=transforms,
         normalize_output=normalize_output,
-        use_water_line=use_water_line,
     )
 
     # Run inference on each image in the dataset
@@ -214,7 +219,13 @@ def plot_inference_results(test_df, train_df=None, plot_filename=None):
 if __name__ == "__main__":
     # Parse program arguments
     parser = argparse.ArgumentParser(description="Deep Water Level")
-    parser.add_argument("-m", "--model_path", type=str, default=None, help="Path to the model file")
+    parser.add_argument(
+        "-m",
+        "--model_path",
+        type=str,
+        default=None,
+        help="Path to the model file",
+    )
     parser.add_argument(
         "--normalize_output",
         type=bool,
@@ -249,11 +260,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scatter_plot", type=bool, default=True, help="Show a scatter plot of actual vs predicted values"
     )
+    # TO DO: would be nice if the model name could be stored in the model file instead of passing it here
     parser.add_argument(
-        "--use_water_line",
-        type=bool,
-        default=False,
-        help="If set, do inference of the water level coordinates as output instead of depth",
+        "--model_name",
+        choices=["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNet50Pretrained"],
+        default="BasicCnnRegression",
+        help="Model to use for inference.  See ModelNames for options",
     )
 
     parser.add_argument("--verbose", action="store_true", help="Print error for each image in the dataset")
@@ -263,7 +275,9 @@ if __name__ == "__main__":
     if args.verbose:
         VERBOSE = True
 
-    (model, model_args, preprocessing_args) = load_model(args.model_path, args.use_water_line)
+    model_name = args.model_name
+
+    (model, model_args, preprocessing_args) = load_model(args.model_path, model_name)
 
     equalization = preprocessing_args["equalization"] if "equalization" in preprocessing_args else True
     crop_box = preprocessing_args["crop_box"] if "crop_box" in preprocessing_args else None
@@ -272,11 +286,11 @@ if __name__ == "__main__":
     if "dataset_dir" in args and "annotations_file" in args:
         test_df = run_dataset_inference(
             model,
+            model_name,
             dataset_dir=args.dataset_dir,
             annotations_file=args.annotations_file,
             normalize_output=args.normalize_output,
             crop_box=crop_box,
-            use_water_line=args.use_water_line,
             equalization=equalization,
         )
         if args.annotations_out_filename is not None:
@@ -286,11 +300,11 @@ if __name__ == "__main__":
         if args.train_dataset_dir is not None and args.train_annotations_file is not None:
             train_df = run_dataset_inference(
                 model,
+                model_name,
                 dataset_dir=args.train_dataset_dir,
                 annotations_file=args.train_annotations_file,
                 normalize_output=args.normalize_output,
                 crop_box=crop_box,
-                use_water_line=args.use_water_line,
                 equalization=equalization,
             )
 

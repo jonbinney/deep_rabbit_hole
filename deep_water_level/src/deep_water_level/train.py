@@ -11,7 +11,7 @@ from utils import start_experiment  # From object_tracker_0 package
 import mlflow
 from annotation_utils.misc import my_device
 from deep_water_level.data import get_data_loader, get_data_loaders
-from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames
 
 shutdown_requested = False
 
@@ -22,9 +22,9 @@ def signal_handler(signal, frame):
     print("Interrupt requested. Will finish this epoch, save the model and then exit")
 
 
-def create_model(train_water_line, use_pretrained=False, **kwargs):
+def create_model(model_name: ModelNames, **kwargs):
     # Create the model
-    if use_pretrained:
+    if model_name == "ResNet50Pretrained":
         # Instantiate the model
         model = torchvision.models.resnet50(num_classes=365, weights=None)
         # Load the pretrained weights
@@ -37,10 +37,13 @@ def create_model(train_water_line, use_pretrained=False, **kwargs):
         model.load_state_dict(state_dict)
         # Replace the last fully connected layer
         model.fc = nn.Linear(model.fc.in_features, 1)
-    elif train_water_line:
+    elif model_name == "BasicCnnRegressionWaterLine":
         model = BasicCnnRegressionWaterLine(**kwargs)
-    else:
+    elif model_name == "BasicCnnRegression":
         model = BasicCnnRegression(**kwargs)
+    else:
+        raise ValueError(f"Unknown model name: {model_name}")
+
     return (model, kwargs)
 
 
@@ -61,7 +64,7 @@ def do_training(
     crop_box: list = None,
     equalization: bool = True,
     # Model parameters
-    use_pretrained: bool = False,
+    model_name: ModelNames = "BasicCnnRegression",
     dropout_p: float = None,
     n_conv_layers: int = 2,
     channel_multiplier: float = 2.0,
@@ -72,7 +75,6 @@ def do_training(
     max_pool_stride: int = 1,
     # Configuration parameters
     log_transformed_images: bool = False,
-    train_water_line: bool = False,
     report_fn: callable = lambda *args, **kwargs: None,
     output_model_path: Path = None,
 ):
@@ -97,11 +99,11 @@ def do_training(
         (train_data, test_data) = get_data_loaders(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            model_name,
             batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
-            use_water_line=train_water_line,
             random_rotation_degrees=random_rotation_degrees,
             color_jitter=color_jitter,
         )
@@ -110,25 +112,25 @@ def do_training(
         train_data = get_data_loader(
             train_dataset_dir / "images",
             train_dataset_dir / "annotations" / annotations_file,
+            model_name,
             batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
-            use_water_line=train_water_line,
             random_rotation_degrees=random_rotation_degrees,
             color_jitter=color_jitter,
         )
         test_data = get_data_loader(
             test_dataset_dir / "images",
             test_dataset_dir / "annotations" / annotations_file,
+            model_name,
             batch_size=batch_size,
             shuffle=False,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
             equalization=equalization,
             normalize_output=normalize_output,
-            use_water_line=train_water_line,
             random_rotation_degrees=random_rotation_degrees,
             color_jitter=color_jitter,
         )
@@ -150,8 +152,7 @@ def do_training(
 
     # Train the model
     (model, model_args) = create_model(
-        train_water_line,
-        use_pretrained=use_pretrained,
+        model_name,
         image_size=first_image.shape,
         dropout_p=dropout_p,
         n_conv_layers=n_conv_layers,
@@ -307,16 +308,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--train_water_line",
-        type=bool,
-        default=False,
-        help="If set, the model is trained with the water line coordinates as well as the depth",
+        "--model_name",
+        type=str,
+        default="BasicCnnRegression",
+        help="Model to use for training.  See ModelNames for options",
     )
 
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, signal_handler)
 
+    model = do_training(**vars(args))
     start_experiment("Deep Water Level Training")
 
     with mlflow.start_run():
