@@ -44,6 +44,7 @@ def create_model(model_name: ModelNames, **kwargs):
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
+    kwargs["model_name"] = model_name
     return (model, kwargs)
 
 
@@ -217,7 +218,14 @@ def do_training(
 
     # Save model to disk, locally
     if output_model_path is None:
-        output_model_path = model.default_model_filename()
+        if model_name == "BasicCnnRegression":
+            output_model_path = "model.pth"
+        elif model_name == "BasicCnnRegressionWaterLine":
+            output_model_path = "model_waterline.pth"
+        elif model_name == "ResNet50Pretrained":
+            output_model_path = "model_resnet50_pretrained.pth"
+        else:
+            raise ValueError(f"Unknown model name: {model_name}")
 
     torch.save(
         {
@@ -318,7 +326,6 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    model = do_training(**vars(args))
     start_experiment("Deep Water Level Training")
 
     with mlflow.start_run():

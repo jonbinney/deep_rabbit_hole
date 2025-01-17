@@ -7,8 +7,6 @@ ModelNames = Literal["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNe
 
 
 class BasicCnnRegression(nn.Module):
-    DEFAULT_MODEL_FILENAME = "model.pth"
-
     """
     Basic model which includes two CNN layers and a single linear layer.
     """
@@ -91,12 +89,8 @@ class BasicCnnRegression(nn.Module):
         x = self.fcn2(x)
         return x
 
-    def default_model_filename(self):
-        return self.DEFAULT_MODEL_FILENAME
-
 
 class BasicCnnRegressionWaterLine(nn.Module):
-    DEFAULT_MODEL_FILENAME = "model_water_line.pth"
     """
     Basic model which includes two CNN layers and a single linear layer, and the output is the coordinates for the water line.
     """
@@ -178,6 +172,3 @@ class BasicCnnRegressionWaterLine(nn.Module):
             x = self.dropout(x)
         x = self.fcn2(x)
         return x
-
-    def default_model_filename(self):
-        return self.DEFAULT_MODEL_FILENAME
