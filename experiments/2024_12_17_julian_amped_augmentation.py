@@ -56,7 +56,7 @@ with mlflow.start_run():
     do_training(**args)
 
     # Load the model and run inference using it
-    model, model_args, preprocessing_args = load_model(output_model_path, model_name)
+    model, model_name, model_args, preprocessing_args = load_model(output_model_path)
 
     train_df = run_dataset_inference(
         model,

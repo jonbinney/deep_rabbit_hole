@@ -30,18 +30,12 @@ from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLi
 VERBOSE = False
 
 
-def load_model(model_path: Path, model_name: ModelNames):
-    if model_path is None:
-        if model_name == "ResNet50Pretrained":
-            model_path = "model_resnet50_pretrained.pth"
-        elif model_name == "BasicCnnRegressionWaterLine":
-            model_path = BasicCnnRegressionWaterLine.DEFAULT_MODEL_FILENAME
-        elif model_name == "BasicCnnRegression":
-            model_path = BasicCnnRegression.DEFAULT_MODEL_FILENAME
-
+def load_model(model_path: Path):
     checkpoint = torch.load(model_path, weights_only=False, map_location=my_device())
     model_args = checkpoint["model_args"]
-    preprocessing_args = checkpoint["preprocessing_args"] if "preprocessing_args" in checkpoint else {}
+    # Old models won't have this field, so assuming is BasicCnnRegression
+    model_name = model_args.pop("model_name", "BasicCnnRegression")
+    preprocessing_args = checkpoint.get("preprocessing_args", {})
 
     if model_name == "ResNet50Pretrained":
         model = torchvision.models.resnet50(num_classes=365, weights=None)
@@ -55,7 +49,7 @@ def load_model(model_path: Path, model_name: ModelNames):
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    return (model, model_args, preprocessing_args)
+    return (model, model_name, model_args, preprocessing_args)
 
 
 def run_inference(model, input, transforms=None):
@@ -223,7 +217,7 @@ if __name__ == "__main__":
         "-m",
         "--model_path",
         type=str,
-        default=None,
+        default="model.pth",
         help="Path to the model file",
     )
     parser.add_argument(
@@ -260,13 +254,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scatter_plot", type=bool, default=True, help="Show a scatter plot of actual vs predicted values"
     )
-    # TO DO: would be nice if the model name could be stored in the model file instead of passing it here
-    parser.add_argument(
-        "--model_name",
-        choices=["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNet50Pretrained"],
-        default="BasicCnnRegression",
-        help="Model to use for inference.  See ModelNames for options",
-    )
 
     parser.add_argument("--verbose", action="store_true", help="Print error for each image in the dataset")
 
@@ -275,9 +262,7 @@ if __name__ == "__main__":
     if args.verbose:
         VERBOSE = True
 
-    model_name = args.model_name
-
-    (model, model_args, preprocessing_args) = load_model(args.model_path, model_name)
+    (model, model_name, model_args, preprocessing_args) = load_model(args.model_path)
 
     equalization = preprocessing_args["equalization"] if "equalization" in preprocessing_args else True
     crop_box = preprocessing_args["crop_box"] if "crop_box" in preprocessing_args else None
