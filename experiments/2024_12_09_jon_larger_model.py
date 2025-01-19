@@ -9,9 +9,9 @@ annotations_file = Path("filtered.csv")
 train_dataset_path = Path("datasets/water_train_set4")
 test_dataset_path = Path("datasets/water_test_set5")
 crop_box = [130, 275, 140, 140]
-train_water_line = False
 model_filename = Path("model.pth")
 parent_output_dir = Path("../dwl_output")
+model_name = "BasicCnnRegression"
 
 output_dir = parent_output_dir / f"large_conv"
 output_model_path = output_dir / model_filename
@@ -28,6 +28,7 @@ do_training(
     normalize_output=False,
     crop_box=None,
     # Model parameters
+    model_name=model_name,
     dropout_p=None,
     n_conv_layers=2,
     channel_multiplier=2.0,
@@ -38,27 +39,26 @@ do_training(
     max_pool_stride=1,
     # Configuration parameters
     log_transformed_images=False,
-    train_water_line=False,
     output_model_path=output_model_path,
 )
 
 # Load the model and run inference using it
-model, model_args, preprocessing_args = load_model(output_model_path, train_water_line)
+model, model_name, model_args, preprocessing_args = load_model(output_model_path)
 
 train_df = run_dataset_inference(
     model,
+    model_name,
     train_dataset_path,
     annotations_file,
     **preprocessing_args,
-    use_water_line=train_water_line,
 )
 
 test_df = run_dataset_inference(
     model,
+    model_name,
     test_dataset_path,
     annotations_file,
     **preprocessing_args,
-    use_water_line=train_water_line,
 )
 
 plot_inference_results(test_df, train_df)
