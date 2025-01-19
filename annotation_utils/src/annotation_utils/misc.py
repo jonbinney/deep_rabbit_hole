@@ -17,15 +17,14 @@ def bad_name(dataset_dir, image):
     return image["file_name"].startswith("pilenew/images/2024-10-06/0-1728254877-")
 
 
-def too_little_contrast(dataset_dir, image):
+def too_little_contrast(image_filename):
     """
     Function for filter_images
     Removes images with low contrast
     """
-    image_filename = image.get("file_name", None)
     if image_filename is not None:
         # use OpenCV to display the image and wait for a key
-        img = cv2.imread(f"{dataset_dir}/images/{image_filename}")
+        img = cv2.imread(image_filename)
         # Convert to grayscale and normalize
         img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img_gray = img_gray / 255.0
@@ -47,7 +46,7 @@ def filter_images(eval_fn: callable = bad_name):
 
     delete_ids = []
     for image in data["images"]:
-        if eval_fn(dataset_dir, image):
+        if eval_fn(f"{dataset_dir}/images/{image.get("file_name", None)}"):
             delete_ids.append(image["id"])
 
     # Remove the images if the ID is in delete_ids
