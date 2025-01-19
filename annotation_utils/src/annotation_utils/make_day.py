@@ -91,7 +91,7 @@ def filter_images(dataset_path: Path):
     print(f"Filtered out {len(removed)} low contrast images")
 
 
-def make_day(date: str, depth: float, dataset_path: str, upload: bool):
+def make_day(date: str, depth: float, dataset_path: str):
     dataset_path = Path(dataset_path)
 
     print(f"Creating dataset for day {date} with depth {depth} at {dataset_path}")
@@ -106,16 +106,12 @@ def make_day(date: str, depth: float, dataset_path: str, upload: bool):
     # 3. Create annotations file (coco)
     create_single_depth_annotations_coco(dataset_path, depth)
 
-    # 4. (optional) Update to bucket
-    pass
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", type=str, required=True)
     parser.add_argument("--depth", type=float, required=True)
     parser.add_argument("--dataset_path", type=str, required=True)
-    parser.add_argument("--upload", type=bool, default=False)
     args = parser.parse_args()
 
     make_day(**vars(args))
