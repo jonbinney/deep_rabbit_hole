@@ -1,9 +1,12 @@
-from typing import Tuple, Literal
+from typing import Literal, Tuple
 
 import torch
 import torch.nn as nn
+from torchvision import models
+from torchvision.models.segmentation import DeepLabV3_ResNet50_Weights
+from torchvision.models.segmentation.deeplabv3 import DeepLabHead
 
-ModelNames = Literal["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNet50Pretrained"]
+ModelNames = Literal["BasicCnnRegression", "BasicCnnRegressionWaterLine", "ResNet50Pretrained", "DeepLabV3"]
 
 
 class BasicCnnRegression(nn.Module):
@@ -172,3 +175,13 @@ class BasicCnnRegressionWaterLine(nn.Module):
             x = self.dropout(x)
         x = self.fcn2(x)
         return x
+
+
+class DeepLabModel(nn.Module):
+    def __init__(self):
+        super(DeepLabModel, self).__init__()
+        self.model = models.segmentation.deeplabv3_resnet50(weights=DeepLabV3_ResNet50_Weights.DEFAULT)
+        self.model.classifier = DeepLabHead(2048, num_classes=2)
+
+    def forward(self, x):
+        return self.model(x)["out"]

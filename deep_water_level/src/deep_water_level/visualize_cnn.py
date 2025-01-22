@@ -97,7 +97,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    model, _, _ = load_model(args.model_path, "BasicCnnRegression")
+    model, _, _, _ = load_model(args.model_path)
     conv_layers = get_conv_layers(model)
 
     for layer in conv_layers:

@@ -28,6 +28,8 @@ class WaterDataset(Dataset):
     def load_annotations(self):
         suffix = self.annotations_file.suffix
         if suffix == ".json":
+            if self.model_name == "DeepLabV3":
+                return self.load_coco_for_segmentation()
             return self.load_coco()
         elif suffix == ".csv":
             return self.load_csv()
@@ -60,6 +62,28 @@ class WaterDataset(Dataset):
                 print(f"WARN: No image found for annotation. image_id: {image_id}")
         return data
 
+    def load_coco_for_segmentation(self):
+        with open(self.annotations_file, "r") as f:
+            coco_data = json.load(f)
+
+        annotations = {}
+        for ann in coco_data["annotations"]:
+            image_id = ann["image_id"]
+            if image_id not in annotations:
+                annotations[image_id] = []
+            annotations[image_id].append(ann)
+
+        data = [
+            (
+                str(Path(self.images_dir) / img["file_name"]),
+                img | {"segmentation": annotations[image_id][0]["segmentation"]},
+            )
+            for img in coco_data["images"]
+            if image_id in annotations
+        ]
+
+        return data
+
     def load_csv(self):
         def parse_line(line):
             fields = line.split(",")
@@ -88,12 +112,32 @@ class WaterDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        image_path, depth = self.data[index]
+        image_path, label = self.data[index]
         image = Image.open(image_path)
         if self.transforms is not None:
             image = self.transforms(image)
-        depth = torch.tensor(depth, dtype=torch.float32)
-        return image, depth, image_path
+
+        if self.model_name == "DeepLabV3":
+            label = self.decode_rle(label["segmentation"])
+        else:
+            label = torch.tensor(label, dtype=torch.float32)
+        return image, label, image_path
+
+    def decode_rle(self, rle):
+        width, height = rle["size"]
+        counts = rle["counts"]
+
+        mask = torch.zeros(height * width, dtype=torch.long)
+        pos = 0
+        is_zero = True
+        for count in counts:
+            if not is_zero:
+                mask[pos : pos + count] = 1
+
+            pos += count
+            is_zero = not is_zero
+
+        return mask.reshape((height, width)).swapdims(0, 1)
 
 
 class JitterCrop(torch.nn.Module):
@@ -222,11 +266,13 @@ def get_data_loaders(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
+            drop_last=True,
         ),
         torch.utils.data.DataLoader(
             test_dataset,
             batch_size=batch_size,
             shuffle=False,
+            drop_last=True,
         ),
     )
 
@@ -260,4 +306,4 @@ def get_data_loader(
         transforms=transforms,
         normalize_output=normalize_output,
     )
-    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)

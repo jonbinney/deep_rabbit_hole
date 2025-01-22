@@ -48,7 +48,7 @@ def load_raw_data(raw_data_dir: Path, camera_id: str = None):
 def load_annotations(dataset_dir: Path, annotations_file_name: str):
     annotations_file_path = dataset_dir / "annotations" / annotations_file_name
     images_dir_path = dataset_dir / "images"
-    dataset = WaterDataset(annotations_file_path, images_dir_path)
+    dataset = WaterDataset(annotations_file_path, images_dir_path, "BasicCnnRegression")
     data = dataset.load_annotations()
     timestamps = []
     image_paths = []
