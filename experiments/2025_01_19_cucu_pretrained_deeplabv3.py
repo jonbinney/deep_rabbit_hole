@@ -30,7 +30,7 @@ args = {
     "equalization": True,
     # Training parameters
     "batch_size": 2,
-    "n_epochs": 1,  # QQ 5
+    "n_epochs": 5,
     "learning_rate": 1e-3,
     # "random_rotation_degrees": 15,
     # "crop_box_jitter": [10, 30],
