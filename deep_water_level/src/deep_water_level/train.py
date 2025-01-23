@@ -1,8 +1,8 @@
 # Script that trains a network model for deep water level detection
 import argparse
+import signal
 from pathlib import Path
 
-import signal
 import torch
 import torch.nn as nn
 import torchvision
@@ -11,7 +11,7 @@ from utils import start_experiment  # From object_tracker_0 package
 import mlflow
 from annotation_utils.misc import my_device
 from deep_water_level.data import get_data_loader, get_data_loaders
-from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames, DeepLabModel
 
 shutdown_requested = False
 
@@ -41,6 +41,8 @@ def create_model(model_name: ModelNames, **kwargs):
         model = BasicCnnRegressionWaterLine(**kwargs)
     elif model_name == "BasicCnnRegression":
         model = BasicCnnRegression(**kwargs)
+    elif model_name == "DeepLabV3":
+        model = DeepLabModel()
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
@@ -167,7 +169,10 @@ def do_training(
     model.to(device)
     print(f"Model summary: {model}")
 
-    criterion = nn.MSELoss()
+    if model_name == "DeepLabV3":
+        criterion = nn.CrossEntropyLoss()
+    else:
+        criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     for epoch in range(n_epochs):
@@ -224,6 +229,8 @@ def do_training(
             output_model_path = "model_waterline.pth"
         elif model_name == "ResNet50Pretrained":
             output_model_path = "model_resnet50_pretrained.pth"
+        elif model_name == "DeepLabV3":
+            output_model_path = "model_deeplabv3_pretrained.pth"
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 

@@ -25,7 +25,7 @@ import torchvision
 
 from annotation_utils.misc import filename_to_datetime, my_device
 from deep_water_level.data import WaterDataset, get_transforms
-from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames
+from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames, DeepLabModel
 
 VERBOSE = False
 
@@ -44,6 +44,8 @@ def load_model(model_path: Path):
         model = BasicCnnRegressionWaterLine(**model_args)
     elif model_name == "BasicCnnRegression":
         model = BasicCnnRegression(**model_args)
+    elif model_name == "DeepLabV3":
+        model = DeepLabModel()
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
 
