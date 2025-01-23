@@ -234,17 +234,14 @@ def do_training(
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 
-    if model_name == "DeepLabV3 QQ can I remove?":
-        torch.save(model.state_dict(), output_model_path)
-    else:
-        torch.save(
-            {
-                "model_state_dict": model.state_dict(),
-                "model_args": model_args,
-                "preprocessing_args": preprocessing_args,
-            },
-            output_model_path,
-        )
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "model_args": model_args,
+            "preprocessing_args": preprocessing_args,
+        },
+        output_model_path,
+    )
 
     # TODO: Log Model. It's a bit trickier than this, it requires the signature to be inferred or defined properly
     # mlflow.pytorch.log_model(model, "model")
