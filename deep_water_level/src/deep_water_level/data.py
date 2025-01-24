@@ -165,8 +165,8 @@ class JitterCrop(torch.nn.Module):
 def get_transforms(
     crop_box=None,
     equalization: bool = True,
-    is_trainig: bool = True,
-    crop_box_jitter: List[int] = None,
+    is_training: bool = True,
+    crop_box_jitter: List[int] | None = None,
     random_rotation_degrees: int = 0,
     color_jitter: float = 0.0,
 ):
@@ -176,7 +176,7 @@ def get_transforms(
     # - Make most effective use of dtypes
 
     if crop_box is not None:
-        if is_trainig and crop_box_jitter is not None:
+        if is_training and crop_box_jitter is not None:
             transforms_array.append(JitterCrop(crop_box, crop_box_jitter))
         else:
             top, left, height, width = crop_box
@@ -200,7 +200,7 @@ def get_transforms(
     )
 
     # Only add data augmentation transforms for training
-    if is_trainig:
+    if is_training:
         # Add data augmentation
         transforms_array.extend(
             [
