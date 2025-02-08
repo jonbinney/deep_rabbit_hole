@@ -3,7 +3,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -114,13 +114,15 @@ class WaterDataset(Dataset):
     def __getitem__(self, index):
         image_path, label = self.data[index]
         image = Image.open(image_path)
-        if self.transforms is not None:
-            image = self.transforms(image)
-
         if self.model_name == "DeepLabV3":
             label = self.decode_rle(label["segmentation"])
+            if self.transforms is not None:
+                image, label = self.transforms(image, label)
         else:
             label = torch.tensor(label, dtype=torch.float32)
+            if self.transforms is not None:
+                image = self.transforms(image)
+
         return image, label, image_path
 
     def decode_rle(self, rle):
@@ -162,62 +164,93 @@ class JitterCrop(torch.nn.Module):
         )
 
 
-def get_transforms(
-    crop_box=None,
-    equalization: bool = True,
-    is_training: bool = True,
-    crop_box_jitter: List[int] | None = None,
-    random_rotation_degrees: int = 0,
-    color_jitter: float = 0.0,
-):
-    transforms_array = []
+class ImageTransforms:
+    """
+    Custom transform for images and (optionally) their masks
+    """
 
-    # TODO:
-    # - Make most effective use of dtypes
+    def __init__(
+        self,
+        is_training: bool = True,
+        crop_box: Optional[List[int] | Callable[[], List[int]]] = None,
+        crop_box_jitter: Optional[List[int]] = None,
+        resize: Optional[List[int]] = None,
+        equalization: bool = True,
+        random_rotation: float = 0,
+        color_jitter: float = 0,
+    ):
+        self.crop_box = crop_box
+        self.is_training = is_training
+        self.crop_box_jitter = crop_box_jitter
+        self.equalization = equalization
+        self.random_rotation = random_rotation
+        self.color_jitter = color_jitter
+        self.resize = resize
 
-    if crop_box is not None:
-        if is_training and crop_box_jitter is not None:
-            transforms_array.append(JitterCrop(crop_box, crop_box_jitter))
+    def __call__(self, image, mask=None):
+        crop_box = self.crop_box
+        if callable(crop_box):
+            crop_box = crop_box()
+
+        if self.is_training:
+            rotation = random.uniform(-self.random_rotation, self.random_rotation)
+
+            if crop_box is not None and self.crop_box_jitter is not None:
+                horiz = random.randint(-self.crop_box_jitter[1], self.crop_box_jitter[1])
+                vert = random.randint(-self.crop_box_jitter[0], self.crop_box_jitter[0])
+                crop_box = [crop_box[0] + vert, crop_box[1] + horiz, crop_box[2], crop_box[3]]
         else:
-            top, left, height, width = crop_box
-            transforms_array.append(
-                functools.partial(v2.functional.crop, top=top, left=left, height=height, width=width)
-            )
+            rotation = 0
 
-    if equalization:
-        # Apply histogram equalization to each image
-        # IMPORTANT: This works with input in the range [0, 255]
-        transforms_array.append(v2.functional.equalize)
+        image = self.geometrical_transforms(image, crop_box, rotation, self.resize)
+        image = v2.functional.to_image(image)
+        image = v2.functional.to_dtype(image, torch.float32, scale=True)  # convert to float32 and normalize to 0, 1
+        # TODO(adamantivm) Enable normalization. Make it work with equalization, which requires
+        # moving equalization to later and including the necessary dtype conversions back and forth
+        # v2.Normalize(mean=[0.10391959, 0.1423446, 0.13618265], std=[0.05138122, 0.04945769, 0.045432]),
+        # Pre-calculated mean and std values for water_train_set4:
+        # - Without cropping:
+        # Mean: [0.18653404 0.20722116 0.19524723], std: [0.15864415 0.13673791 0.12532181]
+        # - With Binney cropping:
+        # Mean: [0.10391959 0.1423446  0.13618265], std: [0.05138122 0.04945769 0.045432  ]
 
-    transforms_array.extend(
-        [
-            v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),  # convert to float32 and normalize to 0, 1
-            # TODO(adamantivm) Enable normalization. Make it work with equalization, which requires
-            # moving equalization to later and including the necessary dtype conversions back and forth
-            # v2.Normalize(mean=[0.10391959, 0.1423446, 0.13618265], std=[0.05138122, 0.04945769, 0.045432]),
-        ]
-    )
+        if self.equalization:
+            # Apply histogram equalization to each image
+            # IMPORTANT: This works with input in the range [0, 255]
+            image = v2.functional.equalize(image)
 
-    # Only add data augmentation transforms for training
-    if is_training:
-        # Add data augmentation
-        transforms_array.extend(
-            [
-                v2.ColorJitter(
-                    brightness=color_jitter, contrast=color_jitter, saturation=color_jitter, hue=color_jitter
-                ),
-                v2.RandomRotation(degrees=random_rotation_degrees),
-            ]
-        )
+        if self.color_jitter > 0 and self.is_training:
+            cj = self.color_jitter
+            image = v2.ColorJitter(brightness=cj, contrast=cj, saturation=cj, hue=cj)(image)
 
-    # Pre-calculated mean and std values for water_train_set4:
-    # - Without cropping:
-    # Mean: [0.18653404 0.20722116 0.19524723], std: [0.15864415 0.13673791 0.12532181]
-    # - With Binney cropping:
-    # Mean: [0.10391959 0.1423446  0.13618265], std: [0.05138122 0.04945769 0.045432  ]
+        if mask is None:
+            return image
 
-    return v2.Compose(transforms_array)
+        mask = mask.unsqueeze(0)
+        mask = self.geometrical_transforms(mask, crop_box, rotation, self.resize)
+        mask = mask.squeeze(0)
+
+        return image, mask
+
+    def geometrical_transforms(
+        self, image, crop_box: Optional[List[int]], rotation: float, resize: Optional[List[int]]
+    ):
+        center = None
+        if crop_box is not None:
+            x_center = crop_box[1] + crop_box[3] / 2
+            y_center = crop_box[0] + crop_box[2] / 2
+            center = [x_center, y_center]
+
+        if rotation != 0:
+            image = v2.functional.affine(image, angle=rotation, center=center, translate=[0, 0], scale=1, shear=[0])
+
+        if crop_box is not None:
+            image = v2.functional.crop(image, crop_box[0], crop_box[1], crop_box[2], crop_box[3])
+
+        if resize is not None:
+            image = v2.functional.resize(image, size=resize)
+
+        return image
 
 
 def get_data_loaders(
@@ -228,17 +261,19 @@ def get_data_loaders(
     train_test_split: Tuple[float, float] = (0.8, 0.2),
     normalize_output: bool = False,
     crop_box=None,  # [top, left, height, width]
+    resize: Optional[List[int]] = None,
     equalization: bool = True,
-    crop_box_jitter: List[int] = None,
+    crop_box_jitter: Optional[List[int]] = None,
     random_rotation_degrees: int = 0,
     color_jitter: float = 0.0,
 ):
-    transforms = get_transforms(
+    transforms = ImageTransforms(
         crop_box=crop_box,
         equalization=equalization,
         crop_box_jitter=crop_box_jitter,
-        random_rotation_degrees=random_rotation_degrees,
+        random_rotation=random_rotation_degrees,
         color_jitter=color_jitter,
+        resize=resize,
     )
 
     # Load dataset from directory
@@ -286,16 +321,18 @@ def get_data_loader(
     normalize_output: bool = False,
     crop_box=None,  # [top, left, height, width]
     equalization: bool = True,
-    crop_box_jitter: List[int] = None,
+    crop_box_jitter: Optional[List[int]] = None,
+    resize: Optional[List[int]] = None,
     random_rotation_degrees: int = 0,
     color_jitter: float = 0.0,
 ):
-    transforms = get_transforms(
+    transforms = ImageTransforms(
         crop_box=crop_box,
         equalization=equalization,
         crop_box_jitter=crop_box_jitter,
-        random_rotation_degrees=random_rotation_degrees,
+        random_rotation=random_rotation_degrees,
         color_jitter=color_jitter,
+        resize=resize,
     )
 
     # Load dataset from directory
