@@ -2,6 +2,7 @@
 import argparse
 import signal
 from pathlib import Path
+from typing import Callable, List, Optional
 
 import torch
 import torch.nn as nn
@@ -64,7 +65,8 @@ def do_training(
     color_jitter: float = 0.2,
     # Pre-processing parameters
     normalize_output: bool = False,
-    crop_box: list = None,
+    crop_box: Optional[List[int] | Callable[[], List[int]]] = None,
+    resize: Optional[List[int]] = None,
     equalization: bool = True,
     # Model parameters
     model_name: ModelNames = "BasicCnnRegression",
@@ -92,7 +94,7 @@ def do_training(
 
     preprocessing_args = {
         "normalize_output": normalize_output,
-        "crop_box": crop_box,
+        "crop_box": "custom function" if callable(crop_box) else crop_box,
         "equalization": equalization,
     }
 
@@ -106,6 +108,7 @@ def do_training(
             batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
+            resize=resize,
             equalization=equalization,
             random_rotation_degrees=random_rotation_degrees,
             color_jitter=color_jitter,
@@ -119,6 +122,7 @@ def do_training(
             batch_size=batch_size,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
+            resize=resize,
             equalization=equalization,
             normalize_output=normalize_output,
             random_rotation_degrees=random_rotation_degrees,
@@ -132,6 +136,7 @@ def do_training(
             shuffle=False,
             crop_box=crop_box,
             crop_box_jitter=crop_box_jitter,
+            resize=resize,
             equalization=equalization,
             normalize_output=normalize_output,
             random_rotation_degrees=random_rotation_degrees,
@@ -143,8 +148,15 @@ def do_training(
         log_dir.mkdir(parents=True, exist_ok=True)
         for image_i in range(len(train_data.dataset)):
             image_filename = log_dir / f"train_data_{image_i}.png"
-            image = train_data.dataset[image_i][0]
+            image, mask, _ = train_data.dataset[image_i]
             torchvision.utils.save_image(image, image_filename)
+
+            mask_filename = log_dir / f"train_data_{image_i}_mask.png"
+            # Convert 2D binary mask tensor to displayable image format
+            mask = mask.unsqueeze(0)  # Add channel dimension
+            mask = mask.float()  # Convert to float for save_image
+            torchvision.utils.save_image(mask, mask_filename)
+
         for image_i in range(len(test_data.dataset)):
             image_filename = log_dir / f"test_data_{image_i}.png"
             image = test_data.dataset[image_i][0]

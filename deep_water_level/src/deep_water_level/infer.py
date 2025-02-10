@@ -24,7 +24,7 @@ import torch.nn as nn
 import torchvision
 
 from annotation_utils.misc import filename_to_datetime, my_device
-from deep_water_level.data import WaterDataset, get_transforms
+from deep_water_level.data import WaterDataset, ImageTransforms
 from deep_water_level.model import BasicCnnRegression, BasicCnnRegressionWaterLine, ModelNames, DeepLabModel
 
 VERBOSE = False
@@ -63,7 +63,7 @@ def run_inference(model, input, transforms=None):
 
 
 def run_gradio_app(model, crop_box=None):
-    transforms = get_transforms(crop_box)
+    transforms = ImageTransforms(crop_box)
 
     # Define the Gradio app
     demo = gr.Interface(
@@ -95,7 +95,7 @@ def run_dataset_inference(
         else:
             return "[" + ", ".join([f"{x:.4f}" for x in a]) + "]"
 
-    transforms = get_transforms(crop_box=crop_box, equalization=equalization)
+    transforms = ImageTransforms(crop_box=crop_box, equalization=equalization)
     dataset = WaterDataset(
         dataset_dir / "annotations" / annotations_file,
         dataset_dir / "images",
