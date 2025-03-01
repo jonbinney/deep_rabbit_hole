@@ -38,7 +38,7 @@ class QuoridorEnv(AECEnv):
 
     def reset(self, seed=None, options=None):
         self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
-        self.walls = np.zeros((self.wall_size, self.wall_size), dtype=np.int8)
+        self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.possible_agents}
         # Positions are (row, col)
         self.positions = {"player_1": (4, 0), "player_2": (4, 8)}
@@ -94,20 +94,20 @@ class QuoridorEnv(AECEnv):
         Place a wall.
         In a 9x9 board:
         - First we subtract 81 to get the wall index
-        - The first 8x8 = 64 values reprsent horizontal walls, the last 8x8 = 64 values represent vertical walls
-        - For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+        - The first 8x8 = 64 values reprsent vertical walls, the last 8x8 = 64 values represent horizontal walls
         - For vertical walls, we place the wall starting atht upper right corner of the (row, col) cell
+        - For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
 
-        TODO: Represent vertical and horizontal walls
         TODO: Prevent placing walls conflicting with existing ones
         TODO: Prevent completely blocking the path from one end to the other
         """
         if self.walls_remaining[agent] == 0:
             return  # No walls left
         wall_idx = action - self.board_size**2
-        row, col = divmod(wall_idx // 2, self.wall_size)
-        if self.walls[row, col] == 0:
-            self.walls[row, col] = 1  # Mark as wall
+        orientation, wall_idx = divmod(wall_idx, self.wall_size**2)
+        row, col = divmod(wall_idx, self.wall_size)
+        if self.walls[row, col, orientation] == 0:
+            self.walls[row, col, orientation] = 1  # Mark as wall
             self.walls_remaining[agent] -= 1
 
     def _check_win(self, agent):
@@ -126,11 +126,41 @@ class QuoridorEnv(AECEnv):
         return "player_2" if agent == "player_1" else "player_1"
 
     def render(self):
-        # TODO: Render walls
-        board_str = "\n".join(
-            [" ".join(str(self.board[row, col]) for col in range(self.board_size)) for row in range(self.board_size)]
-        )
-        return board_str
+        board_str = ""
+
+        for row in range(self.board_size):
+            # Render board row with player positions and vertical walls
+            for col in range(self.board_size):
+                if self.positions["player_1"] == (row, col):
+                    board_str += " P1 "
+                elif self.positions["player_2"] == (row, col):
+                    board_str += " P2 "
+                else:
+                    board_str += " .  "
+
+                # Render vertical walls (|)
+                if row < self.wall_size and col < self.wall_size:
+                    if self.walls[row, col, 0]:
+                        board_str += "|"
+                    elif row > 0 and self.walls[row - 1, col, 0]:  # Continuation of a vertical wall
+                        board_str += "|"
+                    else:
+                        board_str += " "
+
+            board_str += "\n"
+
+            # Render horizontal walls (───)
+            if row < self.wall_size:
+                for col in range(self.wall_size):
+                    if col < self.wall_size and self.walls[row, col, 1]:
+                        board_str += "───"  # Wall segment
+                    elif col > 0 and self.walls[row, col - 1, 1]:
+                        board_str += "───"  # Continuation of a wall from the left
+                    else:
+                        board_str += "   "
+                board_str += "\n"
+
+        print(board_str)
 
 
 # Wrapping the environment for PettingZoo compatibility
