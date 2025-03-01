@@ -12,7 +12,7 @@ class QuoridorEnv(AECEnv):
         self.render_mode = "ansi"
 
         self.board_size = 9  # 9x9 grid
-        self.wall_size = 8  # 8x8 grid for walls
+        self.wall_size = self.board_size - 1  # 8x8 grid for walls
         self.max_walls = 10  # Each player gets 10 walls
 
         self.possible_agents = ["player_1", "player_2"]
@@ -51,6 +51,10 @@ class QuoridorEnv(AECEnv):
         self.agent_selection = self.agent_order[0]
 
     def step(self, action):
+        """
+        Players move by selecting an index from 0-80 (9×9 board).
+        Wall placement is mapped to 81-208 (8×8×2).
+        """
         agent = self.agent_selection
         if self.terminations[agent]:
             self._next_player()
@@ -75,6 +79,9 @@ class QuoridorEnv(AECEnv):
         return divmod(idx, self.board_size)
 
     def _move(self, agent, action):
+        """
+        TODO: Only allow valid moves
+        """
         row, col = self.idx_to_rowcol(action)
         if (row, col) in self.positions.values():
             return  # Invalid move (occupied)
@@ -83,6 +90,18 @@ class QuoridorEnv(AECEnv):
         self.board[row, col] = 1 if agent == "player_1" else 2
 
     def _place_wall(self, agent, action):
+        """
+        Place a wall.
+        In a 9x9 board:
+        - First we subtract 81 to get the wall index
+        - The first 8x8 = 64 values reprsent horizontal walls, the last 8x8 = 64 values represent vertical walls
+        - For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+        - For vertical walls, we place the wall starting atht upper right corner of the (row, col) cell
+
+        TODO: Represent vertical and horizontal walls
+        TODO: Prevent placing walls conflicting with existing ones
+        TODO: Prevent completely blocking the path from one end to the other
+        """
         if self.walls_remaining[agent] == 0:
             return  # No walls left
         wall_idx = action - self.board_size**2
