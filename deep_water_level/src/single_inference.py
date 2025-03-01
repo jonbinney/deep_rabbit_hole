@@ -76,9 +76,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Water Level")
     parser.add_argument("-m", "--model_path", type=str, default="model.pth", help="Path to the model file")
     parser.add_argument("--image_filename", type=str, default="image.jpg", help="Path to a sample image file")
-    parser.add_argument("--verbose", type=bool, default=False)
+    parser.add_argument("--verbose", action="store_true", default=False)
     parser.add_argument(
-        "--multi_croppings", type=bool, default=False, description="Perform and calcucate two more croppings"
+        "--multi_croppings", action="store_true", default=False, help="Perform and calcucate two more croppings"
     )
 
     args = parser.parse_args()
@@ -120,4 +120,5 @@ if __name__ == "__main__":
     # Idea: Calculate a standard deviation to understand uncertainty
     # Idea: Remove outlier if there is a clear one
     # Idea: Record everything so we can analyze it later
-    print(f"{depths[0]}")
+    for depth in depths:
+        print(depth)
