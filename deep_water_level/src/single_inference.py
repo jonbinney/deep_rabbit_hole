@@ -76,7 +76,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Water Level")
     parser.add_argument("-m", "--model_path", type=str, default="model.pth", help="Path to the model file")
     parser.add_argument("--image_filename", type=str, default="image.jpg", help="Path to a sample image file")
-    parser.add_argument("--verbose", type=bool, default=False)
+    parser.add_argument("--verbose", action="store_true", default=False)
+    parser.add_argument(
+        "--multi_croppings", action="store_true", default=False, help="Perform and calcucate two more croppings"
+    )
 
     args = parser.parse_args()
 
@@ -86,21 +89,36 @@ if __name__ == "__main__":
     # Load the model
     (model, model_args, preprocessing_args) = load_model(args.model_path)
 
-    # Load the transforms
-    crop_box = preprocessing_args.get("crop_box", None)
-    transforms = get_transforms(crop_box=crop_box)
-
     # Load the data
     equalization = preprocessing_args.get("equalization", False)
     input = Image.open(args.image_filename)
     if equalization:
         input = ImageOps.equalize(input)
 
-    # Record the current timestamp
-    start_time = time.time()
-    depth = run_inference(model, input, transforms)
-    end_time = time.time()
+    # Get crop box(es)
+    crop_boxes = [preprocessing_args.get("crop_box", None)]
+    if crop_boxes[0] and args.multi_croppings:
+        (y, x, h, w) = crop_boxes[0]
+        (dy, dx) = [20, -100]
+        crop_boxes.append([y + dy, x + dx, h, w])
+        crop_boxes.append([y - dy, x - dx, h, w])
 
-    if verbose:
-        print(f"We got depth = {depth} in {end_time - start_time} seconds")
-    print(f"{depth}")
+    # Calculate the depth for each crop
+    depths = []
+    for crop_box in crop_boxes:
+        transforms = get_transforms(crop_box=crop_box)
+        start_time = time.time()
+        depth = run_inference(model, input, transforms)
+        depths.append(depth)
+        end_time = time.time()
+        if verbose:
+            print(f"We got depth = {depth} in {end_time - start_time} seconds, crop_box={crop_box}")
+
+    # TODO: Do something interesting with the multiple results if there are many
+    # That requires also changing the integration scripts that sends this to
+    # home assistant
+    # Idea: Calculate a standard deviation to understand uncertainty
+    # Idea: Remove outlier if there is a clear one
+    # Idea: Record everything so we can analyze it later
+    for depth in depths:
+        print(depth)
