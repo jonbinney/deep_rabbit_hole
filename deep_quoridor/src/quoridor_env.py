@@ -1,5 +1,4 @@
 from pettingzoo import AECEnv
-from pettingzoo.utils import wrappers
 from gymnasium import spaces
 import numpy as np
 
@@ -41,6 +40,7 @@ class QuoridorEnv(AECEnv):
         self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
         self.walls = np.zeros((self.wall_size, self.wall_size), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.possible_agents}
+        # Positions are (row, col)
         self.positions = {"player_1": (4, 0), "player_2": (4, 8)}
         self.board[self.positions["player_1"]] = 1
         self.board[self.positions["player_2"]] = 2
@@ -68,8 +68,14 @@ class QuoridorEnv(AECEnv):
 
         self._next_player()
 
+    def rowcol_to_idx(self, row, col):
+        return row * self.board_size + col
+
+    def idx_to_rowcol(self, idx):
+        return divmod(idx, self.board_size)
+
     def _move(self, agent, action):
-        row, col = divmod(action, self.board_size)
+        row, col = self.idx_to_rowcol(action)
         if (row, col) in self.positions.values():
             return  # Invalid move (occupied)
         self.board[self.positions[agent]] = 0
@@ -101,6 +107,7 @@ class QuoridorEnv(AECEnv):
         return "player_2" if agent == "player_1" else "player_1"
 
     def render(self):
+        # TODO: Render walls
         board_str = "\n".join(
             [" ".join(str(self.board[row, col]) for col in range(self.board_size)) for row in range(self.board_size)]
         )
