@@ -1,3 +1,14 @@
+"""
+Quoridor Gym/PettingZoo Environment implementation.
+
+The action is represented as follows, taking a 9x9 board as an example:
+- First 9x9 = 81 values represent player positions
+- The next 8x8 = 64 values reprsent vertical walls and the last 8x8 = 64 values represent horizontal walls
+- The cell position of a wall represnts the first space occupied by a wall, knowing that each cell takes two spaces.
+- For vertical walls, we place the wall starting at the upper right corner of the (row, col) cell
+- For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+"""
+
 from typing import Tuple
 from pettingzoo import AECEnv
 from gymnasium import spaces
@@ -62,10 +73,11 @@ class QuoridorEnv(AECEnv):
             self._next_player()
             return
 
-        if action < self.board_size**2:
-            self._move(agent, action)
+        (row, col, action_type) = self.action_index_to_params(action)
+        if action_type == 0:
+            self._move(agent, (row, col))
         else:
-            self._place_wall(agent, action)
+            self._place_wall(agent, (row, col), action_type - 1)
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.possible_agents}
@@ -93,32 +105,32 @@ class QuoridorEnv(AECEnv):
         Takes an action index to action parameters (row, col, movement_type)
         movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
         """
+        action_type, _ = divmod(idx - self.board_size**2, self.wall_size**2)
+        action_type += 1
         if idx < self.board_size**2:
-            return divmod(idx, self.board_size)
+            row, col = divmod(idx, self.board_size)
         elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
-            return divmod(idx - self.board_size**2, self.wall_size)
+            row, col = divmod(idx - self.board_size**2, self.wall_size)
         elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
-            return divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
+            row, col = divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
         else:
             raise ValueError(f"Invalid action index: {idx}")
+        return (row, col, action_type)
 
-    def _move(self, agent, action):
+    def _move(self, agent, position):
         """
         TODO: Only allow valid moves
         """
-        row, col = self.action_index_to_params(action)
+        row, col = position
         if (row, col) in self.positions.values():
+            print("WTF: Invalid action: Occupied")
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)
 
-    def _place_wall(self, agent, action):
+    def _place_wall(self, agent, position, orientation):
         """
-        Place a wall.
-        In a 9x9 board:
-        - First we subtract 81 to get the wall index
-        - The first 8x8 = 64 values reprsent vertical walls, the last 8x8 = 64 values represent horizontal walls
-        - For vertical walls, we place the wall starting at the upper right corner of the (row, col) cell
-        - For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+        Place a wall at the specified position and orientation.
+        Since each wall is of length 2, the wall will coneinue through two spaces.
 
         TODO: Prevent placing walls conflicting with existing ones
         TODO: Prevent completely blocking the path from one end to the other
@@ -126,9 +138,7 @@ class QuoridorEnv(AECEnv):
         if self.walls_remaining[agent] == 0:
             print("WTF: Invalid action: No walls left")
             return  # No walls left
-        wall_idx = action - self.board_size**2
-        orientation, wall_idx = divmod(wall_idx, self.wall_size**2)
-        row, col = divmod(wall_idx, self.wall_size)
+        (row, col) = position
         if self.walls[row, col, orientation] == 0:
             self.walls[row, col, orientation] = 1  # Mark as wall
             self.walls_remaining[agent] -= 1
