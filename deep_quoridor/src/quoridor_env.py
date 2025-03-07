@@ -1,3 +1,4 @@
+from typing import Tuple
 from pettingzoo import AECEnv
 from gymnasium import spaces
 import numpy as np
@@ -73,17 +74,39 @@ class QuoridorEnv(AECEnv):
 
         self._next_player()
 
-    def rowcol_to_idx(self, row, col):
-        return row * self.board_size + col
+    def action_params_to_index(self, row: int, col: int, action_type: int = 0) -> int:
+        """
+        Takes action parameters (row, col, movement_type) to an action index
+        movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
+        """
+        if action_type == 0:
+            return row * self.board_size + col
+        elif action_type == 1:
+            return self.board_size**2 + row * self.wall_size + col
+        elif action_type == 2:
+            return self.board_size**2 + self.wall_size**2 + row * self.wall_size + col
+        else:
+            raise ValueError(f"Invalid action type: {action_type}")
 
-    def idx_to_rowcol(self, idx):
-        return divmod(idx, self.board_size)
+    def action_index_to_params(self, idx) -> Tuple[int, int, int]:
+        """
+        Takes an action index to action parameters (row, col, movement_type)
+        movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
+        """
+        if idx < self.board_size**2:
+            return divmod(idx, self.board_size)
+        elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
+            return divmod(idx - self.board_size**2, self.wall_size)
+        elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
+            return divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
+        else:
+            raise ValueError(f"Invalid action index: {idx}")
 
     def _move(self, agent, action):
         """
         TODO: Only allow valid moves
         """
-        row, col = self.idx_to_rowcol(action)
+        row, col = self.action_index_to_params(action)
         if (row, col) in self.positions.values():
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)

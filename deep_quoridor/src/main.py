@@ -10,7 +10,12 @@ board = game.render()
 print(board)
 
 # Manually select moves (modify these to test different scenarios)
-actions = [game.rowcol_to_idx(4, 1), game.rowcol_to_idx(4, 7), 87, 139, 192]  # Example moves for testing
+actions = [
+    game.action_params_to_index(4, 1, 0),
+    game.action_params_to_index(4, 7, 0),
+    game.action_params_to_index(4, 3, 1),
+    game.action_params_to_index(5, 6, 2),
+]  # Example moves for testing
 
 for step, action in enumerate(actions):
     agent = game.agent_selection
