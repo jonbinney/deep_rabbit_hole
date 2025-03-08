@@ -105,13 +105,14 @@ class QuoridorEnv(AECEnv):
         Takes an action index to action parameters (row, col, movement_type)
         movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
         """
-        action_type, _ = divmod(idx - self.board_size**2, self.wall_size**2)
-        action_type += 1
         if idx < self.board_size**2:
+            action_type = 0
             row, col = divmod(idx, self.board_size)
         elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
+            action_type = 1
             row, col = divmod(idx - self.board_size**2, self.wall_size)
         elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
+            action_type = 2
             row, col = divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
         else:
             raise ValueError(f"Invalid action index: {idx}")
