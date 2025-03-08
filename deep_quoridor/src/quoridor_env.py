@@ -1,6 +1,20 @@
 """
 Quoridor Gym/PettingZoo Environment implementation.
 
+The board size is parameterizable with:
+ - Board size (int): size of the square board
+ - Max number of walls (int): maximum number of walls that each player can place
+Boards are always square.
+For all explanations below, the default value of 9x9 is assumed.
+
+The state is implemented in a two-hot encoding, as follows:
+ - A 9x9 2D array, each representing a space in the board. All values are 0 except
+   1 where player 1 is placed, and 2 where player 2 is placed.
+   NOTE: This is represented internally in a compact way but converted in the specified
+   observation space format as needed.
+ - An 8x8x2 array, representing the vertical and horizontal walls placed in the board, using
+   one-hot encoding.
+
 The action is represented as follows, taking a 9x9 board as an example:
 - First 9x9 = 81 values represent player positions
 - The next 8x8 = 64 values reprsent vertical walls and the last 8x8 = 64 values represent horizontal walls
@@ -11,6 +25,7 @@ The action is represented as follows, taking a 9x9 board as an example:
 
 from typing import Tuple
 from pettingzoo import AECEnv
+from pettingzoo.utils import wrappers
 from gymnasium import spaces
 import numpy as np
 
@@ -21,7 +36,7 @@ class QuoridorEnv(AECEnv):
     def __init__(self, board_size: int = 9, max_walls: int = 10):
         super().__init__()
 
-        self.render_mode = "ansi"
+        self.render_mode = "human"
 
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
@@ -201,4 +216,4 @@ class QuoridorEnv(AECEnv):
 
 # Wrapping the environment for PettingZoo compatibility
 def env():
-    return QuoridorEnv()
+    return wrappers.CaptureStdoutWrapper(QuoridorEnv())
