@@ -1,3 +1,5 @@
-pettingzoo
 gymnasium
 numpy
+pettingzoo[classic] # "butterfly" includes some simple graphical environments
+supersuit # Preprocessing wrappers for observation spaces
+torch
