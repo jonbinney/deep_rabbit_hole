@@ -11,8 +11,8 @@ print(board)
 
 # Manually select moves (modify these to test different scenarios)
 actions = [
-    game.action_params_to_index(4, 1, 0),
-    game.action_params_to_index(4, 7, 0),
+    game.action_params_to_index(1, 4, 0),
+    game.action_params_to_index(7, 4, 0),
     game.action_params_to_index(4, 3, 1),
     game.action_params_to_index(5, 6, 2),
 ]  # Example moves for testing
@@ -20,6 +20,12 @@ actions = [
 step = 0
 for agent in game.agent_iter():
     observation, reward, termination, truncation, info = game.last()
+
+    mask = observation["action_mask"]
+    print("Valid moves:")
+    for i in range(game.board_size**2):  # For now only showing moves
+        if mask[i] == 1:
+            print(f"{i}: {game.action_index_to_params(i)}")
 
     # End of hardcoded test actions
     if len(actions) == 0:

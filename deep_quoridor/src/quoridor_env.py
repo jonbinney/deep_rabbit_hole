@@ -54,7 +54,10 @@ class QuoridorEnv(AECEnv):
         self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.agents}
         # Positions are (row, col)
-        self.positions = {"player_0": (self.board_size // 2, 0), "player_1": (self.board_size // 2, self.board_size - 1)}
+        self.positions = {
+            "player_0": (0, self.board_size // 2),
+            "player_1": (self.board_size - 1, self.board_size // 2),
+        }
 
         self.rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
@@ -95,9 +98,6 @@ class QuoridorEnv(AECEnv):
         self._next_player()
 
     def observe(self, agent_id):
-        return self._get_observation(agent_id)
-
-    def _get_observation(self, agent_id):
         """
         Returns the observation and action mask in a dict, like so:
         {
@@ -105,8 +105,78 @@ class QuoridorEnv(AECEnv):
             "action_mask": action_mask
         }
         """
-        # TODO: Implement
-        return None
+        return {
+            "observation": self._get_observation(agent_id),
+            "action_mask": self._get_action_mask(agent_id),
+        }
+
+    def _get_observation(self, agent_id):
+        # TODO: Do we need to make copies of the state or can we return references directly?
+
+        # Calculate board from self.positions
+        # NOTE: The board uses 1 to indicate where the agent is and 2 to indicate where the opponent is
+        # Obviously, this will be different for each player
+        board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
+        board[self.positions[agent_id]] = 1
+        board[self.positions[self._opponent(agent_id)]] = 2
+
+        # Make a copy of walls
+        walls = self.walls.copy()
+
+        return {
+            "board": board,
+            "walls": walls,
+            "my_walls_remaining": self.walls_remaining[agent_id],
+            "opponent_walls_remaining": self.walls_remaining[self._opponent(agent_id)],
+        }
+
+    def _get_action_mask(self, agent_id):
+        # Start with an empty mask (nothing possible)
+        mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
+
+        # Calculate valid "moves" (as opposed to wall placements)
+        # Start with the four basic directions
+        for row, col in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            old_row, old_col = self.positions[agent_id]
+            new_row, new_col = old_row + row, old_col + col
+
+            # Check if the new position is still inside the board
+            if not (0 <= new_row < self.board_size and 0 <= new_col < self.board_size):
+                continue
+
+            # Is there a wall in the way we're going?
+            blocked_by_wall = False
+            if row == 0:  # Moving vertically - check horizontal walls
+                wall_col = min(old_col, new_col)
+                # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
+                # Since the wall grid is one smaller than the board (because boards take two spaces)
+                if (
+                    self.walls[min(new_row, self.wall_size - 1), wall_col, 0] == 1
+                    or self.walls[max(new_row - 1, 0), wall_col, 0] == 1
+                ):
+                    blocked_by_wall = True
+            else:  # Moving horizontally - check vertical walls
+                wall_row = min(old_row, new_row)
+                # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
+                # Since the wall grid is one smaller than the board (because boards take two spaces)
+                if (
+                    self.walls[wall_row, min(new_col, self.wall_size - 1), 1] == 1
+                    or self.walls[wall_row, max(new_col - 1, 0), 1] == 1
+                ):
+                    blocked_by_wall = True
+
+            # Is the opponent in the target position?
+            opponent_in_target = self.positions[self._opponent(agent_id)] == (new_row, new_col)
+
+            # TODO: Jumping the opponent, considering walls if there are any
+
+            # Check if the aren't any walls in the way
+            if not opponent_in_target and not blocked_by_wall:
+                mask[self.action_params_to_index(new_row, new_col, 0)] = 1
+
+        # TODO: Valid wall placements
+
+        return mask
 
     def _get_info(self):
         # This is for now unused, returning empty dict
@@ -155,11 +225,16 @@ class QuoridorEnv(AECEnv):
     def observation_space(self, agent):
         return spaces.Dict(
             {
-                # For now: 0 = empty, 1 = player 1, 2 = player 2 in a board_size x board_size grid
-                "board": spaces.Box(0, 2, (self.board_size, self.board_size), dtype=np.int8),
-                # For now: 0 = no wall, 1 = wall on a grid of wall_size x wall_size x orientation (0 = vertical, 1 = horizontal)
-                "walls": spaces.Box(0, 1, (self.wall_size, self.wall_size, 2), dtype=np.int8),
-                "walls_remaining": spaces.Discrete(self.max_walls + 1),
+                "observation": spaces.Dict(
+                    {
+                        # For now: 0 = empty, 1 = player 1, 2 = player 2 in a board_size x board_size grid
+                        "board": spaces.Box(0, 2, (self.board_size, self.board_size), dtype=np.int8),
+                        # For now: 0 = no wall, 1 = wall on a grid of wall_size x wall_size x orientation (0 = vertical, 1 = horizontal)
+                        "walls": spaces.Box(0, 1, (self.wall_size, self.wall_size, 2), dtype=np.int8),
+                        "my_walls_remaining": spaces.Discrete(self.max_walls + 1),
+                        "opponent_walls_remaining": spaces.Discrete(self.max_walls + 1),
+                    }
+                ),
                 "action_mask": spaces.Box(0, 1, (self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8),
             }
         )
