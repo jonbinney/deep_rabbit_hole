@@ -17,14 +17,27 @@ actions = [
     game.action_params_to_index(5, 6, 2),
 ]  # Example moves for testing
 
-for step, action in enumerate(actions):
-    agent = game.agent_selection
-    print(f"\nStep {step + 1}: {agent} takes action {action}")
+step = 0
+for agent in game.agent_iter():
+    observation, reward, termination, truncation, info = game.last()
+
+    # End of hardcoded test actions
+    if len(actions) == 0:
+        break
+
+    if termination or truncation:
+        action = None
+        print(f"\nGame Over! {agent} wins.")
+    else:
+        # Hardcoded actions for now
+        action = actions.pop(0)
+        print(f"\nStep {step + 1}: {agent} takes action {action}")
 
     game.step(action)  # Apply action
+
     board = game.render()  # Print updated board
     print(board)
 
-    if game.terminations[agent]:  # Check if someone won
-        print(f"\nGame Over! {agent} wins.")
-        break
+    step += 1
+
+game.close()
