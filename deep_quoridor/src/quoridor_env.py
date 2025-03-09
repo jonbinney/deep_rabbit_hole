@@ -54,7 +54,7 @@ class QuoridorEnv(AECEnv):
         self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.agents}
         # Positions are (row, col)
-        self.positions = {"player_0": (4, 0), "player_1": (4, 8)}
+        self.positions = {"player_0": (self.board_size // 2, 0), "player_1": (self.board_size // 2, self.board_size - 1)}
 
         self.rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
