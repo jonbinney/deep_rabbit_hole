@@ -228,7 +228,7 @@ class QuoridorEnv(AECEnv):
 
     def _check_win(self, agent):
         row, _ = self.positions[agent]
-        if agent == "player_0" and row == 8:
+        if agent == "player_0" and row == self.board_size - 1:
             return True
         if agent == "player_1" and row == 0:
             return True
