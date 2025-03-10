@@ -150,6 +150,11 @@ class QuoridorEnv(AECEnv):
                 self.walls[wall_row, min(col_a, self.wall_size - 1), 1] == 1
                 or self.walls[wall_row, max(col_a - 1, 0), 1] == 1
             )
+        else:
+            raise ValueError(f"Invalid movement from {row_a, col_a} to {row_b, col_b}")
+
+    def _is_in_board(self, row, col):
+        return 0 <= row < self.board_size and 0 <= col < self.board_size
 
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
@@ -162,7 +167,7 @@ class QuoridorEnv(AECEnv):
             new_row, new_col = old_row + row, old_col + col
 
             # Check if the new position is still inside the board
-            if not (0 <= new_row < self.board_size and 0 <= new_col < self.board_size):
+            if not self._is_in_board(new_row, new_col):
                 continue
 
             # Check if that direction is blocked by a wall
@@ -171,14 +176,13 @@ class QuoridorEnv(AECEnv):
 
             # Check if the opponent is in the target position
             if self.positions[self._opponent(agent_id)] == (new_row, new_col):
-                # Can we jump straight over the component?
+                # Can we jump straight over the opponent?
                 straight_row = new_row + row
                 straight_col = new_col + col
 
                 if (
                     # That new position falls within the board
-                    0 <= straight_row < self.board_size
-                    and 0 <= straight_col < self.board_size
+                    self._is_in_board(straight_row, straight_col)
                     # That new position is not blocked by a wall behind them
                     and not self._is_wall_between(new_row, new_col, straight_row, straight_col)
                 ):
@@ -196,8 +200,7 @@ class QuoridorEnv(AECEnv):
 
                         if (
                             # That new position falls within the board
-                            0 <= diag_row < self.board_size
-                            and 0 <= diag_col < self.board_size
+                            self._is_in_board(diag_row, diag_col)
                             # That new position is not blocked by a wall
                             and not self._is_wall_between(new_row, new_col, diag_row, diag_col)
                         ):
