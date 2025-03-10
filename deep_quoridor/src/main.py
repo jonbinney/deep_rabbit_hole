@@ -11,10 +11,18 @@ print(board)
 
 # Manually select moves (modify these to test different scenarios)
 actions = [
+    # 0- Move forward
     game.action_params_to_index(1, 4, 0),
+    # 1- Move forward (opponent)
     game.action_params_to_index(7, 4, 0),
+    # 0- Add a Horizontal wall
     game.action_params_to_index(6, 4, 2),
+    # 1- Add a vertical wall
     game.action_params_to_index(0, 3, 1),
+    # 0- Place next to the opponent, let it jump
+    game.action_params_to_index(7, 3, 0),
+    # 1- Place a wall behind me so that the P0 can't jump
+    game.action_params_to_index(7, 4, 1),
 ]  # Example moves for testing
 
 step = 0

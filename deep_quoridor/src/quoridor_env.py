@@ -132,6 +132,25 @@ class QuoridorEnv(AECEnv):
             "opponent_walls_remaining": self.walls_remaining[self._opponent(agent_id)],
         }
 
+    def _is_wall_between(self, row_a, col_a, row_b, col_b):
+        """
+        Returns True if there is a wall between pos_a and pos_b
+        NOTE: The min and max tricks there are just a lazy way to avoid overindexing
+        Since the wall grid is one smaller than the board (because boards take two spaces)
+        """
+        if row_a == row_b:  # Horizontal movement - check vertical walls
+            wall_col = min(col_a, col_b)
+            return (
+                self.walls[min(row_a, self.wall_size - 1), wall_col, 0] == 1
+                or self.walls[max(row_a - 1, 0), wall_col, 0] == 1
+            )
+        elif col_a == col_b:  # Vertical movement - check horizontal walls
+            wall_row = min(row_a, row_b)
+            return (
+                self.walls[wall_row, min(col_a, self.wall_size - 1), 1] == 1
+                or self.walls[wall_row, max(col_a - 1, 0), 1] == 1
+            )
+
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
         mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
@@ -146,35 +165,48 @@ class QuoridorEnv(AECEnv):
             if not (0 <= new_row < self.board_size and 0 <= new_col < self.board_size):
                 continue
 
-            # Is there a wall in the way we're going?
-            blocked_by_wall = False
-            if row == 0:  # Moving horizontally - check vertical walls
-                wall_col = min(old_col, new_col)
-                # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
-                # Since the wall grid is one smaller than the board (because boards take two spaces)
+            # Check if that direction is blocked by a wall
+            if self._is_wall_between(old_row, old_col, new_row, new_col):
+                continue
+
+            # Check if the opponent is in the target position
+            if self.positions[self._opponent(agent_id)] == (new_row, new_col):
+                # Can we jump straight over the component?
+                straight_row = new_row + row
+                straight_col = new_col + col
+
                 if (
-                    self.walls[min(new_row, self.wall_size - 1), wall_col, 0] == 1
-                    or self.walls[max(new_row - 1, 0), wall_col, 0] == 1
+                    # That new position falls within the board
+                    0 <= straight_row < self.board_size
+                    and 0 <= straight_col < self.board_size
+                    # That new position is not blocked by a wall behind them
+                    and not self._is_wall_between(new_row, new_col, straight_row, straight_col)
                 ):
-                    blocked_by_wall = True
-            else:  # Moving vertically - check horizontal walls
-                wall_row = min(old_row, new_row)
-                # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
-                # Since the wall grid is one smaller than the board (because boards take two spaces)
-                if (
-                    self.walls[wall_row, min(new_col, self.wall_size - 1), 1] == 1
-                    or self.walls[wall_row, max(new_col - 1, 0), 1] == 1
-                ):
-                    blocked_by_wall = True
+                    mask[self.action_params_to_index(straight_row, straight_col, 0)] = 1
+                    continue
+                else:
+                    # Try the diagonals, to the sides of the oponent
+                    for side in [1, -1]:
+                        if row == 0:
+                            diag_row = new_row + side
+                            diag_col = new_col
+                        else:
+                            diag_row = new_row
+                            diag_col = new_col + side
 
-            # Is the opponent in the target position?
-            opponent_in_target = self.positions[self._opponent(agent_id)] == (new_row, new_col)
+                        if (
+                            # That new position falls within the board
+                            0 <= diag_row < self.board_size
+                            and 0 <= diag_col < self.board_size
+                            # That new position is not blocked by a wall
+                            and not self._is_wall_between(new_row, new_col, diag_row, diag_col)
+                        ):
+                            mask[self.action_params_to_index(diag_row, diag_col, 0)] = 1
+                    continue
 
-            # TODO: Jumping the opponent, considering walls if there are any
-
-            # Check if the aren't any walls in the way
-            if not opponent_in_target and not blocked_by_wall:
-                mask[self.action_params_to_index(new_row, new_col, 0)] = 1
+            # If we get to this point it's because the target is within the board,
+            # not blocked by a wall and the opponent is not on the way
+            mask[self.action_params_to_index(new_row, new_col, 0)] = 1
 
         # TODO: Valid wall placements
 
