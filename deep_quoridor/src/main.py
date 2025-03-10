@@ -13,8 +13,8 @@ print(board)
 actions = [
     game.action_params_to_index(1, 4, 0),
     game.action_params_to_index(7, 4, 0),
-    game.action_params_to_index(4, 3, 1),
-    game.action_params_to_index(5, 6, 2),
+    game.action_params_to_index(6, 4, 2),
+    game.action_params_to_index(0, 3, 1),
 ]  # Example moves for testing
 
 step = 0
@@ -22,7 +22,7 @@ for agent in game.agent_iter():
     observation, reward, termination, truncation, info = game.last()
 
     mask = observation["action_mask"]
-    print("Valid moves:")
+    print(f"Valid moves for agent {agent}:")
     for i in range(game.board_size**2):  # For now only showing moves
         if mask[i] == 1:
             print(f"{i}: {game.action_index_to_params(i)}")

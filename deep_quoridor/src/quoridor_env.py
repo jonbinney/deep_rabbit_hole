@@ -21,6 +21,8 @@ The action is represented as follows, taking a 9x9 board as an example:
 - The cell position of a wall represnts the first space occupied by a wall, knowing that each cell takes two spaces.
 - For vertical walls, we place the wall starting at the upper right corner of the (row, col) cell
 - For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+
+Every time we represent a coordinate as a tuple, it is in the form (row, col)
 """
 
 import functools
@@ -146,7 +148,7 @@ class QuoridorEnv(AECEnv):
 
             # Is there a wall in the way we're going?
             blocked_by_wall = False
-            if row == 0:  # Moving vertically - check horizontal walls
+            if row == 0:  # Moving horizontally - check vertical walls
                 wall_col = min(old_col, new_col)
                 # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
                 # Since the wall grid is one smaller than the board (because boards take two spaces)
@@ -155,7 +157,7 @@ class QuoridorEnv(AECEnv):
                     or self.walls[max(new_row - 1, 0), wall_col, 0] == 1
                 ):
                     blocked_by_wall = True
-            else:  # Moving horizontally - check vertical walls
+            else:  # Moving vertically - check horizontal walls
                 wall_row = min(old_row, new_row)
                 # NOTE: The min and max tricks there are just a lazy way to avoid overindexing
                 # Since the wall grid is one smaller than the board (because boards take two spaces)
@@ -248,11 +250,11 @@ class QuoridorEnv(AECEnv):
         Takes action parameters (row, col, movement_type) to an action index
         movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
         """
-        if action_type == 0:
+        if action_type == 0:  # Pawn movement
             return row * self.board_size + col
-        elif action_type == 1:
+        elif action_type == 1:  # Placing a vertical wall
             return self.board_size**2 + row * self.wall_size + col
-        elif action_type == 2:
+        elif action_type == 2:  # Placing a horizontal wall
             return self.board_size**2 + self.wall_size**2 + row * self.wall_size + col
         else:
             raise ValueError(f"Invalid action type: {action_type}")
@@ -262,13 +264,15 @@ class QuoridorEnv(AECEnv):
         Takes an action index to action parameters (row, col, movement_type)
         movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
         """
-        if idx < self.board_size**2:
+        if idx < self.board_size**2:  # Pawn movement
             action_type = 0
             row, col = divmod(idx, self.board_size)
         elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
+            # Vertical wall placement
             action_type = 1
             row, col = divmod(idx - self.board_size**2, self.wall_size)
         elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
+            # Horizontal wall placement
             action_type = 2
             row, col = divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
         else:
