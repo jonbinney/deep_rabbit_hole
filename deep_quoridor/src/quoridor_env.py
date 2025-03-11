@@ -384,7 +384,7 @@ class QuoridorEnv(AECEnv):
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]
 
     def get_opponent(self, agent):
-        return "player_1" if agent == "player_0" else "player_1"
+        return "player_1" if agent == "player_0" else "player_0"
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """

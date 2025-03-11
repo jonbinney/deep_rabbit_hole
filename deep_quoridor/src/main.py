@@ -17,7 +17,8 @@ for agent in game.agent_iter():
 
     if termination or truncation:
         action = None
-        print(f"\nGame Over! {game.get_opponent(agent)} wins.")
+        winner = max(game.rewards, key=game.rewards.get)
+        print(f"\nGame Over! {winner} wins.")
         break
     else:
         # Hardcoded actions for now
