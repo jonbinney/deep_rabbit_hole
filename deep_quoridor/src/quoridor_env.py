@@ -278,9 +278,11 @@ class QuoridorEnv(AECEnv):
             if row < self.wall_size:
                 for col in range(self.board_size):
                     if col < self.wall_size and self.walls[row, col, 1]:
-                        board_str += "──── "  # Wall segment
+                        board_str += "────+"  # Wall segment
                     elif col > 0 and self.walls[row, col - 1, 1]:
                         board_str += "──── "  # Continuation of a wall from the left
+                    elif col < self.wall_size and self.walls[row, col, 0]:
+                        board_str += "    +"  # Vertical wall going through this intersection
                     else:
                         board_str += "     "
                 board_str += "\n"
