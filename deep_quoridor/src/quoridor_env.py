@@ -92,7 +92,7 @@ class QuoridorEnv(AECEnv):
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
-            self.rewards[self._opponent(agent)] = -1
+            self.rewards[self.get_opponent(agent)] = -1
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -120,7 +120,7 @@ class QuoridorEnv(AECEnv):
         # Obviously, this will be different for each player
         board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
         board[self.positions[agent_id]] = 1
-        board[self.positions[self._opponent(agent_id)]] = 2
+        board[self.positions[self.get_opponent(agent_id)]] = 2
 
         # Make a copy of walls
         walls = self.walls.copy()
@@ -129,7 +129,7 @@ class QuoridorEnv(AECEnv):
             "board": board,
             "walls": walls,
             "my_walls_remaining": self.walls_remaining[agent_id],
-            "opponent_walls_remaining": self.walls_remaining[self._opponent(agent_id)],
+            "opponent_walls_remaining": self.walls_remaining[self.get_opponent(agent_id)],
         }
 
     def _is_wall_between(self, row_a, col_a, row_b, col_b):
@@ -175,7 +175,7 @@ class QuoridorEnv(AECEnv):
                 continue
 
             # Check if the opponent is in the target position
-            if self.positions[self._opponent(agent_id)] == (new_row, new_col):
+            if self.positions[self.get_opponent(agent_id)] == (new_row, new_col):
                 # Can we jump straight over the opponent?
                 straight_row = new_row + row
                 straight_col = new_col + col
@@ -211,9 +211,38 @@ class QuoridorEnv(AECEnv):
             # not blocked by a wall and the opponent is not on the way
             mask[self.action_params_to_index(new_row, new_col, 0)] = 1
 
-        # TODO: Valid wall placements
+        # Calculate wall placements
+        # Iterate over all possible wall positions, only of there are any left to place
+        if self.walls_remaining[agent_id] > 0:
+            for row, col, orientation in np.ndindex(self.walls.shape):
+                if self._is_wall_overlap(row, col, orientation):
+                    continue
+
+                # Check if the wall can be placed without blocking
+                if self._can_place_wall_without_blocking(row, col, orientation):
+                    mask[self.action_params_to_index(row, col, orientation + 1)] = 1
 
         return mask
+
+    def _is_wall_overlap(self, row, col, orientation):
+        """
+        Checks whether there is any wall overlaping where this wall would be placed
+        """
+        # Check if it doesn't collide with a crossing wall
+        if self.walls[row, col, (orientation + 1) % 2] == 1:
+            return True
+
+        # Check overlap with a wall in the same orientation before or after
+        deltarow = (orientation + 1) % 2
+        deltacol = orientation
+        if (
+            self.walls[min(row + deltarow, self.wall_size - 1), min(col + deltacol, self.wall_size - 1), orientation]
+            == 1
+            or self.walls[max(row - deltarow, 0), max(col - deltacol, 0), orientation] == 1
+        ):
+            return True
+
+        return False
 
     def _get_info(self):
         # This is for now unused, returning empty dict
@@ -352,7 +381,7 @@ class QuoridorEnv(AECEnv):
         idx = self.agent_order.index(self.agent_selection)
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]
 
-    def _opponent(self, agent):
+    def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_1"
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
