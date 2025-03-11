@@ -162,6 +162,16 @@
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/narration.txt",
             ]
         },
+        {
+                "name": "PyTest Deep Quoridor",
+                "type": "debugpy",
+                "request": "launch",
+                "module": "pytest",
+                "console": "integratedTerminal",
+                "cwd": "${workspaceFolder}",
+                "args": ["deep_quoridor", "-s"]
+
+        }
     ],
     "inputs": [
         {
