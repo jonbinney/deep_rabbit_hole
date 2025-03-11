@@ -355,6 +355,49 @@ class QuoridorEnv(AECEnv):
     def _opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_1"
 
+    def _can_place_wall_without_blocking(self, row, col, orientation):
+        """
+        Returns whether a wall can be placed in the specified coordinates an orientations such that
+        both pawns can still reach the target row
+        """
+
+        def can_reach(row, col, target_row):
+            def dfs(row, col, target_row, visited):
+                if row == target_row:
+                    return True
+
+                if visited[row, col]:
+                    return False
+
+                visited[row, col] = True
+
+                # Find out the forward direction to try it first and maybe get to the target faster
+                fwd = 1 if target_row > row else -1
+
+                moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
+                for new_row, new_col in moves:
+                    if (
+                        self._is_in_board(new_row, new_col)
+                        and not self._is_wall_between(row, col, new_row, new_col)
+                        and dfs(new_row, new_col, target_row, visited)
+                    ):
+                        return True
+
+                return False
+
+            visited = np.zeros((self.board_size, self.board_size), dtype="bool")
+            return dfs(row, col, target_row, visited)
+
+        # Temporarily place the wall so that we can easily check for walls
+        previous = self.walls[row, col, orientation]
+        self.walls[row, col, orientation] = 1
+        result = can_reach(*self.positions["player_0"], self.board_size - 1) and can_reach(
+            *self.positions["player_1"], 0
+        )
+        self.walls[row, col, orientation] = previous
+
+        return result
+
 
 # Wrapping the environment for PettingZoo compatibility
 def env():
