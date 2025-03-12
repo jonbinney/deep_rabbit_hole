@@ -1,3 +1,5 @@
+import curses
+
 from quoridor_env import env  # Import the environment from your file
 
 # Initialize environment
@@ -10,6 +12,11 @@ board = game.render()
 print(board)
 
 step = 0
+stdscr = curses.initscr()
+curses.noecho()
+curses.cbreak()
+curses.start_color()
+
 for agent in game.agent_iter():
     observation, reward, termination, truncation, info = game.last()
 
@@ -27,9 +34,16 @@ for agent in game.agent_iter():
 
     game.step(action)  # Apply action
 
-    board = game.render()  # Print updated board
+    board = game.render()
+    stdscr.clear()
+    stdscr.addstr(0, 0, board)
+    stdscr.refresh()
+    curses.napms(500)
     print(board)
 
     step += 1
 
 game.close()
+curses.nocbreak()
+curses.echo()
+curses.endwin()
