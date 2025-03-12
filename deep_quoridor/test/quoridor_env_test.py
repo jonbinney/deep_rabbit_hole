@@ -13,12 +13,14 @@ def parse_board(board):
     - '.': Empty cell
     - '*': Potential move positions for player 1
     - '|': Vertical walls
+    - 'v': A vertical wall cannot be placed here (for testing wall placement)
     - ' ': Empty spaces (just for formatting)
     - '+': Vertical wall continuation (just for formatting)
 
     Additionally, between 2 rows for the cells, a row with horizontal walls can be included.
     The position of the wall will be with respect to the row above.  The row is composed by:
     - '-': Horizontal walls
+    - 'v': A horizontal wall cannot be placed here (for testing wall placement)
     - ' ': Empty spaces (just for formatting)
     - '+': Horizontal wall continuation (just for formatting)
 
@@ -26,12 +28,14 @@ def parse_board(board):
         tuple: A tuple containing two elements:
             - QuoridorEnv: An environment instance representing the parsed board state
             - list: A list of tuples (row, col) representing potential move positions
+            - list: A list of tuples (row, col, orientation) represeting where the walls are forbidden to be placed
 
     """
     rows = [r for r in board.split("\n") if r.strip()]
     size = len([ch for ch in rows[0] if ch in "12.*"])
     env = quoridor_env(size)
     potential_moves = []
+    forbidden_walls = []
 
     row_n = 0
     col_positions = {}  # map from position in the string to column number
@@ -39,8 +43,8 @@ def parse_board(board):
     for row in rows:
         col_n = 0
 
-        is_cell_row = set(row) <= set("12.*| +")
-        is_h_wall_row = set(row) <= set("- +")
+        is_cell_row = set(row) <= set("12.*| +v")
+        is_h_wall_row = set(row) <= set("- +>")
         assert is_cell_row or is_h_wall_row, f"Row contains invalid characters {row}"
 
         if is_h_wall_row:
@@ -52,6 +56,9 @@ def parse_board(board):
                 if ch == "-" and not env.is_wall_between(row_n - 1, col_n, row_n, col_n):
                     env.place_wall("player_0", (row_n - 1, col_n), 1)
 
+                if ch == ">" or ch == "-":
+                    forbidden_walls.append((row_n - 1, col_n, 1))
+
             col_positions = {}
 
         else:
@@ -59,10 +66,11 @@ def parse_board(board):
                 if ch == " " or ch == "+":
                     continue
 
-                if ch == "|":
-                    if not env.is_wall_between(row_n, col_n - 1, row_n, col_n):
+                if ch == "v" or ch == "|":
+                    forbidden_walls.append((row_n, col_n - 1, 0))
+                    if ch == "|" and not env.is_wall_between(row_n, col_n - 1, row_n, col_n):
                         env.place_wall("player_0", (row_n, col_n - 1), 0)
-                    continue  # don't count it as a cell column
+                    continue
 
                 if ch == "*":
                     potential_moves.append((row_n, col_n))
@@ -78,12 +86,12 @@ def parse_board(board):
             row_n += 1
 
     assert row_n == size, f"Was expecting {size} rows, but found {row_n}"
-    return env, potential_moves
+    return env, potential_moves, forbidden_walls
 
 
 class TestQuoridorEnv:
     def _test_pawn_movements(self, s):
-        env, potential_moves = parse_board(s)
+        env, potential_moves, _ = parse_board(s)
         N = env.board_size
         action_mask = env.observe("player_0")["action_mask"]
 
@@ -93,6 +101,21 @@ class TestQuoridorEnv:
                 env_moves.append(divmod(i, N))
 
         assert env_moves == potential_moves
+
+    def _test_wall_placements(self, s):
+        env, _, forbidden_walls = parse_board(s)
+        N = env.board_size
+        env.render()
+        action_mask = env.observe("player_0")["action_mask"]
+
+        env_walls = []
+        for i in range(N**2, len(action_mask)):
+            if action_mask[i] == 0:
+                row, col, action_type = env.action_index_to_params(i)
+
+                env_walls.append((row, col, action_type - 1))
+
+        assert set(env_walls) == set(forbidden_walls)
 
     def test_corner_movements(self):
         self._test_pawn_movements("""
@@ -198,4 +221,62 @@ class TestQuoridorEnv:
              -+-
            . . . .
            . . . .
+        """)
+
+    def test_forbidden_walls(self):
+        self._test_wall_placements("""
+            . . 1 . .
+            . . .v. .
+            . . .|. .
+                >
+            . . .|. .
+            . . 2 . .
+        """)
+
+        self._test_wall_placements("""
+            . . 1 . .
+            . . .v. .
+              > - -
+            . . . . .
+            . . . . .
+            . . 2 . .
+        """)
+
+        self._test_wall_placements("""
+            . .v1 .v.
+            . .|.v.|.
+              >+-+-+
+            . .|. .|.
+            . . . . .
+            . . 2 . .
+        """)
+
+    def test_forbidden_walls_due_to_blocking(self):
+        self._test_wall_placements("""
+            . .|1|. .
+              > >
+            . .|.|. .
+              > >
+            . . . . .
+            . . . . .
+            . . 2 . .
+        """)
+
+        self._test_wall_placements("""
+            . . 1v.v.
+            .v. .v. .
+            -+- -+-
+            . . . . .
+            . . . . .
+            . . 2 . .
+        """)
+
+        self._test_wall_placements("""
+            . . 1 . . .
+            . . . . . .
+            .v. .v. . .
+            -+- -+- >
+            . . . . . .
+            . . . . . .
+            . . 2 . . .
         """)

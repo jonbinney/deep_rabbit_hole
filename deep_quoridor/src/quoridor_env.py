@@ -232,15 +232,13 @@ class QuoridorEnv(AECEnv):
         if self.walls[row, col, (orientation + 1) % 2] == 1:
             return True
 
-        # Check overlap with a wall in the same orientation before or after
-        deltarow = (orientation + 1) % 2
-        deltacol = orientation
-        if (
-            self.walls[min(row + deltarow, self.wall_size - 1), min(col + deltacol, self.wall_size - 1), orientation]
-            == 1
-            or self.walls[max(row - deltarow, 0), max(col - deltacol, 0), orientation] == 1
-        ):
-            return True
+        # Check that in the 2 wall segments there's no other segment already
+        if orientation == 0:
+            if self.is_wall_between(row, col, row, col + 1) or self.is_wall_between(row + 1, col, row + 1, col + 1):
+                return True
+        else:
+            if self.is_wall_between(row, col, row + 1, col) or self.is_wall_between(row, col + 1, row + 1, col + 1):
+                return True
 
         return False
 
@@ -328,7 +326,7 @@ class QuoridorEnv(AECEnv):
     def action_index_to_params(self, idx) -> Tuple[int, int, int]:
         """
         Takes an action index to action parameters (row, col, movement_type)
-        movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
+        movement_type = 0 for moving, 1 for vertical wall placement, 2 for horizontal wall placement
         """
         if idx < self.board_size**2:  # Pawn movement
             action_type = 0
