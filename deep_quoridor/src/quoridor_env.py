@@ -36,7 +36,7 @@ import numpy as np
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int = 9, max_walls: int = 10):
+    def __init__(self, board_size: int, max_walls: int):
         super(AECEnv, self).__init__()
 
         self.render_mode = "human"
@@ -429,5 +429,5 @@ class QuoridorEnv(AECEnv):
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env(board_size: int = 9):
-    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size))
+def env(board_size: int = 9, max_walls: int = 10):
+    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls))
