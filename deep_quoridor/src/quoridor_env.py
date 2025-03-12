@@ -25,6 +25,7 @@ The action is represented as follows, taking a 9x9 board as an example:
 Every time we represent a coordinate as a tuple, it is in the form (row, col)
 """
 
+import copy
 import functools
 from typing import Tuple
 from pettingzoo import AECEnv
@@ -48,6 +49,13 @@ class QuoridorEnv(AECEnv):
         self.possible_agents = ["player_0", "player_1"]
 
         self.reset()
+
+    def copy(self):
+        """
+        A deep copy is not very efficient; eventually we should break out the game logic and state
+        into a separate class that can be used by agents during planning
+        """
+        return copy.deepcopy(self)
 
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents.copy()
