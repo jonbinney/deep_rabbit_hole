@@ -1,6 +1,6 @@
 import pytest
 
-from deep_quoridor.src.quoridor_env import QuoridorEnv
+from deep_quoridor.src.quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
@@ -30,7 +30,7 @@ def parse_board(board):
     """
     rows = [r for r in board.split("\n") if r.strip()]
     size = len([ch for ch in rows[0] if ch in "12.*"])
-    env = QuoridorEnv(size)
+    env = quoridor_env(size)
     potential_moves = []
 
     row_n = 0
@@ -49,8 +49,8 @@ def parse_board(board):
                     break
 
                 ch = row[i]
-                if ch == "-" and not env._is_wall_between(row_n - 1, col_n, row_n, col_n):
-                    env._place_wall("player_0", (row_n - 1, col_n), 1)
+                if ch == "-" and not env.is_wall_between(row_n - 1, col_n, row_n, col_n):
+                    env.place_wall("player_0", (row_n - 1, col_n), 1)
 
             col_positions = {}
 
@@ -60,8 +60,8 @@ def parse_board(board):
                     continue
 
                 if ch == "|":
-                    if not env._is_wall_between(row_n, col_n - 1, row_n, col_n):
-                        env._place_wall("player_0", (row_n, col_n - 1), 0)
+                    if not env.is_wall_between(row_n, col_n - 1, row_n, col_n):
+                        env.place_wall("player_0", (row_n, col_n - 1), 0)
                     continue  # don't count it as a cell column
 
                 if ch == "*":
