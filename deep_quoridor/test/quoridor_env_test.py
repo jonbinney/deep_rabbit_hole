@@ -20,7 +20,7 @@ def parse_board(board):
     Additionally, between 2 rows for the cells, a row with horizontal walls can be included.
     The position of the wall will be with respect to the row above.  The row is composed by:
     - '-': Horizontal walls
-    - 'v': A horizontal wall cannot be placed here (for testing wall placement)
+    - '>': A horizontal wall cannot be placed here (for testing wall placement)
     - ' ': Empty spaces (just for formatting)
     - '+': Horizontal wall continuation (just for formatting)
 
