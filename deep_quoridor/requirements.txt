@@ -1,3 +1,4 @@
 pettingzoo
 gymnasium
 numpy
+pytest

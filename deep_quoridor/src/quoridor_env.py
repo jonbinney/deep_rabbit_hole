@@ -87,7 +87,7 @@ class QuoridorEnv(AECEnv):
         if action_type == 0:
             self._move(agent, (row, col))
         else:
-            self._place_wall(agent, (row, col), action_type - 1)
+            self.place_wall(agent, (row, col), action_type - 1)
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
@@ -132,7 +132,7 @@ class QuoridorEnv(AECEnv):
             "opponent_walls_remaining": self.walls_remaining[self.get_opponent(agent_id)],
         }
 
-    def _is_wall_between(self, row_a, col_a, row_b, col_b):
+    def is_wall_between(self, row_a, col_a, row_b, col_b):
         """
         Returns True if there is a wall between pos_a and pos_b
         NOTE: The min and max tricks there are just a lazy way to avoid overindexing
@@ -171,7 +171,7 @@ class QuoridorEnv(AECEnv):
                 continue
 
             # Check if that direction is blocked by a wall
-            if self._is_wall_between(old_row, old_col, new_row, new_col):
+            if self.is_wall_between(old_row, old_col, new_row, new_col):
                 continue
 
             # Check if the opponent is in the target position
@@ -184,7 +184,7 @@ class QuoridorEnv(AECEnv):
                     # That new position falls within the board
                     self._is_in_board(straight_row, straight_col)
                     # That new position is not blocked by a wall behind them
-                    and not self._is_wall_between(new_row, new_col, straight_row, straight_col)
+                    and not self.is_wall_between(new_row, new_col, straight_row, straight_col)
                 ):
                     mask[self.action_params_to_index(straight_row, straight_col, 0)] = 1
                     continue
@@ -202,7 +202,7 @@ class QuoridorEnv(AECEnv):
                             # That new position falls within the board
                             self._is_in_board(diag_row, diag_col)
                             # That new position is not blocked by a wall
-                            and not self._is_wall_between(new_row, new_col, diag_row, diag_col)
+                            and not self.is_wall_between(new_row, new_col, diag_row, diag_col)
                         ):
                             mask[self.action_params_to_index(diag_row, diag_col, 0)] = 1
                     continue
@@ -355,7 +355,7 @@ class QuoridorEnv(AECEnv):
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)
 
-    def _place_wall(self, agent, position, orientation):
+    def place_wall(self, agent, position, orientation):
         """
         Place a wall at the specified position and orientation.
         Since each wall is of length 2, the wall will coneinue through two spaces.
@@ -409,7 +409,7 @@ class QuoridorEnv(AECEnv):
                 for new_row, new_col in moves:
                     if (
                         self._is_in_board(new_row, new_col)
-                        and not self._is_wall_between(row, col, new_row, new_col)
+                        and not self.is_wall_between(row, col, new_row, new_col)
                         and dfs(new_row, new_col, target_row, visited)
                     ):
                         return True
@@ -431,5 +431,5 @@ class QuoridorEnv(AECEnv):
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env():
-    return wrappers.CaptureStdoutWrapper(QuoridorEnv())
+def env(board_size: int = 9):
+    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size))
