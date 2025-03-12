@@ -25,7 +25,7 @@ def parse_board(board):
     - '+': Horizontal wall continuation (just for formatting)
 
     Returns:
-        tuple: A tuple containing two elements:
+        tuple: A tuple containing three elements:
             - QuoridorEnv: An environment instance representing the parsed board state
             - list: A list of tuples (row, col) representing potential move positions
             - list: A list of tuples (row, col, orientation) represeting where the walls are forbidden to be placed
