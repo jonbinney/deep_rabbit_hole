@@ -218,11 +218,53 @@ class QuoridorEnv(AECEnv):
                 if self._is_wall_overlap(row, col, orientation):
                     continue
 
-                # Check if the wall can be placed without blocking
-                if self._can_place_wall_without_blocking(row, col, orientation):
+                if not self._is_wall_potential_block(row, col, orientation) or self._can_place_wall_without_blocking(
+                    row, col, orientation
+                ):
                     mask[self.action_params_to_index(row, col, orientation + 1)] = 1
 
         return mask
+
+    def _is_wall_potential_block(self, row, col, orientation):
+        # Area to find other walls that may touch this wall
+        top = max(0, row - 1)
+        bottom = min(self.wall_size - 1, row + 1)
+        left = max(0, col - 1)
+        right = min(self.wall_size - 1, col + 1)
+
+        # Whether the wall was touched in the left/top, middle, right/bottom
+        touches = [False, False, False]
+
+        if orientation == 1:  # Horizontal
+            # On the left border or touching another horizontal wall on the left side
+            if (col == 0) or (col >= 2 and self.walls[row, col - 2, 1] == 1):
+                touches[0] = True
+
+            # On the right border or touching another horizontal wall on the right sinde
+            if (col == self.wall_size) - 1 or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
+                touches[2] = True
+
+            # Check for vertical walls touching it
+            for r in range(top, bottom + 1):
+                for c in range(left, right + 1):
+                    if self.walls[r, c, 0]:
+                        touches[c - left] = True
+        else:  # Vertical
+            # On the top border or touching another verticall wall on top
+            if (row == 0) or (row >= 2 and self.walls[row - 2, col, 0] == 1):
+                touches[0] = True
+
+            # On the bottom border or touching another verticall wall on the bottom
+            if (row == self.wall_size - 1) or (row < self.wall_size - 2 and self.walls[row + 2, col, 0] == 1):
+                touches[2] = True
+
+            # Check for horizontal walls touching it
+            for r in range(top, bottom + 1):
+                for c in range(left, right + 1):
+                    if self.walls[r, c, 1]:
+                        touches[r - top] = True
+
+        return sum(touches) > 1
 
     def _is_wall_overlap(self, row, col, orientation):
         """
