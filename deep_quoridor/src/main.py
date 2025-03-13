@@ -1,7 +1,20 @@
-import curses
 import argparse
+import curses
 
 from quoridor_env import env  # Import the environment from your file
+from simple_agent import SimpleAgent
+
+
+class RandomAgent:
+    def __init__(self):
+        pass
+
+    def get_action(self, game):
+        observation, _, termination, truncation, _ = game.last()
+        mask = observation["action_mask"]
+        if termination or truncation:
+            return None
+        return game.action_space(game.agent_selection).sample(mask)
 
 
 def play(board_size: int | None, max_walls: int | None, render: str):
@@ -11,6 +24,11 @@ def play(board_size: int | None, max_walls: int | None, render: str):
     game = env(**args)
 
     game.reset()
+
+    agents = {
+        "player_0": RandomAgent(),
+        "player_1": RandomAgent(),
+    }
 
     if render == "print":
         print("Initial Board State:")
@@ -25,20 +43,15 @@ def play(board_size: int | None, max_walls: int | None, render: str):
     step = 0
 
     for agent in game.agent_iter():
-        observation, reward, termination, truncation, info = game.last()
-
-        mask = observation["action_mask"]
-
+        _, _, termination, truncation, _ = game.last()
         if termination or truncation:
             action = None
             winner = max(game.rewards, key=game.rewards.get)
-            print(f"\nGame Over! {winner} wins.")
+            print(f"\nGame Over! {winner} wins after {step} steps.")
             break
-        else:
-            # Hardcoded actions for now
-            action = game.action_space(agent).sample(mask)
-            print(f"\nStep {step + 1}: {agent} takes action {action}")
 
+        action = agents[agent].get_action(game)
+        print(f"\nStep {step + 1}: {agent} takes action {action}")
         game.step(action)  # Apply action
 
         board = game.render()
@@ -49,7 +62,8 @@ def play(board_size: int | None, max_walls: int | None, render: str):
             stdscr.refresh()
             curses.napms(500)
 
-        print(board)
+        if render == "print":
+            print(board)
 
         step += 1
 
