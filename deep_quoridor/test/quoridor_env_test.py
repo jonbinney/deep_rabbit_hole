@@ -117,6 +117,68 @@ class TestQuoridorEnv:
 
         assert set(env_walls) == set(forbidden_walls)
 
+    def _test_can_reach(self, s, moves_p1, moves_p2):
+        env, _, _ = parse_board(s)
+        N = env.board_size
+        (row, col) = env.positions["player_0"]
+        assert moves_p1 == env.can_reach(row, col, N - 1, False)
+        (row, col) = env.positions["player_1"]
+        assert moves_p2 == env.can_reach(row, col, 0, False)
+
+    def test_distance_to_goal(self):
+        self._test_can_reach(
+            """
+            1 . .
+            . . .
+            . . 2
+        """,
+            2,
+            2,
+        )
+
+        self._test_can_reach(
+            """
+            . * .
+            . . .
+            2 . 1
+        """,
+            0,
+            2,
+        )
+
+        self._test_can_reach(
+            """
+            1 . .
+            - -
+            . . .
+            . . 2
+        """,
+            4,
+            2,
+        )
+
+        self._test_can_reach(
+            """
+            1 .|.
+            - -+
+            . .|.
+            . . 2
+        """,
+            -1,
+            2,
+        )
+
+        self._test_can_reach(
+            """
+            1 . .
+            - - 
+            . .|.
+            . .|2
+        """,
+            4,
+            2,
+        )
+
     def test_corner_movements(self):
         self._test_pawn_movements("""
             1 * .

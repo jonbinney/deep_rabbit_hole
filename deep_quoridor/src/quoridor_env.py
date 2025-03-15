@@ -473,14 +473,16 @@ class QuoridorEnv(AECEnv):
                 dfs = self._dfs(new_row, new_col, target_row, visited)
                 if dfs != -1:
                     if any_path:
-                        return dfs
+                        return dfs + 1
                     if best == -1 or dfs + 1 < best:
-                        best = dfs
+                        best = dfs + 1
 
         return best
 
     def can_reach(self, row, col, target_row, any_path=True):
         """
+        Returns -1 if the target row can't be reached, or the number of moves it takes to reach
+        the target row if it's reachable.
         If any_path is set to true, the first path to the target row will be returned (faster).
         Otherwise, the shortest path will be returned (potentially slower)
         """
