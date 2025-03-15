@@ -438,7 +438,7 @@ class QuoridorEnv(AECEnv):
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
 
-    def dfs(self, row, col, target_row, visited):
+    def _dfs(self, row, col, target_row, visited, any_path=True):
         """
         Performs a depth-first search to find whether the pawn can reach the target row.
 
@@ -448,6 +448,8 @@ class QuoridorEnv(AECEnv):
             target_row (int): The target row to reach
             visited (numpy.array): A 2D boolean array with the same shape as the board,
                 indicating which positions have been visited
+            If any_path is set to true, the first path to the target row will be returned (faster).
+            Otherwise, the shortest path will be returned (potentially slower)
 
         Returns:
             int: Number of steps to reach the target or -1 if it's unreachable
@@ -468,11 +470,22 @@ class QuoridorEnv(AECEnv):
                 and not self.is_wall_between(row, col, new_row, new_col)
                 and not visited[new_row, new_col]
             ):
-                dfs = self.dfs(new_row, new_col, target_row, visited)
-                if dfs != -1 and (best == -1 or dfs + 1 < best):
-                    best = dfs + 1
+                dfs = self._dfs(new_row, new_col, target_row, visited)
+                if dfs != -1:
+                    if any_path:
+                        return dfs
+                    if best == -1 or dfs + 1 < best:
+                        best = dfs
 
         return best
+
+    def can_reach(self, row, col, target_row, any_path=True):
+        """
+        If any_path is set to true, the first path to the target row will be returned (faster).
+        Otherwise, the shortest path will be returned (potentially slower)
+        """
+        visited = np.zeros((self.board_size, self.board_size), dtype="bool")
+        return self._dfs(row, col, target_row, visited, any_path)
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
@@ -480,15 +493,12 @@ class QuoridorEnv(AECEnv):
         both pawns can still reach the target row
         """
 
-        def can_reach(row, col, target_row):
-            visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-            return self.dfs(row, col, target_row, visited) != -1
-
         # Temporarily place the wall so that we can easily check for walls
         previous = self.walls[row, col, orientation]
         self.walls[row, col, orientation] = 1
-        result = can_reach(*self.positions["player_0"], self.board_size - 1) and can_reach(
-            *self.positions["player_1"], 0
+        result = (
+            self.can_reach(*self.positions["player_0"], self.board_size - 1) != -1
+            and self.can_reach(*self.positions["player_1"], 0) != -1
         )
         self.walls[row, col, orientation] = previous
 
