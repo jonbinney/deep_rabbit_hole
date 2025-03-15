@@ -27,7 +27,7 @@ def play(board_size: int | None, max_walls: int | None, render: str):
 
     agents = {
         "player_0": RandomAgent(),
-        "player_1": RandomAgent(),
+        "player_1": SimpleAgent(),
     }
 
     if render == "print":
@@ -60,7 +60,7 @@ def play(board_size: int | None, max_walls: int | None, render: str):
             stdscr.clear()
             stdscr.addstr(2, 2, board)
             stdscr.refresh()
-            curses.napms(500)
+            curses.napms(100)
 
         if render == "print":
             print(board)

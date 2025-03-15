@@ -37,10 +37,11 @@ import numpy as np
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int, max_walls: int):
+    def __init__(self, board_size: int, max_walls: int, step_rewards: bool = False):
         super(AECEnv, self).__init__()
 
         self.render_mode = "human"
+        self.step_rewards = step_rewards
 
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
@@ -101,6 +102,9 @@ class QuoridorEnv(AECEnv):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             self.rewards[self.get_opponent(agent)] = -1
+        elif self.step_rewards:
+            # TODO: Calculate distance to goal for each agent
+            pass
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -434,6 +438,42 @@ class QuoridorEnv(AECEnv):
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
 
+    def dfs(self, row, col, target_row, visited):
+        """
+        Performs a depth-first search to find whether the pawn can reach the target row.
+
+        Args:
+            row (int): The current row of the pawn
+            col (int): The current column of the pawn
+            target_row (int): The target row to reach
+            visited (numpy.array): A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if row == target_row:
+            return 0
+
+        visited[row, col] = True
+
+        # Find out the forward direction to try it first and maybe get to the target faster
+        fwd = 1 if target_row > row else -1
+
+        moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
+        best = -1
+        for new_row, new_col in moves:
+            if (
+                self._is_in_board(new_row, new_col)
+                and not self.is_wall_between(row, col, new_row, new_col)
+                and not visited[new_row, new_col]
+            ):
+                dfs = self.dfs(new_row, new_col, target_row, visited)
+                if dfs != -1 and (best == -1 or dfs + 1 < best):
+                    best = dfs + 1
+
+        return best
+
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
         Returns whether a wall can be placed in the specified coordinates an orientations such that
@@ -441,31 +481,8 @@ class QuoridorEnv(AECEnv):
         """
 
         def can_reach(row, col, target_row):
-            def dfs(row, col, target_row, visited):
-                if row == target_row:
-                    return True
-
-                if visited[row, col]:
-                    return False
-
-                visited[row, col] = True
-
-                # Find out the forward direction to try it first and maybe get to the target faster
-                fwd = 1 if target_row > row else -1
-
-                moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-                for new_row, new_col in moves:
-                    if (
-                        self._is_in_board(new_row, new_col)
-                        and not self.is_wall_between(row, col, new_row, new_col)
-                        and dfs(new_row, new_col, target_row, visited)
-                    ):
-                        return True
-
-                return False
-
             visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-            return dfs(row, col, target_row, visited)
+            return self.dfs(row, col, target_row, visited) != -1
 
         # Temporarily place the wall so that we can easily check for walls
         previous = self.walls[row, col, orientation]
