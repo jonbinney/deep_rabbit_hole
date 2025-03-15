@@ -103,8 +103,14 @@ class QuoridorEnv(AECEnv):
             self.rewards[agent] = 1
             self.rewards[self.get_opponent(agent)] = -1
         elif self.step_rewards:
-            # TODO: Calculate distance to goal for each agent
-            pass
+            # Assign rewards as the difference in distance to the goal divided by
+            # twice the board size.
+            (row, col) = self.positions[agent]
+            agent_distance = self.can_reach(row, col, self.board_size - 1, False)
+            (row, col) = self.positions[self.get_opponent(agent)]
+            oponent_distance = self.can_reach(row, col, self.board_size - 1, False)
+            self.rewards[agent] = (agent_distance - oponent_distance) / (2 * self.board_size)
+            self.rewards[self.get_opponent(agent)] = (oponent_distance - agent_distance) / (2 * self.board_size)
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
