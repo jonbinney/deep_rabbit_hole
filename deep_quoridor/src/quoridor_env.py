@@ -104,11 +104,11 @@ class QuoridorEnv(AECEnv):
             self.rewards[self.get_opponent(agent)] = -1
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
-            # twice the board size.
+            # three times the board size.
             (row, col) = self.positions[agent]
-            agent_distance = self.can_reach(row, col, self.get_goal_row(agent), False)
+            agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
             (row, col) = self.positions[self.get_opponent(agent)]
-            oponent_distance = self.can_reach(row, col, self.get_goal_row(self.get_opponent(agent)), False)
+            oponent_distance = self.distance_to_target(row, col, self.get_goal_row(self.get_opponent(agent)), False)
             self.rewards[agent] = (oponent_distance - agent_distance) / (3 * self.board_size)
             self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (3 * self.board_size)
 
@@ -484,10 +484,12 @@ class QuoridorEnv(AECEnv):
 
         return best
 
-    def can_reach(self, row, col, target_row, any_path=True):
+    def can_reach(self, row, col, target_row):
+        return self.distance_to_target(row, col, target_row, True) != -1
+
+    def distance_to_target(self, row, col, target_row, any_path=False):
         """
-        Returns -1 if the target row can't be reached, or the number of moves it takes to reach
-        the target row if it's reachable.
+        Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
         If any_path is set to true, the first path to the target row will be returned (faster).
         Otherwise, the shortest path will be returned (potentially slower)
         """
@@ -503,10 +505,7 @@ class QuoridorEnv(AECEnv):
         # Temporarily place the wall so that we can easily check for walls
         previous = self.walls[row, col, orientation]
         self.walls[row, col, orientation] = 1
-        result = (
-            self.can_reach(*self.positions["player_0"], self.board_size - 1) != -1
-            and self.can_reach(*self.positions["player_1"], 0) != -1
-        )
+        result = all(self.can_reach(*self.positions[agent], self.get_goal_row(agent)) for agent in self.agents)
         self.walls[row, col, orientation] = previous
 
         return result

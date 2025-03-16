@@ -117,16 +117,16 @@ class TestQuoridorEnv:
 
         assert set(env_walls) == set(forbidden_walls)
 
-    def _test_can_reach(self, s, moves_p1, moves_p2):
+    def _test_distance_to_target(self, s, moves_p1, moves_p2):
         env, _, _ = parse_board(s)
         N = env.board_size
         (row, col) = env.positions["player_0"]
-        assert moves_p1 == env.can_reach(row, col, N - 1, False)
+        assert moves_p1 == env.distance_to_target(row, col, N - 1, False)
         (row, col) = env.positions["player_1"]
-        assert moves_p2 == env.can_reach(row, col, 0, False)
+        assert moves_p2 == env.distance_to_target(row, col, 0, False)
 
     def test_distance_to_goal(self):
-        self._test_can_reach(
+        self._test_distance_to_target(
             """
             1 . .
             . . .
@@ -136,7 +136,7 @@ class TestQuoridorEnv:
             2,
         )
 
-        self._test_can_reach(
+        self._test_distance_to_target(
             """
             . * .
             . . .
@@ -146,7 +146,7 @@ class TestQuoridorEnv:
             2,
         )
 
-        self._test_can_reach(
+        self._test_distance_to_target(
             """
             1 . .
             - -
@@ -157,7 +157,7 @@ class TestQuoridorEnv:
             2,
         )
 
-        self._test_can_reach(
+        self._test_distance_to_target(
             """
             1 .|.
             - -+
@@ -168,7 +168,7 @@ class TestQuoridorEnv:
             2,
         )
 
-        self._test_can_reach(
+        self._test_distance_to_target(
             """
             1 . .
             - - 
