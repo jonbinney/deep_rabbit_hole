@@ -17,9 +17,9 @@ class RandomAgent:
         return game.action_space(game.agent_selection).sample(mask)
 
 
-def play(board_size: int | None, max_walls: int | None, render: str):
+def play(board_size: int | None, max_walls: int | None, render: str, step_rewards: bool):
     # Don't pass the None arguments to env so it uses the defaults
-    args = {"board_size": board_size, "max_walls": max_walls}
+    args = {"board_size": board_size, "max_walls": max_walls, "step_rewards": step_rewards}
     args = {k: v for k, v in args.items() if v is not None}
     game = env(**args)
 
@@ -53,6 +53,7 @@ def play(board_size: int | None, max_walls: int | None, render: str):
         action = agents[agent].get_action(game)
         print(f"\nStep {step + 1}: {agent} takes action {action}")
         game.step(action)  # Apply action
+        print(f"Rewards: {game.rewards}")
 
         board = game.render()
 
@@ -79,7 +80,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
     parser.add_argument("-W", "--max_walls", type=int, default=None, help="Max walls per player")
-    parser.add_argument("-r", "--render", choices=["print", "curses"], default="curses", help="Render mode")
+    parser.add_argument("-r", "--render", choices=["print", "curses"], default="print", help="Render mode")
+    parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
 
     args = parser.parse_args()
-    play(args.board_size, args.max_walls, args.render)
+    play(**vars(args))

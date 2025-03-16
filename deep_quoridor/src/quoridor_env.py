@@ -37,7 +37,7 @@ import numpy as np
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int, max_walls: int, step_rewards: bool = False):
+    def __init__(self, board_size: int, max_walls: int, step_rewards: bool):
         super(AECEnv, self).__init__()
 
         self.render_mode = "human"
@@ -106,11 +106,11 @@ class QuoridorEnv(AECEnv):
             # Assign rewards as the difference in distance to the goal divided by
             # twice the board size.
             (row, col) = self.positions[agent]
-            agent_distance = self.can_reach(row, col, self.board_size - 1, False)
+            agent_distance = self.can_reach(row, col, self.get_goal_row(agent), False)
             (row, col) = self.positions[self.get_opponent(agent)]
-            oponent_distance = self.can_reach(row, col, self.board_size - 1, False)
-            self.rewards[agent] = (agent_distance - oponent_distance) / (2 * self.board_size)
-            self.rewards[self.get_opponent(agent)] = (oponent_distance - agent_distance) / (2 * self.board_size)
+            oponent_distance = self.can_reach(row, col, self.get_goal_row(self.get_opponent(agent)), False)
+            self.rewards[agent] = (oponent_distance - agent_distance) / (3 * self.board_size)
+            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (3 * self.board_size)
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -431,11 +431,7 @@ class QuoridorEnv(AECEnv):
 
     def _check_win(self, agent):
         row, _ = self.positions[agent]
-        if agent == "player_0" and row == self.board_size - 1:
-            return True
-        if agent == "player_1" and row == 0:
-            return True
-        return False
+        return row == self.get_goal_row(agent)
 
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
@@ -443,6 +439,9 @@ class QuoridorEnv(AECEnv):
 
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
+
+    def get_goal_row(self, agent):
+        return 0 if agent == "player_1" else self.board_size - 1
 
     def _dfs(self, row, col, target_row, visited, any_path=True):
         """
@@ -514,5 +513,5 @@ class QuoridorEnv(AECEnv):
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env(board_size: int = 9, max_walls: int = 10):
-    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls))
+def env(board_size: int = 9, max_walls: int = 10, step_rewards: bool = False):
+    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls, step_rewards))
