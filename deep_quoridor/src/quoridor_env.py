@@ -25,13 +25,15 @@ The action is represented as follows, taking a 9x9 board as an example:
 Every time we represent a coordinate as a tuple, it is in the form (row, col)
 """
 
-import copy
 import functools
 from typing import Tuple
+
+import numpy as np
+from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
-from gymnasium import spaces
-import numpy as np
+
+from quoridor import Quoridor
 
 
 class QuoridorEnv(AECEnv):
@@ -39,35 +41,23 @@ class QuoridorEnv(AECEnv):
 
     def __init__(self, board_size: int, max_walls: int):
         super(AECEnv, self).__init__()
-
         self.render_mode = "human"
-
-        self.board_size = board_size  # assumed square grid
-        self.wall_size = self.board_size - 1  # grid for walls
-        self.max_walls = max_walls  # Each player gets 10 walls
-
         self.possible_agents = ["player_0", "player_1"]
+        self._game = Quoridor(board_size, max_walls, self.possible_agents)
 
-        self.reset()
-
-    def copy(self):
+    def reset(self, seed=None, options=None, game=None):
         """
-        A deep copy is not very efficient; eventually we should break out the game logic and state
-        into a separate class that can be used by agents during planning
-        """
-        return copy.deepcopy(self)
+        Reset the environment to the initial state.
 
-    def reset(self, seed=None, options=None):
+        If a game is provided, it will be used as the game state instead.
+        """
+        if game is None:
+            self._game = Quoridor(self._game.board_size, self._game.max_walls, self._game.players)
+        else:
+            self._game = game
+
         self.agents = self.possible_agents.copy()
         self.agent_order = self.agents.copy()
-
-        self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
-        self.walls_remaining = {agent: self.max_walls for agent in self.agents}
-        # Positions are (row, col)
-        self.positions = {
-            "player_0": (0, self.board_size // 2),
-            "player_1": (self.board_size - 1, self.board_size // 2),
-        }
 
         self.rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
@@ -134,35 +124,8 @@ class QuoridorEnv(AECEnv):
         walls = self.walls.copy()
 
         return {
-            "board": board,
-            "walls": walls,
-            "my_walls_remaining": self.walls_remaining[agent_id],
-            "opponent_walls_remaining": self.walls_remaining[self.get_opponent(agent_id)],
+            "game": self._game,
         }
-
-    def is_wall_between(self, row_a, col_a, row_b, col_b):
-        """
-        Returns True if there is a wall between pos_a and pos_b
-        NOTE: The min and max tricks there are just a lazy way to avoid overindexing
-        Since the wall grid is one smaller than the board (because boards take two spaces)
-        """
-        if row_a == row_b:  # Horizontal movement - check vertical walls
-            wall_col = min(col_a, col_b)
-            return (
-                self.walls[min(row_a, self.wall_size - 1), wall_col, 0] == 1
-                or self.walls[max(row_a - 1, 0), wall_col, 0] == 1
-            )
-        elif col_a == col_b:  # Vertical movement - check horizontal walls
-            wall_row = min(row_a, row_b)
-            return (
-                self.walls[wall_row, min(col_a, self.wall_size - 1), 1] == 1
-                or self.walls[wall_row, max(col_a - 1, 0), 1] == 1
-            )
-        else:
-            raise ValueError(f"Invalid movement from {row_a, col_a} to {row_b, col_b}")
-
-    def _is_in_board(self, row, col):
-        return 0 <= row < self.board_size and 0 <= col < self.board_size
 
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
@@ -297,45 +260,7 @@ class QuoridorEnv(AECEnv):
         return {}
 
     def render(self):
-        board_str = ""
-
-        for row in range(self.board_size):
-            # Render board row with player positions and vertical walls
-            for col in range(self.board_size):
-                if self.positions["player_0"] == (row, col):
-                    board_str += " P0 "
-                elif self.positions["player_1"] == (row, col):
-                    board_str += " P1 "
-                else:
-                    board_str += " .  "
-
-                # Render vertical walls (|)
-                if col < self.wall_size:
-                    if row < self.wall_size and self.walls[row, col, 0]:
-                        board_str += "|"
-                    elif row > 0 and self.walls[row - 1, col, 0]:  # Continuation of a vertical wall
-                        board_str += "|"
-                    else:
-                        board_str += " "
-                else:
-                    board_str += " "
-
-            board_str += "\n"
-
-            # Render horizontal walls (───)
-            if row < self.wall_size:
-                for col in range(self.board_size):
-                    if col < self.wall_size and self.walls[row, col, 1]:
-                        board_str += "────+"  # Wall segment
-                    elif col > 0 and self.walls[row, col - 1, 1]:
-                        board_str += "──── "  # Continuation of a wall from the left
-                    elif col < self.wall_size and self.walls[row, col, 0]:
-                        board_str += "    +"  # Vertical wall going through this intersection
-                    else:
-                        board_str += "     "
-                board_str += "\n"
-
-        print(board_str)
+        print(self._game.render_to_string())
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
@@ -403,22 +328,6 @@ class QuoridorEnv(AECEnv):
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)
 
-    def place_wall(self, agent, position, orientation):
-        """
-        Place a wall at the specified position and orientation.
-        Since each wall is of length 2, the wall will coneinue through two spaces.
-
-        TODO: Prevent placing walls conflicting with existing ones
-        TODO: Prevent completely blocking the path from one end to the other
-        """
-        if self.walls_remaining[agent] == 0:
-            print("WTF: Invalid action: No walls left")
-            return  # No walls left
-        (row, col) = position
-        if self.walls[row, col, orientation] == 0:
-            self.walls[row, col, orientation] = 1  # Mark as wall
-            self.walls_remaining[agent] -= 1
-
     def _check_win(self, agent):
         row, _ = self.positions[agent]
         if agent == "player_0" and row == self.board_size - 1:
@@ -433,49 +342,6 @@ class QuoridorEnv(AECEnv):
 
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
-
-    def _can_place_wall_without_blocking(self, row, col, orientation):
-        """
-        Returns whether a wall can be placed in the specified coordinates an orientations such that
-        both pawns can still reach the target row
-        """
-
-        def can_reach(row, col, target_row):
-            def dfs(row, col, target_row, visited):
-                if row == target_row:
-                    return True
-
-                if visited[row, col]:
-                    return False
-
-                visited[row, col] = True
-
-                # Find out the forward direction to try it first and maybe get to the target faster
-                fwd = 1 if target_row > row else -1
-
-                moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-                for new_row, new_col in moves:
-                    if (
-                        self._is_in_board(new_row, new_col)
-                        and not self.is_wall_between(row, col, new_row, new_col)
-                        and dfs(new_row, new_col, target_row, visited)
-                    ):
-                        return True
-
-                return False
-
-            visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-            return dfs(row, col, target_row, visited)
-
-        # Temporarily place the wall so that we can easily check for walls
-        previous = self.walls[row, col, orientation]
-        self.walls[row, col, orientation] = 1
-        result = can_reach(*self.positions["player_0"], self.board_size - 1) and can_reach(
-            *self.positions["player_1"], 0
-        )
-        self.walls[row, col, orientation] = previous
-
-        return result
 
 
 # Wrapping the environment for PettingZoo compatibility
