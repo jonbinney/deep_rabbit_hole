@@ -37,10 +37,11 @@ import numpy as np
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int, max_walls: int):
+    def __init__(self, board_size: int, max_walls: int, step_rewards: bool):
         super(AECEnv, self).__init__()
 
         self.render_mode = "human"
+        self.step_rewards = step_rewards
 
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
@@ -101,6 +102,15 @@ class QuoridorEnv(AECEnv):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             self.rewards[self.get_opponent(agent)] = -1
+        elif self.step_rewards:
+            # Assign rewards as the difference in distance to the goal divided by
+            # three times the board size.
+            (row, col) = self.positions[agent]
+            agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
+            (row, col) = self.positions[self.get_opponent(agent)]
+            oponent_distance = self.distance_to_target(row, col, self.get_goal_row(self.get_opponent(agent)), False)
+            self.rewards[agent] = (oponent_distance - agent_distance) / (3 * self.board_size)
+            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (3 * self.board_size)
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -421,11 +431,7 @@ class QuoridorEnv(AECEnv):
 
     def _check_win(self, agent):
         row, _ = self.positions[agent]
-        if agent == "player_0" and row == self.board_size - 1:
-            return True
-        if agent == "player_1" and row == 0:
-            return True
-        return False
+        return row == self.get_goal_row(agent)
 
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
@@ -434,50 +440,77 @@ class QuoridorEnv(AECEnv):
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
 
+    def get_goal_row(self, agent):
+        return 0 if agent == "player_1" else self.board_size - 1
+
+    def _dfs(self, row, col, target_row, visited, any_path=True):
+        """
+        Performs a depth-first search to find whether the pawn can reach the target row.
+
+        Args:
+            row (int): The current row of the pawn
+            col (int): The current column of the pawn
+            target_row (int): The target row to reach
+            visited (numpy.array): A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+            If any_path is set to true, the first path to the target row will be returned (faster).
+            Otherwise, the shortest path will be returned (potentially slower)
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if row == target_row:
+            return 0
+
+        visited[row, col] = True
+
+        # Find out the forward direction to try it first and maybe get to the target faster
+        fwd = 1 if target_row > row else -1
+
+        moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
+        best = -1
+        for new_row, new_col in moves:
+            if (
+                self._is_in_board(new_row, new_col)
+                and not self.is_wall_between(row, col, new_row, new_col)
+                and not visited[new_row, new_col]
+            ):
+                dfs = self._dfs(new_row, new_col, target_row, visited)
+                if dfs != -1:
+                    if any_path:
+                        return dfs + 1
+                    if best == -1 or dfs + 1 < best:
+                        best = dfs + 1
+
+        return best
+
+    def can_reach(self, row, col, target_row):
+        return self.distance_to_target(row, col, target_row, True) != -1
+
+    def distance_to_target(self, row, col, target_row, any_path=False):
+        """
+        Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
+        If any_path is set to true, the first path to the target row will be returned (faster).
+        Otherwise, the shortest path will be returned (potentially slower)
+        """
+        visited = np.zeros((self.board_size, self.board_size), dtype="bool")
+        return self._dfs(row, col, target_row, visited, any_path)
+
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
         Returns whether a wall can be placed in the specified coordinates an orientations such that
         both pawns can still reach the target row
         """
 
-        def can_reach(row, col, target_row):
-            def dfs(row, col, target_row, visited):
-                if row == target_row:
-                    return True
-
-                if visited[row, col]:
-                    return False
-
-                visited[row, col] = True
-
-                # Find out the forward direction to try it first and maybe get to the target faster
-                fwd = 1 if target_row > row else -1
-
-                moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-                for new_row, new_col in moves:
-                    if (
-                        self._is_in_board(new_row, new_col)
-                        and not self.is_wall_between(row, col, new_row, new_col)
-                        and dfs(new_row, new_col, target_row, visited)
-                    ):
-                        return True
-
-                return False
-
-            visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-            return dfs(row, col, target_row, visited)
-
         # Temporarily place the wall so that we can easily check for walls
         previous = self.walls[row, col, orientation]
         self.walls[row, col, orientation] = 1
-        result = can_reach(*self.positions["player_0"], self.board_size - 1) and can_reach(
-            *self.positions["player_1"], 0
-        )
+        result = all(self.can_reach(*self.positions[agent], self.get_goal_row(agent)) for agent in self.agents)
         self.walls[row, col, orientation] = previous
 
         return result
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env(board_size: int = 9, max_walls: int = 10):
-    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls))
+def env(board_size: int = 9, max_walls: int = 10, step_rewards: bool = False):
+    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls, step_rewards))
