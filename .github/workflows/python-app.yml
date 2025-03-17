@@ -26,7 +26,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f deep_quoridor/requirements.txt ]; then pip install -r deep_quoridor/requirements.txt; fi
     - name: Test with pytest
       run: |
         PYTHONPATH=$PYTHONPATH:$(pwd)/deep_quoridor/src pytest deep_quoridor/test
