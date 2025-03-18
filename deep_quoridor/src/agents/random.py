@@ -1,4 +1,4 @@
-from arena import Agent
+from agents.agent import Agent
 
 
 class RandomAgent(Agent):

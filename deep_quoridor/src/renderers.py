@@ -3,7 +3,31 @@ from typing import Optional
 import curses
 
 
-class ResultsRenderer(ArenaPlugin):
+class Renderer(ArenaPlugin):
+    """
+    Base class for all renderers, which take a game and render it in some way.
+    """
+
+    renderers = {}
+
+    def __init_subclass__(cls, **kwargs):
+        friendly_name = cls.__name__.replace("Renderer", "").lower()
+        Renderer.renderers[friendly_name] = cls
+
+    @staticmethod
+    def create(friendly_name: str):
+        return Renderer.renderers[friendly_name]()
+
+    @staticmethod
+    def names():
+        return list(Renderer.renderers.keys())
+
+
+class NoneRenderer(Renderer):
+    pass
+
+
+class ResultsRenderer(Renderer):
     def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
         self.match = f"{agent1.__class__.__name__} vs {agent2.__class__.__name__}"
 
@@ -11,7 +35,7 @@ class ResultsRenderer(ArenaPlugin):
         print(f"Game over! {self.match}: {game.winner()} won in {step} steps")
 
 
-class TextRenderer(ArenaPlugin):
+class TextRenderer(Renderer):
     def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
         print("Initial Board State:")
         print(game.render())
@@ -25,7 +49,7 @@ class TextRenderer(ArenaPlugin):
         print(game.render())
 
 
-class CursesRenderer(ArenaPlugin):
+class CursesRenderer(Renderer):
     def __init__(self, napms=100):
         super().__init__()
         self.napms = napms

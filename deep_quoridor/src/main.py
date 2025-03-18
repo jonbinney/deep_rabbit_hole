@@ -1,33 +1,25 @@
 import argparse
 from arena_yaml_recorder import ArenaYAMLRecorder
 from arena import Arena
-from simple_agent import SimpleAgent
-from random_agents import RandomAgent
-from renderers import ResultsRenderer, TextRenderer, CursesRenderer
+from agents import SimpleAgent, RandomAgent
+from renderers import Renderer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
     parser.add_argument("-W", "--max_walls", type=int, default=None, help="Max walls per player")
-    parser.add_argument("-r", "--render", choices=["result", "text", "curses"], default="result", help="Render mode")
+    parser.add_argument("-r", "--renderer", choices=Renderer.names(), default="results", help="Render mode")
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument(
         "--games_output_filename",
         type=str,
-        default="game.yaml",
+        default="game_recording.yaml",
         help="Save the played games to a file. Use 'None' to disable saving.",
     )
 
     args = parser.parse_args()
 
-    # TO DO: this should be automatically detected from the environment
-    renderer = None
-    if args.render == "result":
-        renderer = ResultsRenderer()
-    elif args.render == "text":
-        renderer = TextRenderer()
-    elif args.render == "curses":
-        renderer = CursesRenderer()
+    renderer = Renderer.create(args.renderer)
 
     saver = None
     if args.games_output_filename != "None":

@@ -1,13 +1,14 @@
 from typing import Optional
 from quoridor_env import env
-
-
-class Agent:
-    def get_action(self, game):
-        raise NotImplementedError("You must implement the get_action method")
+from agents import Agent
 
 
 class ArenaPlugin:
+    """
+    Base class for all arena plugins.
+    The plug in can override any combinantion of the methods below in order to provide additional functionality.
+    """
+
     def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
         pass
 
@@ -25,7 +26,15 @@ class ArenaPlugin:
 
 
 class CompositeArenaPlugin:
+    """
+    Allows to combine multiple plugins into a single one, calling them sequentially for each method.
+
+    """
+
     def __init__(self, plugins: list[ArenaPlugin]):
+        """
+        For the sake of convenience, the plugin list is allowed to be empty, in which case the plugin will be a no-op.
+        """
         self.plugins = plugins
 
     def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
