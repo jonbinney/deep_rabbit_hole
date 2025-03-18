@@ -5,6 +5,10 @@ import yaml
 
 
 class ArenaYAMLRecorder(ArenaPlugin):
+    """
+    Saves metadata about the game and all the actions in a YAML file
+    """
+
     def __init__(self, filename: str):
         self.data = {}
         self.game_n = 0

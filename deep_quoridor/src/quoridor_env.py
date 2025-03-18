@@ -410,7 +410,6 @@ class QuoridorEnv(AECEnv):
         row, col = position
         if (row, col) in self.positions.values():
             print("WTF: Invalid action: Occupied")
-            raise ValueError("meh")
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)
 
