@@ -410,6 +410,7 @@ class QuoridorEnv(AECEnv):
         row, col = position
         if (row, col) in self.positions.values():
             print("WTF: Invalid action: Occupied")
+            raise ValueError("meh")
             return  # Invalid move (occupied)
         self.positions[agent] = (row, col)
 
@@ -432,6 +433,13 @@ class QuoridorEnv(AECEnv):
     def _check_win(self, agent):
         row, _ = self.positions[agent]
         return row == self.get_goal_row(agent)
+
+    def winner(self):
+        for agent in self.agents:
+            if self._check_win(agent):
+                return agent
+
+        return None
 
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
