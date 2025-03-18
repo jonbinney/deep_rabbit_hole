@@ -27,7 +27,7 @@ Every time we represent a coordinate as a tuple, it is in the form (row, col)
 
 import copy
 import functools
-from typing import Tuple
+from typing import Tuple, Optional
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from gymnasium import spaces
@@ -433,10 +433,13 @@ class QuoridorEnv(AECEnv):
         row, _ = self.positions[agent]
         return row == self.get_goal_row(agent)
 
-    def winner(self):
-        for agent in self.agents:
+    def winner(self) -> Optional[int]:
+        """
+        Return the index of the winner (0 for player 1, 1 for player 2) or None if there's no winner
+        """
+        for idx, agent in enumerate(self.agent_order):
             if self._check_win(agent):
-                return agent
+                return idx
 
         return None
 
