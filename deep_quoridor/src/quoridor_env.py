@@ -433,6 +433,13 @@ class QuoridorEnv(AECEnv):
         row, _ = self.positions[agent]
         return row == self.get_goal_row(agent)
 
+    def winner(self):
+        for agent in self.agents:
+            if self._check_win(agent):
+                return agent
+
+        return None
+
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]

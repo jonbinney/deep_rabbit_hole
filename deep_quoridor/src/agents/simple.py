@@ -1,3 +1,6 @@
+from agents.agent import Agent
+
+
 def sample_random_action_sequence(game, max_path_length):
     """
     Sample a random sequence of actions for a given game. Stops early if the game terminates."""
@@ -26,8 +29,9 @@ def sample_random_action_sequence(game, max_path_length):
     return action_sequence, total_reward
 
 
-class SimpleAgent:
+class SimpleAgent(Agent):
     def __init__(self, sequence_length=3, num_sequences=10):
+        super().__init__()
         self.sequence_length = sequence_length
         self.num_sequences = num_sequences
 
