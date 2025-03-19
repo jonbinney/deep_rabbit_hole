@@ -2,4 +2,5 @@ pettingzoo
 gymnasium
 numpy
 pytest
-pyyaml
+pyyamlpip
+prettytable

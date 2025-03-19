@@ -13,9 +13,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p",
         "--players",
-        type=str,
-        default="random,simple",
-        help="Name of the players separated by comma. Each player will play with each one of the rest t times",
+        nargs="+",
+        choices=Agent.names(),
+        default=["random", "simple"],
+        help="List of players to compete against each other",
     )
     parser.add_argument(
         "-A", "--all", action="store_true", default=False, help="Plays a tournament of all agents against each other"
@@ -38,14 +39,9 @@ if __name__ == "__main__":
     if args.games_output_filename != "None":
         saver = ArenaYAMLRecorder(args.games_output_filename)
 
-    if args.all:
-        players = Agent.names()
-    else:
-        players = args.players.split(",")
+    players = Agent.names() if args.all else args.players
 
-    times = args.times
-
-    args = {
+    arena_args = {
         "board_size": args.board_size,
         "max_walls": args.max_walls,
         "step_rewards": args.step_rewards,
@@ -53,7 +49,7 @@ if __name__ == "__main__":
         "saver": saver,
     }
 
-    args = {k: v for k, v in args.items() if v is not None}
-    arena = Arena(**args)
+    arena_args = {k: v for k, v in arena_args.items() if v is not None}
+    arena = Arena(**arena_args)
 
-    arena.play_games(players, times)
+    arena.play_games(players, args.times)

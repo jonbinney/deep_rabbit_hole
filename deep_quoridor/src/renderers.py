@@ -1,6 +1,8 @@
 from arena import ArenaPlugin, Agent, GameResult
-from typing import Optional
 import curses
+from prettytable import PrettyTable
+from collections import defaultdict
+import numpy as np
 
 
 class Renderer(ArenaPlugin):
@@ -32,38 +34,58 @@ class ResultsRenderer(Renderer):
         self.match = f"{agent1.name()} vs {agent2.name()}"
 
     def end_game(self, game, result: GameResult):
-        print(f"{self.match}: {result.winner} won in {result.steps} steps")
+        print(f"{result.game_id}: {self.match} - {result.winner} won in {result.steps} steps")
 
     def end_arena(self, game, results: list[GameResult]):
-        won = {}
-        won_as_p1 = {}
+        def perc(wins: int, played: int) -> str:
+            if played == 0:
+                return "-"
+
+            return f"{wins / played * 100.0:.0f}%"
+
+        all_players = sorted(set([r.player1 for r in results]) | set([r.player2 for r in results]))
+        players = {player: i for i, player in enumerate(all_players)}
+
+        table = PrettyTable()
+        table.field_names = ["P1 \\ P2"] + list(players) + ["Total"]
+
+        N = len(players)
+        wins = np.zeros((N + 1, N + 1))
+        games = np.zeros((N + 1, N + 1))
+
         for r in results:
-            for player in [r.player1, r.player2]:
-                if player not in won:
-                    won[player] = 0
-                    won_as_p1[player] = 0
-
+            games[players[r.player1], players[r.player2]] += 1
             if r.winner == r.player1:
-                won[r.player1] += 1
-                won_as_p1[r.player1] += 1
-            else:
-                won[r.player2] += 1
+                wins[players[r.player1], players[r.player2]] += 1
 
-        print("\n")
-        print("Player          | Wins   | Wins P1 ")
-        print("===================================")
+        # Get the totals per row and column
+        wins[-1, :] = np.sum(wins, axis=0)
+        wins[:, -1] = np.sum(wins, axis=1)
+        games[-1, :] = np.sum(games, axis=0)
+        games[:, -1] = np.sum(games, axis=1)
 
-        for player, wins in sorted(won.items(), key=lambda x: x[1], reverse=True):
-            print(f"{player:15s} | {wins:6d} | {won_as_p1[player]:6d} ")
+        # Hacky way of adding an extra column and row for the totals
+        players["Total"] = max(players.values()) + 1
+
+        # Set the results in the PrettyTable
+        for player1, i1 in players.items():
+            row = [player1]
+            for _, i2 in players.items():
+                row.append(perc(wins[i1, i2], games[i1, i2]))
+
+            table.add_row(row)
+
+            # Before the last row add this separation, since the last row is the total
+            if i1 == len(players) - 2:
+                table.add_row(["======" for _ in range(len(players) + 1)])
+
+        print(table)
 
 
 class TextRenderer(ResultsRenderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         print("Initial Board State:")
         print(game.render())
-
-    def end_game(self, game, result: GameResult):
-        print(f"\nGame Over! {result.winner} wins after {result.steps} steps.")
 
     def action(self, game, step, agent, action):
         print(f"\nStep {step + 1}: {agent} takes action {action}")
