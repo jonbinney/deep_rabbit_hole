@@ -48,3 +48,8 @@ class SimpleAgent(Agent):
         # Choose the action sequence with the highest reward.
         best_sequence, _ = max(possible_action_sequences, key=lambda x: x[1])
         return best_sequence[0]
+
+
+class SimplePlus(SimpleAgent):
+    def __init__(self, sequence_length=20, num_sequences=20):
+        super().__init__()
