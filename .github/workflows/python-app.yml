@@ -30,3 +30,7 @@ jobs:
     - name: Test with pytest
       run: |
         PYTHONPATH=$PYTHONPATH:$(pwd)/deep_quoridor/src pytest deep_quoridor/test
+    - name: Run some games as a sanity check
+      run: |
+        PYTHONPATH=$PYTHONPATH:$(pwd)/deep_quoridor/src python deep_quoridor/src/main.py -t 2
+    
