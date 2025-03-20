@@ -84,6 +84,7 @@ class ResultsRenderer(Renderer):
 
 class TextRenderer(ResultsRenderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
+        super().start_game(game, agent1, agent2)
         print("Initial Board State:")
         print(game.render())
 
