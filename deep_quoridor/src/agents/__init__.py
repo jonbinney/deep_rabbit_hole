@@ -29,5 +29,5 @@ class Agent:
         raise NotImplementedError("You must implement the get_action method")
 
 
-from agents.random import RandomAgent
-from agents.simple import SimpleAgent
+from agents.random import RandomAgent  # noqa: E402, F401
+from agents.simple import SimpleAgent  # noqa: E402, F401
