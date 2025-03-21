@@ -3,3 +3,4 @@ gymnasium
 numpy
 pytest
 pyyaml
+prettytable

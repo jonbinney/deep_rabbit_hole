@@ -1,4 +1,4 @@
-from agents.agent import Agent
+from agents import Agent
 
 
 def sample_random_action_sequence(game, max_path_length):

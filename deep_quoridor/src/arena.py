@@ -1,6 +1,18 @@
 from typing import Optional
 from quoridor_env import env
 from agents import Agent
+from dataclasses import dataclass
+import time
+
+
+@dataclass
+class GameResult:
+    player1: str
+    player2: str
+    winner: str
+    steps: int
+    time_ms: int
+    game_id: str
 
 
 class ArenaPlugin:
@@ -9,16 +21,16 @@ class ArenaPlugin:
     The plug in can override any combinantion of the methods below in order to provide additional functionality.
     """
 
-    def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
+    def start_game(self, game, agent1: Agent, agent2: Agent):
         pass
 
-    def end_game(self, game, step):
+    def end_game(self, game, result: GameResult):
         pass
 
     def start_arena(self, game):
         pass
 
-    def end_arena(self, game):
+    def end_arena(self, game, results: list[GameResult]):
         pass
 
     def action(self, game, step, agent, action):
@@ -37,17 +49,17 @@ class CompositeArenaPlugin:
         """
         self.plugins = plugins
 
-    def start_game(self, game, agent1: Optional[Agent] = None, agent2: Optional[Agent] = None):
+    def start_game(self, game, agent1: Agent, agent2: Agent):
         [plugin.start_game(game, agent1, agent2) for plugin in self.plugins]
 
-    def end_game(self, game, step):
-        [plugin.end_game(game, step) for plugin in self.plugins]
+    def end_game(self, game, result: GameResult):
+        [plugin.end_game(game, result) for plugin in self.plugins]
 
     def start_arena(self, game):
         [plugin.start_arena(game) for plugin in self.plugins]
 
-    def end_arena(self, game):
-        [plugin.end_arena(game) for plugin in self.plugins]
+    def end_arena(self, game, results: list[GameResult]):
+        [plugin.end_arena(game, results) for plugin in self.plugins]
 
     def action(self, game, step, agent, action):
         [plugin.action(game, step, agent, action) for plugin in self.plugins]
@@ -70,9 +82,8 @@ class Arena:
         plugins = [p for p in [renderer, saver] if p is not None]
         self.plugins = CompositeArenaPlugin(plugins)
 
-    def _play_game(self, agent1: Agent, agent2: Agent):
+    def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
-
         agents = {
             "player_0": agent1,
             "player_1": agent2,
@@ -80,21 +91,49 @@ class Arena:
 
         self.plugins.start_game(self.game, agent1, agent2)
 
-        for step, agent in enumerate(self.game.agent_iter()):
+        start_time = time.time()
+        step = 0
+        for agent in self.game.agent_iter():
             _, _, termination, truncation, _ = self.game.last()
             if termination or truncation:
                 action = None
-                self.plugins.end_game(self.game, step)
                 break
 
             action = int(agents[agent].get_action(self.game))
             self.game.step(action)
-
             self.plugins.action(self.game, step, agent, action)
+            step += 1
+
+        end_time = time.time()
+
+        result = GameResult(
+            player1=agent1.name(),
+            player2=agent2.name(),
+            winner=[agent1, agent2][self.game.winner()].name(),
+            steps=step,
+            time_ms=int((end_time - start_time) * 1000),
+            game_id=game_id,
+        )
+        self.plugins.end_game(self.game, result)
 
         self.game.close()
+        return result
 
-    def play_game(self, agent1: Agent, agent2: Agent):
+    def play_games(self, players: list[str], times: int):
         self.plugins.start_arena(self.game)
-        self._play_game(agent1, agent2)
-        self.plugins.end_arena(self.game)
+
+        match_id = 1
+        results = []
+
+        for i in range(len(players)):
+            for j in range(i + 1, len(players)):
+                for t in range(times):
+                    agent_i = Agent.create(players[i])
+                    agent_j = Agent.create(players[j])
+                    agent_1, agent_2 = (agent_i, agent_j) if t % 2 == 0 else (agent_j, agent_i)
+
+                    result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                    results.append(result)
+                    match_id += 1
+
+        self.plugins.end_arena(self.game, results)
