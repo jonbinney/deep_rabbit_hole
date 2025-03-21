@@ -4,3 +4,4 @@ numpy
 pytest
 pyyaml
 prettytable
+torch
