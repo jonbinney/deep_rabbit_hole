@@ -1,6 +1,7 @@
 from typing import Optional
 from quoridor_env import env
 from agents import Agent
+from agents import AgentRegistry
 from agents.replay import ReplayAgent
 from dataclasses import dataclass
 import time
@@ -133,8 +134,8 @@ class Arena:
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
                 for t in range(times):
-                    agent_i = Agent.create(players[i])
-                    agent_j = Agent.create(players[j])
+                    agent_i = AgentRegistry.create(players[i])
+                    agent_j = AgentRegistry.create(players[j])
                     agent_1, agent_2 = (
                         (agent_i, agent_j) if t % 2 == 0 else (agent_j, agent_i)
                     )

@@ -1,7 +1,7 @@
-from agents import Agent
+from agents import SelfRegisteringAgent
 
 
-class RandomAgent(Agent):
+class RandomAgent(SelfRegisteringAgent):
     def __init__(self):
         super().__init__()
 
