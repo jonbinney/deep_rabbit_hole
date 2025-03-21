@@ -74,6 +74,7 @@ class Arena:
         step_rewards: bool = False,
         renderer: Optional[ArenaPlugin] = None,
         saver: Optional[ArenaPlugin] = None,
+        plugins: list[ArenaPlugin] = [],
     ):
         self.board_size = board_size
         self.max_walls = max_walls
@@ -82,8 +83,9 @@ class Arena:
             board_size=board_size, max_walls=max_walls, step_rewards=step_rewards
         )
 
-        plugins = [p for p in [renderer, saver] if p is not None]
-        self.plugins = CompositeArenaPlugin(plugins)
+        self.plugins = CompositeArenaPlugin(
+            [p for p in plugins + [renderer, saver] if p is not None]
+        )
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()

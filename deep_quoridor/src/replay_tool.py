@@ -1,6 +1,8 @@
 import argparse
+import time
 from arena_yaml_recorder import ArenaYAMLRecorder
 from arena import Arena
+from arena import ArenaPlugin
 from renderers import Renderer
 
 
@@ -11,12 +13,23 @@ options to customize the replay experience, including renderer selection and spe
 
 Command-line Arguments:
     -r, --renderer: Render mode for game replay visualization (default: "results")
+    -t, --time_delay: Time delay between moves in milliseconds. Only applied if > 0 (default: -1)
     -g, --game_ids: List of specific game IDs to replay. If not set, replays all games
     -f, --games_input_filename: Path to YAML file containing recorded games (default: "game_recording.yaml")
 
 Example Usage:
     python replay_tool.py -r text -g game_0008 game_0009 -f my_games.yaml
+    python replay_tool.py -r text -t 500 -f my_games.yaml  # Replay with 500ms delay between moves
 """
+
+
+class ActionDelayPlugin(ArenaPlugin):
+    def __init__(self, time_delay: int):
+        self.time_delay = time_delay
+
+    def action(self, game, step, agent, action):
+        time.sleep(self.time_delay / 1000)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor replay tool")
@@ -26,6 +39,13 @@ if __name__ == "__main__":
         choices=Renderer.names(),
         default="results",
         help="Render mode",
+    )
+    parser.add_argument(
+        "-t",
+        "--time_delay",
+        type=int,
+        default=-1,
+        help="Time delay between moves in ms, > 0 or ignored (default: -1)",
     )
     parser.add_argument(
         "-g",
@@ -54,6 +74,7 @@ if __name__ == "__main__":
         "max_walls": arena_data["config"]["max_walls"],
         "step_rewards": arena_data["config"]["step_rewards"],
         "renderer": renderer,
+        "plugins": [ActionDelayPlugin(args.time_delay)] if args.time_delay > 0 else [],
     }
 
     arena_args = {k: v for k, v in arena_args.items() if v is not None}
