@@ -55,9 +55,7 @@ __all__ = [
     "Pretrained01FlatDQNAgent",
 ]
 
-from agents.random import RandomAgent  # noqa: E402
-from agents.simple import SimpleAgent  # noqa: E402
-from agents.flat_dqn import FlatDQNAgent, Pretrained01FlatDQNAgent  # noqa: E402
 
 from agents.random import RandomAgent  # noqa: E402, F401
 from agents.simple import SimpleAgent  # noqa: E402, F401
+from agents.flat_dqn import FlatDQNAgent, Pretrained01FlatDQNAgent  # noqa: E402
