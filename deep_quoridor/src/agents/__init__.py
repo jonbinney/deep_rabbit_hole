@@ -18,8 +18,8 @@ class Agent:
         return class_name.replace("Agent", "").lower()
 
     @staticmethod
-    def create(friendly_name: str) -> "Agent":
-        return Agent.agents[friendly_name]()
+    def create(friendly_name: str, **kwargs) -> "Agent":
+        return Agent.agents[friendly_name](**kwargs)
 
     @staticmethod
     def names():
@@ -29,9 +29,14 @@ class Agent:
         raise NotImplementedError("You must implement the get_action method")
 
 
-__all__ = ["RandomAgent", "SimpleAgent", "Agent", "DQNAgent"]
+__all__ = [
+    "RandomAgent",
+    "SimpleAgent",
+    "Agent",
+    "FlatDQNAgent",
+    "Pretrained01FlatDQNAgent",
+]
 
-from agents.random import RandomAgent  # noqa: E402, F401
-from agents.simple import SimpleAgent  # noqa: E402, F401
-from agents.agent import Agent
-from agents.flat_dqn import DQNAgent
+from agents.random import RandomAgent  # noqa: E402
+from agents.simple import SimpleAgent  # noqa: E402
+from agents.flat_dqn import FlatDQNAgent, Pretrained01FlatDQNAgent  # noqa: E402

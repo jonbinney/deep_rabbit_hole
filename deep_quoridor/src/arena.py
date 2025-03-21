@@ -128,8 +128,8 @@ class Arena:
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
                 for t in range(times):
-                    agent_i = Agent.create(players[i])
-                    agent_j = Agent.create(players[j])
+                    agent_i = Agent.create(players[i], board_size=self.board_size)
+                    agent_j = Agent.create(players[j], board_size=self.board_size)
                     agent_1, agent_2 = (agent_i, agent_j) if t % 2 == 0 else (agent_j, agent_i)
 
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")

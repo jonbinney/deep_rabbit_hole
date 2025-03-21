@@ -1,10 +1,10 @@
 import argparse
-import os
 from arena_yaml_recorder import ArenaYAMLRecorder
 from arena import Arena
 from agents import RandomAgent, DQNAgent
-from renderers import Renderer
 from agents import Agent
+from renderers import Renderer
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
@@ -70,10 +70,6 @@ if __name__ == "__main__":
         "saver": saver,
     }
 
-    arena_args = {k: v for k, v in arena_args.items() if v is not None}
-    arena = Arena(**arena_args)
-
-    arena.play_games(players, args.times)
     args = {k: v for k, v in args.items() if v is not None}
     # Calculate action space size for DQN agent
     board_size = args.get("board_size", 9)  # Default to 9 if not specified
