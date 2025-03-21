@@ -170,3 +170,4 @@ cython_debug/
 # MLFlow logging directories
 mlartifacts
 mlruns
+game_recording.yaml
