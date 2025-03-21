@@ -30,7 +30,7 @@ def sample_random_action_sequence(game, max_path_length):
 
 
 class SimpleAgent(Agent):
-    def __init__(self, sequence_length=3, num_sequences=10):
+    def __init__(self, sequence_length=3, num_sequences=10, **kwargs):
         super().__init__()
         self.sequence_length = sequence_length
         self.num_sequences = num_sequences
