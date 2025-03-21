@@ -188,4 +188,6 @@ class Pretrained01FlatDQNAgent(FlatDQNAgent):
             print(f"Loading pre-trained model from {model_path}")
             self.load_model(model_path)
         else:
-            print(f"Warning: Model file {model_path} not found, using untrained agent")
+            print(
+                f"Warning: Model file {model_path} not found, using untrained agent. Ask Julian for the weights file."
+            )
