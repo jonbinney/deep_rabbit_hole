@@ -1,5 +1,4 @@
 from arena import ArenaPlugin, Agent, GameResult
-from typing import Optional
 import yaml
 
 
@@ -38,3 +37,11 @@ class ArenaYAMLRecorder(ArenaPlugin):
         }
         with open(self.filename, "w") as file:
             file.write(yaml.dump(output, sort_keys=False))
+
+    @staticmethod
+    def load_recorded_arena_data(filename: str) -> dict:
+        with open(filename, "r") as file:
+            return yaml.load(file, Loader=yaml.FullLoader)
+
+
+
