@@ -8,7 +8,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
     parser.add_argument("-W", "--max_walls", type=int, default=None, help="Max walls per player")
-    parser.add_argument("-r", "--renderers", nargs="+", choices=Renderer.names(), default=["results"], help="Render mode")
+    parser.add_argument(
+        "-r", 
+        "--renderers",
+        nargs="+",
+        choices=Renderer.names(),
+        default=["progressbar", "arenaresults"],
+        help="Render modes to be used")
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument(
         "-p",
