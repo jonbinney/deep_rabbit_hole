@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 import os
-from agents import DQNAgent, RandomAgent
+from agents import FlatDQNAgent, RandomAgent
 from quoridor_env import env
 
 
@@ -36,7 +36,7 @@ def train_dqn(
     action_size = board_size**2 + ((board_size - 1) ** 2) * 2
 
     # Create the DQN agent
-    dqn_agent = DQNAgent(board_size, action_size)
+    dqn_agent = FlatDQNAgent(board_size, action_size)
 
     # Create a random opponent
     random_agent = RandomAgent()
