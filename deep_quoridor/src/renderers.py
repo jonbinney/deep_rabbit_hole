@@ -46,40 +46,33 @@ class ResultsRenderer(Renderer):
         all_players = sorted(set([r.player1 for r in results]) | set([r.player2 for r in results]))
         players = {player: i for i, player in enumerate(all_players)}
 
-        table = PrettyTable()
-        table.field_names = ["P1 \\ P2"] + list(players) + ["Total"]
-
-        N = len(players)
-        wins = np.zeros((N + 1, N + 1))
-        games = np.zeros((N + 1, N + 1))
+        games = defaultdict(lambda: 0)
+        wins = defaultdict(lambda: 0)
 
         for r in results:
-            games[players[r.player1], players[r.player2]] += 1
+            pair1 = (f"P1 {r.player1}", r.player2)
+            pair2 = (f"P2 {r.player2}", r.player1)
+            games[pair1] += 1
+            games[pair2] += 1
             if r.winner == r.player1:
-                wins[players[r.player1], players[r.player2]] += 1
+                wins[pair1] += 1
+            else:
+                wins[pair2] += 1
 
-        # Get the totals per row and column
-        wins[-1, :] = np.sum(wins, axis=0)
-        wins[:, -1] = np.sum(wins, axis=1)
-        games[-1, :] = np.sum(games, axis=0)
-        games[:, -1] = np.sum(games, axis=1)
+        table = PrettyTable()
+        table.field_names = ["Player"] + list(players) + ["Total"]
 
-        # Hacky way of adding an extra column and row for the totals
-        players["Total"] = max(players.values()) + 1
+        for player in players:
+            for pos_player in [f"P1 {player}", f"P2 {player}"]:
+                row_wins = [wins[(pos_player, opponent)] for opponent in players]
+                row_games = [games[(pos_player, opponent)] for opponent in players]
+                row_wins.append(sum(row_wins))
+                row_games.append(sum(row_games))
 
-        # Set the results in the PrettyTable
-        for player1, i1 in players.items():
-            row = [player1]
-            for _, i2 in players.items():
-                row.append(perc(wins[i1, i2], games[i1, i2]))
-
-            table.add_row(row)
-
-            # Before the last row add this separation, since the last row is the total
-            if i1 == len(players) - 2:
-                table.add_row(["======" for _ in range(len(players) + 1)])
+                table.add_row([pos_player] + [perc(w, g) for w, g in zip(row_wins, row_games)])
 
         print(table)
+        return
 
 
 class TextRenderer(ResultsRenderer):
