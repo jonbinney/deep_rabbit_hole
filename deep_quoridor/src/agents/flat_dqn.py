@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 import random
-from agents import Agent
+from agents import SelfRegisteringAgent
 
 
 class DQNNetwork(nn.Module):
@@ -53,7 +53,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
-class FlatDQNAgent(Agent):
+class FlatDQNAgent(SelfRegisteringAgent):
     """
     Agent that uses Deep Q-Network for action selection.
     """
