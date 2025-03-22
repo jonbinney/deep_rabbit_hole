@@ -2,7 +2,7 @@ from agents import SelfRegisteringAgent
 
 
 class RandomAgent(SelfRegisteringAgent):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
 
     def get_action(self, game):
