@@ -1,6 +1,8 @@
 from typing import Optional
 from quoridor_env import env
 from agents import Agent
+from agents import AgentRegistry
+from agents.replay import ReplayAgent
 from dataclasses import dataclass
 import time
 
@@ -73,14 +75,14 @@ class Arena:
         step_rewards: bool = False,
         renderer: Optional[ArenaPlugin] = None,
         saver: Optional[ArenaPlugin] = None,
+        plugins: list[ArenaPlugin] = [],
     ):
         self.board_size = board_size
         self.max_walls = max_walls
         self.step_rewards = step_rewards
         self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
-        plugins = [p for p in [renderer, saver] if p is not None]
-        self.plugins = CompositeArenaPlugin(plugins)
+        self.plugins = CompositeArenaPlugin([p for p in plugins + [renderer, saver] if p is not None])
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
@@ -131,9 +133,34 @@ class Arena:
                     agent_i = Agent.create(players[i], board_size=self.board_size)
                     agent_j = Agent.create(players[j], board_size=self.board_size)
                     agent_1, agent_2 = (agent_i, agent_j) if t % 2 == 0 else (agent_j, agent_i)
-
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                     results.append(result)
                     match_id += 1
+
+        self.plugins.end_arena(self.game, results)
+
+    def replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
+        """Replays a series of games from previously recorded arena data.
+
+        This method simulates games using recorded moves from previous matches, allowing for
+        replay and analysis of historical games.
+        """
+        self.plugins.start_arena(self.game)
+
+        results = []
+
+        if len(game_ids_to_replay) == 0:
+            game_ids_to_replay = arena_data["games"].keys()
+
+        for game_id in game_ids_to_replay:
+            game_data = arena_data["games"][game_id]
+            steps_player1 = game_data["actions"][::2]
+            steps_player2 = game_data["actions"][1::2]
+
+            agent_1 = ReplayAgent(game_data["player1"], steps_player1)
+            agent_2 = ReplayAgent(game_data["player2"], steps_player2)
+
+            result = self._play_game(agent_1, agent_2, game_id)
+            results.append(result)
 
         self.plugins.end_arena(self.game, results)

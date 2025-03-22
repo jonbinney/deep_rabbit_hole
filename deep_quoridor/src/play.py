@@ -1,28 +1,42 @@
 import argparse
 from arena_yaml_recorder import ArenaYAMLRecorder
 from arena import Arena
-from agents import Agent
 from renderers import Renderer
+from agents import AgentRegistry
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
     parser.add_argument("-W", "--max_walls", type=int, default=None, help="Max walls per player")
-    parser.add_argument("-r", "--renderer", choices=Renderer.names(), default="results", help="Render mode")
+    parser.add_argument(
+        "-r",
+        "--renderer",
+        choices=Renderer.names(),
+        default="results",
+        help="Render mode",
+    )
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument(
         "-p",
         "--players",
         nargs="+",
-        choices=Agent.names(),
+        choices=AgentRegistry.names(),
         default=["random", "simple"],
         help="List of players to compete against each other",
     )
     parser.add_argument(
-        "-A", "--all", action="store_true", default=False, help="Plays a tournament of all agents against each other"
+        "-A",
+        "--all",
+        action="store_true",
+        default=False,
+        help="Plays a tournament of all agents against each other",
     )
     parser.add_argument(
-        "-t", "--times", type=int, default=10, help="Number of times each player will play with each opponent"
+        "-t",
+        "--times",
+        type=int,
+        default=10,
+        help="Number of times each player will play with each opponent",
     )
     parser.add_argument(
         "--games_output_filename",
@@ -39,7 +53,7 @@ if __name__ == "__main__":
     if args.games_output_filename != "None":
         saver = ArenaYAMLRecorder(args.games_output_filename)
 
-    players = Agent.names() if args.all else args.players
+    players = AgentRegistry.names() if args.all else args.players
 
     arena_args = {
         "board_size": args.board_size,
