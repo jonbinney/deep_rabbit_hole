@@ -81,12 +81,12 @@ class Arena:
         self.max_walls = max_walls
         self.step_rewards = step_rewards
         self.game = env(
-            board_size=board_size, max_walls=max_walls, step_rewards=step_rewards
+            board_size=board_size,
+            max_walls=max_walls,
+            step_rewards=step_rewards,
         )
 
-        self.plugins = CompositeArenaPlugin(
-            [p for p in plugins + [renderer, saver] if p is not None]
-        )
+        self.plugins = CompositeArenaPlugin([p for p in plugins + [renderer, saver] if p is not None])
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
@@ -130,15 +130,14 @@ class Arena:
 
         match_id = 1
         results = []
+        agents = [AgentRegistry.create(p) for p in players]
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
                 for t in range(times):
-                    agent_i = AgentRegistry.create(players[i])
-                    agent_j = AgentRegistry.create(players[j])
-                    agent_1, agent_2 = (
-                        (agent_i, agent_j) if t % 2 == 0 else (agent_j, agent_i)
-                    )
+                    agent_1, agent_2 = (agents[i], agents[j]) if t % 2 == 0 else (agents[j], agents[i])
+                    agent_1.reset()
+                    agent_2.reset()
 
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                     results.append(result)
