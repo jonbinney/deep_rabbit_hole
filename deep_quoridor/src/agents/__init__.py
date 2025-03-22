@@ -21,8 +21,8 @@ class AgentRegistry:
     agents = {}
 
     @staticmethod
-    def create(friendly_name: str) -> Agent:
-        return AgentRegistry.agents[friendly_name]()
+    def create(friendly_name: str, **kwargs) -> Agent:
+        return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod
     def names():
@@ -50,5 +50,8 @@ class SelfRegisteringAgent(Agent):
         return class_name.replace("Agent", "").lower()
 
 
-from agents.random import RandomAgent  # noqa: E402, F401
-from agents.simple import SimpleAgent  # noqa: E402, F401
+__all__ = ["RandomAgent", "SimpleAgent", "Agent", "FlatDQNAgent", "Pretrained01FlatDQNAgent"]
+
+from agents.random import RandomAgent  # noqa: E402
+from agents.simple import SimpleAgent  # noqa: E402
+from agents.flat_dqn import FlatDQNAgent, Pretrained01FlatDQNAgent  # noqa: E402
