@@ -125,12 +125,17 @@ class Arena:
         self.game.close()
         return result
 
-    def play_games(self, players: list[str], times: int):
+    def play_games(self, players: list[str | Agent], times: int):
         self.plugins.start_arena(self.game)
 
         match_id = 1
         results = []
-        agents = [AgentRegistry.create(p) for p in players]
+        agents = []
+        for p in players:
+            if isinstance(p, Agent):
+                agents.append(p)
+            else:
+                agents.append(AgentRegistry.create(p))
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
