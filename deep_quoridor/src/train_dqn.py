@@ -32,11 +32,8 @@ def train_dqn(
     """
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
-    # Calculate action space size
-    action_size = board_size**2 + ((board_size - 1) ** 2) * 2
-
     # Create the DQN agent
-    dqn_agent = FlatDQNAgent(board_size, action_size)
+    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
 
     # Create a random opponent
     random_agent = RandomAgent()
@@ -50,6 +47,12 @@ def train_dqn(
     for episode in range(episodes):
         game.reset()
 
+        if False:
+            print()
+            print("-------------------------------")
+            print(f"Episode {episode + 1}/{episodes}")
+            print("-------------------------------")
+
         # Reset episode-specific variables
         episode_reward = 0
         episode_losses = []
@@ -59,11 +62,14 @@ def train_dqn(
             observation, reward, termination, truncation, _ = game.last()
 
             # If the game is over, break the loop
+            # BUG: Missing recording a negative reward for the DQN agent when the opponent wins
             if termination or truncation:
+                if False:
+                    print(f"Winner: {game.get_opponent(agent_name)}. Episode reward: {episode_reward}")
                 break
 
             # If it's the DQN agent's turn
-            if agent_name == "player_0":
+            if agent_name == "player_1":
                 # Get current state
                 state = dqn_agent.preprocess_observation(observation)
 
@@ -73,8 +79,13 @@ def train_dqn(
                 # Execute action
                 game.step(action)
 
-                # Get new state, reward, etc.
-                next_observation, reward, termination, truncation, _ = game.last()
+                # Get the observation and rewards for THIS agent (not the opponent)
+                next_observation = game.observe(agent_name)
+                reward = game.rewards[agent_name]
+
+                # See if the game is over
+                # TODO: Understand what is truncation and if either of these values are player dependent
+                _, _, termination, truncation, _ = game.last()
 
                 # Add to episode reward
                 episode_reward += reward
@@ -106,6 +117,10 @@ def train_dqn(
                 # Execute action
                 game.step(action)
 
+            if False:
+                print(f"{agent_name} moves: {action}")
+                print(game.render())
+
         # Aggregate episode statistics
         total_rewards.append(episode_reward)
         if episode_losses:
@@ -115,10 +130,16 @@ def train_dqn(
         # Update target network periodically
         if episode % update_target_every == 0:
             dqn_agent.update_target_network()
-            avg_reward = sum(total_rewards[-100:]) / min(100, len(total_rewards)) if total_rewards else 0.0
-            avg_loss = sum(losses[-100:]) / min(100, len(losses)) if losses else 0.0
+            avg_reward = (
+                sum(total_rewards[-1 * update_target_every :]) / min(update_target_every, len(total_rewards))
+                if total_rewards
+                else 0.0
+            )
+            avg_loss = (
+                sum(losses[-1 * update_target_every :]) / min(update_target_every, len(losses)) if losses else 0.0
+            )
             print(
-                f"Episode {episode}/{episodes}, Avg Reward: {avg_reward:.2f}, "
+                f"Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
                 f"Avg Loss: {avg_loss:.4f}, Epsilon: {dqn_agent.epsilon:.4f}"
             )
 
