@@ -29,7 +29,7 @@ class ArenaPlugin:
     def end_game(self, game, result: GameResult):
         pass
 
-    def start_arena(self, game):
+    def start_arena(self, game, total_games: int):
         pass
 
     def end_arena(self, game, results: list[GameResult]):
@@ -57,8 +57,8 @@ class CompositeArenaPlugin:
     def end_game(self, game, result: GameResult):
         [plugin.end_game(game, result) for plugin in self.plugins]
 
-    def start_arena(self, game):
-        [plugin.start_arena(game) for plugin in self.plugins]
+    def start_arena(self, game, total_games: int):
+        [plugin.start_arena(game, total_games) for plugin in self.plugins]
 
     def end_arena(self, game, results: list[GameResult]):
         [plugin.end_arena(game, results) for plugin in self.plugins]
@@ -73,7 +73,7 @@ class Arena:
         board_size: int = 9,
         max_walls: int = 10,
         step_rewards: bool = False,
-        renderer: Optional[ArenaPlugin] = None,
+        renderers: list[ArenaPlugin] = [],
         saver: Optional[ArenaPlugin] = None,
         plugins: list[ArenaPlugin] = [],
     ):
@@ -82,7 +82,7 @@ class Arena:
         self.step_rewards = step_rewards
         self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
-        self.plugins = CompositeArenaPlugin([p for p in plugins + [renderer, saver] if p is not None])
+        self.plugins = CompositeArenaPlugin([p for p in plugins + renderers + [saver] if p is not None])
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
@@ -122,7 +122,7 @@ class Arena:
         return result
 
     def play_games(self, players: list[str], times: int):
-        self.plugins.start_arena(self.game)
+        self.plugins.start_arena(self.game, total_games=len(players) * (len(players) - 1) * times // 2)
 
         match_id = 1
         results = []
