@@ -183,7 +183,7 @@ class Pretrained01FlatDQNAgent(FlatDQNAgent):
 
     def __init__(self, board_size, **kwargs):
         super(Pretrained01FlatDQNAgent, self).__init__(board_size)
-        model_path = "/home/julian/aaae/deep-rabbit-hole/code/deep_rabbit_hole/models/dqn_flat_nostep_final.pt"
+        model_path = "/home/julian/aaae/deep-rabbit-hole/code/deep_rabbit_hole/models/dqn_agent_final.pt"
         if os.path.exists(model_path):
             print(f"Loading pre-trained model from {model_path}")
             self.load_model(model_path)

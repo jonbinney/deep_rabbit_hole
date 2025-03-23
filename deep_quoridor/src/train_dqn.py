@@ -81,7 +81,7 @@ def train_dqn(
 
                 # Get the observation and rewards for THIS agent (not the opponent)
                 next_observation = game.observe(agent_name)
-                reward = game.rewards[agent_name]
+                reward = game.rewards[agent_name] * 1000
 
                 # See if the game is over
                 # TODO: Understand what is truncation and if either of these values are player dependent
