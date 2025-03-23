@@ -15,8 +15,8 @@ class AgentRegistry:
     agents = {}
 
     @staticmethod
-    def create(friendly_name: str) -> Agent:
-        return AgentRegistry.agents[friendly_name]()
+    def create(friendly_name: str, **kwargs) -> Agent:
+        return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod
     def names():
@@ -42,9 +42,6 @@ class SelfRegisteringAgent(Agent):
     @staticmethod
     def _friendly_name(class_name: str):
         return class_name.replace("Agent", "").lower()
-
-    def get_action(self, game):
-        raise NotImplementedError("You must implement the get_action method")
 
 
 __all__ = [
