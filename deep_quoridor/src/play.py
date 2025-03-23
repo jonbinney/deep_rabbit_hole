@@ -1,10 +1,8 @@
 import argparse
-import os
 from arena_yaml_recorder import ArenaYAMLRecorder
 from arena import Arena
-from agents import AgentRegistry, RandomAgent, Pretrained01FlatDQNAgent
+from agents import AgentRegistry
 from renderers import Renderer
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
