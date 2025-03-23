@@ -1,7 +1,6 @@
 from arena import ArenaPlugin, Agent, GameResult
 import curses
 from prettytable import PrettyTable
-from collections import defaultdict
 import numpy as np
 
 
@@ -29,12 +28,36 @@ class NoneRenderer(Renderer):
     pass
 
 
-class ResultsRenderer(Renderer):
+class MatchResultsRenderer(Renderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         self.match = f"{agent1.name()} vs {agent2.name()}"
 
     def end_game(self, game, result: GameResult):
         print(f"{result.game_id}: {self.match} - {result.winner} won in {result.steps} steps")
+
+
+class ProgressBarRenderer(Renderer):
+    def update_progress_bar(self, bar_width: int = 50) -> str:
+        progress = self.games_played / self.total_games * 100    
+        filled = int(bar_width * progress / 100)
+        bar = '=' * filled + '-' * (bar_width - filled)
+        print(f"\rProgress: [{bar}] {progress:.1f}% ({self.games_played}/{self.total_games})", end='', flush=True)
+    
+
+    def start_arena(self, game, total_games):
+        self.total_games = total_games
+        self.games_played = 0
+        self.update_progress_bar()
+
+    def end_game(self, game, result):
+        self.games_played += 1
+        self.update_progress_bar()
+
+    def end_arena(self, game, results: list[GameResult]):
+        print()
+
+
+class ArenaResultsRenderer(Renderer):
 
     def end_arena(self, game, results: list[GameResult]):
         def perc(wins: int, played: int) -> str:
@@ -42,6 +65,14 @@ class ResultsRenderer(Renderer):
                 return "-"
 
             return f"{wins / played * 100.0:.0f}%"
+
+        print("Arena stats")
+        print("===========")
+        print("Board size: ", game.board_size)
+        print("Max walls: ", game.max_walls)
+        print("Step rewards: ", game.step_rewards)
+        print("Total number of games: ", len(results), "\n")
+        
 
         all_players = sorted(set([r.player1 for r in results]) | set([r.player2 for r in results]))
         players = {player: i for i, player in enumerate(all_players)}
@@ -82,11 +113,14 @@ class ResultsRenderer(Renderer):
         print(table)
 
 
-class TextRenderer(ResultsRenderer):
+class TextBoardRenderer(Renderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
-        super().start_game(game, agent1, agent2)
+        self.match = f"{agent1.name()} vs {agent2.name()}"
         print("Initial Board State:")
         print(game.render())
+
+    def end_game(self, game, result: GameResult):
+        print(f"{result.game_id}: {self.match} - {result.winner} won in {result.steps} steps")
 
     def action(self, game, step, agent, action):
         print(f"\nStep {step + 1}: {agent} takes action {action}")
@@ -94,12 +128,12 @@ class TextRenderer(ResultsRenderer):
         print(game.render())
 
 
-class CursesRenderer(Renderer):
+class CursesBoardRenderer(Renderer):
     def __init__(self, napms=100):
         super().__init__()
         self.napms = napms
 
-    def start_arena(self, game):
+    def start_arena(self, game, total_games: int):
         self.stdscr = curses.initscr()
         curses.noecho()
         curses.cbreak()
@@ -110,9 +144,13 @@ class CursesRenderer(Renderer):
         curses.echo()
         curses.endwin()
 
+    def start_game(self, game, agent1: Agent, agent2: Agent):
+        self.match = f"{agent1.name()} vs {agent2.name()}"
+
     def action(self, game, step, agent, action):
         board = game.render()
-        self.stdscr.clear()
-        self.stdscr.addstr(2, 0, board)
+        self.stdscr.erase()
+        self.stdscr.addstr(0, 0, f"Game: {self.match} - Step {step + 1}: {agent} takes action {action}")
+        self.stdscr.addstr(2, 2, board)
         self.stdscr.refresh()
         curses.napms(self.napms)

@@ -11,6 +11,9 @@ class ArenaYAMLRecorder(ArenaPlugin):
         self.games = {}
         self.filename = filename
 
+    def start_arena(self, game, total_games: int):
+        self.games = {}
+
     def start_game(self, game, agent1: Agent, agent2: Agent):
         self.actions = []
 

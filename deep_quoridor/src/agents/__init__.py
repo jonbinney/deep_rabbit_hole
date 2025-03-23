@@ -50,8 +50,15 @@ class SelfRegisteringAgent(Agent):
         return class_name.replace("Agent", "").lower()
 
 
-__all__ = ["RandomAgent", "SimpleAgent", "Agent", "FlatDQNAgent", "Pretrained01FlatDQNAgent"]
+__all__ = [
+    "RandomAgent",
+    "SimpleAgent",
+    "Agent",
+    "FlatDQNAgent",
+    "Pretrained01FlatDQNAgent",
+]
 
-from agents.random import RandomAgent  # noqa: E402
-from agents.simple import SimpleAgent  # noqa: E402
+
+from agents.random import RandomAgent  # noqa: E402, F401
+from agents.simple import SimpleAgent  # noqa: E402, F401
 from agents.flat_dqn import FlatDQNAgent, Pretrained01FlatDQNAgent  # noqa: E402
