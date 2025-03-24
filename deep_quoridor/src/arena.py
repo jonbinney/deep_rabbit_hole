@@ -151,7 +151,7 @@ class Arena:
         This method simulates games using recorded moves from previous matches, allowing for
         replay and analysis of historical games.
         """
-        self.plugins.start_arena(self.game)
+        self.plugins.start_arena(self.game, len(game_ids_to_replay))
 
         results = []
 
