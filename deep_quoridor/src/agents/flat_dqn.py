@@ -113,10 +113,10 @@ class FlatDQNAgent(SelfRegisteringAgent):
             return None
 
         mask = observation["action_mask"]
-        valid_actions = np.where(mask == 1)[0]
 
         # With probability epsilon, select a random action (exploration)
         if random.random() < self.epsilon:
+            valid_actions = np.where(mask == 1)[0]
             return np.random.choice(valid_actions)
 
         # Otherwise, select the action with the highest Q-value (exploitation)

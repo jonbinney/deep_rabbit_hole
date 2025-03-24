@@ -1,6 +1,8 @@
 import argparse
 import numpy as np
 import os
+
+import torch
 from agents import FlatDQNAgent, RandomAgent
 from quoridor_env import env
 
@@ -39,7 +41,11 @@ def train_dqn(
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
     # Create the DQN agent
+<<<<<<< Updated upstream
     dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+=======
+    dqn_agent = FlatDQNAgent(board_size)
+>>>>>>> Stashed changes
 
     # Create a random opponent
     random_agent = RandomAgent()
@@ -173,6 +179,7 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
     print(f"Using step rewards: {args.step_rewards}")
+    print(f"device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
     agent, rewards, losses = train_dqn(
         episodes=args.episodes,

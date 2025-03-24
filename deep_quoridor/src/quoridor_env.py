@@ -89,7 +89,7 @@ class QuoridorEnv(AECEnv):
         """
         agent = self.agent_selection
         if self.terminations[agent]:
-            self._next_player()
+            self._was_dead_step(action)
             return
 
         (row, col, action_type) = self.action_index_to_params(action)
