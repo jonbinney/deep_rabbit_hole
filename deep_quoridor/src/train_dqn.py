@@ -39,7 +39,7 @@ def train_dqn(
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
     # Create the DQN agent
-    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.995)
+    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
 
     # Create a random opponent
     random_agent = RandomAgent()
@@ -82,7 +82,7 @@ def train_dqn(
                 next_observation = game.observe(agent_name)
 
                 # Make the reward much larger than 1, to make it stand out
-                reward = game.rewards[agent_name] * 100
+                reward = game.rewards[agent_name] * 1000
 
                 # See if the game is over
                 # TODO: Understand what is truncation and if either of these values are player dependent
