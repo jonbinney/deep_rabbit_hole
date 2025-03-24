@@ -10,6 +10,12 @@ class Agent:
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
+    def reset(self):
+        """This method is called before starting a new game for the agent
+        to have a chance to reset its state before starting.
+        """
+        pass
+
 
 class AgentRegistry:
     agents = {}
