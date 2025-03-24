@@ -175,7 +175,7 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
     print(f"Using step rewards: {args.step_rewards}")
-    print(f"device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
+    print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
     agent, rewards, losses = train_dqn(
         episodes=args.episodes,
