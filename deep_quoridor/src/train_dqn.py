@@ -70,7 +70,7 @@ def train_dqn(
             # If it's the DQN agent's turn
             if agent_name == "player_1":
                 # Get current state
-                state = dqn_agent.preprocess_observation(observation)
+                state = dqn_agent.observation_to_tensor(observation)
 
                 # Select action using epsilon-greedy
                 action = dqn_agent.get_action(game)
@@ -95,7 +95,7 @@ def train_dqn(
 
                 # Store transition in replay buffer
                 next_state = (
-                    dqn_agent.preprocess_observation(next_observation) if not (termination or truncation) else None
+                    dqn_agent.observation_to_tensor(next_observation) if not (termination or truncation) else None
                 )
                 done = 1.0 if (termination or truncation) else 0.0
                 dqn_agent.replay_buffer.add(
