@@ -41,11 +41,7 @@ def train_dqn(
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
     # Create the DQN agent
-<<<<<<< Updated upstream
     dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
-=======
-    dqn_agent = FlatDQNAgent(board_size)
->>>>>>> Stashed changes
 
     # Create a random opponent
     random_agent = RandomAgent()
