@@ -19,6 +19,12 @@ def train_dqn(
     """
     Train a DQN agent to play Quoridor.
 
+    Julian notes:
+    - This is for now working for a trivial 3x3 board with no walls
+    - It teaches the agent to use black (player 2) only, against a random agent
+      Note that in a 3x3 board with no walls, black always wins (if it wants)
+    - It's currently not assigning negative rewards for losing
+
     Args:
         episodes: Number of episodes to train for
         batch_size: Size of batches to sample from replay buffer
@@ -33,7 +39,7 @@ def train_dqn(
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
     # Create the DQN agent
-    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.995)
 
     # Create a random opponent
     random_agent = RandomAgent()
@@ -47,13 +53,6 @@ def train_dqn(
     for episode in range(episodes):
         game.reset()
 
-        if False:
-            print()
-            print("-------------------------------")
-            print(f"Episode {episode + 1}/{episodes}")
-            print("-------------------------------")
-
-        # Reset episode-specific variables
         episode_reward = 0
         episode_losses = []
 
@@ -62,10 +61,8 @@ def train_dqn(
             observation, reward, termination, truncation, _ = game.last()
 
             # If the game is over, break the loop
-            # BUG: Missing recording a negative reward for the DQN agent when the opponent wins
+            # TODO: Assign negative reward to the DQN agent when the opponent wins
             if termination or truncation:
-                if False:
-                    print(f"Winner: {game.get_opponent(agent_name)}. Episode reward: {episode_reward}")
                 break
 
             # If it's the DQN agent's turn
@@ -80,8 +77,12 @@ def train_dqn(
                 game.step(action)
 
                 # Get the observation and rewards for THIS agent (not the opponent)
+                # NOTE: If we used game.last() it will return the observation and rewards for the currently active agent
+                # which, since we already did game.step(), is now the opponent
                 next_observation = game.observe(agent_name)
-                reward = game.rewards[agent_name] * 1000
+
+                # Make the reward much larger than 1, to make it stand out
+                reward = game.rewards[agent_name] * 100
 
                 # See if the game is over
                 # TODO: Understand what is truncation and if either of these values are player dependent
@@ -116,10 +117,6 @@ def train_dqn(
 
                 # Execute action
                 game.step(action)
-
-            if False:
-                print(f"{agent_name} moves: {action}")
-                print(game.render())
 
         # Aggregate episode statistics
         total_rewards.append(episode_reward)
