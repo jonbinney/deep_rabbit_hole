@@ -90,7 +90,7 @@ class FlatDQNAgent(SelfRegisteringAgent):
         """Copy parameters from online network to target network."""
         self.target_network.load_state_dict(self.online_network.state_dict())
 
-    def preprocess_observation(self, observation):
+    def observation_to_tensor(self, observation):
         """
         Convert the observation dict to a flat tensor.
         """
@@ -113,14 +113,14 @@ class FlatDQNAgent(SelfRegisteringAgent):
             return None
 
         mask = observation["action_mask"]
-        valid_actions = np.where(mask == 1)[0]
 
         # With probability epsilon, select a random action (exploration)
         if random.random() < self.epsilon:
+            valid_actions = np.where(mask == 1)[0]
             return np.random.choice(valid_actions)
 
         # Otherwise, select the action with the highest Q-value (exploitation)
-        state = self.preprocess_observation(observation)
+        state = self.observation_to_tensor(observation)
         with torch.no_grad():
             q_values = self.online_network(state)
 

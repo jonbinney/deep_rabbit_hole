@@ -35,10 +35,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor replay tool")
     parser.add_argument(
         "-r",
-        "--renderer",
+        "--renderers",
+        nargs="+",
         choices=Renderer.names(),
-        default="results",
-        help="Render mode",
+        default=["progressbar", "arenaresults"],
+        help="Render modes to be used",
     )
     parser.add_argument(
         "-t",
@@ -65,7 +66,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    renderer = Renderer.create(args.renderer)
+    renderers = [Renderer.create(r) for r in args.renderers]
 
     arena_data = ArenaYAMLRecorder.load_recorded_arena_data(args.games_input_filename)
 
@@ -73,7 +74,7 @@ if __name__ == "__main__":
         "board_size": arena_data["config"]["board_size"],
         "max_walls": arena_data["config"]["max_walls"],
         "step_rewards": arena_data["config"]["step_rewards"],
-        "renderer": renderer,
+        "renderers": renderers,
         "plugins": [ActionDelayPlugin(args.time_delay)] if args.time_delay > 0 else [],
     }
 

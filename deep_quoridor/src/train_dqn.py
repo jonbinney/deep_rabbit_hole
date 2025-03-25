@@ -1,6 +1,8 @@
 import argparse
 import numpy as np
 import os
+
+import torch
 from agents import FlatDQNAgent, RandomAgent
 from quoridor_env import env
 
@@ -68,7 +70,7 @@ def train_dqn(
             # If it's the DQN agent's turn
             if agent_name == "player_1":
                 # Get current state
-                state = dqn_agent.preprocess_observation(observation)
+                state = dqn_agent.observation_to_tensor(observation)
 
                 # Select action using epsilon-greedy
                 action = dqn_agent.get_action(game)
@@ -93,7 +95,7 @@ def train_dqn(
 
                 # Store transition in replay buffer
                 next_state = (
-                    dqn_agent.preprocess_observation(next_observation) if not (termination or truncation) else None
+                    dqn_agent.observation_to_tensor(next_observation) if not (termination or truncation) else None
                 )
                 done = 1.0 if (termination or truncation) else 0.0
                 dqn_agent.replay_buffer.add(
@@ -173,6 +175,7 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
     print(f"Using step rewards: {args.step_rewards}")
+    print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
     agent, rewards, losses = train_dqn(
         episodes=args.episodes,
