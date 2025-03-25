@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import IntEnum, unique
 
-import networkx as nx
 import numpy as np
 
 type Position = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
