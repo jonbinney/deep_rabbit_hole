@@ -151,7 +151,6 @@ class Arena:
         This method simulates games using recorded moves from previous matches, allowing for
         replay and analysis of historical games.
         """
-
         results = []
 
         if len(game_ids_to_replay) == 0:
