@@ -14,7 +14,7 @@ if __name__ == "__main__":
         "--renderers",
         nargs="+",
         choices=Renderer.names(),
-        default=["progressbar", "pygame"],
+        default=["progressbar", "arenaresults"],
         help="Render modes to be used",
     )
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
