@@ -13,10 +13,12 @@ def train_dqn(
     update_target_every,
     board_size,
     max_walls,
+    epsilon_decay=0.9999,
     save_path="models",
     model_name="dqn_agent",
     save_frequency=100,
     step_rewards=True,
+    assign_negative_reward=False,
 ):
     """
     Train a DQN agent to play Quoridor.
@@ -41,7 +43,7 @@ def train_dqn(
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
     # Create the DQN agent
-    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
 
     # Create a random opponent
     random_agent = RandomAgent()
@@ -63,8 +65,13 @@ def train_dqn(
             observation, reward, termination, truncation, _ = game.last()
 
             # If the game is over, break the loop
-            # TODO: Assign negative reward to the DQN agent when the opponent wins
             if termination or truncation:
+                # Update the reward on the last element of the replay buffer (if there is any)
+                # markingit as final and with a large negative reward
+                if assign_negative_reward and agent_name == "player_1" and len(dqn_agent.replay_buffer) > 0:
+                    last = dqn_agent.replay_buffer.get_last()
+                    last[2] = -1000
+                    last[4] = 1.0
                 break
 
             # If it's the DQN agent's turn
@@ -158,15 +165,19 @@ def train_dqn(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a DQN agent for Quoridor")
-    parser.add_argument("-N", "--board_size", type=int, default=9, help="Board Size")
-    parser.add_argument("-W", "--max_walls", type=int, default=10, help="Max walls per player")
-    parser.add_argument("-e", "--episodes", type=int, default=1000, help="Number of episodes to train for")
+    parser.add_argument("-N", "--board_size", type=int, default=3, help="Board Size")
+    parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
+    parser.add_argument("-e", "--episodes", type=int, default=2000, help="Number of episodes to train for")
     parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("-u", "--update_target", type=int, default=100, help="Episodes between target network updates")
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument("--save_path", type=str, default="models", help="Directory to save models")
     parser.add_argument("--model_name", type=str, default="dqn_agent", help="Base name for saved models")
     parser.add_argument("--save_frequency", type=int, default=500, help="How often to save the model (in episodes)")
+    parser.add_argument("--epsilon_decay", type=float, default=0.999, help="Epsilon decay rate for exploration")
+    parser.add_argument(
+        "--assign_negative_reward", action="store_true", default=False, help="Assign negative reward when agent loses"
+    )
 
     args = parser.parse_args()
 
@@ -174,7 +185,9 @@ if __name__ == "__main__":
     print(f"Board size: {args.board_size}x{args.board_size}")
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
+    print(f"Epsilon decay: {args.epsilon_decay}")
     print(f"Using step rewards: {args.step_rewards}")
+    print(f"Assign negative reward: {args.assign_negative_reward}")
     print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
     agent, rewards, losses = train_dqn(
@@ -183,10 +196,12 @@ if __name__ == "__main__":
         update_target_every=args.update_target,
         board_size=args.board_size,
         max_walls=args.max_walls,
+        epsilon_decay=args.epsilon_decay,
         save_path=args.save_path,
         model_name=args.model_name,
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
+        assign_negative_reward=args.assign_negative_reward,
     )
 
     print("Training completed!")
