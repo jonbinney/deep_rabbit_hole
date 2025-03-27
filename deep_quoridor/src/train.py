@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 
 import numpy as np
 import torch
@@ -40,11 +41,13 @@ def train_dqn(
         save_frequency: How often to save the model (in episodes)
         step_rewards: Whether to use step rewards
     """
+    # Set random seed for reproducibility
+    random.seed(42)
+
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
-    agent1 = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
-    # agent2 = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
-    agent2 = RandomAgent()
+    agent1 = RandomAgent()
+    agent2 = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
 
     agents = [agent1, agent2]
 
@@ -54,14 +57,15 @@ def train_dqn(
     total_rewards = {a.name(): [] for a in agents}
     losses = {a.name(): [] for a in agents}
 
-    switch_players = True
+    # Enable to allow agents to play as P0 and P1 alternatively
+    switch_players = False
     for episode in range(episodes):
         game.reset()
 
         agents_by_playerid = (
-            {"player_0": agent1, "player_1": agent2}
-            if switch_players and episode % 2 == 0
-            else {"player_0": agent2, "player_1": agent1}
+            {"player_0": agent2, "player_1": agent1}
+            if switch_players and episode % 2 == 1
+            else {"player_0": agent1, "player_1": agent2}
         )
 
         episode_reward = {a.name(): 0 for a in agents}
@@ -167,7 +171,7 @@ def train_dqn(
                     )
                     print(
                         f"{agent_name} Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
-                        f"{agent_name} Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
+                        f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
                     )
 
         # Save model periodically
@@ -202,7 +206,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-f", "--save_frequency", type=int, default=500, help="How often to save the model (in episodes)"
     )
-    parser.add_argument("-d", "--epsilon_decay", type=float, default=0.999, help="Epsilon decay rate for exploration")
+    parser.add_argument("-d", "--epsilon_decay", type=float, default=0.9999, help="Epsilon decay rate for exploration")
     parser.add_argument(
         "-n",
         "--assign_negative_reward",

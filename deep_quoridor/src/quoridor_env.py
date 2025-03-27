@@ -101,8 +101,8 @@ class QuoridorEnv(AECEnv):
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
-            self.rewards[agent] = 1
-            self.rewards[self.get_opponent(agent)] = -1
+            self.rewards[agent] = 1000
+            self.rewards[self.get_opponent(agent)] = -1000
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
