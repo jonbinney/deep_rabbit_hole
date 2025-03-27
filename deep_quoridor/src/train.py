@@ -2,12 +2,46 @@ import argparse
 import os
 import random
 
+import gymnasium.utils.seeding
 import numpy as np
 import torch
 from agents import FlatDQNAgent
 from agents.flat_dqn import AbstractTrainableAgent
 from agents.random import RandomAgent
 from quoridor_env import env
+
+
+def set_deterministic(seed=42):
+    """Sets all random seeds for deterministic behavior."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    gymnasium.utils.seeding.np_random(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def update_target_network(episodes, update_target_every, agents, total_rewards, losses, episode):
+    for agent in agents:
+        if isinstance(agent, AbstractTrainableAgent):
+            agent_name = agent.name()
+            agent.update_target_network()
+            avg_reward = (
+                sum(total_rewards[agent_name][-1 * update_target_every :])
+                / min(update_target_every, len(total_rewards[agent_name]))
+                if total_rewards[agent_name]
+                else 0.0
+            )
+            avg_loss = (
+                sum(losses[agent_name][-1 * update_target_every :]) / min(update_target_every, len(losses[agent_name]))
+                if losses[agent_name]
+                else 0.0
+            )
+            print(
+                f"{agent_name} Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
+                f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
+            )
 
 
 def train_dqn(
@@ -42,10 +76,9 @@ def train_dqn(
         step_rewards: Whether to use step rewards
     """
     # Set random seed for reproducibility
-    random.seed(42)
+    set_deterministic(42)
 
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
-
     agent1 = RandomAgent()
     agent2 = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
 
@@ -129,7 +162,7 @@ def train_dqn(
                     done,
                 )
 
-                # Train the agent
+                # Train the agent at every step once we have more samples that the batch size we use
                 if len(agent.replay_buffer) > batch_size:
                     loss = agent.train(batch_size)
                     if loss is not None:
@@ -153,26 +186,7 @@ def train_dqn(
 
         # Update target network periodically
         if episode % update_target_every == 0:
-            for agent in agents:
-                if isinstance(agent, AbstractTrainableAgent):
-                    agent_name = agent.name()
-                    agent.update_target_network()
-                    avg_reward = (
-                        sum(total_rewards[agent_name][-1 * update_target_every :])
-                        / min(update_target_every, len(total_rewards[agent_name]))
-                        if total_rewards[agent_name]
-                        else 0.0
-                    )
-                    avg_loss = (
-                        sum(losses[agent_name][-1 * update_target_every :])
-                        / min(update_target_every, len(losses[agent_name]))
-                        if losses[agent_name]
-                        else 0.0
-                    )
-                    print(
-                        f"{agent_name} Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
-                        f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
-                    )
+            update_target_network(episodes, update_target_every, agents, total_rewards, losses, episode)
 
         # Save model periodically
         if episode % save_frequency == 0 and episode > 0:
@@ -183,7 +197,7 @@ def train_dqn(
                     agent.save_model(save_file)
                     print(f"{agent_name} Model saved to {save_file}")
 
-    # Save final model
+    # Save final models
     for agent in agents:
         if isinstance(agent, AbstractTrainableAgent):
             agent_name = agent.name()
