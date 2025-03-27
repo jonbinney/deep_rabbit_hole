@@ -170,13 +170,19 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--episodes", type=int, default=2000, help="Number of episodes to train for")
     parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("-u", "--update_target", type=int, default=100, help="Episodes between target network updates")
-    parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
-    parser.add_argument("--save_path", type=str, default="models", help="Directory to save models")
-    parser.add_argument("--model_name", type=str, default="dqn_agent", help="Base name for saved models")
-    parser.add_argument("--save_frequency", type=int, default=500, help="How often to save the model (in episodes)")
-    parser.add_argument("--epsilon_decay", type=float, default=0.999, help="Epsilon decay rate for exploration")
+    parser.add_argument("-s", "--step_rewards", action="store_true", default=False, help="Enable step rewards")
+    parser.add_argument("-p", "--save_path", type=str, default="models", help="Directory to save models")
+    parser.add_argument("-m", "--model_name", type=str, default="dqn_agent", help="Base name for saved models")
     parser.add_argument(
-        "--assign_negative_reward", action="store_true", default=False, help="Assign negative reward when agent loses"
+        "-f", "--save_frequency", type=int, default=500, help="How often to save the model (in episodes)"
+    )
+    parser.add_argument("-d", "--epsilon_decay", type=float, default=0.999, help="Epsilon decay rate for exploration")
+    parser.add_argument(
+        "-n",
+        "--assign_negative_reward",
+        action="store_true",
+        default=False,
+        help="Assign negative reward when agent loses",
     )
 
     args = parser.parse_args()
