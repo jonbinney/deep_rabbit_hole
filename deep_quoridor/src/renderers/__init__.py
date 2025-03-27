@@ -1,4 +1,4 @@
-from arena import ArenaPlugin
+from arena_utils import ArenaPlugin
 
 
 class Renderer(ArenaPlugin):

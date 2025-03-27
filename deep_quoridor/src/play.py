@@ -1,9 +1,9 @@
 import argparse
-from arena_yaml_recorder import ArenaYAMLRecorder
-from arena import Arena
+
 from agents import AgentRegistry
-from renderers import Renderer, PygameRenderer
-from threading import Thread
+from arena import Arena
+from arena_yaml_recorder import ArenaYAMLRecorder
+from renderers import Renderer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
@@ -68,13 +68,4 @@ if __name__ == "__main__":
     arena_args = {k: v for k, v in arena_args.items() if v is not None}
     arena = Arena(**arena_args)
 
-    # arena.play_games(players, args.times)
-    thread = Thread(target=arena.play_games, args=(players, args.times))
-    thread.start()
-
-    for r in renderers:
-        if isinstance(r, PygameRenderer):
-            r.main_thread()
-            break
-
-    # thread.join()
+    arena.play_games(renderers, players, args.times)

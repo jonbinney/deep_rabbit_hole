@@ -1,70 +1,12 @@
-from typing import Optional
-from quoridor_env import env
-from agents import Agent
-from agents import AgentRegistry
-from agents.replay import ReplayAgent
-from dataclasses import dataclass
 import time
+from threading import Thread
+from typing import Optional
 
-
-@dataclass
-class GameResult:
-    player1: str
-    player2: str
-    winner: str
-    steps: int
-    time_ms: int
-    game_id: str
-
-
-class ArenaPlugin:
-    """
-    Base class for all arena plugins.
-    The plug in can override any combinantion of the methods below in order to provide additional functionality.
-    """
-
-    def start_game(self, game, agent1: Agent, agent2: Agent):
-        pass
-
-    def end_game(self, game, result: GameResult):
-        pass
-
-    def start_arena(self, game, total_games: int):
-        pass
-
-    def end_arena(self, game, results: list[GameResult]):
-        pass
-
-    def action(self, game, step, agent, action):
-        pass
-
-
-class CompositeArenaPlugin:
-    """
-    Allows to combine multiple plugins into a single one, calling them sequentially for each method.
-
-    """
-
-    def __init__(self, plugins: list[ArenaPlugin]):
-        """
-        For the sake of convenience, the plugin list is allowed to be empty, in which case the plugin will be a no-op.
-        """
-        self.plugins = plugins
-
-    def start_game(self, game, agent1: Agent, agent2: Agent):
-        [plugin.start_game(game, agent1, agent2) for plugin in self.plugins]
-
-    def end_game(self, game, result: GameResult):
-        [plugin.end_game(game, result) for plugin in self.plugins]
-
-    def start_arena(self, game, total_games: int):
-        [plugin.start_arena(game, total_games) for plugin in self.plugins]
-
-    def end_arena(self, game, results: list[GameResult]):
-        [plugin.end_arena(game, results) for plugin in self.plugins]
-
-    def action(self, game, step, agent, action):
-        [plugin.action(game, step, agent, action) for plugin in self.plugins]
+from agents import Agent, AgentRegistry
+from agents.replay import ReplayAgent
+from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
+from quoridor_env import env
+from renderers import PygameRenderer
 
 
 class Arena:
@@ -90,7 +32,6 @@ class Arena:
             "player_0": agent1,
             "player_1": agent2,
         }
-
         self.plugins.start_game(self.game, agent1, agent2)
 
         start_time = time.time()
@@ -121,7 +62,7 @@ class Arena:
         self.game.close()
         return result
 
-    def play_games(self, players: list[str | Agent], times: int):
+    def _play_games(self, players: list[str | Agent], times: int):
         self.plugins.start_arena(self.game, total_games=len(players) * (len(players) - 1) * times // 2)
 
         match_id = 1
@@ -145,7 +86,7 @@ class Arena:
 
         self.plugins.end_arena(self.game, results)
 
-    def replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
+    def _replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
         """Replays a series of games from previously recorded arena data.
 
         This method simulates games using recorded moves from previous matches, allowing for
@@ -170,3 +111,31 @@ class Arena:
             results.append(result)
 
         self.plugins.end_arena(self.game, results)
+
+    def play_games(self, renderers: list[ArenaPlugin], players: list[str | Agent], times: int):
+        pygame_renderer = next((r for r in renderers if isinstance(r, PygameRenderer)), None)
+
+        if pygame_renderer is None:
+            self._play_games(players, times)
+        else:
+            # When using PygameRenderer, pygame needs to run in the main thread (at least on MacOS),
+            # so we need to start a new thread for the game loop.
+            thread = Thread(target=self._play_games, args=(players, times))
+            thread.start()
+
+            pygame_renderer.main_thread()
+            thread.join()
+
+    def replay_games(self, renderers: list[ArenaPlugin], arena_data: dict, game_ids_to_replay: list[str]):
+        pygame_renderer = next((r for r in renderers if isinstance(r, PygameRenderer)), None)
+
+        if pygame_renderer is None:
+            self._replay_games(arena_data, game_ids_to_replay)
+        else:
+            # When using PygameRenderer, pygame needs to run in the main thread (at least on MacOS),
+            # so we need to start a new thread for the game loop.
+            thread = Thread(target=self._replay_games, args=(arena_data, game_ids_to_replay))
+            thread.start()
+
+            pygame_renderer.main_thread()
+            thread.join()

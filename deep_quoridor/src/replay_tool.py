@@ -1,10 +1,9 @@
 import argparse
 import time
-from arena_yaml_recorder import ArenaYAMLRecorder
-from arena import Arena
-from arena import ArenaPlugin
-from renderers import Renderer
 
+from arena import Arena, ArenaPlugin
+from arena_yaml_recorder import ArenaYAMLRecorder
+from renderers import Renderer
 
 """Deep Quoridor Game Replay Tool
 
@@ -81,4 +80,4 @@ if __name__ == "__main__":
     arena_args = {k: v for k, v in arena_args.items() if v is not None}
     arena = Arena(**arena_args)
 
-    arena.replay_games(arena_data, args.game_ids)
+    arena.replay_games(renderers, arena_data, args.game_ids)

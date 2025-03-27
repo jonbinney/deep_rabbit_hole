@@ -1,8 +1,8 @@
-pettingzoo
 gymnasium
 numpy
+pettingzoo
+prettytable
+pygame
 pytest
 pyyaml
-prettytable
 torch
-pygame
