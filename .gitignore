@@ -171,3 +171,4 @@ cython_debug/
 mlartifacts
 mlruns
 game_recording.yaml
+.vscode/launch.json

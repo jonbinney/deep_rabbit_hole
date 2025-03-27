@@ -27,11 +27,12 @@ Every time we represent a coordinate as a tuple, it is in the form (row, col)
 
 import copy
 import functools
-from typing import Tuple, Optional
+from typing import Optional, Tuple
+
+import numpy as np
+from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
-from gymnasium import spaces
-import numpy as np
 
 
 class QuoridorEnv(AECEnv):

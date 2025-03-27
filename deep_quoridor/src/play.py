@@ -1,7 +1,8 @@
 import argparse
-from arena_yaml_recorder import ArenaYAMLRecorder
-from arena import Arena
+
 from agents import AgentRegistry
+from arena import Arena
+from arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
 
 if __name__ == "__main__":

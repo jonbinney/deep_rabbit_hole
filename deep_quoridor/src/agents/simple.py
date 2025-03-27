@@ -1,4 +1,4 @@
-from agents import SelfRegisteringAgent
+from agents.core import SelfRegisteringAgent
 
 
 def sample_random_action_sequence(game, max_path_length):
@@ -42,9 +42,7 @@ class SimpleAgent(SelfRegisteringAgent):
 
         possible_action_sequences = []
         for _ in range(self.num_sequences):
-            action_sequence, total_reward = sample_random_action_sequence(
-                game.copy(), self.sequence_length
-            )
+            action_sequence, total_reward = sample_random_action_sequence(game.copy(), self.sequence_length)
             possible_action_sequences.append((action_sequence, total_reward))
 
         # Choose the action sequence with the highest reward.

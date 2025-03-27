@@ -1,9 +1,11 @@
 import argparse
-import numpy as np
 import os
 
+import numpy as np
 import torch
-from agents import FlatDQNAgent, RandomAgent
+from agents import DExpAgent, FlatDQNAgent
+from agents.flat_dqn import AbstractTrainableAgent
+from agents.random import RandomAgent
 from quoridor_env import env
 
 
@@ -14,7 +16,6 @@ def train_dqn(
     board_size,
     max_walls,
     save_path="models",
-    model_name="dqn_agent",
     save_frequency=100,
     step_rewards=True,
 ):
@@ -34,32 +35,38 @@ def train_dqn(
         board_size: Size of the Quoridor board
         max_walls: Maximum number of walls per player
         save_path: Directory to save trained models
-        model_name: Base name for saved models
         save_frequency: How often to save the model (in episodes)
         step_rewards: Whether to use step rewards
     """
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
-    # Create the DQN agent
-    dqn_agent = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+    agent1 = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+    # agent2 = FlatDQNAgent(board_size, epsilon_decay=0.9999)
+    agent2 = RandomAgent()
 
-    # Create a random opponent
-    random_agent = RandomAgent()
+    agents = [agent1, agent2]
 
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
-    total_rewards = []
-    losses = []
+    total_rewards = {a.name(): [] for a in agents}
+    losses = {a.name(): [] for a in agents}
 
+    switch_players = True
     for episode in range(episodes):
         game.reset()
 
-        episode_reward = 0
-        episode_losses = []
+        agents_by_playerid = (
+            {"player_0": agent1, "player_1": agent2}
+            if switch_players and episode % 2 == 0
+            else {"player_0": agent2, "player_1": agent1}
+        )
+
+        episode_reward = {a.name(): 0 for a in agents}
+        episode_losses = {a.name(): [] for a in agents}
 
         # Agent iteration loop
-        for agent_name in game.agent_iter():
+        for player_id in game.agent_iter():
             observation, reward, termination, truncation, _ = game.last()
 
             # If the game is over, break the loop
@@ -67,13 +74,15 @@ def train_dqn(
             if termination or truncation:
                 break
 
+            agent = agents_by_playerid[player_id]
+            agent_name = agent.name()
             # If it's the DQN agent's turn
-            if agent_name == "player_1":
+            if isinstance(agent, AbstractTrainableAgent):
                 # Get current state
-                state = dqn_agent.observation_to_tensor(observation)
+                state = agent.observation_to_tensor(observation)
 
                 # Select action using epsilon-greedy
-                action = dqn_agent.get_action(game)
+                action = agent.get_action(game)
 
                 # Execute action
                 game.step(action)
@@ -81,24 +90,22 @@ def train_dqn(
                 # Get the observation and rewards for THIS agent (not the opponent)
                 # NOTE: If we used game.last() it will return the observation and rewards for the currently active agent
                 # which, since we already did game.step(), is now the opponent
-                next_observation = game.observe(agent_name)
+                next_observation = game.observe(player_id)
 
                 # Make the reward much larger than 1, to make it stand out
-                reward = game.rewards[agent_name] * 1000
+                reward = game.rewards[player_id]
 
                 # See if the game is over
                 # TODO: Understand what is truncation and if either of these values are player dependent
                 _, _, termination, truncation, _ = game.last()
 
                 # Add to episode reward
-                episode_reward += reward
+                episode_reward[agent_name] += reward
 
                 # Store transition in replay buffer
-                next_state = (
-                    dqn_agent.observation_to_tensor(next_observation) if not (termination or truncation) else None
-                )
-                done = 1.0 if (termination or truncation) else 0.0
-                dqn_agent.replay_buffer.add(
+                next_state = agent.observation_to_tensor(next_observation)
+                done = 1 if termination or truncation else 0
+                agent.replay_buffer.add(
                     state.cpu().numpy(),
                     action,
                     reward,
@@ -107,53 +114,68 @@ def train_dqn(
                 )
 
                 # Train the agent
-                if len(dqn_agent.replay_buffer) > batch_size:
-                    loss = dqn_agent.train(batch_size)
+                if len(agent.replay_buffer) > batch_size:
+                    loss = agent.train(batch_size)
                     if loss is not None:
-                        episode_losses.append(loss)
+                        episode_losses[agent_name].append(loss)
 
             # If it's the random opponent's turn
             else:
                 # Get action from random agent
-                action = random_agent.get_action(game)
+                action = agent.get_action(game)
 
                 # Execute action
                 game.step(action)
 
         # Aggregate episode statistics
-        total_rewards.append(episode_reward)
-        if episode_losses:
-            avg_loss = sum(episode_losses) / len(episode_losses)
-            losses.append(avg_loss)
+        for agent in agents:
+            agent_name = agent.name()
+            total_rewards[agent_name].append(episode_reward[agent_name])
+            if episode_losses[agent_name]:
+                avg_loss = sum(episode_losses[agent_name]) / len(episode_losses[agent_name])
+                losses[agent_name].append(avg_loss)
 
         # Update target network periodically
         if episode % update_target_every == 0:
-            dqn_agent.update_target_network()
-            avg_reward = (
-                sum(total_rewards[-1 * update_target_every :]) / min(update_target_every, len(total_rewards))
-                if total_rewards
-                else 0.0
-            )
-            avg_loss = (
-                sum(losses[-1 * update_target_every :]) / min(update_target_every, len(losses)) if losses else 0.0
-            )
-            print(
-                f"Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
-                f"Avg Loss: {avg_loss:.4f}, Epsilon: {dqn_agent.epsilon:.4f}"
-            )
+            for agent in agents:
+                if isinstance(agent, AbstractTrainableAgent):
+                    agent_name = agent.name()
+                    agent.update_target_network()
+                    avg_reward = (
+                        sum(total_rewards[agent_name][-1 * update_target_every :])
+                        / min(update_target_every, len(total_rewards[agent_name]))
+                        if total_rewards[agent_name]
+                        else 0.0
+                    )
+                    avg_loss = (
+                        sum(losses[agent_name][-1 * update_target_every :])
+                        / min(update_target_every, len(losses[agent_name]))
+                        if losses[agent_name]
+                        else 0.0
+                    )
+                    print(
+                        f"{agent_name} Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
+                        f"{agent_name} Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
+                    )
 
         # Save model periodically
         if episode % save_frequency == 0 and episode > 0:
-            save_file = os.path.join(save_path, f"{model_name}_episode_{episode}.pt")
-            dqn_agent.save_model(save_file)
-            print(f"Model saved to {save_file}")
+            for agent in agents:
+                if isinstance(agent, AbstractTrainableAgent):
+                    agent_name = agent.name()
+                    save_file = os.path.join(save_path, f"{agent.name()}_episode_{episode}.pt")
+                    agent.save_model(save_file)
+                    print(f"{agent_name} Model saved to {save_file}")
 
     # Save final model
-    final_save_file = os.path.join(save_path, f"{model_name}_final.pt")
-    dqn_agent.save_model(final_save_file)
-    print(f"Final model saved to {final_save_file}")
+    for agent in agents:
+        if isinstance(agent, AbstractTrainableAgent):
+            agent_name = agent.name()
+            final_save_file = os.path.join(save_path, f"{agent.name()}_final.pt")
+            agent.save_model(final_save_file)
+            print(f"{agent_name} Final model saved to {final_save_file}")
 
-    return dqn_agent, total_rewards, losses
+    return
 
 
 if __name__ == "__main__":
@@ -165,7 +187,6 @@ if __name__ == "__main__":
     parser.add_argument("-u", "--update_target", type=int, default=100, help="Episodes between target network updates")
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument("--save_path", type=str, default="models", help="Directory to save models")
-    parser.add_argument("--model_name", type=str, default="dqn_agent", help="Base name for saved models")
     parser.add_argument("--save_frequency", type=int, default=500, help="How often to save the model (in episodes)")
 
     args = parser.parse_args()
@@ -177,14 +198,13 @@ if __name__ == "__main__":
     print(f"Using step rewards: {args.step_rewards}")
     print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
-    agent, rewards, losses = train_dqn(
+    train_dqn(
         episodes=args.episodes,
         batch_size=args.batch_size,
         update_target_every=args.update_target,
         board_size=args.board_size,
         max_walls=args.max_walls,
         save_path=args.save_path,
-        model_name=args.model_name,
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
     )
