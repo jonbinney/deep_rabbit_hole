@@ -84,7 +84,7 @@ def train_dqn(
                     and len(agent.replay_buffer) > 0
                 ):
                     last = agent.replay_buffer.get_last()
-                    last[2] = -1000
+                    last[2] = game.rewards[player_id]
                     last[4] = 1.0
                 break
 

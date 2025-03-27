@@ -55,7 +55,7 @@ class FlatDQNAgent(AbstractTrainableAgent):
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
 
         flat_obs = np.concatenate([board, walls, my_walls, opponent_walls])
-        return torch.FloatTensor(flat_obs, device=self.device)
+        return torch.FloatTensor(flat_obs).to(self.device)
 
 
 class Pretrained01FlatDQNAgent(FlatDQNAgent):
