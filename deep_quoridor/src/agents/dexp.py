@@ -8,14 +8,14 @@ import torch.nn as nn
 from agents.core import AbstractTrainableAgent
 
 
-class DQNNetwork(nn.Module):
+class DExpNetwork(nn.Module):
     """
     Neural network model for Deep Q-learning.
     Takes observation from the Quoridor game and outputs Q-values for each action.
     """
 
     def __init__(self, board_size, action_size):
-        super(DQNNetwork, self).__init__()
+        super(DExpNetwork, self).__init__()
 
         # Calculate input dimensions based on observation space
         # Board is board_size x board_size with 2 channels (player position and opponent position)
@@ -28,15 +28,24 @@ class DQNNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 256), nn.ReLU(), nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size)
+            nn.Linear(flat_input_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, action_size),
         )
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = nn.DataParallel(self.model)
+        self.model.to(device)
 
     def forward(self, x):
         return self.model(x)
 
 
-class FlatDQNAgent(AbstractTrainableAgent):
-    """Agent that uses Deep Q-Network with flat state representation."""
+class DExpAgent(AbstractTrainableAgent):
+    """Diego experimental Agent using DRL."""
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -44,11 +53,12 @@ class FlatDQNAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        return DQNNetwork(self.board_size, self.action_size)
+        return DExpNetwork(self.board_size, self.action_size)
 
     def observation_to_tensor(self, observation):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
+
         board = obs["board"].flatten()
         walls = obs["walls"].flatten()
         my_walls = np.array([obs["my_walls_remaining"]])
@@ -58,14 +68,14 @@ class FlatDQNAgent(AbstractTrainableAgent):
         return torch.FloatTensor(flat_obs).to(self.device)
 
 
-class Pretrained01FlatDQNAgent(FlatDQNAgent):
+class DExpPretainedAgent(DExpAgent):
     """
     A FlatDQNAgent that is initialized with the pre-trained model from main.py.
     """
 
     def __init__(self, board_size, **kwargs):
         super().__init__(board_size, epsilon=0.0)
-        model_path = Path(__file__).resolve().parents[3] / "models" / "flatdqn_final.pt"
+        model_path = Path(__file__).resolve().parents[3] / "models" / "dexp_final.pt"
         if os.path.exists(model_path):
             print(f"Loading pre-trained model from {model_path}")
             self.load_model(model_path)

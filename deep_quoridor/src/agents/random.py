@@ -1,4 +1,4 @@
-from agents import SelfRegisteringAgent
+from agents.core import SelfRegisteringAgent
 
 
 class RandomAgent(SelfRegisteringAgent):

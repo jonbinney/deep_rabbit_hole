@@ -1,10 +1,11 @@
-from typing import Optional
-from quoridor_env import env
-from agents import Agent
-from agents import AgentRegistry
-from agents.replay import ReplayAgent
-from dataclasses import dataclass
+import select
+import sys
 import time
+from dataclasses import dataclass
+from typing import Optional
+
+from agents import Agent, AgentRegistry, ReplayAgent
+from quoridor_env import env
 
 
 @dataclass

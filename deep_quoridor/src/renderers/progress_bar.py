@@ -1,5 +1,6 @@
-from renderers import Renderer
 from arena import GameResult
+
+from renderers import Renderer
 
 
 class ProgressBarRenderer(Renderer):

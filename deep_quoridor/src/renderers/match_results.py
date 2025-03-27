@@ -1,6 +1,7 @@
-from renderers import Renderer
-from arena import GameResult
 from agents import Agent
+from arena import GameResult
+
+from renderers import Renderer
 
 
 class MatchResultsRenderer(Renderer):

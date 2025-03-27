@@ -1,7 +1,9 @@
-from renderers import Renderer
-from arena import GameResult
-from agents import Agent
 import curses
+
+from agents import Agent
+from arena import GameResult
+
+from renderers import Renderer
 
 
 class CursesBoardRenderer(Renderer):
@@ -27,6 +29,6 @@ class CursesBoardRenderer(Renderer):
         board = game.render()
         self.stdscr.erase()
         self.stdscr.addstr(0, 0, f"Game: {self.match} - Step {step + 1}: {agent} takes action {action}")
-        self.stdscr.addstr(2, 2, board)
+        self.stdscr.addstr(2, 0, board)
         self.stdscr.refresh()
         curses.napms(self.napms)

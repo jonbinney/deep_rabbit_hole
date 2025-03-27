@@ -1,5 +1,5 @@
-from arena import ArenaPlugin, Agent, GameResult
 import yaml
+from arena import Agent, ArenaPlugin, GameResult
 
 
 class ArenaYAMLRecorder(ArenaPlugin):
@@ -42,6 +42,3 @@ class ArenaYAMLRecorder(ArenaPlugin):
     def load_recorded_arena_data(filename: str) -> dict:
         with open(filename, "r") as file:
             return yaml.load(file, Loader=yaml.FullLoader)
-
-
-
