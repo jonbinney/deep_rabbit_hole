@@ -73,3 +73,4 @@ class Pretrained01FlatDQNAgent(FlatDQNAgent):
             print(
                 f"Warning: Model file {model_path} not found, using untrained agent. Ask Julian for the weights file."
             )
+            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")

@@ -4,8 +4,12 @@ class Agent:
     Given a game state, the agent should return an action.
     """
 
+    @staticmethod
+    def _friendly_name(class_name: str):
+        return class_name.replace("Agent", "").lower()
+
     def name(self) -> str:
-        raise NotImplementedError("You must implement the name method")
+        return Agent._friendly_name(self.__class__.__name__)
 
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
@@ -31,20 +35,3 @@ class AgentRegistry:
     @staticmethod
     def register(name: str, agent_class):
         AgentRegistry.agents[name] = agent_class
-
-
-class SelfRegisteringAgent(Agent):
-    """
-    Base class for all agents.
-    Given a game state, the agent should return an action.
-    """
-
-    def __init_subclass__(cls, **kwargs):
-        AgentRegistry.register(SelfRegisteringAgent._friendly_name(cls.__name__), cls)
-
-    def name(self):
-        return SelfRegisteringAgent._friendly_name(self.__class__.__name__)
-
-    @staticmethod
-    def _friendly_name(class_name: str):
-        return class_name.replace("Agent", "").lower()
