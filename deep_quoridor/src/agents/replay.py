@@ -1,4 +1,4 @@
-from agents import Agent
+from agents.core import Agent
 
 
 class ReplayAgent(Agent):

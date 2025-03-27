@@ -1,6 +1,7 @@
+import yaml
+
 from arena_utils import ArenaPlugin, GameResult
 from agents import Agent
-import yaml
 
 
 class ArenaYAMLRecorder(ArenaPlugin):

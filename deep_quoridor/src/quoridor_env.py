@@ -27,11 +27,13 @@ Every time we represent a coordinate as a tuple, it is in the form (row, col)
 
 import copy
 import functools
-from typing import Tuple, Optional
+import random
+from typing import Optional, Tuple
+
+import numpy as np
+from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
-from gymnasium import spaces
-import numpy as np
 
 
 class QuoridorEnv(AECEnv):
@@ -100,8 +102,8 @@ class QuoridorEnv(AECEnv):
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
-            self.rewards[agent] = 1
-            self.rewards[self.get_opponent(agent)] = -1
+            self.rewards[agent] = 1000
+            self.rewards[self.get_opponent(agent)] = -1000
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
@@ -359,7 +361,8 @@ class QuoridorEnv(AECEnv):
                         "walls": spaces.Box(0, 1, (self.wall_size, self.wall_size, 2), dtype=np.int8),
                         "my_walls_remaining": spaces.Discrete(self.max_walls + 1),
                         "opponent_walls_remaining": spaces.Discrete(self.max_walls + 1),
-                    }
+                    },
+                    seed=random.randint(0, 2**32 - 1),
                 ),
                 "action_mask": spaces.Box(0, 1, (self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8),
             }
@@ -367,7 +370,7 @@ class QuoridorEnv(AECEnv):
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
-        return spaces.Discrete(self.board_size**2 + (self.wall_size**2) * 2)
+        return spaces.Discrete(self.board_size**2 + (self.wall_size**2) * 2, seed=random.randint(0, 2**32 - 1))
 
     def action_params_to_index(self, row: int, col: int, action_type: int = 0) -> int:
         """

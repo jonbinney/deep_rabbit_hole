@@ -1,7 +1,8 @@
-from renderers import Renderer
-from prettytable import PrettyTable
 import numpy as np
 from arena import GameResult
+from prettytable import PrettyTable
+
+from renderers import Renderer
 
 
 class ArenaResultsRenderer(Renderer):
