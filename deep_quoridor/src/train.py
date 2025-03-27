@@ -5,8 +5,8 @@ import random
 import gymnasium.utils.seeding
 import numpy as np
 import torch
-from agents import FlatDQNAgent
-from agents.flat_dqn import AbstractTrainableAgent
+from agents.dexp import DExpAgent
+from agents.flat_dqn import AbstractTrainableAgent, FlatDQNAgent
 from agents.random import RandomAgent
 from quoridor_env import env
 
@@ -80,7 +80,8 @@ def train_dqn(
 
     game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
     agent1 = RandomAgent()
-    agent2 = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)
+    _ = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)  # noqa: F841
+    agent2 = DExpAgent(board_size, epsilon_decay=epsilon_decay)
 
     agents = [agent1, agent2]
 

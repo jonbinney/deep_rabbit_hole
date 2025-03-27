@@ -37,7 +37,6 @@ class DExpNetwork(nn.Module):
             nn.Linear(256, action_size),
         )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = nn.DataParallel(self.model)
         self.model.to(device)
 
     def forward(self, x):
@@ -68,9 +67,9 @@ class DExpAgent(AbstractTrainableAgent):
         return torch.FloatTensor(flat_obs).to(self.device)
 
 
-class DExpPretainedAgent(DExpAgent):
+class DExpPretrainedAgent(DExpAgent):
     """
-    A FlatDQNAgent that is initialized with the pre-trained model from main.py.
+    A DExpAgent that is initialized with the pre-trained model from main.py.
     """
 
     def __init__(self, board_size, **kwargs):
@@ -83,3 +82,4 @@ class DExpPretainedAgent(DExpAgent):
             print(
                 f"Warning: Model file {model_path} not found, using untrained agent. Ask Julian for the weights file."
             )
+            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")

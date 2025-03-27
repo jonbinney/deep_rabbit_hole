@@ -5,11 +5,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from agents.core import SelfRegisteringAgent
+from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
 
-class AbstractTrainableAgent(SelfRegisteringAgent):
+class AbstractTrainableAgent(Agent):
     """Base class for trainable agents using neural networks."""
 
     def __init__(self, board_size, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, gamma=0.99):
