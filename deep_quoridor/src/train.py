@@ -43,11 +43,15 @@ class TrainingStatusRenderer(Renderer):
 
 
 class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, path: str, agents: list[AbstractTrainableAgent]):
+    def __init__(
+        self, update_every: int, path: str, board_size: int, max_walls: int, agents: list[AbstractTrainableAgent]
+    ):
         self.agents = agents
         self.update_every = update_every
         self.path = path
         self.episode_count = 0
+        self.board_size = board_size
+        self.max_walls = max_walls
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 and self.episode_count > 0:
@@ -60,7 +64,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
     def _save_models(self, suffix: str):
         for agent in self.agents:
             agent_name = agent.name()
-            save_file = os.path.join(self.path, f"{agent_name}{suffix}.pt")
+            save_file = os.path.join(self.path, f"{agent_name}_B{self.board_size}W{self.max_walls}{suffix}.pt")
             agent.save_model(save_file)
             print(f"{agent_name} Model saved to {save_file}")
 
@@ -102,6 +106,7 @@ def train_dqn(
     agent1 = RandomAgent()
     agent2 = DExpAgent(
         board_size,
+        max_walls,
         epsilon_decay=epsilon_decay,
         batch_size=batch_size,
         update_target_every=update_target_every,
@@ -110,9 +115,7 @@ def train_dqn(
     agent2.training_mode = True
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
-        update_every=save_frequency,
-        path=save_path,
-        agents=[agent2],
+        update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
     )
     print_plugin = TrainingStatusRenderer(
         update_every=100,
