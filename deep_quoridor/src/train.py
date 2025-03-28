@@ -109,8 +109,6 @@ def train_dqn(
         save_frequency: How often to save the model (in episodes)
         step_rewards: Whether to use step rewards
     """
-    # Set random seed for reproducibility
-    set_deterministic(42)
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
