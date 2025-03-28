@@ -157,6 +157,13 @@ if __name__ == "__main__":
         default=False,
         help="Assign negative reward when agent loses",
     )
+    parser.add_argument(
+        "-i",
+        "--seed",
+        type=int,
+        default=42,
+        help="Initializes the random seed for the training. Default is 42",
+    )
 
     args = parser.parse_args()
 
@@ -168,7 +175,10 @@ if __name__ == "__main__":
     print(f"Using step rewards: {args.step_rewards}")
     print(f"Assign negative reward: {args.assign_negative_reward}")
     print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
+    print(f"Initializing random seed {args.seed}")
 
+    # Set random seed for reproducibility
+    set_deterministic(args.seed)
     train_dqn(
         episodes=args.episodes,
         batch_size=args.batch_size,
