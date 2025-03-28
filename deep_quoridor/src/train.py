@@ -1,10 +1,8 @@
 import argparse
 import os
-import random
 
-import gymnasium.utils.seeding
-import numpy as np
 import torch
+import utils
 from agents.dexp import DExpAgent
 from agents.flat_dqn import AbstractTrainableAgent
 from agents.random import RandomAgent
@@ -65,17 +63,6 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
             save_file = os.path.join(self.path, f"{agent_name}{suffix}.pt")
             agent.save_model(save_file)
             print(f"{agent_name} Model saved to {save_file}")
-
-
-def set_deterministic(seed=42):
-    """Sets all random seeds for deterministic behavior."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    gymnasium.utils.seeding.np_random(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 def train_dqn(
@@ -185,7 +172,7 @@ if __name__ == "__main__":
     print(f"Initializing random seed {args.seed}")
 
     # Set random seed for reproducibility
-    set_deterministic(args.seed)
+    utils.set_deterministic(args.seed)
     train_dqn(
         episodes=args.episodes,
         batch_size=args.batch_size,
