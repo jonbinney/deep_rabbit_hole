@@ -1,13 +1,8 @@
 import time
-from dataclasses import dataclass
 from threading import Thread
 from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
-from quoridor_env import env
-
-from agents import Agent, AgentRegistry
-from agents.replay import ReplayAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
 from quoridor_env import env
 from renderers import PygameRenderer
