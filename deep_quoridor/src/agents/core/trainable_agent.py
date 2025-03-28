@@ -12,13 +12,26 @@ from agents.core.replay_buffer import ReplayBuffer
 class AbstractTrainableAgent(Agent):
     """Base class for trainable agents using neural networks."""
 
-    def __init__(self, board_size, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, gamma=0.99):
+    def __init__(
+        self,
+        board_size,
+        epsilon=1.0,
+        epsilon_min=0.01,
+        epsilon_decay=0.995,
+        gamma=0.99,
+        batch_size=64,
+        update_target_every=100,
+        assing_negative_reward=False,
+    ):
         super().__init__()
         self.board_size = board_size
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.gamma = gamma
+        self.batch_size = batch_size
+        self.update_target_every = update_target_every
+        self.assign_negative_reward = assing_negative_reward
 
         self.action_size = self._calculate_action_size()
 
@@ -47,14 +60,12 @@ class AbstractTrainableAgent(Agent):
         self.player_id = None
         self.games_count = 0
 
-    def is_learning_agent(self):
+    def is_trainable(self):
         return True
-
-    def set_update_target_every(self, update_target_every: int):
-        self.update_target_every = update_target_every
 
     def start_game(self, game, player_id):
         self.reset_match_related_info()
+        self.player_id = player_id
 
     def end_game(self, game):
         """Store episode results and reset tracking"""
@@ -63,22 +74,23 @@ class AbstractTrainableAgent(Agent):
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
 
-    def handle_step(self, observation_before_action, action, game):
+    def handle_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode:
-            print("Agent is not in training mode. Skipping step.")
             return
-        state_before_action = self.observation_to_tensor(observation_before_action)
-        state_after_action = self.observation_to_tensor(game.observe(self.player_id))
-        reward = game.reward(self.player_id)
-        done = game.is_done()
-        self.current_match_reward += reward
+        reward = game.rewards[self.player_id]
 
         # Handle end of episode
-        if action is None and len(self.replay_buffer) > 0:
-            last = self.replay_buffer.get_last()
-            last[2] = reward  # update final reward
-            last[4] = 1.0  # mark as done
+        if action is None:
+            if self.assign_negative_reward and len(self.replay_buffer) > 0:
+                last = self.replay_buffer.get_last()
+                last[2] = reward  # update final reward
+                last[4] = 1.0  # mark as done
             return
+
+        state_before_action = self.observation_to_tensor(observation_before_action)
+        state_after_action = self.observation_to_tensor(game.observe(self.player_id))
+        done = game.is_done()
+        self.current_match_reward += reward
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),

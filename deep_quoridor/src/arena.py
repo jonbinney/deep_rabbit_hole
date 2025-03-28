@@ -34,6 +34,8 @@ class Arena:
             "player_0": agent1,
             "player_1": agent2,
         }
+        for p, a in agents.items():
+            a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
 
         start_time = time.time()
@@ -43,20 +45,16 @@ class Arena:
             agent = agents[player_id]
 
             if termination or truncation:
-                if agent.is_learning_agent() and agent.training_mode and self.assign_negative_reward:
-                    # Handle end of game training update with negative reward
-                    agent.train_step(observation, None, self.game.rewards[player_id], None, True)
+                if agent.is_trainable():
+                    # Handle end of game (in case winner was not this agent)
+                    agent.handle_step_outcome(observation, None, self.game)
                 break
 
             action = int(agent.get_action(self.game))
             self.game.step(action)
 
-            if agent.is_trainable() and agent.training_mode:
-                state = observation
-                next_observation = self.game.observe(player_id)
-                next_state = next_observation
-                done = termination or truncation
-                agent.train_step(state, action, self.game.rewards[player_id], next_state, done)
+            if agent.is_trainable():
+                agent.handle_step_outcome(observation, action, self.game)
 
             self.plugins.action(self.game, step, player_id, action)
             step += 1
@@ -71,6 +69,8 @@ class Arena:
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,
         )
+        for p, a in agents.items():
+            a.end_game(self.game)
         self.plugins.end_game(self.game, result)
 
         self.game.close()

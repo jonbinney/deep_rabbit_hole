@@ -11,11 +11,11 @@ class Agent:
     def name(self) -> str:
         return Agent._friendly_name(self.__class__.__name__)
 
-    def is_learning_agent(self) -> bool:
+    def is_trainable(self) -> bool:
         """Returns True if the agent is a learning agent, False otherwise."""
         return False
 
-    def start_game(self, game):
+    def start_game(self, game, player_id):
         """This method is called when a new game starts.
         It allows the agent to reset its state if needed.
         """

@@ -68,4 +68,4 @@ if __name__ == "__main__":
     arena_args = {k: v for k, v in arena_args.items() if v is not None}
     arena = Arena(**arena_args)
 
-    arena.play_games(renderers, players, args.times)
+    arena.play_games(players, args.times)

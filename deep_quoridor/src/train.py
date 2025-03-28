@@ -53,12 +53,18 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 and self.episode_count > 0:
-            for agent in self.agents:
-                agent_name = agent.name()
-                save_file = os.path.join(self.path, f"{agent.name()}_episode_{self.episode_count}.pt")
-                agent.save_model(save_file)
-                print(f"{agent_name} Model saved to {save_file}")
+            self._save_models(f"_episode_{self.episode_count}")
         self.episode_count += 1
+
+    def end_arena(self, game, results):
+        self._save_models("_final")
+
+    def _save_models(self, suffix: str):
+        for agent in self.agents:
+            agent_name = agent.name()
+            save_file = os.path.join(self.path, f"{agent_name}{suffix}.pt")
+            agent.save_model(save_file)
+            print(f"{agent_name} Model saved to {save_file}")
 
 
 def set_deterministic(seed=42):
@@ -109,9 +115,14 @@ def train_dqn(
     os.makedirs(save_path, exist_ok=True)
 
     agent1 = RandomAgent()
-    agent2 = DExpAgent(board_size, epsilon_decay=epsilon_decay, batch_size=batch_size)
+    agent2 = DExpAgent(
+        board_size,
+        epsilon_decay=epsilon_decay,
+        batch_size=batch_size,
+        update_target_every=update_target_every,
+        assing_negative_reward=assign_negative_reward,
+    )
     agent2.training_mode = True
-    agent2.set_update_target_every(update_target_every)
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
         update_every=save_frequency,
@@ -127,8 +138,6 @@ def train_dqn(
         board_size=board_size,
         max_walls=max_walls,
         step_rewards=step_rewards,
-        training=True,
-        assign_negative_reward=assign_negative_reward,
         renderers=[print_plugin],
         plugins=[save_plugin],
     )
