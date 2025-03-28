@@ -22,6 +22,7 @@ class Renderer(ArenaPlugin):
 
 
 from renderers.arena_results import ArenaResultsRenderer  # noqa: E402, F401
+from renderers.arena_results2 import ArenaResults2Renderer  # noqa: E402, F401
 from renderers.curses_board import CursesBoardRenderer  # noqa: E402, F401
 from renderers.match_results import MatchResultsRenderer  # noqa: E402, F401
 from renderers.none import NoneRenderer  # noqa: E402, F401
