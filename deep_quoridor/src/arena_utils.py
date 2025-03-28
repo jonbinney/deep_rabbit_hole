@@ -1,5 +1,6 @@
-from agents import Agent
 from dataclasses import dataclass
+
+from agents import Agent
 
 
 @dataclass

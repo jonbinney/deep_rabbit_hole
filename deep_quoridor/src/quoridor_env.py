@@ -119,6 +119,12 @@ class QuoridorEnv(AECEnv):
 
         self._next_player()
 
+    def is_done(self):
+        """
+        Returns True if the game is done
+        """
+        return any(self.terminations.values())
+
     def observe(self, agent_id):
         """
         Returns the observation and action mask in a dict, like so:

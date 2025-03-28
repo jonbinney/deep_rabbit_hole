@@ -11,14 +11,24 @@ class Agent:
     def name(self) -> str:
         return Agent._friendly_name(self.__class__.__name__)
 
-    def get_action(self, game) -> int:
-        raise NotImplementedError("You must implement the get_action method")
+    def is_learning_agent(self) -> bool:
+        """Returns True if the agent is a learning agent, False otherwise."""
+        return False
 
-    def reset(self):
-        """This method is called before starting a new game for the agent
-        to have a chance to reset its state before starting.
+    def start_game(self, game):
+        """This method is called when a new game starts.
+        It allows the agent to reset its state if needed.
         """
         pass
+
+    def end_game(self, game):
+        """This method is called when a game ends.
+        It allows the agent to clean up its state if needed.
+        """
+        pass
+
+    def get_action(self, game) -> int:
+        raise NotImplementedError("You must implement the get_action method")
 
 
 class AgentRegistry:

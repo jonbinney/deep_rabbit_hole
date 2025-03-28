@@ -37,6 +37,63 @@ class AbstractTrainableAgent(Agent):
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
         self.replay_buffer = ReplayBuffer(capacity=10000)
+        self.training_mode = False
+        self.match_rewards = []
+        self.train_call_losses = []
+        self.reset_match_related_info()
+
+    def reset_match_related_info(self):
+        self.current_match_reward = 0
+        self.player_id = None
+        self.games_count = 0
+
+    def is_learning_agent(self):
+        return True
+
+    def set_update_target_every(self, update_target_every: int):
+        self.update_target_every = update_target_every
+
+    def start_game(self, game, player_id):
+        self.reset_match_related_info()
+
+    def end_game(self, game):
+        """Store episode results and reset tracking"""
+        self.match_rewards.append(self.current_match_reward)
+        self.games_count += 1
+        if (self.games_count % self.update_target_every) == 0:
+            self.update_target_network()
+
+    def handle_step(self, observation_before_action, action, game):
+        if not self.training_mode:
+            print("Agent is not in training mode. Skipping step.")
+            return
+        state_before_action = self.observation_to_tensor(observation_before_action)
+        state_after_action = self.observation_to_tensor(game.observe(self.player_id))
+        reward = game.reward(self.player_id)
+        done = game.is_done()
+        self.current_match_reward += reward
+
+        # Handle end of episode
+        if action is None and len(self.replay_buffer) > 0:
+            last = self.replay_buffer.get_last()
+            last[2] = reward  # update final reward
+            last[4] = 1.0  # mark as done
+            return
+
+        self.replay_buffer.add(
+            state_before_action.cpu().numpy(),
+            action,
+            reward,
+            state_after_action.cpu().numpy()
+            if state_after_action is not None
+            else np.zeros_like(state_before_action.cpu().numpy()),
+            float(done),
+        )
+
+        if len(self.replay_buffer) > self.batch_size:
+            loss = self.train(self.batch_size)
+            if loss is not None:
+                self.train_call_losses.append(loss)
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""

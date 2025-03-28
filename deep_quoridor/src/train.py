@@ -6,9 +6,59 @@ import gymnasium.utils.seeding
 import numpy as np
 import torch
 from agents.dexp import DExpAgent
-from agents.flat_dqn import AbstractTrainableAgent, FlatDQNAgent
+from agents.flat_dqn import AbstractTrainableAgent
 from agents.random import RandomAgent
-from quoridor_env import env
+from arena import Arena
+from arena_utils import ArenaPlugin
+from renderers import Renderer
+
+
+class PrintTrainStatusRenderer(Renderer):
+    def __init__(self, update_every: int, total_episodes: int, agents: list[AbstractTrainableAgent]):
+        self.agents = agents
+        self.update_every = update_every
+        self.total_episodes = total_episodes
+        self.episode_count = 0
+
+    def end_game(self, game, result):
+        if self.episode_count % self.update_every == 0:
+            for agent in self.agents:
+                agent_name = agent.name()
+                avg_reward = (
+                    sum(agent.match_rewards[-1 * self.update_every :])
+                    / min(self.update_every, len(agent.match_rewards))
+                    if agent.match_rewards
+                    else 0.0
+                )
+                avg_loss = (
+                    sum(agent.train_call_losses[-1 * self.update_every :])
+                    / min(self.update_every, len(agent.train_call_losses))
+                    if agent.train_call_losses
+                    else 0.0
+                )
+                print(
+                    f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Avg Reward: {avg_reward:.2f}, "
+                    f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
+                )
+        self.episode_count += 1
+        return
+
+
+class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
+    def __init__(self, update_every: int, path: str, agents: list[AbstractTrainableAgent]):
+        self.agents = agents
+        self.update_every = update_every
+        self.path = path
+        self.episode_count = 0
+
+    def end_game(self, game, result):
+        if self.episode_count % self.update_every == 0 and self.episode_count > 0:
+            for agent in self.agents:
+                agent_name = agent.name()
+                save_file = os.path.join(self.path, f"{agent.name()}_episode_{self.episode_count}.pt")
+                agent.save_model(save_file)
+                print(f"{agent_name} Model saved to {save_file}")
+        self.episode_count += 1
 
 
 def set_deterministic(seed=42):
@@ -20,28 +70,6 @@ def set_deterministic(seed=42):
     gymnasium.utils.seeding.np_random(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
-
-def update_target_network(episodes, update_target_every, agents, total_rewards, losses, episode):
-    for agent in agents:
-        if isinstance(agent, AbstractTrainableAgent):
-            agent_name = agent.name()
-            agent.update_target_network()
-            avg_reward = (
-                sum(total_rewards[agent_name][-1 * update_target_every :])
-                / min(update_target_every, len(total_rewards[agent_name]))
-                if total_rewards[agent_name]
-                else 0.0
-            )
-            avg_loss = (
-                sum(losses[agent_name][-1 * update_target_every :]) / min(update_target_every, len(losses[agent_name]))
-                if losses[agent_name]
-                else 0.0
-            )
-            print(
-                f"{agent_name} Episode {episode + 1}/{episodes}, Avg Reward: {avg_reward:.2f}, "
-                f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
-            )
 
 
 def train_dqn(
@@ -77,135 +105,35 @@ def train_dqn(
     """
     # Set random seed for reproducibility
     set_deterministic(42)
-
-    game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
-    agent1 = RandomAgent()
-    _ = FlatDQNAgent(board_size, epsilon_decay=epsilon_decay)  # noqa: F841
-    agent2 = DExpAgent(board_size, epsilon_decay=epsilon_decay)
-
-    agents = [agent1, agent2]
-
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
-    total_rewards = {a.name(): [] for a in agents}
-    losses = {a.name(): [] for a in agents}
+    agent1 = RandomAgent()
+    agent2 = DExpAgent(board_size, epsilon_decay=epsilon_decay, batch_size=batch_size)
+    agent2.training_mode = True
+    agent2.set_update_target_every(update_target_every)
 
-    # Enable to allow agents to play as P0 and P1 alternatively
-    switch_players = False
-    for episode in range(episodes):
-        game.reset()
+    save_plugin = SaveModelEveryNEpisodesPlugin(
+        update_every=save_frequency,
+        path=save_path,
+        agents=[agent2],
+    )
+    print_plugin = PrintTrainStatusRenderer(
+        update_every=save_frequency,
+        total_episodes=episodes,
+        agents=[agent2],
+    )
+    arena = Arena(
+        board_size=board_size,
+        max_walls=max_walls,
+        step_rewards=step_rewards,
+        training=True,
+        assign_negative_reward=assign_negative_reward,
+        renderers=[print_plugin],
+        plugins=[save_plugin],
+    )
 
-        agents_by_playerid = (
-            {"player_0": agent2, "player_1": agent1}
-            if switch_players and episode % 2 == 1
-            else {"player_0": agent1, "player_1": agent2}
-        )
-
-        episode_reward = {a.name(): 0 for a in agents}
-        episode_losses = {a.name(): [] for a in agents}
-
-        # Agent iteration loop
-        for player_id in game.agent_iter():
-            observation, reward, termination, truncation, _ = game.last()
-
-            agent = agents_by_playerid[player_id]
-            agent_name = agent.name()
-
-            # If the game is over, update negative reward and break the loop
-            if termination or truncation:
-                # Update the reward on the last element of the replay buffer (if there is any)
-                # marking it as final and with a large negative reward
-                if (
-                    assign_negative_reward
-                    and isinstance(agent, AbstractTrainableAgent)
-                    and len(agent.replay_buffer) > 0
-                ):
-                    last = agent.replay_buffer.get_last()
-                    last[2] = game.rewards[player_id]
-                    last[4] = 1.0
-                break
-
-            # If it's the DQN agent's turn
-            if isinstance(agent, AbstractTrainableAgent):
-                # Get current state
-                state = agent.observation_to_tensor(observation)
-
-                # Select action using epsilon-greedy
-                action = agent.get_action(game)
-
-                # Execute action
-                game.step(action)
-
-                # Get the observation and rewards for THIS agent (not the opponent)
-                # NOTE: If we used game.last() it will return the observation and rewards for the currently active agent
-                # which, since we already did game.step(), is now the opponent
-                next_observation = game.observe(player_id)
-
-                # Make the reward much larger than 1, to make it stand out
-                reward = game.rewards[player_id]
-
-                # See if the game is over
-                # TODO: Understand what is truncation and if either of these values are player dependent
-                _, _, termination, truncation, _ = game.last()
-
-                # Add to episode reward
-                episode_reward[agent_name] += reward
-
-                # Store transition in replay buffer
-                next_state = agent.observation_to_tensor(next_observation)
-                done = 1 if termination or truncation else 0
-                agent.replay_buffer.add(
-                    state.cpu().numpy(),
-                    action,
-                    reward,
-                    next_state.cpu().numpy() if next_state is not None else np.zeros_like(state.cpu().numpy()),
-                    done,
-                )
-
-                # Train the agent at every step once we have more samples that the batch size we use
-                if len(agent.replay_buffer) > batch_size:
-                    loss = agent.train(batch_size)
-                    if loss is not None:
-                        episode_losses[agent_name].append(loss)
-
-            # If it's the random opponent's turn
-            else:
-                # Get action from random agent
-                action = agent.get_action(game)
-
-                # Execute action
-                game.step(action)
-
-        # Aggregate episode statistics
-        for agent in agents:
-            agent_name = agent.name()
-            total_rewards[agent_name].append(episode_reward[agent_name])
-            if episode_losses[agent_name]:
-                avg_loss = sum(episode_losses[agent_name]) / len(episode_losses[agent_name])
-                losses[agent_name].append(avg_loss)
-
-        # Update target network periodically
-        if episode % update_target_every == 0:
-            update_target_network(episodes, update_target_every, agents, total_rewards, losses, episode)
-
-        # Save model periodically
-        if episode % save_frequency == 0 and episode > 0:
-            for agent in agents:
-                if isinstance(agent, AbstractTrainableAgent):
-                    agent_name = agent.name()
-                    save_file = os.path.join(save_path, f"{agent.name()}_episode_{episode}.pt")
-                    agent.save_model(save_file)
-                    print(f"{agent_name} Model saved to {save_file}")
-
-    # Save final models
-    for agent in agents:
-        if isinstance(agent, AbstractTrainableAgent):
-            agent_name = agent.name()
-            final_save_file = os.path.join(save_path, f"{agent.name()}_final.pt")
-            agent.save_model(final_save_file)
-            print(f"{agent_name} Final model saved to {final_save_file}")
-
+    arena.play_games(players=[agent1, agent2], times=episodes)
     return
 
 
