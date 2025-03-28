@@ -102,8 +102,8 @@ class QuoridorEnv(AECEnv):
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
-            self.rewards[agent] = 1000
-            self.rewards[self.get_opponent(agent)] = -1000
+            self.rewards[agent] = 1
+            self.rewards[self.get_opponent(agent)] = -1
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
@@ -111,13 +111,19 @@ class QuoridorEnv(AECEnv):
             agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
             (row, col) = self.positions[self.get_opponent(agent)]
             oponent_distance = self.distance_to_target(row, col, self.get_goal_row(self.get_opponent(agent)), False)
-            self.rewards[agent] = (oponent_distance - agent_distance) / (3 * self.board_size)
-            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (3 * self.board_size)
+            self.rewards[agent] = (oponent_distance - agent_distance) / (self.board_size**2)
+            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (self.board_size**2)
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
 
         self._next_player()
+
+    def is_done(self):
+        """
+        Returns True if the game is done
+        """
+        return any(self.terminations.values())
 
     def observe(self, agent_id):
         """

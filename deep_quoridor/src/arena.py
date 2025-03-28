@@ -17,12 +17,15 @@ class Arena:
         renderers: list[ArenaPlugin] = [],
         saver: Optional[ArenaPlugin] = None,
         plugins: list[ArenaPlugin] = [],
+        swap_players: bool = True,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
         self.step_rewards = step_rewards
+        self.swap_players = swap_players
         self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
+        self.renderers = renderers
         self.plugins = CompositeArenaPlugin([p for p in plugins + renderers + [saver] if p is not None])
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
@@ -31,19 +34,29 @@ class Arena:
             "player_0": agent1,
             "player_1": agent2,
         }
+        for p, a in agents.items():
+            a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
 
         start_time = time.time()
         step = 0
-        for agent in self.game.agent_iter():
-            _, _, termination, truncation, _ = self.game.last()
+        for player_id in self.game.agent_iter():
+            observation, _, termination, truncation, _ = self.game.last()
+            agent = agents[player_id]
+
             if termination or truncation:
-                action = None
+                if agent.is_trainable():
+                    # Handle end of game (in case winner was not this agent)
+                    agent.handle_step_outcome(observation, None, self.game)
                 break
 
-            action = int(agents[agent].get_action(self.game))
+            action = int(agent.get_action(self.game))
             self.game.step(action)
-            self.plugins.action(self.game, step, agent, action)
+
+            if agent.is_trainable():
+                agent.handle_step_outcome(observation, action, self.game)
+
+            self.plugins.action(self.game, step, player_id, action)
             step += 1
 
         end_time = time.time()
@@ -56,6 +69,8 @@ class Arena:
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,
         )
+        for p, a in agents.items():
+            a.end_game(self.game)
         self.plugins.end_game(self.game, result)
 
         self.game.close()
@@ -76,9 +91,9 @@ class Arena:
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
                 for t in range(times):
-                    agent_1, agent_2 = (agents[i], agents[j]) if t % 2 == 0 else (agents[j], agents[i])
-                    agent_1.reset()
-                    agent_2.reset()
+                    agent_1, agent_2 = (
+                        (agents[i], agents[j]) if not self.swap_players or t % 2 == 0 else (agents[j], agents[i])
+                    )
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                     results.append(result)
                     match_id += 1
@@ -111,8 +126,8 @@ class Arena:
 
         self.plugins.end_arena(self.game, results)
 
-    def play_games(self, renderers: list[ArenaPlugin], players: list[str | Agent], times: int):
-        pygame_renderer = next((r for r in renderers if isinstance(r, PygameRenderer)), None)
+    def play_games(self, players: list[str | Agent], times: int):
+        pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         if pygame_renderer is None:
             self._play_games(players, times)
@@ -125,8 +140,8 @@ class Arena:
             pygame_renderer.main_thread()
             thread.join()
 
-    def replay_games(self, renderers: list[ArenaPlugin], arena_data: dict, game_ids_to_replay: list[str]):
-        pygame_renderer = next((r for r in renderers if isinstance(r, PygameRenderer)), None)
+    def replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
+        pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         if pygame_renderer is None:
             self._replay_games(arena_data, game_ids_to_replay)
