@@ -105,8 +105,9 @@ def train_dqn(
 
     agent1 = RandomAgent()
     agent2 = DExpAgent(
-        board_size,
-        max_walls,
+        board_size=board_size,
+        max_walls=max_walls,
+        epsilon=1,
         epsilon_decay=epsilon_decay,
         batch_size=batch_size,
         update_target_every=update_target_every,
