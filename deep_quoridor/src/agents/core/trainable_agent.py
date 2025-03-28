@@ -56,7 +56,7 @@ class AbstractTrainableAgent(Agent):
         self.reset_episode_related_info()
 
     def reset_episode_related_info(self):
-        self.current_match_reward = 0
+        self.current_episode_reward = 0
         self.player_id = None
         self.games_count = 0
 
@@ -69,7 +69,7 @@ class AbstractTrainableAgent(Agent):
 
     def end_game(self, game):
         """Store episode results and reset tracking"""
-        self.episodes_rewards.append(self.current_match_reward)
+        self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
@@ -90,7 +90,7 @@ class AbstractTrainableAgent(Agent):
         state_before_action = self.observation_to_tensor(observation_before_action)
         state_after_action = self.observation_to_tensor(game.observe(self.player_id))
         done = game.is_done()
-        self.current_match_reward += reward
+        self.current_episode_reward += reward
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),

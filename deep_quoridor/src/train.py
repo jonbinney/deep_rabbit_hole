@@ -128,7 +128,7 @@ def train_dqn(
         agents=[agent2],
     )
     print_plugin = TrainingStatusRenderer(
-        update_every=save_frequency,
+        update_every=100,
         total_episodes=episodes,
         agents=[agent2],
     )
