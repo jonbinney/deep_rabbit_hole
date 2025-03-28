@@ -39,10 +39,10 @@ from pettingzoo.utils import wrappers
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int, max_walls: int, step_rewards: bool):
+    def __init__(self, board_size: int, max_walls: int, step_rewards: bool = False, **kwargs):
         super(AECEnv, self).__init__()
 
-        self.render_mode = "human"
+        self.render_mode = kwargs.get("render_mode", "human")
         self.step_rewards = step_rewards
 
         self.board_size = board_size  # assumed square grid
@@ -536,5 +536,8 @@ class QuoridorEnv(AECEnv):
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env(board_size: int = 9, max_walls: int = 10, step_rewards: bool = False):
-    return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls, step_rewards))
+def env(render_mode="human", **kwargs):
+    if render_mode == "human":
+        return wrappers.CaptureStdoutWrapper(QuoridorEnv(**kwargs))
+    else:
+        return QuoridorEnv(**kwargs)
