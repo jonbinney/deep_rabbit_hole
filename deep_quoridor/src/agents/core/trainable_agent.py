@@ -51,11 +51,11 @@ class AbstractTrainableAgent(Agent):
         self.criterion = self._create_criterion()
         self.replay_buffer = ReplayBuffer(capacity=10000)
         self.training_mode = False
-        self.match_rewards = []
+        self.episodes_rewards = []
         self.train_call_losses = []
-        self.reset_match_related_info()
+        self.reset_episode_related_info()
 
-    def reset_match_related_info(self):
+    def reset_episode_related_info(self):
         self.current_match_reward = 0
         self.player_id = None
         self.games_count = 0
@@ -64,12 +64,12 @@ class AbstractTrainableAgent(Agent):
         return True
 
     def start_game(self, game, player_id):
-        self.reset_match_related_info()
+        self.reset_episode_related_info()
         self.player_id = player_id
 
     def end_game(self, game):
         """Store episode results and reset tracking"""
-        self.match_rewards.append(self.current_match_reward)
+        self.episodes_rewards.append(self.current_match_reward)
         self.games_count += 1
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()

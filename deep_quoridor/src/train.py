@@ -13,7 +13,7 @@ from arena_utils import ArenaPlugin
 from renderers import Renderer
 
 
-class PrintTrainStatusRenderer(Renderer):
+class TrainingStatusRenderer(Renderer):
     def __init__(self, update_every: int, total_episodes: int, agents: list[AbstractTrainableAgent]):
         self.agents = agents
         self.update_every = update_every
@@ -25,9 +25,9 @@ class PrintTrainStatusRenderer(Renderer):
             for agent in self.agents:
                 agent_name = agent.name()
                 avg_reward = (
-                    sum(agent.match_rewards[-1 * self.update_every :])
-                    / min(self.update_every, len(agent.match_rewards))
-                    if agent.match_rewards
+                    sum(agent.episodes_rewards[-1 * self.update_every :])
+                    / min(self.update_every, len(agent.episodes_rewards))
+                    if agent.episodes_rewards
                     else 0.0
                 )
                 avg_loss = (
@@ -129,7 +129,7 @@ def train_dqn(
         path=save_path,
         agents=[agent2],
     )
-    print_plugin = PrintTrainStatusRenderer(
+    print_plugin = TrainingStatusRenderer(
         update_every=save_frequency,
         total_episodes=episodes,
         agents=[agent2],
