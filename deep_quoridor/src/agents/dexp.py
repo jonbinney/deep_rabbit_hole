@@ -25,13 +25,13 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 1024),
+            nn.Linear(flat_input_size, 512),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
+            nn.Linear(512, 512),
             nn.ReLU(),
-            nn.Linear(1024, 512),
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(512, action_size),
+            nn.Linear(256, action_size),
         )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
