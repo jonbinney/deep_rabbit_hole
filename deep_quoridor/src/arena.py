@@ -17,7 +17,7 @@ class Arena:
         renderers: list[ArenaPlugin] = [],
         saver: Optional[ArenaPlugin] = None,
         plugins: list[ArenaPlugin] = [],
-        swap_players: bool = False,
+        swap_players: bool = True,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
@@ -91,7 +91,9 @@ class Arena:
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
                 for t in range(times):
-                    agent_1, agent_2 = (agents[i], agents[j]) if t % 2 == 0 else (agents[j], agents[i])
+                    agent_1, agent_2 = (
+                        (agents[i], agents[j]) if not self.swap_players or t % 2 == 0 else (agents[j], agents[i])
+                    )
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                     results.append(result)
                     match_id += 1
