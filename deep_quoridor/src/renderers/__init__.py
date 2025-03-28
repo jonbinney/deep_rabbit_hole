@@ -1,4 +1,4 @@
-from arena import ArenaPlugin
+from arena_utils import ArenaPlugin
 
 
 class Renderer(ArenaPlugin):
@@ -27,3 +27,4 @@ from renderers.match_results import MatchResultsRenderer  # noqa: E402, F401
 from renderers.none import NoneRenderer  # noqa: E402, F401
 from renderers.progress_bar import ProgressBarRenderer  # noqa: E402, F401
 from renderers.text_board import TextBoardRenderer  # noqa: E402, F401
+from renderers.pygame import PygameRenderer  # noqa: E402, F401
