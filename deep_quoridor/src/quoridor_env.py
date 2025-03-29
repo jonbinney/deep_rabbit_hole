@@ -63,6 +63,7 @@ class QuoridorEnv(AECEnv):
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents.copy()
         self.agent_order = self.agents.copy()
+        self.last_action_mask = {a: [] for a in self.agents}
 
         self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.agents}
@@ -93,6 +94,9 @@ class QuoridorEnv(AECEnv):
         if self.terminations[agent]:
             self._next_player()
             return
+
+        if self.last_action_mask[agent][action] != 1:
+            raise RuntimeError(f"Action not allowed by mask {action}")
 
         (row, col, action_type) = self.action_index_to_params(action)
         if action_type == 0:
@@ -179,7 +183,7 @@ class QuoridorEnv(AECEnv):
         else:
             raise ValueError(f"Invalid movement from {row_a, col_a} to {row_b, col_b}")
 
-    def is_in_board(self, row, col):
+    def _is_in_board(self, row, col):
         return 0 <= row < self.board_size and 0 <= col < self.board_size
 
     def _get_action_mask(self, agent_id):
@@ -193,7 +197,7 @@ class QuoridorEnv(AECEnv):
             new_row, new_col = old_row + row, old_col + col
 
             # Check if the new position is still inside the board
-            if not self.is_in_board(new_row, new_col):
+            if not self._is_in_board(new_row, new_col):
                 continue
 
             # Check if that direction is blocked by a wall
@@ -208,7 +212,7 @@ class QuoridorEnv(AECEnv):
 
                 if (
                     # That new position falls within the board
-                    self.is_in_board(straight_row, straight_col)
+                    self._is_in_board(straight_row, straight_col)
                     # That new position is not blocked by a wall behind them
                     and not self.is_wall_between(new_row, new_col, straight_row, straight_col)
                 ):
@@ -226,7 +230,7 @@ class QuoridorEnv(AECEnv):
 
                         if (
                             # That new position falls within the board
-                            self.is_in_board(diag_row, diag_col)
+                            self._is_in_board(diag_row, diag_col)
                             # That new position is not blocked by a wall
                             and not self.is_wall_between(new_row, new_col, diag_row, diag_col)
                         ):
@@ -249,6 +253,7 @@ class QuoridorEnv(AECEnv):
                 ):
                     mask[self.action_params_to_index(row, col, orientation + 1)] = 1
 
+        self.last_action_mask[agent_id] = mask
         return mask
 
     def _is_wall_potential_block(self, row, col, orientation):
@@ -267,14 +272,14 @@ class QuoridorEnv(AECEnv):
                 touches[0] = True
 
             # On the right border or touching another horizontal wall on the right sinde
-            if (col == self.wall_size) - 1 or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
+            if (col == self.wall_size - 1) or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
                 touches[2] = True
 
             # Check for vertical walls touching it
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 0]:
-                        touches[c - left] = True
+                        touches[c - col + 1] = True
         else:  # Vertical
             # On the top border or touching another verticall wall on top
             if (row == 0) or (row >= 2 and self.walls[row - 2, col, 0] == 1):
@@ -288,7 +293,7 @@ class QuoridorEnv(AECEnv):
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 1]:
-                        touches[r - top] = True
+                        touches[r - row + 1] = True
 
         return sum(touches) > 1
 
@@ -490,7 +495,7 @@ class QuoridorEnv(AECEnv):
         best = -1
         for new_row, new_col in moves:
             if (
-                self.is_in_board(new_row, new_col)
+                self._is_in_board(new_row, new_col)
                 and not self.is_wall_between(row, col, new_row, new_col)
                 and not visited[new_row, new_col]
             ):
