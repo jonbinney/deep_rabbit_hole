@@ -1,28 +1,62 @@
-"""Uses Stable-Baselines3 to train agents in the Connect Four environment using invalid action masking.
+"""Uses Stable-Baselines3 to train agents in the Quoridor environment using invalid action masking.
 
 For information about invalid action masking in PettingZoo, see https://pettingzoo.farama.org/api/aec/#action-masking
 For more information about invalid action masking in SB3, see https://sb3-contrib.readthedocs.io/en/master/modules/ppo_mask.html
 
-Author: Elliot (https://github.com/elliottower)
+Taken from Author: Elliot (https://github.com/elliottower)
+
+TODO:
+ - Make it work without flattening the observation space
+ - Write down necessary hack for this to work at all or find a better solution
+ - Make it possible to render the test plays
+ - Integrate as an agent on our LLL environment
+ - Learn about PPO and improve model params
+ - (future) Implement a Maskable DQN
 """
 
-import functools
 import glob
 import os
 import time
-from typing import override
 
-import numpy as np
 import pettingzoo.utils
 import quoridor_env
+import torch
 from gymnasium import spaces
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.torch_layers import FlattenExtractor
+
+
+class DictFlattenExtractor(FlattenExtractor):
+    """
+    This class is necessary because the default FlattenExtractor does not work with dict spaces.
+    It just tries to call "flatten" directly which of course doesn't exist on a dict.
+    NOTE: It is important to be careful to not flatten the batch dimension (first one).
+    """
+
+    def __init__(self, observation_space: spaces.Box):
+        super().__init__(observation_space)
+
+    def forward(self, obs: dict) -> torch.Tensor:
+        thobs = torch.tensor([], device=list(obs.values())[0].device)
+        for v in obs.values():
+            thobs = torch.cat((thobs, torch.tensor(v).flatten(start_dim=1)), dim=1)
+        return thobs
 
 
 class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
-    """Wrapper to allow PettingZoo environments to be used with SB3 illegal action masking."""
+    """
+    Wrapper to allow PettingZoo environments to be used with SB3 illegal action masking.
+    In particular it adapts PettingZoo, since the Action Masking part of it is already implemented
+    in SB3_contrib as the MaskablePPO.
+    The required changes are minor:
+    - Present observation_space and action_space as props instead of methods
+    - return last() on step()
+    - return observation on reset()
+    - return only the observation (not the action mask) in observe()
+    - provide a method to get to the action mask
+    """
 
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
@@ -31,12 +65,9 @@ class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
         """
         super().reset(seed, options)
 
-        # Strip the action mask out from the observation space
-        self.observation_space = spaces.Box(
-            0,
-            2,
-            (self.unwrapped.board_size**2 + 2 * (self.unwrapped.board_size - 1) ** 2 + 2,),
-        )
+        # SB3 needs observation and action spaces as props instead of methods (?)
+        full_observation = super().observation_space(self.possible_agents[0])
+        self.observation_space = full_observation["observation"]
         self.action_space = super().action_space(self.possible_agents[0])
 
         # Return initial observation, info (PettingZoo AEC envs do not by default)
@@ -50,15 +81,16 @@ class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
         obs = super().observe(agent)["observation"]
-        # Take obs, which is a dict with some arrays, and convert it to a flat numpy array
-        return np.concatenate(
-            [
-                obs["board"].flatten(),
-                obs["walls"][0].flatten(),
-                obs["walls"][1].flatten(),
-                [obs["my_walls_remaining"], obs["opponent_walls_remaining"]],
-            ]
-        )
+        # # Take obs, which is a dict with some arrays, and convert it to a flat numpy array
+        # return np.concatenate(
+        #     [
+        #         obs["board"].flatten(),
+        #         obs["walls"][0].flatten(),
+        #         obs["walls"][1].flatten(),
+        #         [obs["my_walls_remaining"], obs["opponent_walls_remaining"]],
+        #     ]
+        # )
+        return obs
 
     def action_mask(self):
         """Separate function used in order to access the action mask."""
@@ -88,7 +120,8 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
     # a new action_mask_fn kwarg, as it did in an earlier draft.
-    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
+    policy_kwargs = {"features_extractor_class": DictFlattenExtractor}
+    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs)
     model.set_random_seed(seed)
     model.learn(total_timesteps=steps)
 
