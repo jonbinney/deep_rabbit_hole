@@ -1,5 +1,6 @@
 import argparse
 
+import utils
 from agents import AgentRegistry
 from arena import Arena
 from arena_yaml_recorder import ArenaYAMLRecorder
@@ -47,7 +48,17 @@ if __name__ == "__main__":
         help="Save the played games to a file. Use 'None' to disable saving.",
     )
 
+    parser.add_argument(
+        "-i",
+        "--seed",
+        type=int,
+        default=42,
+        help="Initializes the random seed for the training. Default is 42",
+    )
+
     args = parser.parse_args()
+
+    utils.set_deterministic(args.seed)
 
     renderers = [Renderer.create(r) for r in args.renderers]
 

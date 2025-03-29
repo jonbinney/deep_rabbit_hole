@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -28,13 +25,13 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 512),
+            nn.Linear(flat_input_size, 1024),
             nn.ReLU(),
-            nn.Linear(512, 512),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.Linear(512, 256),
+            nn.Linear(1024, 512),
             nn.ReLU(),
-            nn.Linear(256, action_size),
+            nn.Linear(512, action_size),
         )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
@@ -72,14 +69,6 @@ class DExpPretrainedAgent(DExpAgent):
     A DExpAgent that is initialized with the pre-trained model from main.py.
     """
 
-    def __init__(self, board_size, **kwargs):
-        super().__init__(board_size, epsilon=0.0)
-        model_path = Path(__file__).resolve().parents[3] / "models" / "dexp_final.pt"
-        if os.path.exists(model_path):
-            print(f"Loading pre-trained model from {model_path}")
-            self.load_model(model_path)
-        else:
-            print(
-                f"Warning: Model file {model_path} not found, using untrained agent. Ask Julian for the weights file."
-            )
-            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.load_pretrained_file()

@@ -1,4 +1,6 @@
+import os
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -15,7 +17,8 @@ class AbstractTrainableAgent(Agent):
     def __init__(
         self,
         board_size,
-        epsilon=1.0,
+        max_walls,
+        epsilon=0,
         epsilon_min=0.01,
         epsilon_decay=0.995,
         gamma=0.99,
@@ -25,6 +28,7 @@ class AbstractTrainableAgent(Agent):
     ):
         super().__init__()
         self.board_size = board_size
+        self.max_walls = max_walls
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
@@ -227,3 +231,14 @@ class AbstractTrainableAgent(Agent):
         """Load the model from disk."""
         self.online_network.load_state_dict(torch.load(path))
         self.update_target_network()
+
+    def load_pretrained_file(self):
+        filename = (
+            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_final.pt"
+        )
+        model_path = Path(__file__).resolve().parents[4] / "models" / filename
+        if os.path.exists(model_path):
+            print(f"Loading pre-trained model from {model_path}")
+            self.load_model(model_path)
+        else:
+            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
