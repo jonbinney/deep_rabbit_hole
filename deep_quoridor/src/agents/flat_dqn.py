@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -63,14 +60,6 @@ class Pretrained01FlatDQNAgent(FlatDQNAgent):
     A FlatDQNAgent that is initialized with the pre-trained model from main.py.
     """
 
-    def __init__(self, board_size, **kwargs):
-        super().__init__(board_size, epsilon=0.0)
-        model_path = Path(__file__).resolve().parents[3] / "models" / "flatdqn_final.pt"
-        if os.path.exists(model_path):
-            print(f"Loading pre-trained model from {model_path}")
-            self.load_model(model_path)
-        else:
-            print(
-                f"Warning: Model file {model_path} not found, using untrained agent. Ask Julian for the weights file."
-            )
-            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.load_pretrained_file()

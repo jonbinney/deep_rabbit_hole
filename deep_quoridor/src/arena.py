@@ -86,7 +86,7 @@ class Arena:
             if isinstance(p, Agent):
                 agents.append(p)
             else:
-                agents.append(AgentRegistry.create(p, board_size=self.board_size))
+                agents.append(AgentRegistry.create(p, board_size=self.board_size, max_walls=self.max_walls))
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
