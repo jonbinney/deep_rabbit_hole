@@ -55,7 +55,8 @@ def parse_board(board):
                     env.place_wall("player_0", (row_n - 1, col_n), 1)
 
                 if ch == ">" or ch == "-":
-                    forbidden_walls.append((row_n - 1, col_n, 1))
+                    if col_n < size - 1:
+                        forbidden_walls.append((row_n - 1, col_n, 1))
 
             col_positions = {}
 
@@ -65,7 +66,8 @@ def parse_board(board):
                     continue
 
                 if ch == "v" or ch == "|":
-                    forbidden_walls.append((row_n, col_n - 1, 0))
+                    if row_n < size - 1:
+                        forbidden_walls.append((row_n, col_n - 1, 0))
                     if ch == "|" and not env.is_wall_between(row_n, col_n - 1, row_n, col_n):
                         env.place_wall("player_0", (row_n, col_n - 1), 0)
                     continue
