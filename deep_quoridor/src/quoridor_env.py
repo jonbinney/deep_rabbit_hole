@@ -182,6 +182,9 @@ class QuoridorEnv(AECEnv):
     def _is_in_board(self, row, col):
         return 0 <= row < self.board_size and 0 <= col < self.board_size
 
+    def is_in_board(self, row, col):
+        return 0 <= row < self.board_size and 0 <= col < self.board_size
+
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
         mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
