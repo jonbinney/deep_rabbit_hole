@@ -37,13 +37,14 @@ class Arena:
         for p, a in agents.items():
             a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
-
+        show = False
         start_time = time.time()
         step = 0
         for player_id in self.game.agent_iter():
             observation, _, termination, truncation, _ = self.game.last()
             agent = agents[player_id]
-
+            if show:
+                print(self.game.render())
             if termination or truncation:
                 if agent.is_trainable():
                     # Handle end of game (in case winner was not this agent)

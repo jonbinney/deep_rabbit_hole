@@ -1,5 +1,3 @@
-import pytest
-
 from deep_quoridor.src.quoridor_env import env as quoridor_env
 
 
@@ -102,7 +100,7 @@ class TestQuoridorEnv:
 
         assert env_moves == potential_moves
 
-    def _test_wall_placements(self, s):
+    def _test_wall_placements(self, s, just_highlighted=False):
         env, _, forbidden_walls = parse_board(s)
         N = env.board_size
         env.render()
@@ -115,7 +113,11 @@ class TestQuoridorEnv:
 
                 env_walls.append((row, col, action_type - 1))
 
-        assert set(env_walls) == set(forbidden_walls)
+        if just_highlighted:
+            diff = set(forbidden_walls).difference(set(env_walls))
+            assert diff
+        else:
+            assert set(env_walls) == set(forbidden_walls)
 
     def _test_distance_to_target(self, s, moves_p1, moves_p2):
         env, _, _ = parse_board(s)
@@ -342,3 +344,18 @@ class TestQuoridorEnv:
             . . . . . .
             . . 2 . . .
         """)
+
+        self._test_wall_placements(
+            """
+            . 1 . . .
+              -+-
+            . . . . .
+              -+- -+-
+            .|. 2 . .
+                -+-
+            .|. .|.|.
+             >
+            . . .|.|.
+        """,
+            True,
+        )

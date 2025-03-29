@@ -34,6 +34,8 @@ class TrainingStatusRenderer(Renderer):
                     if agent.train_call_losses
                     else 0.0
                 )
+                if self.episode_count == 14:
+                    print("Aa")
                 print(
                     f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Avg Reward: {avg_reward:.2f}, "
                     f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
@@ -119,7 +121,7 @@ def train_dqn(
         update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
     )
     print_plugin = TrainingStatusRenderer(
-        update_every=100,
+        update_every=1,
         total_episodes=episodes,
         agents=[agent2],
     )

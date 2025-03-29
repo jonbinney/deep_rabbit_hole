@@ -157,16 +157,25 @@ class AbstractTrainableAgent(Agent):
         """Select a random action from valid actions."""
         return np.random.choice(valid_actions)
 
+    def convert_action_mask_to_tensor(self, mask):
+        return torch.tensor(mask, dtype=torch.float32, device=self.device)
+
+    def convert_to_action_from_tensor_index(self, action_index_in_tensor):
+        return action_index_in_tensor
+
     def _get_best_action(self, observation, mask):
         """Get the best action based on Q-values."""
         state = self.observation_to_tensor(observation)
         with torch.no_grad():
             q_values = self.online_network(state)
 
-        mask_tensor = torch.tensor(mask, dtype=torch.float32, device=self.device)
+        mask_tensor = self.convert_action_mask_to_tensor(mask)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
 
-        return torch.argmax(q_values).item()
+        selected_action = torch.argmax(q_values).item()
+        idx = self.convert_to_action_from_tensor_index(selected_action)
+        assert mask[idx] == 1
+        return idx
 
     def train(self, batch_size):
         """Train the network on a batch of samples."""
