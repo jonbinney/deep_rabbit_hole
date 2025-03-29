@@ -147,8 +147,20 @@ class Board:
         """
         assert is_valid_position_type(position1)
         assert is_valid_position_type(position2)
-        wall_position = position1 + position2
-        return self._grid[*wall_position] == Board.PLAYER1_WALL
+        assert np.sum(np.abs(position1 - position2)) == 1, "Positions must be adjacent"
+
+        position1_on_board = self.is_position_on_board(position1)
+        position2_on_board = self.is_position_on_board(position2)
+        assert position1_on_board or position2_on_board, "At least one position must be on the board"
+
+        if position1_on_board and position2_on_board:
+            wall_position = position1 + position2
+            return self._grid[*wall_position] == Board.PLAYER1_WALL
+        else:
+            # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
+            # players are allowed to jump diagonally if they are adjacent to another player and the border of the
+            # board is on the other side of that player.
+            return True
 
     def is_position_on_board(self, position: Position) -> bool:
         assert is_valid_position_type(position)
