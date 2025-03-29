@@ -20,7 +20,7 @@ class GreedyAgent(Agent):
         first move, you can't easily use this because you'd need to generate a new action_mask
         """
         movement_mask = action_mask[: game.board_size**2]
-        valid_moves = [i for i, x in enumerate(movement_mask) if x == 1]
+        valid_moves = np.argwhere(movement_mask == 1).reshape(-1)
         return [game.action_index_to_params(i)[:2] for i in valid_moves]
 
     def _next_moves(self, game, pos: Position) -> list[Position]:
@@ -98,9 +98,9 @@ class GreedyAgent(Agent):
         return shortest_path
 
     def _get_opponent_position(self, game, board: np.ndarray) -> Position:
-        coords = tuple(int(x[0]) for x in np.where(board == 2))
-        assert len(coords) == 2, "Expected exactly one opponent position"
-        return coords
+        coords = np.argwhere(board == 2)
+        assert len(coords) == 1, "Expected exactly one opponent position"
+        return (int(coords[0][0]), int(coords[0][1]))
 
     def _get_block_action(self, game, opponent_shortest_path: list[Position], action_mask: np.ndarray):
         for p0, p1 in zip(opponent_shortest_path, opponent_shortest_path[1:]):
