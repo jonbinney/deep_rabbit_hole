@@ -272,14 +272,14 @@ class QuoridorEnv(AECEnv):
                 touches[0] = True
 
             # On the right border or touching another horizontal wall on the right sinde
-            if (col == self.wall_size) - 1 or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
+            if (col == self.wall_size - 1) or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
                 touches[2] = True
 
             # Check for vertical walls touching it
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 0]:
-                        touches[c - left] = True
+                        touches[c - col + 1] = True
         else:  # Vertical
             # On the top border or touching another verticall wall on top
             if (row == 0) or (row >= 2 and self.walls[row - 2, col, 0] == 1):
@@ -293,7 +293,7 @@ class QuoridorEnv(AECEnv):
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 1]:
-                        touches[r - top] = True
+                        touches[r - row + 1] = True
 
         return sum(touches) > 1
 

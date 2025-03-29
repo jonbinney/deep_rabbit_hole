@@ -115,7 +115,7 @@ class TestQuoridorEnv:
 
         if just_highlighted:
             diff = set(forbidden_walls).difference(set(env_walls))
-            assert diff
+            assert not diff
         else:
             assert set(env_walls) == set(forbidden_walls)
 
@@ -354,7 +354,7 @@ class TestQuoridorEnv:
             .|. 2 . .
                 -+-
             .|. .|.|.
-             >
+            >
             . . .|.|.
         """,
             True,
