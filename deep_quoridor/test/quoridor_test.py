@@ -111,7 +111,7 @@ class TestQuoridor:
                 if game.is_action_valid(MoveAction(position)):
                     game_moves.append(position)
 
-        assert [game_move == potential_move for game_move, potential_move in zip(game_moves, potential_moves)]
+        np.testing.assert_equal(np.array(game_moves), np.array(potential_moves))
 
     def _test_wall_placements(self, s):
         game, _, forbidden_walls = parse_board(s)
@@ -230,6 +230,12 @@ class TestQuoridor:
              -+-
            . . . .
            . . . .
+        """)
+
+        self._test_pawn_movements("""
+            . * .
+            * 1 *
+            * 2 *
         """)
 
     def test_forbidden_walls(self):
