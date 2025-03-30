@@ -1,5 +1,3 @@
-import pytest
-
 from deep_quoridor.src.quoridor_env import env as quoridor_env
 
 
@@ -57,7 +55,8 @@ def parse_board(board):
                     env.place_wall("player_0", (row_n - 1, col_n), 1)
 
                 if ch == ">" or ch == "-":
-                    forbidden_walls.append((row_n - 1, col_n, 1))
+                    if col_n < size - 1:
+                        forbidden_walls.append((row_n - 1, col_n, 1))
 
             col_positions = {}
 
@@ -67,7 +66,8 @@ def parse_board(board):
                     continue
 
                 if ch == "v" or ch == "|":
-                    forbidden_walls.append((row_n, col_n - 1, 0))
+                    if row_n < size - 1:
+                        forbidden_walls.append((row_n, col_n - 1, 0))
                     if ch == "|" and not env.is_wall_between(row_n, col_n - 1, row_n, col_n):
                         env.place_wall("player_0", (row_n, col_n - 1), 0)
                     continue
@@ -102,7 +102,7 @@ class TestQuoridorEnv:
 
         assert env_moves == potential_moves
 
-    def _test_wall_placements(self, s):
+    def _test_wall_placements(self, s, just_highlighted=False):
         env, _, forbidden_walls = parse_board(s)
         N = env.board_size
         env.render()
@@ -115,7 +115,11 @@ class TestQuoridorEnv:
 
                 env_walls.append((row, col, action_type - 1))
 
-        assert set(env_walls) == set(forbidden_walls)
+        if just_highlighted:
+            diff = set(forbidden_walls).difference(set(env_walls))
+            assert not diff
+        else:
+            assert set(env_walls) == set(forbidden_walls)
 
     def _test_distance_to_target(self, s, moves_p1, moves_p2):
         env, _, _ = parse_board(s)
@@ -342,3 +346,18 @@ class TestQuoridorEnv:
             . . . . . .
             . . 2 . . .
         """)
+
+        self._test_wall_placements(
+            """
+            . 1 . . .
+              -+-
+            . . . . .
+              -+- -+-
+            .|. 2 . .
+                -+-
+            .|. .|.|.
+            >
+            . . .|.|.
+        """,
+            True,
+        )
