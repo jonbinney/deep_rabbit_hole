@@ -1,10 +1,11 @@
 from queue import Queue
+from typing import TypeAlias
 
 import numpy as np
 
 from agents.core import Agent
 
-type Position = tuple[int, int]
+Position: TypeAlias = tuple[int, int]
 
 
 class GreedyAgent(Agent):

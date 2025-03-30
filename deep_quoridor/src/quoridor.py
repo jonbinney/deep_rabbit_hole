@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from enum import IntEnum, unique
+from typing import TypeAlias
 
 import numpy as np
 
-type Position = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
+Position: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
 
 
 @unique
