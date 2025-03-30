@@ -63,6 +63,7 @@ class QuoridorEnv(AECEnv):
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents.copy()
         self.agent_order = self.agents.copy()
+        self.last_action_mask = {a: [] for a in self.agents}
 
         self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.agents}
@@ -93,6 +94,9 @@ class QuoridorEnv(AECEnv):
         if self.terminations[agent]:
             self._next_player()
             return
+
+        if self.last_action_mask[agent][action] != 1:
+            raise RuntimeError(f"Action not allowed by mask {action}")
 
         (row, col, action_type) = self.action_index_to_params(action)
         if action_type == 0:
@@ -249,6 +253,7 @@ class QuoridorEnv(AECEnv):
                 ):
                     mask[self.action_params_to_index(row, col, orientation + 1)] = 1
 
+        self.last_action_mask[agent_id] = mask
         return mask
 
     def _is_wall_potential_block(self, row, col, orientation):
@@ -267,14 +272,14 @@ class QuoridorEnv(AECEnv):
                 touches[0] = True
 
             # On the right border or touching another horizontal wall on the right sinde
-            if (col == self.wall_size) - 1 or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
+            if (col == self.wall_size - 1) or (col < self.wall_size - 2 and self.walls[row, col + 2, 1] == 1):
                 touches[2] = True
 
             # Check for vertical walls touching it
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 0]:
-                        touches[c - left] = True
+                        touches[c - col + 1] = True
         else:  # Vertical
             # On the top border or touching another verticall wall on top
             if (row == 0) or (row >= 2 and self.walls[row - 2, col, 0] == 1):
@@ -288,7 +293,7 @@ class QuoridorEnv(AECEnv):
             for r in range(top, bottom + 1):
                 for c in range(left, right + 1):
                     if self.walls[r, c, 1]:
-                        touches[r - top] = True
+                        touches[r - row + 1] = True
 
         return sum(touches) > 1
 
