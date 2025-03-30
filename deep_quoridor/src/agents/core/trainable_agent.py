@@ -238,6 +238,7 @@ class AbstractTrainableAgent(Agent):
 
     def load_model(self, path):
         """Load the model from disk."""
+        print(f"Loading pre-trained model from {path}")
         self.online_network.load_state_dict(torch.load(path))
         self.update_target_network()
 
@@ -247,7 +248,6 @@ class AbstractTrainableAgent(Agent):
         )
         model_path = Path(__file__).resolve().parents[4] / "models" / filename
         if os.path.exists(model_path):
-            print(f"Loading pre-trained model from {model_path}")
             self.load_model(model_path)
         else:
             raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
