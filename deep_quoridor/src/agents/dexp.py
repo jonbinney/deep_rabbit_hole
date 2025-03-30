@@ -68,7 +68,7 @@ class DExpAgent(AbstractTrainableAgent):
     def convert_action_mask_to_tensor(self, mask):
         """Convert action mask to tensor, rotating it for player_1."""
         if self.player_id == "player_0":
-            return super().convert_action_mask_to_tensor(mask)
+            return torch.tensor(mask, dtype=torch.float32, device=self.device)
         total_actions = self.board_size * self.board_size  # Movement actions
         wall_actions = (self.board_size - 1) ** 2  # Actions for each wall type
 

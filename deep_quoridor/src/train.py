@@ -3,9 +3,8 @@ import os
 
 import torch
 import utils
-from agents.dexp import DExpAgent
+from agents import DExpAgent, GreedyAgent
 from agents.flat_dqn import AbstractTrainableAgent
-from agents.random import RandomAgent
 from arena import Arena
 from arena_utils import ArenaPlugin
 from renderers import Renderer
@@ -105,17 +104,19 @@ def train_dqn(
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
-    agent1 = RandomAgent()
+    agent1 = GreedyAgent()
     agent2 = DExpAgent(
         board_size=board_size,
         max_walls=max_walls,
-        epsilon=1,
+        epsilon=0.8,
         epsilon_decay=epsilon_decay,
+        gamma=0.9,
         batch_size=batch_size,
         update_target_every=update_target_every,
         assing_negative_reward=assign_negative_reward,
     )
     agent2.training_mode = True
+    agent2.load_model("models/dexp_B5W0_base.pt")
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
         update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
@@ -131,9 +132,10 @@ def train_dqn(
         step_rewards=step_rewards,
         renderers=[print_plugin],
         plugins=[save_plugin],
+        swap_players=True,
     )
 
-    arena.play_games(players=[agent1, agent2], times=episodes)
+    arena.play_games(players=[agent2, agent1], times=episodes)
     return
 
 
