@@ -25,7 +25,7 @@ class CursesBoardRenderer(Renderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         self.match = f"{agent1.name()} vs {agent2.name()}"
 
-    def action(self, game, step, agent, action):
+    def after_action(self, game, step, agent, action):
         board = game.render()
         self.stdscr.erase()
         self.stdscr.addstr(0, 0, f"Game: {self.match} - Step {step + 1}: {agent} takes action {action}")

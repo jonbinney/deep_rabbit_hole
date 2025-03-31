@@ -17,6 +17,7 @@ from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     AbstractTrainableAgent,
     Agent,
     AgentRegistry,
+    Log,
     ReplayBuffer,
 )
 from agents.dexp import DExpAgent, DExpPretrainedAgent  # noqa: E402
