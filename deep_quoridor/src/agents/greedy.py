@@ -156,11 +156,6 @@ class GreedyAgent(Agent):
         path.insert(0, (int(opp_coords[0][0]), int(opp_coords[0][1])))
         self.log.path(path)
 
-        # opp_coords = np.argwhere(observation["observation"]["board"] == 2)
-        # qq = opponent_shortest_path[:]
-        # qq.insert(0, opponent_pos)  # (int(opp_coords[0][0]), int(opp_coords[0][1])))
-        # self.log.path(qq)
-
     def get_action(self, game):
         observation, _, termination, truncation, _ = game.last()
         if termination or truncation:
