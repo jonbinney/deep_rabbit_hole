@@ -39,7 +39,7 @@ from pettingzoo.utils import wrappers
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
 
-    def __init__(self, board_size: int, max_walls: int, step_rewards: bool = False, **kwargs):
+    def __init__(self, board_size: int = 9, max_walls: int = 10, step_rewards: bool = False, **kwargs):
         super(AECEnv, self).__init__()
 
         self.render_mode = kwargs.get("render_mode", "human")
