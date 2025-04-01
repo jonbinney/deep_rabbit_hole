@@ -51,12 +51,14 @@ class Arena:
                 break
 
             action = int(agent.get_action(self.game))
+            self.plugins.before_action(self.game, agent)
+
             self.game.step(action)
 
             if agent.is_trainable():
                 agent.handle_step_outcome(observation, action, self.game)
 
-            self.plugins.action(self.game, step, player_id, action)
+            self.plugins.after_action(self.game, step, player_id, action)
             step += 1
 
         end_time = time.time()

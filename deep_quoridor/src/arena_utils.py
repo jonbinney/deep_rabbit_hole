@@ -31,7 +31,10 @@ class ArenaPlugin:
     def end_arena(self, game, results: list[GameResult]):
         pass
 
-    def action(self, game, step, agent, action):
+    def before_action(self, game, agent: Agent):
+        pass
+
+    def after_action(self, game, step, agent, action):
         pass
 
 
@@ -59,5 +62,8 @@ class CompositeArenaPlugin:
     def end_arena(self, game, results: list[GameResult]):
         [plugin.end_arena(game, results) for plugin in self.plugins]
 
-    def action(self, game, step, agent, action):
-        [plugin.action(game, step, agent, action) for plugin in self.plugins]
+    def before_action(self, game, agent: Agent):
+        [plugin.before_action(game, agent) for plugin in self.plugins]
+
+    def after_action(self, game, step, agent, action):
+        [plugin.after_action(game, step, agent, action) for plugin in self.plugins]

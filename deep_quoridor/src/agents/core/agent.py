@@ -1,8 +1,85 @@
+from dataclasses import dataclass
+
+
+class ActionLog:
+    @dataclass
+    class ActionText:
+        """
+        Log an action with an associated text.
+        """
+
+        action: int
+        text: str
+
+    @dataclass
+    class ActionScoreRanking:
+        """
+        Log a ranking of actions with their scores.
+        """
+
+        ranking: list[tuple[int, int, float]]  # rank, action, score
+
+    @dataclass
+    class Path:
+        """
+        Log a path of coordinates.
+        """
+
+        path: list[tuple[int, int]]  # list of coordinates
+
+    def __init__(self):
+        self.records = []
+        self.set_enabled(False)
+
+    def clear(self):
+        self.records = []
+
+    def set_enabled(self, enabled=True):
+        self._enabled = enabled
+
+    def is_enabled(self) -> bool:
+        return self._enabled
+
+    def action_text(self, action: int, text: str):
+        if not self.is_enabled():
+            return
+        self.records.append(self.ActionText(action, text))
+
+    def action_score_ranking(self, action_scores: dict[int, float]):
+        """
+        Log a ranking of actions with their scores.
+        action_scores is a dictionary where the key is the action and the value is the score.
+        The ranking is created automatically and sorted in descending order.
+        """
+        if not self.is_enabled():
+            return
+        sorted_actions = sorted(action_scores.items(), key=lambda x: x[1], reverse=True)
+        ranking = []
+        curr_rank = 0
+        prev_score = None
+        for action, score in sorted_actions:
+            if prev_score is None or score != prev_score:
+                curr_rank += 1
+
+            ranking.append((curr_rank, action, score))
+            prev_score = score
+
+        self.records.append(self.ActionScoreRanking(ranking))
+
+    def path(self, path: list[tuple[int, int]]):
+        if not self.is_enabled():
+            return
+        self.records.append(self.Path(path))
+
+
 class Agent:
     """
     Base class for all agents.
     Given a game state, the agent should return an action.
     """
+
+    def __init__(self):
+        self.action_log = ActionLog()
 
     @staticmethod
     def _friendly_name(class_name: str):

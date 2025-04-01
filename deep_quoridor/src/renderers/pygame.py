@@ -5,21 +5,40 @@ from threading import Event
 from typing import List, Optional
 
 import pygame
-from agents import Agent
+from agents import ActionLog, Agent
 from arena import GameResult
 
 from renderers import Renderer
 
 WALL_TO_CELL_RATIO = 5
 
+
+def rgb(hexs):
+    return [tuple(int(hex[i : i + 2], 16) for i in (0, 2, 4)) for hex in hexs]
+
+
+# Borrowed from https://yeun.github.io/open-color/
+PALETTE_GRAY = rgb(["212529", "343a40", "495057", "868e96", "adb5bd", "ced4da", "dee2e6", "e9ecef", "f1f3f5", "f8f9fa"])
+PALETTE_TEAL = rgb(["087f5b", "099268", "0ca678", "12b886", "20c997", "38d9a9", "63e6be", "96f2d7", "c3fae8", "e6fcf5"])
+PALETTE_RED = rgb(["c92a2a", "e03131", "f03e3e", "fa5252", "ff6b6b", "ff8787", "ffa8a8", "ffc9c9", "ffe3e3", "fff5f5"])
+PALETTE_ORANGE = rgb(
+    ["d9480f", "e8590c", "f76707", "fd7e14", "ff922b", "ffa94d", "ffc078", "ffd8a8", "ffe8cc", "fff4e6"]
+)
+PALETTE_BLUE = rgb(["1864ab", "1971c2", "1c7ed6", "228be6", "339af0", "4dabf7", "74c0fc", "a5d8ff", "d0ebff", "e7f5ff"])
+
+
+PALETTES = [PALETTE_TEAL, PALETTE_RED, PALETTE_ORANGE, PALETTE_BLUE]
+
 COLOR_BOARD = (222, 184, 135)
 COLOR_GRID = (160, 120, 95)
-COLOR_WALL = (224, 32, 32)
-COLOR_BUTTON = (200, 200, 200)
+COLOR_WALL = (70, 40, 20)
+
+
+COLOR_BUTTON = PALETTE_GRAY[5]
 COLOR_SCREEN = (255, 255, 255)
-COLOR_PLAYER1 = (32, 32, 32)
-COLOR_PLAYER2 = (224, 224, 224)
-COLOR_ACTIVE_PLAYER = (0, 192, 0)
+COLOR_PLAYER1 = PALETTE_GRAY[1]
+COLOR_PLAYER2 = PALETTE_GRAY[6]
+COLOR_ACTIVE_PLAYER = PALETTE_RED[0]
 
 COLOR_BLACK = (0, 0, 0)
 
@@ -37,9 +56,11 @@ class PygameQuoridor:
         self._msg_to_gui = Queue()
         self.board_pixels = 530
         self.board_position = (50, 50)
+        self.log_actions = True
         self.buttons = {
             "start_pause": {"text": "Start", "method": self._handle_start_pause},
             "next": {"text": "Step", "method": self._handle_next},
+            "log": {"text": "Log off", "method": self._handle_log},
         }
 
     def start(self, game):
@@ -72,16 +93,29 @@ class PygameQuoridor:
             }
         )
 
+    def show_log(self, game, log):
+        self._msg_to_gui.put(
+            {
+                "action": "show_log",
+                "game": game,
+                "log": log,
+            }
+        )
+
     def _cell_pos(self, row, col):
         x = col * (self.cell_size + self.wall_size) + self.board_position[0]
         y = row * (self.cell_size + self.wall_size) + self.board_position[1]
         return [x, y, x + self.cell_size, y + self.cell_size]
 
-    def _draw_player(self, color, row, col):
+    def _cell_center(self, row, col):
         x0, y0, x1, y1 = self._cell_pos(row, col)
-        cx = (x0 + x1) // 2
-        cy = (y0 + y1) // 2
+        return [(x0 + x1) // 2, (y0 + y1) // 2]
+
+    def _draw_player(self, color, row, col, active):
+        cx, cy = self._cell_center(row, col)
         pygame.draw.circle(self.screen, color, (cx, cy), self.cell_size * 0.4)
+        if active:
+            pygame.draw.circle(self.screen, COLOR_ACTIVE_PLAYER, (cx, cy), self.cell_size * 0.4 + 3, width=2)
 
     def _draw_board(self):
         mx, my = self.board_position  # margins
@@ -124,28 +158,29 @@ class PygameQuoridor:
                     pygame.draw.rect(self.screen, COLOR_WALL, (x0, y0, x1 - x0, y1 - y0), border_radius=4)
 
     def _draw_players_and_data(self, message):
-        # Draw the pawns
         positions = message["positions"]
-
-        self._draw_player(COLOR_PLAYER1, *positions["player_0"])
-
-        self._draw_player(COLOR_PLAYER2, *positions["player_1"])
-
-        # Write the player names and number of walls left
         ys = [self.board_position[1] - 38, self.board_position[1] + self.board_pixels + 6]
         texts = [
             f"{self.player1} ({message['walls_remaining']['player_0']})",
             f"{self.player2} ({message['walls_remaining']['player_1']})",
         ]
-        actives = [message["current_player"] == "player_0", message["current_player"] == "player_1"]
+        actives = [message["current_player"] == "player_1", message["current_player"] == "player_0"]
+        colors = [COLOR_PLAYER1, COLOR_PLAYER2]
+        positions = [positions["player_0"], positions["player_1"]]
 
-        for y, text, active in zip(ys, texts, actives):
+        for y, text, active, color, position in zip(ys, texts, actives, colors, positions):
+            # Draw the player on the board
+            self._draw_player(color, position[0], position[1], active)
+
+            # Write the name of the player and the walls remaining
             text_surface = self.font24.render(text, True, COLOR_BLACK)
             x = self.board_position[0] + (self.board_pixels - text_surface.get_width()) // 2
             self.screen.blit(text_surface, (x, y))
 
+            # Draw the player color and an active circle next to the name
+            pygame.draw.circle(self.screen, color, (x - 10, y + 16), 5)
             if active:
-                pygame.draw.circle(self.screen, COLOR_ACTIVE_PLAYER, (x - 10, y + 16), 5)
+                pygame.draw.circle(self.screen, COLOR_ACTIVE_PLAYER, (x - 10, y + 16), radius=9, width=2)
 
     def _draw_buttons(self):
         text = {
@@ -156,6 +191,8 @@ class PygameQuoridor:
         }
         if self.game_state in text:
             self.buttons["start_pause"]["text"] = text[self.game_state]
+
+        self.buttons["log"]["text"] = "Log off" if self.log_actions else "Log on"
 
         btn_width = 100
         btn_spacing = 20
@@ -186,6 +223,65 @@ class PygameQuoridor:
         self._draw_buttons()
         self._draw_result(message["result"])
 
+    def _draw_log_action(self, game, action: int, text: str, color):
+        r, c, type = game.action_index_to_params(action)
+        x0, y0, x1, y1 = self._cell_pos(r, c)
+        wall_len = 2 * self.cell_size + self.wall_size
+        if type == 0:
+            x = x0 + self.cell_size // 2
+            y = y0 + self.cell_size // 2
+            pygame.draw.circle(self.screen, color, (x, y), self.cell_size * 0.3)
+
+        elif type == 1:  # vertical wall
+            x = x1 + self.wall_size // 2
+            y = y0 + self.cell_size // 2
+            pygame.draw.rect(self.screen, color, (x1 + 1, y0 + 1, self.wall_size - 1, wall_len - 1), border_radius=4)
+
+        elif type == 2:
+            x = x0 + self.cell_size // 2
+            y = y1 + self.wall_size // 2
+            pygame.draw.rect(self.screen, color, (x0 + 1, y1 + 1, wall_len - 1, self.wall_size - 1), border_radius=4)
+
+        text_surface = self.font12.render(text, True, COLOR_BLACK)
+        self.screen.blit(text_surface, dest=text_surface.get_rect(center=(x, y)))
+
+    def _draw_log_action_score_ranking(self, game, entry: ActionLog.ActionScoreRanking, palette_id: int):
+        palette_size = len(PALETTES[palette_id])
+
+        coeff = palette_size / max([r for r, _, _ in entry.ranking])
+        for ranking, action, score in entry.ranking:
+            text = f"{score:0.2f}" if score < 10 else f"{int(score)}"
+            color = PALETTES[palette_id][int((ranking - 1) * coeff)]
+            self._draw_log_action(game, action, text, color)
+
+        return palette_id + 1
+
+    def _draw_path(self, game, path: list[tuple[int, int]], path_id):
+        for (r1, c1), (r2, c2) in zip(path, path[1:]):
+            p1 = self._cell_center(r1, c1)
+            p2 = self._cell_center(r2, c2)
+            color = PALETTE_GRAY[4]
+            pygame.draw.line(self.screen, color, p1, p2, width=3)
+            pygame.draw.circle(self.screen, color, p2, radius=7)
+
+        return path_id + 1  # todo
+
+    def _draw_log(self, message):
+        if not self.log_actions:
+            return
+        palette_id_asr = 0
+        path_id = 0
+
+        log = message["log"]
+        game = message["game"]
+        for entry in log.records:
+            if isinstance(entry, ActionLog.ActionScoreRanking):
+                palette_id_asr = self._draw_log_action_score_ranking(game, entry, palette_id_asr)
+            if isinstance(entry, ActionLog.ActionText):
+                self._draw_log_action(game, entry.action, entry.text, PALETTE_GRAY[4])
+            if isinstance(entry, ActionLog.Path):
+                path_id = self._draw_path(game, entry.path, path_id)
+
     def _handle_click(self, pos):
         x, y = pos
         for id, button in self.buttons.items():
@@ -199,14 +295,20 @@ class PygameQuoridor:
             self.game_state = GameState.PAUSED
         elif self.game_state == GameState.FINISHED:
             self.game_state = GameState.READY
+        self._draw_buttons()
 
     def _handle_next(self):
         self.game_state = GameState.STEP
+
+    def _handle_log(self):
+        self.log_actions = not self.log_actions
+        self._draw_buttons()
 
     def run(self):
         pygame.init()
         self.font24 = pygame.font.SysFont("Sans", 24)
         self.font16 = pygame.font.SysFont("Sans", 16)
+        self.font12 = pygame.font.SysFont("sfnsmono", 12)
 
         self.screen = pygame.display.set_mode((630, 700))
         pygame.display.set_caption("Quoridor")
@@ -225,6 +327,9 @@ class PygameQuoridor:
                 message = self._msg_to_gui.get()
                 if message["action"] == "update_board":
                     self.draw_screen(message)
+
+                if message["action"] == "show_log":
+                    self._draw_log(message)
 
             pygame.display.flip()
             clock.tick(30)
@@ -267,8 +372,13 @@ class PygameRenderer(Renderer):
             time.sleep(0.01)
 
     def start_game(self, game, agent1: Agent, agent2: Agent):
+        # We always enable the log from the agents and decide later if we want to show it, since it's
+        # easier and the performance impact of logging is negligible when compared to the rendering.
+        agent1.action_log.set_enabled()
+        agent2.action_log.set_enabled()
+
         self.gui.start_game(agent1.name(), agent2.name())
-        self.gui.update_board(game, "player_0")
+        self.gui.update_board(game, "player_1")
 
         self._wait_not_in_states(GameState.READY)
 
@@ -279,8 +389,8 @@ class PygameRenderer(Renderer):
         self.gui.end_game(game, result)
         self._wait_not_in_states(GameState.FINISHED)
 
-    def action(self, game, step, agent, action):
-        self.gui.update_board(game, agent)
+    def before_action(self, game, agent):
+        self.gui.show_log(game, agent.action_log)
         self._wait_not_in_states([GameState.READY, GameState.PAUSED])
 
         if self.gui.game_state == GameState.STEP:
@@ -291,6 +401,9 @@ class PygameRenderer(Renderer):
             while (time.time() - self.last_action_time) < (self.min_time_ms_per_move / 1000.0):
                 time.sleep(0.01)
             self.last_action_time = time.time()
+
+    def after_action(self, game, step, agent, action):
+        self.gui.update_board(game, agent)
 
     def main_thread(self):
         self.gui = PygameQuoridor()

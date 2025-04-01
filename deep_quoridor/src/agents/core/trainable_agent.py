@@ -157,6 +157,17 @@ class AbstractTrainableAgent(Agent):
         """Select a random action from valid actions."""
         return np.random.choice(valid_actions)
 
+    def _log_action(self, q_values):
+        if not self.action_log.is_enabled():
+            return
+
+        self.action_log.clear()
+
+        # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
+        top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
+        scores = {int(i.item()): v.item() for v, i in zip(top_values, top_indices) if v.item() >= -100}
+        self.action_log.action_score_ranking(scores)
+
     def _get_best_action(self, observation, mask):
         """Get the best action based on Q-values."""
         state = self.observation_to_tensor(observation)
@@ -165,7 +176,7 @@ class AbstractTrainableAgent(Agent):
 
         mask_tensor = torch.tensor(mask, dtype=torch.float32, device=self.device)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
-
+        self._log_action(q_values)
         return torch.argmax(q_values).item()
 
     def train(self, batch_size):
