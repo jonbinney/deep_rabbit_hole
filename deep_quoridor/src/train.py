@@ -129,7 +129,7 @@ def train_dqn(
         batch_size=batch_size,
         update_target_every=update_target_every,
         assing_negative_reward=assign_negative_reward,
-        params=DExpPlayParams(use_rotate_board=True, split_board=True),
+        params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
     )
     agent2.training_mode = True
     agent2.final_reward_multiplier = 2
@@ -153,6 +153,19 @@ def train_dqn(
         plugins=[save_plugin],
         swap_players=True,
     )
+
+    print("Agent configurations:")
+    print(f"Agent 2 (DExpAgent): {agent2.name()}")
+    print(f"  - epsilon: {agent2.epsilon}")
+    print(f"  - epsilon_decay: {agent2.epsilon_decay}")
+    print(f"  - gamma: {agent2.gamma}")
+    print(f"  - batch_size: {agent2.batch_size}")
+    print(f"  - update_target_every: {agent2.update_target_every}")
+    print(f"  - training_mode: {agent2.training_mode}")
+    print(f"  - final_reward_multiplier: {agent2.final_reward_multiplier}")
+    print(f"  - use_rotate_board: {agent2.params.use_rotate_board}")
+    print(f"  - split_board: {agent2.params.split_board}")
+    print(f"  - include_turn: {agent2.params.include_turn}")
 
     arena.play_games(players=[agent2, agent1], times=episodes)
     # agent2.epsilon = 0.8
