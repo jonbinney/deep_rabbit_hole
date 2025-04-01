@@ -25,6 +25,7 @@ class AbstractTrainableAgent(Agent):
         batch_size=64,
         update_target_every=100,
         assing_negative_reward=False,
+        **kwargs,
     ):
         super().__init__()
         self.board_size = board_size

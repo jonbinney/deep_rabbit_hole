@@ -135,7 +135,7 @@ def train_dqn(
     agent2.final_reward_multiplier = 2
     # agent2.use_opponentns_actions = False
     # agent2.load_model("models/dexp_B5W0_base.pt")
-    agent3 = GreedyAgent()
+    agent3 = GreedyAgent()  # noqa: F841
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
         update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls

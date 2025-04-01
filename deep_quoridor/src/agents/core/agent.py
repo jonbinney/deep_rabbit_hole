@@ -123,7 +123,7 @@ class AgentRegistry:
         parts = encoded_name.split("-")
         agent_type = parts[0]
         agent_params = parts[1] if len(parts) > 1 else None
-        return AgentRegistry.agents[agent_type](agent_params=agent_params, **kwargs)
+        return AgentRegistry.agents[agent_type](agent_params_str=agent_params, **kwargs)
 
     @staticmethod
     def is_valid_encoded_name(encoded_name):
