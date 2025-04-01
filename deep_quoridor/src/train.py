@@ -4,6 +4,7 @@ import os
 import torch
 import utils
 from agents import DExpAgent, GreedyAgent, SimpleAgent
+from agents.dexp import DExpPlayParams
 from agents.flat_dqn import AbstractTrainableAgent
 from arena import Arena
 from arena_utils import ArenaPlugin
@@ -38,10 +39,8 @@ class TrainingStatusRenderer(Renderer):
                     if agent.train_call_losses
                     else 0.0
                 )
-                if self.episode_count == 14:
-                    print("Aa")
                 print(
-                    f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Avg Reward: {avg_reward:.2f}, "
+                    f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Steps: {self.step}, Avg Reward: {avg_reward:.2f}, "
                     f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
                 )
         self.episode_count += 1
@@ -75,12 +74,13 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
-        self._save_models("_final")
+        self._save_models("final")
 
     def _save_models(self, suffix: str):
         for agent in self.agents:
             agent_name = agent.name()
-            save_file = os.path.join(self.path, f"{agent_name}_B{self.board_size}W{self.max_walls}{suffix}.pt")
+            filename = agent.resolve_filename(suffix)
+            save_file = os.path.join(self.path, filename)
             agent.save_model(save_file)
             print(f"{agent_name} Model saved to {save_file}")
 
@@ -125,13 +125,14 @@ def train_dqn(
         max_walls=max_walls,
         epsilon=1,
         epsilon_decay=epsilon_decay,
-        gamma=0.99,
+        gamma=0.9,
         batch_size=batch_size,
         update_target_every=update_target_every,
         assing_negative_reward=assign_negative_reward,
+        params=DExpPlayParams(use_rotate_board=True, split_board=True),
     )
     agent2.training_mode = True
-    # agent2.final_reward_multiplier = 1
+    agent2.final_reward_multiplier = 2
     # agent2.use_opponentns_actions = False
     # agent2.load_model("models/dexp_B5W0_base.pt")
     agent3 = GreedyAgent()

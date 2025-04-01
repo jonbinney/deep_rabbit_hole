@@ -75,6 +75,7 @@ class AbstractTrainableAgent(Agent):
         """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1
+        self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
 
@@ -191,7 +192,6 @@ class AbstractTrainableAgent(Agent):
 
         batch = self.replay_buffer.sample(batch_size)
         loss = self._train_on_batch(batch)
-        self._update_epsilon()
 
         return loss
 
@@ -239,6 +239,12 @@ class AbstractTrainableAgent(Agent):
         """Update epsilon value for exploration."""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
+    def resolve_filename(self, suffix):
+        filename = (
+            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_{suffix}.pt"
+        )
+        return filename
+
     def save_model(self, path):
         """Save the model to disk."""
         torch.save(self.online_network.state_dict(), path)
@@ -250,9 +256,7 @@ class AbstractTrainableAgent(Agent):
         self.update_target_network()
 
     def load_pretrained_file(self):
-        filename = (
-            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_final.pt"
-        )
+        filename = self.resolve_filename("final")
         model_path = Path(__file__).resolve().parents[4] / "models" / filename
         if os.path.exists(model_path):
             self.load_model(model_path)

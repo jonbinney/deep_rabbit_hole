@@ -91,7 +91,14 @@ class Arena:
             if isinstance(p, Agent):
                 agents.append(p)
             else:
-                agents.append(AgentRegistry.create(p, board_size=self.board_size, max_walls=self.max_walls))
+                parts = p.split("(")
+                agent_type = parts[0]
+                agent_params = parts[1][:-1] if len(parts) > 1 else None
+                agents.append(
+                    AgentRegistry.create(
+                        agent_type, board_size=self.board_size, max_walls=self.max_walls, agent_params_str=agent_params
+                    )
+                )
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):
