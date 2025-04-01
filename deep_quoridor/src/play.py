@@ -8,9 +8,8 @@ from renderers import Renderer
 
 
 def player_with_params(arg):
-    base_name = arg.split("(")[0]  # Get name before parameters
-    if base_name not in AgentRegistry.names():
-        raise argparse.ArgumentTypeError(f"Invalid player name: {base_name}")
+    if not AgentRegistry.is_valid_encoded_name(arg):
+        raise argparse.ArgumentTypeError(f"Invalid player name: {arg}")
     return arg
 
 
