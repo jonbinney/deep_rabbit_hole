@@ -5,7 +5,7 @@ from threading import Event
 from typing import List, Optional
 
 import pygame
-from agents import Agent, Log
+from agents import ActionLog, Agent
 from arena import GameResult
 
 from renderers import Renderer
@@ -245,7 +245,7 @@ class PygameQuoridor:
         text_surface = self.font12.render(text, True, COLOR_BLACK)
         self.screen.blit(text_surface, dest=text_surface.get_rect(center=(x, y)))
 
-    def _draw_log_action_score_ranking(self, game, entry: Log.ActionScoreRanking, palette_id: int):
+    def _draw_log_action_score_ranking(self, game, entry: ActionLog.ActionScoreRanking, palette_id: int):
         palette_size = len(PALETTES[palette_id])
 
         coeff = palette_size / max([r for r, _, _ in entry.ranking])
@@ -275,11 +275,11 @@ class PygameQuoridor:
         log = message["log"]
         game = message["game"]
         for entry in log.records:
-            if isinstance(entry, Log.ActionScoreRanking):
+            if isinstance(entry, ActionLog.ActionScoreRanking):
                 palette_id_asr = self._draw_log_action_score_ranking(game, entry, palette_id_asr)
-            if isinstance(entry, Log.ActionText):
+            if isinstance(entry, ActionLog.ActionText):
                 self._draw_log_action(game, entry.action, entry.text, PALETTE_GRAY[4])
-            if isinstance(entry, Log.Path):
+            if isinstance(entry, ActionLog.Path):
                 path_id = self._draw_path(game, entry.path, path_id)
 
     def _handle_click(self, pos):
@@ -374,8 +374,8 @@ class PygameRenderer(Renderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         # We always enable the log from the agents and decide later if we want to show it, since it's
         # easier and the performance impact of logging is negligible when compared to the rendering.
-        agent1.log.set_enabled()
-        agent2.log.set_enabled()
+        agent1.action_log.set_enabled()
+        agent2.action_log.set_enabled()
 
         self.gui.start_game(agent1.name(), agent2.name())
         self.gui.update_board(game, "player_1")
@@ -390,7 +390,7 @@ class PygameRenderer(Renderer):
         self._wait_not_in_states(GameState.FINISHED)
 
     def before_action(self, game, agent):
-        self.gui.show_log(game, agent.log)
+        self.gui.show_log(game, agent.action_log)
         self._wait_not_in_states([GameState.READY, GameState.PAUSED])
 
         if self.gui.game_state == GameState.STEP:

@@ -15,9 +15,9 @@ __all__ = [
 
 from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     AbstractTrainableAgent,
+    ActionLog,
     Agent,
     AgentRegistry,
-    Log,
     ReplayBuffer,
 )
 from agents.dexp import DExpAgent, DExpPretrainedAgent  # noqa: E402

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-class Log:
+class ActionLog:
     @dataclass
     class ActionText:
         """
@@ -79,7 +79,7 @@ class Agent:
     """
 
     def __init__(self):
-        self.log = Log()
+        self.action_log = ActionLog()
 
     @staticmethod
     def _friendly_name(class_name: str):

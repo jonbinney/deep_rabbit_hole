@@ -158,15 +158,15 @@ class AbstractTrainableAgent(Agent):
         return np.random.choice(valid_actions)
 
     def _log_action(self, q_values):
-        if not self.log.is_enabled():
+        if not self.action_log.is_enabled():
             return
 
-        self.log.clear()
+        self.action_log.clear()
 
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {int(i.item()): v.item() for v, i in zip(top_values, top_indices) if v.item() >= -100}
-        self.log.action_score_ranking(scores)
+        self.action_log.action_score_ranking(scores)
 
     def _get_best_action(self, observation, mask):
         """Get the best action based on Q-values."""

@@ -136,25 +136,25 @@ class GreedyAgent(Agent):
     def _log_action(
         self, game, observation: dict, my_shortest_path: list[Position], opponent_shortest_path: list[Position]
     ):
-        if not self.log.is_enabled():
+        if not self.action_log.is_enabled():
             return
 
-        self.log.clear()
+        self.action_log.clear()
 
         # Log the possible next movements
         movement_mask = observation["action_mask"][: game.board_size**2]
         for action in np.argwhere(movement_mask == 1).reshape(-1):
-            self.log.action_text(int(action), "")
+            self.action_log.action_text(int(action), "")
 
         my_coords = np.argwhere(observation["observation"]["board"] == 1)
         path = my_shortest_path[:]
         path.insert(0, (int(my_coords[0][0]), int(my_coords[0][1])))
-        self.log.path(path)
+        self.action_log.path(path)
 
         opp_coords = np.argwhere(observation["observation"]["board"] == 2)
         path = opponent_shortest_path[:]
         path.insert(0, (int(opp_coords[0][0]), int(opp_coords[0][1])))
-        self.log.path(path)
+        self.action_log.path(path)
 
     def get_action(self, game):
         observation, _, termination, truncation, _ = game.last()
