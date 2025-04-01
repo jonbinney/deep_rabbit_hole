@@ -132,33 +132,37 @@ class DExpAgent(AbstractTrainableAgent):
         return self.observation_to_tensor_by_player(observation, my_turn, self.player_id)
 
     def observation_to_tensor_by_player(self, observation, my_turn, player_id):
-        """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
 
-        board = (
-            obs["board"]
-            if (player_id == "player_0" or not self.params.use_rotate_board)
-            else rotation.rotate_board(obs["board"])
-        )
-        walls = (
-            obs["walls"]
-            if (player_id == "player_0" or not self.params.use_rotate_board)
-            else rotation.rotate_walls(obs["walls"])
-        )
+        # Rotate board and walls if needed for player_1
+        should_rotate = player_id == "player_1" and self.params.use_rotate_board
+        board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
+        walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
 
-        # Split the board into player and opponent positions
-        player_board = (board == 1 if my_turn else board == 2).astype(np.float32)
-        opponent_board = (board == 2 if my_turn else board == 1).astype(np.float32)
+        # Create position matrices for player and opponent
+        is_player_turn = my_turn
+        player_board = (board == 1 if is_player_turn else board == 2).astype(np.float32)
+        opponent_board = (board == 2 if is_player_turn else board == 1).astype(np.float32)
+
+        # Get wall counts
         my_walls = np.array([obs["my_walls_remaining"]])
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
-        if not my_turn and self.params.include_turn:
+
+        # Swap positions and walls if not player's turn and include_turn is True
+        if not is_player_turn and self.params.include_turn:
             my_walls, opponent_walls = opponent_walls, my_walls
             player_board, opponent_board = opponent_board, player_board
+
+        # Prepare board representation
         board = np.stack([player_board, opponent_board]) if self.params.split_board else board
-        board = board.flatten()
-        walls = walls.flatten()
-        turn = [my_turn] if self.params.include_turn else []
-        flat_obs = np.concatenate([turn, board, walls, my_walls, opponent_walls])
+
+        # Flatten all components
+        board_flat = board.flatten()
+        walls_flat = walls.flatten()
+        turn_info = [my_turn] if self.params.include_turn else []
+
+        # Combine all features into single tensor
+        flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
