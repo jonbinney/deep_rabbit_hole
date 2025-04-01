@@ -44,6 +44,10 @@ class DExpNetwork(nn.Module):
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.use_opponentns_actions = False
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
@@ -53,8 +57,9 @@ class DExpAgent(AbstractTrainableAgent):
         return DExpNetwork(self.board_size, self.action_size)
 
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
-        if not self.training_mode:
+        if not self.training_mode or not self.use_opponentns_actions:
             return
+
         opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
 
         reward = game.rewards[opponent_player]

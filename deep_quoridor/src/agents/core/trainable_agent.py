@@ -36,7 +36,7 @@ class AbstractTrainableAgent(Agent):
         self.batch_size = batch_size
         self.update_target_every = update_target_every
         self.assign_negative_reward = assing_negative_reward
-
+        self.final_reward_multiplier = 1
         self.action_size = self._calculate_action_size()
 
         # Setup device
@@ -79,11 +79,15 @@ class AbstractTrainableAgent(Agent):
             self.update_target_network()
 
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
+        pass
 
     def handle_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode:
             return
         reward = game.rewards[self.player_id]
+
+        if game.is_done():
+            reward *= self.final_reward_multiplier
 
         # Handle end of episode
         if action is None:

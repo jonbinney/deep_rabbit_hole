@@ -56,7 +56,8 @@ class Arena:
 
             if agent.is_trainable():
                 agent.handle_step_outcome(observation, action, self.game)
-            opponent_agent = agents[self.game.agent_iter()]
+
+            opponent_agent = agents[self.game.agent_selection]
             if opponent_agent.is_trainable():
                 opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
 
