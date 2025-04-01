@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from agents.core import AbstractTrainableAgent
+from agents.core import AbstractTrainableAgent, agent_utils
 
 
 class DExpNetwork(nn.Module):
@@ -136,12 +136,12 @@ class DExpAgent(AbstractTrainableAgent):
         board = (
             obs["board"]
             if (player_id == "player_0" or not self.params.use_rotate_board)
-            else self.rotate_board(obs["board"])
+            else agent_utils.rotate_board(obs["board"])
         )
         walls = (
             obs["walls"]
             if (player_id == "player_0" or not self.params.use_rotate_board)
-            else self.rotate_walls(obs["walls"])
+            else agent_utils.rotate_walls(obs["walls"])
         )
 
         # Split the board into player and opponent positions
@@ -163,79 +163,15 @@ class DExpAgent(AbstractTrainableAgent):
         """Convert action mask to tensor, rotating it for player_1."""
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
-        total_actions = self.board_size * self.board_size  # Movement actions
-        wall_actions = (self.board_size - 1) ** 2  # Actions for each wall type
-
-        # Split the mask into board moves and wall placements
-        indices = np.array([total_actions, total_actions + wall_actions])
-        board_mask, walls_v, walls_h = np.split(mask, indices)
-
-        # Rotate board moves (first part of mask)
-        board_mask = board_mask.reshape(self.board_size, self.board_size)
-        board_mask = np.rot90(board_mask, k=2).flatten()
-
-        # Rotate wall placements
-        walls_v = walls_v.reshape(self.board_size - 1, self.board_size - 1)
-        walls_h = walls_h.reshape(self.board_size - 1, self.board_size - 1)
-        walls_v = np.rot90(walls_v, k=2).flatten()
-        walls_h = np.rot90(walls_h, k=2).flatten()
-
-        # Combine rotated masks back together
-        rotated_mask = np.concatenate([board_mask, walls_v, walls_h])
-
+        rotated_mask = agent_utils.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
-
-    def _rotate_index_to_original(self, index, grid_size, offset=0):
-        """
-        Helper method to convert rotated indices back to original space.
-
-        Args:
-            index: The index within the current section (board/walls)
-            grid_size: Size of the grid for this section (board_size or board_size-1)
-            offset: Offset to add to final result (0 for board moves, total_actions for walls)
-        """
-        row, col = divmod(index, grid_size)
-        rotated_row = grid_size - 1 - row
-        rotated_col = grid_size - 1 - col
-        return offset + rotated_row * grid_size + rotated_col
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         """Convert action index from rotated tensor back to original action space."""
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
-        total_actions = self.board_size * self.board_size
-        wall_actions = (self.board_size - 1) ** 2
-
-        # Determine which section of the action space we're in
-        if action_index_in_tensor < total_actions:
-            # Board movement action
-            return self._rotate_index_to_original(action_index_in_tensor, self.board_size)
-
-        elif action_index_in_tensor < total_actions + wall_actions:
-            # Vertical wall action
-            wall_index = action_index_in_tensor - total_actions
-            return self._rotate_index_to_original(wall_index, self.board_size - 1, total_actions)
-
-        else:
-            # Horizontal wall action
-            wall_index = action_index_in_tensor - (total_actions + wall_actions)
-            return self._rotate_index_to_original(wall_index, self.board_size - 1, total_actions + wall_actions)
-
-    def rotate_board(self, board):
-        """Rotate the board 180 degrees."""
-        if not self.params.use_rotate_board:
-            raise RuntimeError
-        return np.rot90(board, k=2)
-
-    def rotate_walls(self, walls):
-        """Rotate the walls array 180 degrees for each layer."""
-        if not self.params.use_rotate_board:
-            raise RuntimeError
-        rotated = np.zeros_like(walls)
-        for i in range(walls.shape[2]):
-            rotated[:, :, i] = np.rot90(walls[:, :, i], k=2)
-        return rotated
+        return agent_utils.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
 
 class DExpPretrainedAgent(DExpAgent):
