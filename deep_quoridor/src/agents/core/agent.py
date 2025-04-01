@@ -107,6 +107,9 @@ class Agent:
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
+    def json_config(self) -> str:
+        return ""
+
 
 class AgentRegistry:
     agents = {}

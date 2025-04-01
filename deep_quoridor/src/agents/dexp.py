@@ -1,8 +1,10 @@
+import json
+
 import numpy as np
 import torch
 import torch.nn as nn
 
-from agents.core import AbstractTrainableAgent, agent_utils
+from agents.core import AbstractTrainableAgent, rotation
 
 
 class DExpNetwork(nn.Module):
@@ -136,12 +138,12 @@ class DExpAgent(AbstractTrainableAgent):
         board = (
             obs["board"]
             if (player_id == "player_0" or not self.params.use_rotate_board)
-            else agent_utils.rotate_board(obs["board"])
+            else rotation.rotate_board(obs["board"])
         )
         walls = (
             obs["walls"]
             if (player_id == "player_0" or not self.params.use_rotate_board)
-            else agent_utils.rotate_walls(obs["walls"])
+            else rotation.rotate_walls(obs["walls"])
         )
 
         # Split the board into player and opponent positions
@@ -163,7 +165,7 @@ class DExpAgent(AbstractTrainableAgent):
         """Convert action mask to tensor, rotating it for player_1."""
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
-        rotated_mask = agent_utils.rotate_action_mask(self.board_size, mask)
+        rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
@@ -171,7 +173,26 @@ class DExpAgent(AbstractTrainableAgent):
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
-        return agent_utils.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
+        return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
+
+    def json_config(self) -> str:
+        config = {
+            "board_size": self.board_size,
+            "max_walls": self.max_walls,
+            "epsilon": self.epsilon,
+            "epsilon_decay": self.epsilon_decay,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "update_target_every": self.update_target_every,
+            "training_mode": self.training_mode,
+            "final_reward_multiplier": self.final_reward_multiplier,
+            "params": {
+                "use_rotate_board": self.params.use_rotate_board,
+                "split_board": self.params.split_board,
+                "include_turn": self.params.include_turn,
+            },
+        }
+        return json.dumps(config, indent=2)
 
 
 class DExpPretrainedAgent(DExpAgent):

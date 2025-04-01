@@ -154,20 +154,15 @@ def train_dqn(
         swap_players=True,
     )
 
+    agents = [agent2, agent1]
     print("Agent configurations:")
-    print(f"Agent 2 (DExpAgent): {agent2.name()}")
-    print(f"  - epsilon: {agent2.epsilon}")
-    print(f"  - epsilon_decay: {agent2.epsilon_decay}")
-    print(f"  - gamma: {agent2.gamma}")
-    print(f"  - batch_size: {agent2.batch_size}")
-    print(f"  - update_target_every: {agent2.update_target_every}")
-    print(f"  - training_mode: {agent2.training_mode}")
-    print(f"  - final_reward_multiplier: {agent2.final_reward_multiplier}")
-    print(f"  - use_rotate_board: {agent2.params.use_rotate_board}")
-    print(f"  - split_board: {agent2.params.split_board}")
-    print(f"  - include_turn: {agent2.params.include_turn}")
+    for a in agents:
+        print("-----------------------------------------------------------------")
+        print(f"Agent: {a.name()}")
+        print("Configuration")
+        print(a.json_config())
 
-    arena.play_games(players=[agent2, agent1], times=episodes)
+    arena.play_games(players=agents, times=episodes)
     # agent2.epsilon = 0.8
     # arena.play_games(players=[agent2, agent3], times=episodes)
     return
