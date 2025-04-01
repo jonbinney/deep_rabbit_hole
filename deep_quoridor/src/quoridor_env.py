@@ -156,6 +156,7 @@ class QuoridorEnv(AECEnv):
         walls = self.walls.copy()
 
         return {
+            "my_turn": self.agent_selection == agent_id,
             "board": board,
             "walls": walls,
             "my_walls_remaining": self.walls_remaining[agent_id],

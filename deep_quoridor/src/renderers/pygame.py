@@ -22,6 +22,7 @@ COLOR_PLAYER2 = (224, 224, 224)
 COLOR_ACTIVE_PLAYER = (0, 192, 0)
 
 COLOR_BLACK = (0, 0, 0)
+COLOR_GREY = (128, 128, 128)
 
 
 class GameState(Enum):
@@ -134,8 +135,8 @@ class PygameQuoridor:
         # Write the player names and number of walls left
         ys = [self.board_position[1] - 38, self.board_position[1] + self.board_pixels + 6]
         texts = [
-            f"{self.player1} ({message['walls_remaining']['player_0']})",
-            f"{self.player2} ({message['walls_remaining']['player_1']})",
+            f"P0 {self.player1} ({message['walls_remaining']['player_0']})",
+            f"P1 {self.player2} ({message['walls_remaining']['player_1']})",
         ]
         actives = [message["current_player"] == "player_0", message["current_player"] == "player_1"]
 
@@ -146,6 +147,8 @@ class PygameQuoridor:
 
             if active:
                 pygame.draw.circle(self.screen, COLOR_ACTIVE_PLAYER, (x - 10, y + 16), 5)
+            else:
+                pygame.draw.circle(self.screen, COLOR_GREY, (x - 10, y + 16), 5)
 
     def _draw_buttons(self):
         text = {
@@ -280,7 +283,8 @@ class PygameRenderer(Renderer):
         self._wait_not_in_states(GameState.FINISHED)
 
     def action(self, game, step, agent, action):
-        self.gui.update_board(game, agent)
+        print("AAAA")
+        self.gui.update_board(game, game.agent_selection)
         self._wait_not_in_states([GameState.READY, GameState.PAUSED])
 
         if self.gui.game_state == GameState.STEP:

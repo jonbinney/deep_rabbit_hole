@@ -22,7 +22,7 @@ class AbstractTrainableAgent(Agent):
         epsilon_min=0.01,
         epsilon_decay=0.995,
         gamma=0.99,
-        batch_size=64,
+        batch_size=500,
         update_target_every=100,
         assing_negative_reward=False,
     ):
@@ -78,6 +78,8 @@ class AbstractTrainableAgent(Agent):
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
 
+    def handle_opponent_step_outcome(self, observation_before_action, action, game):
+
     def handle_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode:
             return
@@ -89,6 +91,7 @@ class AbstractTrainableAgent(Agent):
                 last = self.replay_buffer.get_last()
                 last[2] = reward  # update final reward
                 last[4] = 1.0  # mark as done
+                self.current_episode_reward += reward
             return
 
         state_before_action = self.observation_to_tensor(observation_before_action)

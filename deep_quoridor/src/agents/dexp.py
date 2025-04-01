@@ -17,11 +17,12 @@ class DExpNetwork(nn.Module):
         # Calculate input dimensions based on observation space
         # Board is board_size x board_size with 2 channels (player position and opponent position)
         # Walls are (board_size-1) x (board_size-1) with 2 channels (vertical and horizontal walls)
-        board_input_size = board_size * board_size
+        board_input_size = board_size * board_size * 2
         walls_input_size = (board_size - 1) * (board_size - 1) * 2
 
         # Additional features: walls remaining for both players
-        flat_input_size = board_input_size + walls_input_size + 2
+        # turn, board player, board opponent, wall positions, my remaining walls, opponent's remaining walls
+        flat_input_size = board_input_size + walls_input_size + 3
 
         # Define network architecture
         self.model = nn.Sequential(
@@ -51,18 +52,68 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size)
 
+    def handle_opponent_step_outcome(self, observation_before_action, action, game):
+        if not self.training_mode:
+            return
+        opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
+
+        reward = game.rewards[opponent_player]
+
+        # Handle end of episode
+        if action is None:
+            # TODO: Check whether it is worth it
+            # if self.assign_negative_reward and len(self.replay_buffer) > 0:
+            #    last = self.replay_buffer.get_last()
+            #    last[2] = reward  # update final reward
+            #    last[4] = 1.0  # mark as done
+            #    self.current_episode_reward += reward
+            return
+
+        state_before_action = self.observation_to_tensor_by_player(observation_before_action, True, opponent_player)
+        state_after_action = self.observation_to_tensor_by_player(game.observe(opponent_player), False, opponent_player)
+        done = game.is_done()
+
+        self.replay_buffer.add(
+            state_before_action.cpu().numpy(),
+            action,
+            reward,
+            state_after_action.cpu().numpy()
+            if state_after_action is not None
+            else np.zeros_like(state_before_action.cpu().numpy()),
+            float(done),
+        )
+
+        if len(self.replay_buffer) > self.batch_size:
+            loss = self.train(self.batch_size)
+            if loss is not None:
+                self.train_call_losses.append(loss)
+
     def observation_to_tensor(self, observation):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
+        my_turn = 1 if obs["my_turn"] else 0
+        return self.observation_to_tensor_by_player(observation, my_turn, self.player_id)
 
-        board = obs["board"] if (self.player_id == "player_0") else self.rotate_board(obs["board"])
-        walls = obs["walls"] if (self.player_id == "player_0") else self.rotate_walls(obs["walls"])
-        board = board.flatten()
-        walls = walls.flatten()
+    def observation_to_tensor_by_player(self, observation, my_turn, player_id):
+        """Convert the observation dict to a flat tensor."""
+        obs = observation["observation"]
+
+        board = obs["board"] if (player_id == "player_0") else self.rotate_board(obs["board"])
+        walls = obs["walls"] if (player_id == "player_0") else self.rotate_walls(obs["walls"])
+
+        # Split the board into player and opponent positions
+        player_board = (board == 1 if my_turn else board == 2).astype(np.float32)
+        opponent_board = (board == 2 if my_turn else board == 1).astype(np.float32)
         my_walls = np.array([obs["my_walls_remaining"]])
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
+        if not my_turn:
+            my_walls, opponent_walls = opponent_walls, my_walls
+            player_board, opponent_board = opponent_board, player_board
+        board = np.stack([player_board, opponent_board])
+        board = board.flatten()
+        walls = walls.flatten()
 
-        flat_obs = np.concatenate([board, walls, my_walls, opponent_walls])
+        flat_obs = np.concatenate([[my_turn], board, walls, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):

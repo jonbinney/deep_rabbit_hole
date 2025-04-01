@@ -47,7 +47,6 @@ if __name__ == "__main__":
         default="game_recording.yaml",
         help="Save the played games to a file. Use 'None' to disable saving.",
     )
-
     parser.add_argument(
         "-i",
         "--seed",
