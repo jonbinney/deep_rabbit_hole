@@ -133,6 +133,29 @@ class GreedyAgent(Agent):
         # No actions found
         return None
 
+    def _log_action(
+        self, game, observation: dict, my_shortest_path: list[Position], opponent_shortest_path: list[Position]
+    ):
+        if not self.action_log.is_enabled():
+            return
+
+        self.action_log.clear()
+
+        # Log the possible next movements
+        movement_mask = observation["action_mask"][: game.board_size**2]
+        for action in np.argwhere(movement_mask == 1).reshape(-1):
+            self.action_log.action_text(int(action), "")
+
+        my_coords = np.argwhere(observation["observation"]["board"] == 1)
+        path = my_shortest_path[:]
+        path.insert(0, (int(my_coords[0][0]), int(my_coords[0][1])))
+        self.action_log.path(path)
+
+        opp_coords = np.argwhere(observation["observation"]["board"] == 2)
+        path = opponent_shortest_path[:]
+        path.insert(0, (int(opp_coords[0][0]), int(opp_coords[0][1])))
+        self.action_log.path(path)
+
     def get_action(self, game):
         observation, _, termination, truncation, _ = game.last()
         if termination or truncation:
@@ -144,6 +167,8 @@ class GreedyAgent(Agent):
         my_shortest_path = self._shortest_path_from_me(game, observation, goal_row)
         opponent_pos = self._get_opponent_position(game, observation["observation"]["board"])
         opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_row)
+
+        self._log_action(game, observation, my_shortest_path, opponent_shortest_path)
 
         # TODO: use a more elaborate logic to decide whether to block, could be probabilistic
         block = False
