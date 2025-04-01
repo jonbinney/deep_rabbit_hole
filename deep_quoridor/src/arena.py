@@ -51,9 +51,9 @@ class Arena:
                     agent.handle_step_outcome(observation, None, self.game)
                 break
 
-            action = int(agent.get_action(self.game))
-            self.plugins.before_action(self.game, agent)
+            action = agent.get_action(self.game)
 
+            self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
             if agent.is_trainable():
