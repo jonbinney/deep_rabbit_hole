@@ -22,7 +22,7 @@ class AbstractTrainableAgent(Agent):
         epsilon_min=0.01,
         epsilon_decay=0.995,
         gamma=0.99,
-        batch_size=500,
+        batch_size=64,
         update_target_every=100,
         assing_negative_reward=False,
     ):

@@ -119,11 +119,11 @@ def train_dqn(
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
-    agent3 = SimpleAgent()
+    agent1 = SimpleAgent()
     agent2 = DExpAgent(
         board_size=board_size,
         max_walls=max_walls,
-        epsilon=0.8,
+        epsilon=1,
         epsilon_decay=epsilon_decay,
         gamma=0.99,
         batch_size=batch_size,
@@ -131,10 +131,10 @@ def train_dqn(
         assing_negative_reward=assign_negative_reward,
     )
     agent2.training_mode = True
-    agent2.final_reward_multiplier = 1
-    agent2.use_opponentns_actions = False
-    agent2.load_model("models/dexp_B5W0_base.pt")
-    agent1 = GreedyAgent()
+    # agent2.final_reward_multiplier = 1
+    # agent2.use_opponentns_actions = False
+    # agent2.load_model("models/dexp_B5W0_base.pt")
+    agent3 = GreedyAgent()
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
         update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls

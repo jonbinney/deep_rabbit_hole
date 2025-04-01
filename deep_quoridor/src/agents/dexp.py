@@ -11,18 +11,18 @@ class DExpNetwork(nn.Module):
     Takes observation from the Quoridor game and outputs Q-values for each action.
     """
 
-    def __init__(self, board_size, action_size):
+    def __init__(self, board_size, action_size, split_board, include_turn):
         super(DExpNetwork, self).__init__()
 
         # Calculate input dimensions based on observation space
         # Board is board_size x board_size with 2 channels (player position and opponent position)
         # Walls are (board_size-1) x (board_size-1) with 2 channels (vertical and horizontal walls)
-        board_input_size = board_size * board_size * 2
+        board_input_size = board_size * board_size * (2 if split_board else 1)
         walls_input_size = (board_size - 1) * (board_size - 1) * 2
 
         # Additional features: walls remaining for both players
         # turn, board player, board opponent, wall positions, my remaining walls, opponent's remaining walls
-        flat_input_size = board_input_size + walls_input_size + 3
+        flat_input_size = board_input_size + walls_input_size + (3 if include_turn else 2)
 
         # Define network architecture
         self.model = nn.Sequential(
@@ -44,9 +44,14 @@ class DExpNetwork(nn.Module):
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self, use_opponentns_actions=False, split_board=False, include_turn=False, use_rotate_board=False, **kwargs
+    ):
+        self.use_opponentns_actions = use_opponentns_actions
+        self.split_board = split_board
+        self.include_turn = include_turn
+        self.use_rotate_board = use_rotate_board
         super().__init__(**kwargs)
-        self.use_opponentns_actions = False
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -54,7 +59,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        return DExpNetwork(self.board_size, self.action_size)
+        return DExpNetwork(self.board_size, self.action_size, self.split_board, self.include_turn)
 
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode or not self.use_opponentns_actions:
@@ -103,27 +108,31 @@ class DExpAgent(AbstractTrainableAgent):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
 
-        board = obs["board"] if (player_id == "player_0") else self.rotate_board(obs["board"])
-        walls = obs["walls"] if (player_id == "player_0") else self.rotate_walls(obs["walls"])
+        board = (
+            obs["board"] if (player_id == "player_0" or not self.use_rotate_board) else self.rotate_board(obs["board"])
+        )
+        walls = (
+            obs["walls"] if (player_id == "player_0" or not self.use_rotate_board) else self.rotate_walls(obs["walls"])
+        )
 
         # Split the board into player and opponent positions
         player_board = (board == 1 if my_turn else board == 2).astype(np.float32)
         opponent_board = (board == 2 if my_turn else board == 1).astype(np.float32)
         my_walls = np.array([obs["my_walls_remaining"]])
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
-        if not my_turn:
+        if not my_turn and self.include_turn:
             my_walls, opponent_walls = opponent_walls, my_walls
             player_board, opponent_board = opponent_board, player_board
-        board = np.stack([player_board, opponent_board])
+        board = np.stack([player_board, opponent_board]) if self.split_board else board
         board = board.flatten()
         walls = walls.flatten()
-
-        flat_obs = np.concatenate([[my_turn], board, walls, my_walls, opponent_walls])
+        turn = [my_turn] if self.include_turn else []
+        flat_obs = np.concatenate([turn, board, walls, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
         """Convert action mask to tensor, rotating it for player_1."""
-        if self.player_id == "player_0":
+        if self.player_id == "player_0" or not self.use_rotate_board:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         total_actions = self.board_size * self.board_size  # Movement actions
         wall_actions = (self.board_size - 1) ** 2  # Actions for each wall type
@@ -163,7 +172,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         """Convert action index from rotated tensor back to original action space."""
-        if self.player_id == "player_0":
+        if self.player_id == "player_0" or not self.use_rotate_board:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
         total_actions = self.board_size * self.board_size
@@ -186,10 +195,14 @@ class DExpAgent(AbstractTrainableAgent):
 
     def rotate_board(self, board):
         """Rotate the board 180 degrees."""
+        if not self.use_rotate_board:
+            raise RuntimeError
         return np.rot90(board, k=2)
 
     def rotate_walls(self, walls):
         """Rotate the walls array 180 degrees for each layer."""
+        if not self.use_rotate_board:
+            raise RuntimeError
         rotated = np.zeros_like(walls)
         for i in range(walls.shape[2]):
             rotated[:, :, i] = np.rot90(walls[:, :, i], k=2)
