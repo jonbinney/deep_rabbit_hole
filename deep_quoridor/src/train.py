@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import Optional
 
 import torch
 import utils
@@ -10,6 +11,23 @@ from arena import Arena
 from arena_utils import ArenaPlugin
 from renderers import Renderer
 
+import wandb
+
+
+def compute_loss_and_reward(agent: AbstractTrainableAgent, length: int):
+    avg_reward = (
+        sum(agent.episodes_rewards[-length:]) / min(length, len(agent.episodes_rewards))
+        if agent.episodes_rewards
+        else 0.0
+    )
+    avg_loss = (
+        sum(agent.train_call_losses[-length:]) / min(length, len(agent.train_call_losses))
+        if agent.train_call_losses
+        else 0.0
+    )
+
+    return avg_loss, avg_reward
+
 
 class TrainingStatusRenderer(Renderer):
     def __init__(self, update_every: int, total_episodes: int, agents: list[AbstractTrainableAgent]):
@@ -19,21 +37,10 @@ class TrainingStatusRenderer(Renderer):
         self.episode_count = 0
 
     def end_game(self, game, result):
-        if self.episode_count % self.update_every == 0:
+        if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
             for agent in self.agents:
                 agent_name = agent.name()
-                avg_reward = (
-                    sum(agent.episodes_rewards[-1 * self.update_every :])
-                    / min(self.update_every, len(agent.episodes_rewards))
-                    if agent.episodes_rewards
-                    else 0.0
-                )
-                avg_loss = (
-                    sum(agent.train_call_losses[-1 * self.update_every :])
-                    / min(self.update_every, len(agent.train_call_losses))
-                    if agent.train_call_losses
-                    else 0.0
-                )
+                avg_reward, avg_loss = compute_loss_and_reward(agent, self.update_every)
                 print(
                     f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Avg Reward: {avg_reward:.2f}, "
                     f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
@@ -42,9 +49,55 @@ class TrainingStatusRenderer(Renderer):
         return
 
 
+class TrainingStatusWandb(ArenaPlugin):
+    def __init__(self, update_every: int, total_episodes: int, agents: list[AbstractTrainableAgent]):
+        self.agents = agents
+        self.update_every = update_every
+        self.total_episodes = total_episodes
+        self.episode_count = 0
+        self.tags = [agent.model_id() for agent in agents]
+
+    def start_arena(self, game, total_games: int):
+        config = {
+            "board_size": game.board_size,
+            "max_walls": game.max_walls,
+        }
+        for agent in self.agents:
+            config.update({f"{agent.name()} hyperparameters": agent.model_hyperparameters()})
+
+        self.run = wandb.init(
+            project="deep_quoridor",
+            job_type="train",
+            config=config,
+            tags=self.tags,
+        )
+
+    def end_game(self, game, result):
+        if self.episode_count % self.update_every == 0:
+            for agent in self.agents:
+                avg_reward, avg_loss = compute_loss_and_reward(agent, self.update_every)
+
+                self.run.log(
+                    {"loss": avg_loss, "reward": avg_reward, "epsilon": agent.epsilon},
+                    step=self.episode_count,
+                )
+        self.episode_count += 1
+
+    def save(self, agent: AbstractTrainableAgent, filename: str):
+        artifact = wandb.Artifact(f"{agent.model_id()}", type="model", metadata={"episodes": self.total_episodes})
+        artifact.add_file(local_path=filename)
+        artifact.save()
+
+
 class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
     def __init__(
-        self, update_every: int, path: str, board_size: int, max_walls: int, agents: list[AbstractTrainableAgent]
+        self,
+        update_every: int,
+        path: str,
+        board_size: int,
+        max_walls: int,
+        agents: list[AbstractTrainableAgent],
+        wandb_plugin: Optional[TrainingStatusWandb],
     ):
         self.agents = agents
         self.update_every = update_every
@@ -52,6 +105,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.episode_count = 0
         self.board_size = board_size
         self.max_walls = max_walls
+        self.wandb_plugin = wandb_plugin
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 and self.episode_count > 0:
@@ -59,14 +113,16 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
-        self._save_models("_final")
+        self._save_models("_final", final=True)
 
-    def _save_models(self, suffix: str):
+    def _save_models(self, suffix: str, final: bool = False):
         for agent in self.agents:
-            agent_name = agent.name()
-            save_file = os.path.join(self.path, f"{agent_name}_B{self.board_size}W{self.max_walls}{suffix}.pt")
+            save_file = os.path.join(self.path, f"{agent.model_id()}{suffix}.pt")
             agent.save_model(save_file)
-            print(f"{agent_name} Model saved to {save_file}")
+            print(f"{agent.name()} Model saved to {save_file}")
+
+            if self.wandb_plugin is not None and final:
+                self.wandb_plugin.save(agent, save_file)
 
 
 def train_dqn(
@@ -80,6 +136,7 @@ def train_dqn(
     save_frequency=100,
     step_rewards=True,
     assign_negative_reward=False,
+    use_wandb=False,
 ):
     """
     Train a DQN agent to play Quoridor.
@@ -112,11 +169,20 @@ def train_dqn(
         batch_size=batch_size,
         update_target_every=update_target_every,
         assing_negative_reward=assign_negative_reward,
+        training_mode=True,
     )
-    agent2.training_mode = True
+    if use_wandb:
+        wandb_plugin = TrainingStatusWandb(update_every=10, total_episodes=episodes, agents=[agent2])
+    else:
+        wandb_plugin = None
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
-        update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
+        update_every=save_frequency,
+        path=save_path,
+        board_size=board_size,
+        max_walls=max_walls,
+        agents=[agent2],
+        wandb_plugin=wandb_plugin,
     )
     print_plugin = TrainingStatusRenderer(
         update_every=100,
@@ -128,7 +194,7 @@ def train_dqn(
         max_walls=max_walls,
         step_rewards=step_rewards,
         renderers=[print_plugin],
-        plugins=[save_plugin],
+        plugins=[save_plugin, wandb_plugin],
     )
 
     arena.play_games(players=[agent1, agent2], times=episodes)
@@ -162,7 +228,12 @@ if __name__ == "__main__":
         default=42,
         help="Initializes the random seed for the training. Default is 42",
     )
-
+    parser.add_argument(
+        "--no-wandb",
+        action="store_false",
+        default=True,
+        help="Disable Weights & Biases logging",
+    )
     args = parser.parse_args()
 
     print("Starting DQN training...")
@@ -177,6 +248,7 @@ if __name__ == "__main__":
 
     # Set random seed for reproducibility
     utils.set_deterministic(args.seed)
+
     train_dqn(
         episodes=args.episodes,
         batch_size=args.batch_size,
@@ -188,6 +260,7 @@ if __name__ == "__main__":
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
         assign_negative_reward=args.assign_negative_reward,
+        use_wandb=args.no_wandb,
     )
 
     print("Training completed!")

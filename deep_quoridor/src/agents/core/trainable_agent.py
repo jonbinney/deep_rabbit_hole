@@ -1,12 +1,15 @@
 import os
 import random
+import tempfile
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -25,6 +28,8 @@ class AbstractTrainableAgent(Agent):
         batch_size=64,
         update_target_every=100,
         assing_negative_reward=False,
+        training_mode=False,
+        wandb_alias=None,
     ):
         super().__init__()
         self.board_size = board_size
@@ -54,10 +59,29 @@ class AbstractTrainableAgent(Agent):
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
         self.replay_buffer = ReplayBuffer(capacity=10000)
-        self.training_mode = False
+        self.training_mode = training_mode
         self.episodes_rewards = []
         self.train_call_losses = []
         self.reset_episode_related_info()
+
+        if not training_mode:
+            self.load_pretrained_file(self.model_id(), wandb_alias)
+
+    def version(self):
+        raise NotImplementedError("Trainable agents should return a version")
+
+    def model_id(self):
+        return f"{self.name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+
+    def model_hyperparameters(self):
+        return {
+            "epsilon_min": self.epsilon_min,
+            "epsilon_decay": self.epsilon_decay,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "update_target_every": self.update_target_every,
+            "assign_negative_reward": self.assign_negative_reward,
+        }
 
     def reset_episode_related_info(self):
         self.current_episode_reward = 0
@@ -232,13 +256,39 @@ class AbstractTrainableAgent(Agent):
         self.online_network.load_state_dict(torch.load(path))
         self.update_target_network()
 
-    def load_pretrained_file(self):
-        filename = (
-            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_final.pt"
-        )
-        model_path = Path(__file__).resolve().parents[4] / "models" / filename
-        if os.path.exists(model_path):
-            print(f"Loading pre-trained model from {model_path}")
-            self.load_model(model_path)
+    def load_pretrained_file(self, model_id: str, wandb_alias: Optional[str]):
+        models_path = Path(__file__).resolve().parents[4] / "models"
+        model_filename = f"{model_id}_final.pt"
+        if wandb_alias is None or wandb_alias == "":
+            # Local load
+            filename = models_path / model_filename
+
+            if os.path.exists(filename):
+                print(f"Loading pre-trained model from {filename}")
+                self.load_model(filename)
+            else:
+                raise FileNotFoundError(
+                    f"Model file {filename} not found. Please run training or provide an alias to load from wandb, e.g. 'dex:latest'"
+                )
         else:
-            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
+            api = wandb.Api()
+            artifact = api.artifact(f"lazy-learning-liar/deep_quoridor/{model_id}:{wandb_alias}", type="model")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                artifact_dir = artifact.download(root=tmpdir)
+
+                path = artifact.download(root=artifact_dir)
+                tmp_filename = Path(path) / model_filename
+                if not os.path.exists(tmp_filename):
+                    raise FileNotFoundError(f"Model file {tmp_filename} was not downloaded.  Please check the artifact")
+
+                dest = models_path / "wandb"
+                dest.mkdir(parents=True, exist_ok=True)
+
+                model_filename = model_filename.replace("_final.pt", f"_{wandb_alias}.pt")
+                dest = dest / model_filename
+                os.rename(tmp_filename, dest)
+
+                print(f"Pre-trained model downloaded from wandb to {dest}")
+
+            self.load_model(dest)

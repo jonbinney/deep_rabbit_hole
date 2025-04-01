@@ -6,6 +6,16 @@ from arena import Arena
 from arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
 
+
+def validate_players(value):
+    agent_name = value.split(":")[0]
+
+    if agent_name in AgentRegistry.names():
+        return value
+
+    raise argparse.ArgumentTypeError(f"Invalid value: '{value}'.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
@@ -23,9 +33,9 @@ if __name__ == "__main__":
         "-p",
         "--players",
         nargs="+",
-        choices=AgentRegistry.names(),
+        type=validate_players,
         default=["random", "simple"],
-        help="List of players to compete against each other",
+        help=f"List of players to compete against each other. Available players: f{', '.join(AgentRegistry.names())}. If the player is a trainable agent, the model will be loaded locally or from wandb if an alias is specified, e.g. 'dex:v1'",
     )
     parser.add_argument(
         "-A",

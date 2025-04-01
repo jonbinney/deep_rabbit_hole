@@ -43,6 +43,10 @@ class DExpNetwork(nn.Module):
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
 
+    def version(self):
+        """Bump this version when compatibility with saved models is broken"""
+        return 1
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
@@ -62,13 +66,3 @@ class DExpAgent(AbstractTrainableAgent):
 
         flat_obs = np.concatenate([board, walls, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
-
-
-class DExpPretrainedAgent(DExpAgent):
-    """
-    A DExpAgent that is initialized with the pre-trained model from main.py.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.load_pretrained_file()

@@ -36,6 +36,10 @@ class AgentRegistry:
 
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
+        if ":" in friendly_name:
+            friendly_name, wandb_alias = friendly_name.split(":")
+            kwargs["wandb_alias"] = wandb_alias
+
         return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod

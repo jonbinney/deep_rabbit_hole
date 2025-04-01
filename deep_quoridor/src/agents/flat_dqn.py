@@ -35,6 +35,10 @@ class DQNNetwork(nn.Module):
 class FlatDQNAgent(AbstractTrainableAgent):
     """Agent that uses Deep Q-Network with flat state representation."""
 
+    def version(self):
+        """Bump this version when compatibility with saved models is broken"""
+        return 1
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
@@ -53,13 +57,3 @@ class FlatDQNAgent(AbstractTrainableAgent):
 
         flat_obs = np.concatenate([board, walls, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
-
-
-class Pretrained01FlatDQNAgent(FlatDQNAgent):
-    """
-    A FlatDQNAgent that is initialized with the pre-trained model from main.py.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.load_pretrained_file()
