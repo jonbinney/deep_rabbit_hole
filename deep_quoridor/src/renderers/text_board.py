@@ -1,6 +1,7 @@
-from renderers import Renderer
-from arena import GameResult
 from agents import Agent
+from arena import GameResult
+
+from renderers import Renderer
 
 
 class TextBoardRenderer(Renderer):
@@ -12,7 +13,7 @@ class TextBoardRenderer(Renderer):
     def end_game(self, game, result: GameResult):
         print(f"{result.game_id}: {self.match} - {result.winner} won in {result.steps} steps")
 
-    def action(self, game, step, agent, action):
+    def after_action(self, game, step, agent, action):
         print(f"\nStep {step + 1}: {agent} takes action {action}")
         print(f"Rewards: {game.rewards}")
         print(game.render())

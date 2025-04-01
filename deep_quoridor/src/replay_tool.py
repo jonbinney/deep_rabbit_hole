@@ -26,7 +26,7 @@ class ActionDelayPlugin(ArenaPlugin):
     def __init__(self, time_delay: int):
         self.time_delay = time_delay
 
-    def action(self, game, step, agent, action):
+    def after_action(self, game, step, agent, action):
         time.sleep(self.time_delay / 1000)
 
 

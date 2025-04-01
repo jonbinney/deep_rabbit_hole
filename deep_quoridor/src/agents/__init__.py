@@ -15,6 +15,7 @@ __all__ = [
 
 from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     AbstractTrainableAgent,
+    ActionLog,
     Agent,
     AgentRegistry,
     ReplayBuffer,

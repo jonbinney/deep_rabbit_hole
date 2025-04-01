@@ -1,7 +1,6 @@
 import yaml
-
-from arena_utils import ArenaPlugin, GameResult
 from agents import Agent
+from arena_utils import ArenaPlugin, GameResult
 
 
 class ArenaYAMLRecorder(ArenaPlugin):
@@ -19,7 +18,7 @@ class ArenaYAMLRecorder(ArenaPlugin):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         self.actions = []
 
-    def action(self, game, step, agent, action):
+    def after_action(self, game, step, agent, action):
         self.actions.append(action)
 
     def end_game(self, game, result: GameResult):
