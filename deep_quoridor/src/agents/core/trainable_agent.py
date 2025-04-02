@@ -272,7 +272,7 @@ class AbstractTrainableAgent(Agent):
                 )
         else:
             api = wandb.Api()
-            artifact = api.artifact(f"lazy-learning-liar/deep_quoridor/{model_id}:{wandb_alias}", type="model")
+            artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{model_id}:{wandb_alias}", type="model")
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 artifact_dir = artifact.download(root=tmpdir)
