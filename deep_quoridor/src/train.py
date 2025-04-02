@@ -160,7 +160,7 @@ def train_dqn(
         print("-----------------------------------------------------------------")
         print(f"Agent: {a.name()}")
         print("Configuration")
-        print(a.json_config())
+        print(a.yaml_config())
 
     arena.play_games(players=agents, times=episodes)
     # agent2.epsilon = 0.8

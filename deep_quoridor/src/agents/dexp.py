@@ -1,8 +1,7 @@
-import json
-
 import numpy as np
 import torch
 import torch.nn as nn
+import yaml
 
 from agents.core import AbstractTrainableAgent, rotation
 
@@ -179,7 +178,7 @@ class DExpAgent(AbstractTrainableAgent):
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
-    def json_config(self) -> str:
+    def yaml_config(self) -> str:
         config = {
             "board_size": self.board_size,
             "max_walls": self.max_walls,
@@ -196,7 +195,7 @@ class DExpAgent(AbstractTrainableAgent):
                 "include_turn": self.params.include_turn,
             },
         }
-        return json.dumps(config, indent=2)
+        return yaml.dump(config, indent=2)
 
 
 class DExpPretrainedAgent(DExpAgent):
