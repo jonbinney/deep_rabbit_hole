@@ -35,6 +35,8 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 
+from deep_quoridor.src.quoridor import Quoridor, MoveAction, WallAction, Position, WallOrientation, Action
+
 
 class QuoridorEnv(AECEnv):
     metadata = {"render_modes": ["ansi"], "name": "quoridor_v0"}
@@ -383,39 +385,37 @@ class QuoridorEnv(AECEnv):
     def action_space(self, agent):
         return spaces.Discrete(self.board_size**2 + (self.wall_size**2) * 2, seed=random.randint(0, 2**32 - 1))
 
-    def action_params_to_index(self, row: int, col: int, action_type: int = 0) -> int:
+    def action_params_to_index(self, action) -> int:
         """
-        Takes action parameters (row, col, movement_type) to an action index
-        movement_type = 0 for moving, 1 for horizontal wall placement, 2 for vertical wall placement
+        Converts an action object to an action index
         """
-        if action_type == 0:  # Pawn movement
-            return row * self.board_size + col
-        elif action_type == 1:  # Placing a vertical wall
-            return self.board_size**2 + row * self.wall_size + col
-        elif action_type == 2:  # Placing a horizontal wall
-            return self.board_size**2 + self.wall_size**2 + row * self.wall_size + col
+        if isinstance(action, MoveAction):
+            return action.position[0] * self.board_size + action.position[1]
+        elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
+            return self.board_size**2 + action.position[0] * self.wall_size + action.position[1]
+        elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
+            return self.board_size**2 + self.wall_size**2 + action.position[0] * self.wall_size + action.position[1]
         else:
-            raise ValueError(f"Invalid action type: {action_type}")
+            raise ValueError(f"Invalid action type: {action}")
 
-    def action_index_to_params(self, idx) -> Tuple[int, int, int]:
+    def action_index_to_params(self, idx) -> Action:
         """
-        Takes an action index to action parameters (row, col, movement_type)
-        movement_type = 0 for moving, 1 for vertical wall placement, 2 for horizontal wall placement
+        Converts an action index to an action object.
         """
+        action = None
         if idx < self.board_size**2:  # Pawn movement
-            action_type = 0
-            row, col = divmod(idx, self.board_size)
+            action = MoveAction(Position(divmod(idx, self.board_size)))
         elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
-            # Vertical wall placement
-            action_type = 1
-            row, col = divmod(idx - self.board_size**2, self.wall_size)
+            action = WallAction(Position(divmod(idx - self.board_size**2, self.wall_size)), WallOrientation.VERTICAL)
         elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
-            # Horizontal wall placement
-            action_type = 2
-            row, col = divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)
+            action = WallAction(
+                Position(divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)),
+                WallOrientation.HORIZONTAL,
+            )
         else:
             raise ValueError(f"Invalid action index: {idx}")
-        return (row, col, action_type)
+
+        return action
 
     def _move(self, agent, position):
         """
