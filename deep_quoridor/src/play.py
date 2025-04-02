@@ -6,6 +6,13 @@ from arena import Arena
 from arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
 
+
+def player_with_params(arg):
+    if not AgentRegistry.is_valid_encoded_name(arg):
+        raise argparse.ArgumentTypeError(f"Invalid player name: {arg}")
+    return arg
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=None, help="Board Size")
@@ -19,13 +26,14 @@ if __name__ == "__main__":
         help="Render modes to be used",
     )
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
+
     parser.add_argument(
         "-p",
         "--players",
         nargs="+",
-        choices=AgentRegistry.names(),
+        type=player_with_params,
         default=["random", "simple"],
-        help="List of players to compete against each other",
+        help=f"List of players to compete against each other. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
     parser.add_argument(
         "-A",
@@ -47,7 +55,6 @@ if __name__ == "__main__":
         default="game_recording.yaml",
         help="Save the played games to a file. Use 'None' to disable saving.",
     )
-
     parser.add_argument(
         "-i",
         "--seed",

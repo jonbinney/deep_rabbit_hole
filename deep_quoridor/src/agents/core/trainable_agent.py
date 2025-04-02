@@ -25,6 +25,7 @@ class AbstractTrainableAgent(Agent):
         batch_size=64,
         update_target_every=100,
         assing_negative_reward=False,
+        **kwargs,
     ):
         super().__init__()
         self.board_size = board_size
@@ -36,7 +37,7 @@ class AbstractTrainableAgent(Agent):
         self.batch_size = batch_size
         self.update_target_every = update_target_every
         self.assign_negative_reward = assing_negative_reward
-
+        self.final_reward_multiplier = 1
         self.action_size = self._calculate_action_size()
 
         # Setup device
@@ -75,13 +76,20 @@ class AbstractTrainableAgent(Agent):
         """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1
+        self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
+
+    def handle_opponent_step_outcome(self, observation_before_action, action, game):
+        pass
 
     def handle_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode:
             return
         reward = game.rewards[self.player_id]
+
+        if game.is_done():
+            reward *= self.final_reward_multiplier
 
         # Handle end of episode
         if action is None:
@@ -89,6 +97,7 @@ class AbstractTrainableAgent(Agent):
                 last = self.replay_buffer.get_last()
                 last[2] = reward  # update final reward
                 last[4] = 1.0  # mark as done
+                self.current_episode_reward += reward
             return
 
         state_before_action = self.observation_to_tensor(observation_before_action)
@@ -157,6 +166,12 @@ class AbstractTrainableAgent(Agent):
         """Select a random action from valid actions."""
         return np.random.choice(valid_actions)
 
+    def convert_action_mask_to_tensor(self, mask):
+        return torch.tensor(mask, dtype=torch.float32, device=self.device)
+
+    def convert_to_action_from_tensor_index(self, action_index_in_tensor):
+        return action_index_in_tensor
+
     def _log_action(self, q_values):
         if not self.action_log.is_enabled():
             return
@@ -165,7 +180,11 @@ class AbstractTrainableAgent(Agent):
 
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
-        scores = {int(i.item()): v.item() for v, i in zip(top_values, top_indices) if v.item() >= -100}
+        scores = {
+            int(self.convert_to_action_from_tensor_index(i.item())): v.item()
+            for v, i in zip(top_values, top_indices)
+            if v.item() >= -100
+        }
         self.action_log.action_score_ranking(scores)
 
     def _get_best_action(self, observation, mask):
@@ -174,10 +193,14 @@ class AbstractTrainableAgent(Agent):
         with torch.no_grad():
             q_values = self.online_network(state)
 
-        mask_tensor = torch.tensor(mask, dtype=torch.float32, device=self.device)
+        mask_tensor = self.convert_action_mask_to_tensor(mask)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(q_values)
-        return torch.argmax(q_values).item()
+
+        selected_action = torch.argmax(q_values).item()
+        idx = self.convert_to_action_from_tensor_index(selected_action)
+        assert mask[idx] == 1
+        return idx
 
     def train(self, batch_size):
         """Train the network on a batch of samples."""
@@ -186,7 +209,6 @@ class AbstractTrainableAgent(Agent):
 
         batch = self.replay_buffer.sample(batch_size)
         loss = self._train_on_batch(batch)
-        self._update_epsilon()
 
         return loss
 
@@ -234,22 +256,26 @@ class AbstractTrainableAgent(Agent):
         """Update epsilon value for exploration."""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
+    def resolve_filename(self, suffix):
+        filename = (
+            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_{suffix}.pt"
+        )
+        return filename
+
     def save_model(self, path):
         """Save the model to disk."""
         torch.save(self.online_network.state_dict(), path)
 
     def load_model(self, path):
         """Load the model from disk."""
+        print(f"Loading pre-trained model from {path}")
         self.online_network.load_state_dict(torch.load(path))
         self.update_target_network()
 
     def load_pretrained_file(self):
-        filename = (
-            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_final.pt"
-        )
+        filename = self.resolve_filename("final")
         model_path = Path(__file__).resolve().parents[4] / "models" / filename
         if os.path.exists(model_path):
-            print(f"Loading pre-trained model from {model_path}")
             self.load_model(model_path)
         else:
             raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")

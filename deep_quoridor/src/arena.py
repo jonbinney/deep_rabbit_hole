@@ -37,13 +37,11 @@ class Arena:
         for p, a in agents.items():
             a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
-
         start_time = time.time()
         step = 0
         for player_id in self.game.agent_iter():
             observation, _, termination, truncation, _ = self.game.last()
             agent = agents[player_id]
-
             if termination or truncation:
                 if agent.is_trainable():
                     # Handle end of game (in case winner was not this agent)
@@ -51,12 +49,16 @@ class Arena:
                 break
 
             action = int(agent.get_action(self.game))
-            self.plugins.before_action(self.game, agent)
 
+            self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
             if agent.is_trainable():
                 agent.handle_step_outcome(observation, action, self.game)
+
+            opponent_agent = agents[self.game.agent_selection]
+            if opponent_agent.is_trainable():
+                opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
 
             self.plugins.after_action(self.game, step, player_id, action)
             step += 1
@@ -88,7 +90,9 @@ class Arena:
             if isinstance(p, Agent):
                 agents.append(p)
             else:
-                agents.append(AgentRegistry.create(p, board_size=self.board_size, max_walls=self.max_walls))
+                agents.append(
+                    AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
+                )
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):

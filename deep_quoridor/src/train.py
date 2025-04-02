@@ -3,9 +3,9 @@ import os
 
 import torch
 import utils
-from agents.dexp import DExpAgent
+from agents import DExpAgent, GreedyAgent, SimpleAgent
+from agents.dexp import DExpPlayParams
 from agents.flat_dqn import AbstractTrainableAgent
-from agents.random import RandomAgent
 from arena import Arena
 from arena_utils import ArenaPlugin
 from renderers import Renderer
@@ -17,6 +17,11 @@ class TrainingStatusRenderer(Renderer):
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
+
+    def start_game(self, game, agent1, agent2):
+        self.step = 0
+        self.player1 = agent1.name()
+        self.player2 = agent2.name()
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0:
@@ -35,11 +40,21 @@ class TrainingStatusRenderer(Renderer):
                     else 0.0
                 )
                 print(
-                    f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Avg Reward: {avg_reward:.2f}, "
+                    f"{agent_name} Episode {self.episode_count + 1}/{self.total_episodes}, Steps: {self.step}, Avg Reward: {avg_reward:.2f}, "
                     f"Avg Loss: {avg_loss:.4f}, Epsilon: {agent.epsilon:.4f}"
                 )
         self.episode_count += 1
         return
+
+    def action(self, game, step, agent, action):
+        self.step += 1
+        if self.step == 1000:
+            print("board")
+            print(game.render())
+            print(f"player0: {self.player1}")
+            print(game.observe("player_0"))
+            print(f"player1:  {self.player2}")
+            print(game.observe("player_1"))
 
 
 class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
@@ -59,12 +74,13 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
-        self._save_models("_final")
+        self._save_models("final")
 
     def _save_models(self, suffix: str):
         for agent in self.agents:
             agent_name = agent.name()
-            save_file = os.path.join(self.path, f"{agent_name}_B{self.board_size}W{self.max_walls}{suffix}.pt")
+            filename = agent.resolve_filename(suffix)
+            save_file = os.path.join(self.path, filename)
             agent.save_model(save_file)
             print(f"{agent_name} Model saved to {save_file}")
 
@@ -103,23 +119,29 @@ def train_dqn(
     # Create directory for saving models if it doesn't exist
     os.makedirs(save_path, exist_ok=True)
 
-    agent1 = RandomAgent()
+    agent1 = SimpleAgent()
     agent2 = DExpAgent(
         board_size=board_size,
         max_walls=max_walls,
         epsilon=1,
         epsilon_decay=epsilon_decay,
+        gamma=0.9,
         batch_size=batch_size,
         update_target_every=update_target_every,
         assing_negative_reward=assign_negative_reward,
+        params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
     )
     agent2.training_mode = True
+    agent2.final_reward_multiplier = 2
+    # agent2.use_opponentns_actions = False
+    # agent2.load_model("models/dexp_B5W0_base.pt")
+    agent3 = GreedyAgent()  # noqa: F841
 
     save_plugin = SaveModelEveryNEpisodesPlugin(
         update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
     )
     print_plugin = TrainingStatusRenderer(
-        update_every=100,
+        update_every=1,
         total_episodes=episodes,
         agents=[agent2],
     )
@@ -129,9 +151,20 @@ def train_dqn(
         step_rewards=step_rewards,
         renderers=[print_plugin],
         plugins=[save_plugin],
+        swap_players=True,
     )
 
-    arena.play_games(players=[agent1, agent2], times=episodes)
+    agents = [agent2, agent1]
+    print("Agent configurations:")
+    for a in agents:
+        print("-----------------------------------------------------------------")
+        print(f"Agent: {a.name()}")
+        print("Configuration")
+        print(a.yaml_config())
+
+    arena.play_games(players=agents, times=episodes)
+    # agent2.epsilon = 0.8
+    # arena.play_games(players=[agent2, agent3], times=episodes)
     return
 
 

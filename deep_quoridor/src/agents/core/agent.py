@@ -107,6 +107,10 @@ class Agent:
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
+    def yaml_config(self) -> str:
+        """Returns a YAML string representation of the agent's configuration."""
+        return ""
+
 
 class AgentRegistry:
     agents = {}
@@ -114,6 +118,19 @@ class AgentRegistry:
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
         return AgentRegistry.agents[friendly_name](**kwargs)
+
+    @staticmethod
+    def create_from_encoded_name(encoded_name: str, **kwargs) -> Agent:
+        parts = encoded_name.split("-")
+        agent_type = parts[0]
+        agent_params = parts[1] if len(parts) > 1 else None
+        return AgentRegistry.agents[agent_type](agent_params_str=agent_params, **kwargs)
+
+    @staticmethod
+    def is_valid_encoded_name(encoded_name):
+        parts = encoded_name.split("-")
+        agent_type = parts[0]
+        return agent_type in AgentRegistry.names()
 
     @staticmethod
     def names():
