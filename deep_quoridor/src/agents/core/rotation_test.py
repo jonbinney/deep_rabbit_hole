@@ -16,7 +16,7 @@ def test_rotate_action_mask_simple():
     0 1 2                     Vertical(9-12):   Horizontal(13-16):
     3 4 5                     v v              h h
     6 7 8                     v v              h h
-                              v v              h h
+                            v v              h h
 
     Initial mask:             Expected after 180° rotation:
     1 0 0                     0 0 0

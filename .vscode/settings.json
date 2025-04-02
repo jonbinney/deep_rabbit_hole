@@ -8,7 +8,8 @@
         "-s",
         "./*",
         "-p",
-        "test_*.py"
+        "test_*.py",
+        "*_test.py"
     ],
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
@@ -23,5 +24,7 @@
         "github.copilot",
         "github.copilot-chat"
     ],
-    "ruff.trace.server": "messages"
+    "ruff.trace.server": "messages",
+    "python.analysis.extraPaths": [
+    ]
 }
