@@ -35,7 +35,29 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 
-from deep_quoridor.src.quoridor import Quoridor, MoveAction, WallAction, Position, WallOrientation, Action
+from deep_quoridor.src.quoridor import Action, Board, MoveAction, Position, Quoridor, WallAction, WallOrientation
+
+
+def to_q(row, col, action_type):
+    if action_type == 0:
+        return MoveAction(np.array((row, col)))
+    elif action_type == 1:
+        return WallAction(np.array((row, col)), WallOrientation.VERTICAL)
+    elif action_type == 2:
+        return WallAction(np.array((row, col)), WallOrientation.HORIZONTAL)
+    else:
+        assert False
+
+
+def from_q(action):
+    if isinstance(action, MoveAction):
+        return action.position[0], action.position[1], 0
+    elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
+        return action.position[0], action.position[1], 1
+    elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
+        return action.position[0], action.position[1], 2
+    else:
+        assert False
 
 
 class QuoridorEnv(AECEnv):
@@ -52,6 +74,8 @@ class QuoridorEnv(AECEnv):
         self.max_walls = max_walls  # Each player gets 10 walls
 
         self.possible_agents = ["player_0", "player_1"]
+
+        self.game = Quoridor(Board(board_size, max_walls))
 
         self.reset()
 
@@ -218,7 +242,7 @@ class QuoridorEnv(AECEnv):
                     # That new position is not blocked by a wall behind them
                     and not self.is_wall_between(new_row, new_col, straight_row, straight_col)
                 ):
-                    mask[self.action_params_to_index(straight_row, straight_col, 0)] = 1
+                    mask[self.action_params_to_index(to_q(straight_row, straight_col, 0))] = 1
                     continue
                 else:
                     # Try the diagonals, to the sides of the oponent
@@ -236,12 +260,12 @@ class QuoridorEnv(AECEnv):
                             # That new position is not blocked by a wall
                             and not self.is_wall_between(new_row, new_col, diag_row, diag_col)
                         ):
-                            mask[self.action_params_to_index(diag_row, diag_col, 0)] = 1
+                            mask[self.action_params_to_index(to_q(diag_row, diag_col, 0))] = 1
                     continue
 
             # If we get to this point it's because the target is within the board,
             # not blocked by a wall and the opponent is not on the way
-            mask[self.action_params_to_index(new_row, new_col, 0)] = 1
+            mask[self.action_params_to_index(to_q(new_row, new_col, 0))] = 1
 
         # Calculate wall placements
         # Iterate over all possible wall positions, only of there are any left to place
@@ -253,7 +277,7 @@ class QuoridorEnv(AECEnv):
                 if not self._is_wall_potential_block(row, col, orientation) or self._can_place_wall_without_blocking(
                     row, col, orientation
                 ):
-                    mask[self.action_params_to_index(row, col, orientation + 1)] = 1
+                    mask[self.action_params_to_index(to_q(row, col, orientation + 1))] = 1
 
         self.last_action_mask[agent_id] = mask
         return mask
@@ -390,7 +414,7 @@ class QuoridorEnv(AECEnv):
         Converts an action object to an action index
         """
         if isinstance(action, MoveAction):
-            return action.position[0] * self.board_size + action.position[1]
+            return action.destination[0] * self.board_size + action.destination[1]
         elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
             return self.board_size**2 + action.position[0] * self.wall_size + action.position[1]
         elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
@@ -404,12 +428,12 @@ class QuoridorEnv(AECEnv):
         """
         action = None
         if idx < self.board_size**2:  # Pawn movement
-            action = MoveAction(Position(divmod(idx, self.board_size)))
+            action = MoveAction(np.array(divmod(idx, self.board_size)))
         elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
-            action = WallAction(Position(divmod(idx - self.board_size**2, self.wall_size)), WallOrientation.VERTICAL)
+            action = WallAction(np.array(divmod(idx - self.board_size**2, self.wall_size)), WallOrientation.VERTICAL)
         elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
             action = WallAction(
-                Position(divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)),
+                np.array(divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)),
                 WallOrientation.HORIZONTAL,
             )
         else:

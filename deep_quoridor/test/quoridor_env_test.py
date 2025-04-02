@@ -1,4 +1,4 @@
-from deep_quoridor.src.quoridor_env import env as quoridor_env
+from deep_quoridor.src.quoridor_env import env as quoridor_env, to_q, from_q
 
 
 def parse_board(board):
@@ -111,7 +111,7 @@ class TestQuoridorEnv:
         env_walls = []
         for i in range(N**2, len(action_mask)):
             if action_mask[i] == 0:
-                row, col, action_type = env.action_index_to_params(i)
+                row, col, action_type = from_q(env.action_index_to_params(i))
 
                 env_walls.append((row, col, action_type - 1))
 
