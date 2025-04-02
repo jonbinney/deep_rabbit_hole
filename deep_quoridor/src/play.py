@@ -1,6 +1,6 @@
 import argparse
 
-import utils
+from utils.misc import set_deterministic
 from agents import AgentRegistry
 from arena import Arena
 from arena_yaml_recorder import ArenaYAMLRecorder
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    utils.set_deterministic(args.seed)
+    set_deterministic(args.seed)
 
     renderers = [Renderer.create(r) for r in args.renderers]
 

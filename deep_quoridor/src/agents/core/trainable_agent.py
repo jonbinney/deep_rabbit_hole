@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -24,7 +23,7 @@ class AbstractTrainableAgent(Agent):
         gamma=0.99,
         batch_size=64,
         update_target_every=100,
-        assing_negative_reward=False,
+        assign_negative_reward=False,
         **kwargs,
     ):
         super().__init__()
@@ -36,7 +35,7 @@ class AbstractTrainableAgent(Agent):
         self.gamma = gamma
         self.batch_size = batch_size
         self.update_target_every = update_target_every
-        self.assign_negative_reward = assing_negative_reward
+        self.assign_negative_reward = assign_negative_reward
         self.final_reward_multiplier = 1
         self.action_size = self._calculate_action_size()
 

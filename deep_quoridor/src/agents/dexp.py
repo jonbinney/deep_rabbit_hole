@@ -1,9 +1,11 @@
+from dataclasses import dataclass
+
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-
 from agents.core import AbstractTrainableAgent, rotation
+from utils.subargs import SubargsBase
 
 
 class DExpNetwork(nn.Module):
@@ -42,11 +44,11 @@ class DExpNetwork(nn.Module):
         return self.model(x)
 
 
-class DExpPlayParams:
-    def __init__(self, use_rotate_board=False, include_turn=False, split_board=False):
-        self.use_rotate_board = use_rotate_board
-        self.include_turn = include_turn
-        self.split_board = split_board
+@dataclass
+class DExpPlayParams(SubargsBase):
+    use_rotate_board: bool = False
+    include_turn: bool = False
+    split_board: bool = False
 
     @classmethod
     def from_str(cls, agent_params_str="000"):
@@ -64,16 +66,17 @@ class DExpAgent(AbstractTrainableAgent):
 
     def __init__(
         self,
-        use_opponentns_actions=False,
+        use_opponents_actions=False,
         params=DExpPlayParams(),
-        agent_params_str=None,
         **kwargs,
     ):
-        self.use_opponents_actions = use_opponentns_actions
+        self.use_opponents_actions = use_opponents_actions
         self.params = params
-        if agent_params_str is not None:
-            self.params = DExpPlayParams.from_str(agent_params_str)
         super().__init__(**kwargs)
+
+    @classmethod
+    def params_class(cls):
+        return DExpPlayParams
 
     def resolve_filename(self, suffix):
         filename = f"dexp_B{self.board_size}W{self.max_walls}_C{self.params}_{suffix}.pt"

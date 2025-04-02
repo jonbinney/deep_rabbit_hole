@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from utils.subargs import parse_subargs
+
 
 class ActionLog:
     @dataclass
@@ -121,14 +123,23 @@ class AgentRegistry:
 
     @staticmethod
     def create_from_encoded_name(encoded_name: str, **kwargs) -> Agent:
-        parts = encoded_name.split("-")
+        parts = encoded_name.split(":")
         agent_type = parts[0]
-        agent_params = parts[1] if len(parts) > 1 else None
-        return AgentRegistry.agents[agent_type](agent_params_str=agent_params, **kwargs)
+        if len(parts) == 1:
+            # No subarguments passed
+            return AgentRegistry.agents[agent_type](**kwargs)
+
+        subargs_class = AgentRegistry.agents[agent_type].params_class()
+        if subargs_class is None:
+            raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
+
+        subargs = parse_subargs(parts[1], subargs_class)
+
+        return AgentRegistry.agents[agent_type](params=subargs, **kwargs)
 
     @staticmethod
-    def is_valid_encoded_name(encoded_name):
-        parts = encoded_name.split("-")
+    def is_valid_encoded_name(encoded_name: str):
+        parts = encoded_name.split(":")
         agent_type = parts[0]
         return agent_type in AgentRegistry.names()
 
