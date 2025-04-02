@@ -24,7 +24,7 @@ class ParseSubargsError(ValueError):
 
 
 def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="="):
-    ""
+    """Parses the string s and uses it to instantiate a class cls and return it."""
     if s == "":
         return cls()
 
