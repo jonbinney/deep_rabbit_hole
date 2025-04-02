@@ -86,9 +86,12 @@ class DExpAgent(AbstractTrainableAgent):
     def params_class(cls):
         return DExpPlayParams
 
+    def version(self):
+        """Bump this version when compatibility with saved models is broken"""
+        return 1
+
     def resolve_filename(self, suffix):
-        filename = f"dexp_B{self.board_size}W{self.max_walls}_C{self.params}_{suffix}.pt"
-        return filename
+        return f"{self.model_id()}_C{self.params}_{suffix}.pt"
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""

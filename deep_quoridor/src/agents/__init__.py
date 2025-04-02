@@ -8,7 +8,6 @@ __all__ = [
     "RandomAgent",
     "ReplayAgent",
     "ReplayBuffer",
-    "SelfRegisteringAgent",
     "SimpleAgent",
 ]
 

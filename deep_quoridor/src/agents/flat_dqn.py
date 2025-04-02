@@ -42,6 +42,13 @@ class FlatDQNAgent(AbstractTrainableAgent):
         """
         return None
 
+    def name(self):
+        return "flatdqn"
+
+    def version(self):
+        """Bump this version when compatibility with saved models is broken"""
+        return 1
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
