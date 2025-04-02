@@ -111,7 +111,7 @@ class QuoridorEnv(AECEnv):
 
         return None
 
-    def step(self, action):
+    def step(self, action_index):
         """
         Players move by selecting an index from 0-80 (9×9 board).
         Wall placement is mapped to 81-208 (8×8×2).
@@ -121,14 +121,14 @@ class QuoridorEnv(AECEnv):
             self._next_player()
             return
 
-        if self.last_action_mask[agent][action] != 1:
-            raise RuntimeError(f"Action not allowed by mask {action}")
+        if self.last_action_mask[agent][action_index] != 1:
+            raise RuntimeError(f"Action not allowed by mask {action_index}")
 
-        (row, col, action_type) = self.action_index_to_params(action)
-        if action_type == 0:
-            self._move(agent, (row, col))
+        action = self.action_index_to_params(action_index)
+        if isinstance(action, MoveAction):
+            self._move(agent, action.destination)
         else:
-            self.place_wall(agent, (row, col), action_type - 1)
+            self.place_wall(agent, action.position, action.orientation)
 
         if self._check_win(agent):
             self.terminations = {a: True for a in self.agents}
