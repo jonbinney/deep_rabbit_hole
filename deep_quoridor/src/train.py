@@ -2,13 +2,13 @@ import argparse
 import os
 
 import torch
-import utils
 from agents import DExpAgent, GreedyAgent, SimpleAgent
 from agents.dexp import DExpPlayParams
 from agents.flat_dqn import AbstractTrainableAgent
 from arena import Arena
 from arena_utils import ArenaPlugin
 from renderers import Renderer
+from utils.misc import set_deterministic
 
 
 class TrainingStatusRenderer(Renderer):
@@ -128,7 +128,7 @@ def train_dqn(
         gamma=0.9,
         batch_size=batch_size,
         update_target_every=update_target_every,
-        assing_negative_reward=assign_negative_reward,
+        assign_negative_reward=assign_negative_reward,
         params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
     )
     agent2.training_mode = True
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     print(f"Initializing random seed {args.seed}")
 
     # Set random seed for reproducibility
-    utils.set_deterministic(args.seed)
+    set_deterministic(args.seed)
     train_dqn(
         episodes=args.episodes,
         batch_size=args.batch_size,

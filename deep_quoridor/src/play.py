@@ -1,10 +1,10 @@
 import argparse
 
-import utils
 from agents import AgentRegistry
 from arena import Arena
 from arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
+from utils.misc import set_deterministic
 
 
 def player_with_params(arg):
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    utils.set_deterministic(args.seed)
+    set_deterministic(args.seed)
 
     renderers = [Renderer.create(r) for r in args.renderers]
 
