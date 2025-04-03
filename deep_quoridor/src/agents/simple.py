@@ -1,9 +1,7 @@
-from random import Random
-
 from agents.core import Agent
 
 
-def sample_random_action_sequence(rnd, game, max_path_length):
+def sample_random_action_sequence(game, max_path_length):
     """
     Sample a random sequence of actions for a given game. Stops early if the game terminates."""
     agent_name = game.agent_selection
@@ -16,7 +14,7 @@ def sample_random_action_sequence(rnd, game, max_path_length):
 
         # For now, assume the other agent takes random actions.
         if game.agent_selection != agent_name:
-            action = game.action_space(game.agent_selection).sample(rnd, mask)
+            action = game.action_space(game.agent_selection).sample(mask)
             game.step(action)
             continue
 
@@ -32,11 +30,10 @@ def sample_random_action_sequence(rnd, game, max_path_length):
 
 
 class SimpleAgent(Agent):
-    def __init__(self, rnd=Random(), sequence_length=3, num_sequences=10, **kwargs):
+    def __init__(self, sequence_length=3, num_sequences=10, **kwargs):
         super().__init__()
         self.sequence_length = sequence_length
         self.num_sequences = num_sequences
-        self.rnd = rnd
 
     def get_action(self, game):
         _, _, termination, truncation, _ = game.last()
@@ -45,7 +42,7 @@ class SimpleAgent(Agent):
 
         possible_action_sequences = []
         for _ in range(self.num_sequences):
-            action_sequence, total_reward = sample_random_action_sequence(self.rnd, game.copy(), self.sequence_length)
+            action_sequence, total_reward = sample_random_action_sequence(game.copy(), self.sequence_length)
             possible_action_sequences.append((action_sequence, total_reward))
 
         # Choose the action sequence with the highest reward.

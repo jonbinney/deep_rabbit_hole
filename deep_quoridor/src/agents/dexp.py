@@ -104,6 +104,12 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size, self.params.split_board, self.params.include_turn)
 
+    def adjust_reward(self, r, game):
+        r = super().adjust_reward(r, game)
+        if game.is_done():
+            r = r - self.steps / self.board_size**2
+        return r
+
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode or not self.use_opponents_actions:
             return
@@ -179,21 +185,21 @@ class DExpAgent(AbstractTrainableAgent):
 
         # Combine all features into single tensor
         flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
-        print(f"Obs {flat_obs}")
+        # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
         """Convert action mask to tensor, rotating it for player_1."""
         if self.player_id == "player_0" or not self.params.use_rotate_board:
-            print(f"Mask {mask}")
+            # print(f"Mask {mask}")
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
-        print(f"Mask(r) {rotated_mask}")
+        # print(f"Mask(r) {rotated_mask}")
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         """Convert action index from rotated tensor back to original action space."""
-        print(f"action {action_index_in_tensor}")
+        # print(f"action {action_index_in_tensor}")
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 

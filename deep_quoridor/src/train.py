@@ -52,6 +52,7 @@ def train_dqn(
         assign_negative_reward=assign_negative_reward,
         params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
         training_mode=True,
+        use_opponents_actions=False,
     )
     agent2.final_reward_multiplier = 2
     # agent2.load_model("models/dexp_B5W0_base.pt")
