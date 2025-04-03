@@ -35,6 +35,13 @@ class DQNNetwork(nn.Module):
 class FlatDQNAgent(AbstractTrainableAgent):
     """Agent that uses Deep Q-Network with flat state representation."""
 
+    @classmethod
+    def params_class(cls):
+        """If we want to receive parameters from the command line, return a class that uses @dataclass
+        containing the fields.   They will be parsed using subargs.
+        """
+        return None
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
