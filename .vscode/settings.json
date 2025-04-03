@@ -24,7 +24,4 @@
         "github.copilot-chat"
     ],
     "ruff.trace.server": "messages",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}/deep_quoridor/src"
-    ]
 }
