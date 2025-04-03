@@ -179,17 +179,21 @@ class DExpAgent(AbstractTrainableAgent):
 
         # Combine all features into single tensor
         flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
+        print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
         """Convert action mask to tensor, rotating it for player_1."""
         if self.player_id == "player_0" or not self.params.use_rotate_board:
+            print(f"Mask {mask}")
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
+        print(f"Mask(r) {rotated_mask}")
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         """Convert action index from rotated tensor back to original action space."""
+        print(f"action {action_index_in_tensor}")
         if self.player_id == "player_0" or not self.params.use_rotate_board:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 

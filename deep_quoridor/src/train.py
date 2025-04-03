@@ -54,7 +54,6 @@ def train_dqn(
         training_mode=True,
     )
     agent2.final_reward_multiplier = 2
-    # agent2.use_opponentns_actions = False
     # agent2.load_model("models/dexp_B5W0_base.pt")
     agent3 = GreedyAgent()  # noqa: F841
 
@@ -82,7 +81,7 @@ def train_dqn(
         board_size=board_size,
         max_walls=max_walls,
         step_rewards=step_rewards,
-        renderers=[print_plugin],
+        renderers=[print_plugin],  # PygameRenderer()],
         plugins=plugins,
         swap_players=True,
     )

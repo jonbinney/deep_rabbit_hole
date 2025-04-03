@@ -203,6 +203,7 @@ class AbstractTrainableAgent(Agent):
         mask = observation["action_mask"]
 
         if random.random() < self.epsilon:
+            print(f"rnd-mask: {mask}")
             valid_actions = self._get_valid_actions(mask)
             return self._select_random_action(valid_actions)
 
