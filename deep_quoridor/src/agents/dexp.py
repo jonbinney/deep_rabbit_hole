@@ -1,11 +1,13 @@
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-from agents.core import AbstractTrainableAgent, rotation
 from utils.subargs import SubargsBase
+
+from agents.core import AbstractTrainableAgent, rotation
 
 
 class DExpNetwork(nn.Module):
@@ -49,6 +51,7 @@ class DExpPlayParams(SubargsBase):
     use_rotate_board: bool = False
     include_turn: bool = False
     split_board: bool = False
+    nick: Optional[str] = None
 
     @classmethod
     def from_str(cls, agent_params_str="000"):
@@ -73,6 +76,11 @@ class DExpAgent(AbstractTrainableAgent):
         self.use_opponents_actions = use_opponents_actions
         self.params = params
         super().__init__(**kwargs)
+
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        return f"dexp ({self.params})"
 
     @classmethod
     def params_class(cls):

@@ -13,7 +13,7 @@ class SubargsBase:
         def resolve_type(tp):
             if get_origin(tp) is Union:
                 args = [arg for arg in get_args(tp) if arg is not type(None)]
-                return args[0] if args else None
+                return args[0].__name__ if args else None
             return tp.__name__
 
         return {f.name: resolve_type(f.type) for f in fields(cls)}
@@ -41,9 +41,9 @@ def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="="):
             )
 
         field_type = class_fields[k]
-        if field_type == "string":
+        if field_type == "str":
             pass
-        if field_type == "int":
+        elif field_type == "int":
             v = int(v)
         elif field_type == "bool":
             v = v.lower() in ("true", "1", "yes")
@@ -51,7 +51,7 @@ def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="="):
             v = float(v)
         else:
             raise ParseSubargsError(
-                f"Field '{k}' has an type '{field_type}' that I don't know how to parse. May need to update me."
+                f"Field '{k}' is of type '{field_type}' that I don't know how to parse. May need to update me."
             )
         args[k] = v
 
