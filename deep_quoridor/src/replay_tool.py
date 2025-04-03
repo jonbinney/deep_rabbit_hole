@@ -2,7 +2,7 @@ import argparse
 import time
 
 from arena import Arena, ArenaPlugin
-from arena_yaml_recorder import ArenaYAMLRecorder
+from plugins import ArenaYAMLRecorder
 from renderers import Renderer
 
 """Deep Quoridor Game Replay Tool

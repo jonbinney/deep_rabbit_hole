@@ -1,11 +1,13 @@
 import os
 import random
 from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -118,6 +120,20 @@ class AbstractTrainableAgent(Agent):
             loss = self.train(self.batch_size)
             if loss is not None:
                 self.train_call_losses.append(loss)
+
+    def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
+        avg_reward = (
+            sum(self.episodes_rewards[-length:]) / min(length, len(self.episodes_rewards))
+            if self.episodes_rewards
+            else 0.0
+        )
+        avg_loss = (
+            sum(self.train_call_losses[-length:]) / min(length, len(self.train_call_losses))
+            if self.train_call_losses
+            else 0.0
+        )
+
+        return avg_loss, avg_reward
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -255,11 +271,17 @@ class AbstractTrainableAgent(Agent):
         """Update epsilon value for exploration."""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
+    def version(self):
+        raise NotImplementedError("Trainable agents should return a version")
+
+    def model_id(self):
+        return f"{self.model_name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+
+    def model_name(self):
+        raise NotImplementedError("Trainable agents should return a model name")
+
     def resolve_filename(self, suffix):
-        filename = (
-            f"{Agent._friendly_name(self.__class__.__base__.__name__)}_B{self.board_size}W{self.max_walls}_{suffix}.pt"
-        )
-        return filename
+        return f"{self.model_id()}_{suffix}.pt"
 
     def save_model(self, path):
         """Save the model to disk."""
