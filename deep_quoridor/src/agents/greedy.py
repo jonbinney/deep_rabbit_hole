@@ -1,16 +1,35 @@
+import random
+from dataclasses import dataclass
 from queue import Queue
-from typing import TypeAlias
+from typing import Optional, TypeAlias
 
 import numpy as np
+from utils.subargs import SubargsBase
 
 from agents.core import Agent
 
 Position: TypeAlias = tuple[int, int]
 
 
+@dataclass
+class GreedyParams(SubargsBase):
+    p_random: float = 0.0
+    nick: Optional[str] = None
+
+
 class GreedyAgent(Agent):
-    def __init__(self, **kwargs):
+    def __init__(self, params=GreedyParams(), **kwargs):
         super().__init__()
+        self.params = params
+
+    @classmethod
+    def params_class(cls):
+        return GreedyParams
+
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        return f"greedy (p_random={self.params.p_random})" if self.params.p_random > 0 else "greedy"
 
     def start_game(self, game, player_id):
         self.player_id = player_id
@@ -160,6 +179,13 @@ class GreedyAgent(Agent):
         observation, _, termination, truncation, _ = game.last()
         if termination or truncation:
             return None
+
+        if random.random() < self.params.p_random:
+            if self.action_log.is_enabled():
+                self.action_log.clear()
+                # TO DO: when we have the functionality in the log to output a message,
+                # use it to say that the move will be random.
+            return game.action_space(game.agent_selection).sample(observation["action_mask"])
 
         goal_row = game.board_size - 1 if self.player_id == "player_0" else 0
         opponent_row = game.board_size - 1 - goal_row
