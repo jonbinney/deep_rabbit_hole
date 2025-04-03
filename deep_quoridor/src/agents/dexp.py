@@ -82,6 +82,9 @@ class DExpAgent(AbstractTrainableAgent):
             return self.params.nick
         return f"dexp ({self.params})"
 
+    def model_name(self):
+        return "dexp"
+
     @classmethod
     def params_class(cls):
         return DExpPlayParams

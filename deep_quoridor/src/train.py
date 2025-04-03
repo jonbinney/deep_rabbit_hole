@@ -7,6 +7,7 @@ from agents.dexp import DExpPlayParams
 from arena import Arena
 from plugins import SaveModelEveryNEpisodesPlugin
 from renderers import TrainingStatusRenderer
+from utils.misc import set_deterministic
 
 
 def train_dqn(

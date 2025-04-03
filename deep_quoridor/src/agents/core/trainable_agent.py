@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -274,7 +275,10 @@ class AbstractTrainableAgent(Agent):
         raise NotImplementedError("Trainable agents should return a version")
 
     def model_id(self):
-        return f"{self.name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+        return f"{self.model_name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+
+    def model_name(self):
+        raise NotImplementedError("Trainable agents should return a model name")
 
     def resolve_filename(self, suffix):
         return f"{self.model_id()}_{suffix}.pt"

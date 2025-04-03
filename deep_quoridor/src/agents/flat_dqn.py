@@ -45,6 +45,9 @@ class FlatDQNAgent(AbstractTrainableAgent):
     def name(self):
         return "flatdqn"
 
+    def model_name(self):
+        return "flatdqn"
+
     def version(self):
         """Bump this version when compatibility with saved models is broken"""
         return 1
