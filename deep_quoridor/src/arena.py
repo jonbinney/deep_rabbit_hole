@@ -3,6 +3,7 @@ from threading import Thread
 from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
+from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
 from quoridor_env import env
 from renderers import PygameRenderer
@@ -43,7 +44,7 @@ class Arena:
             observation, _, termination, truncation, _ = self.game.last()
             agent = agents[player_id]
             if termination or truncation:
-                if agent.is_trainable():
+                if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                     # Handle end of game (in case winner was not this agent)
                     agent.handle_step_outcome(observation, None, self.game)
                 break
@@ -53,11 +54,11 @@ class Arena:
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
-            if agent.is_trainable():
+            if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                 agent.handle_step_outcome(observation, action, self.game)
 
             opponent_agent = agents[self.game.agent_selection]
-            if opponent_agent.is_trainable():
+            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
                 opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
 
             self.plugins.after_action(self.game, step, player_id, action)
