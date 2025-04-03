@@ -9,7 +9,6 @@
         "./*",
         "-p",
         "test_*.py",
-        "*_test.py"
     ],
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
@@ -25,7 +24,4 @@
         "github.copilot-chat"
     ],
     "ruff.trace.server": "messages",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}/deep_quoridor/src"
-    ]
 }
