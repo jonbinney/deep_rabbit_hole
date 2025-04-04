@@ -1,8 +1,10 @@
+from dataclasses import dataclass
+
 import numpy as np
 import torch
 import torch.nn as nn
 
-from agents.core import AbstractTrainableAgent
+from agents.core import AbstractTrainableAgent, TrainableAgentParams
 
 
 class DQNNetwork(nn.Module):
@@ -32,15 +34,25 @@ class DQNNetwork(nn.Module):
         return self.model(x)
 
 
+@dataclass
+class FlatDQNAParams(TrainableAgentParams):
+    pass
+
+
 class FlatDQNAgent(AbstractTrainableAgent):
     """Agent that uses Deep Q-Network with flat state representation."""
 
+    def __init__(
+        self,
+        params=FlatDQNAParams(),
+        **kwargs,
+    ):
+        self.params = params
+        super().__init__(params=params, **kwargs)
+
     @classmethod
     def params_class(cls):
-        """If we want to receive parameters from the command line, return a class that uses @dataclass
-        containing the fields.   They will be parsed using subargs.
-        """
-        return None
+        return FlatDQNAParams
 
     def name(self):
         return "flatdqn"
@@ -70,13 +82,3 @@ class FlatDQNAgent(AbstractTrainableAgent):
 
         flat_obs = np.concatenate([board, walls, my_walls, opponent_walls])
         return torch.FloatTensor(flat_obs).to(self.device)
-
-
-class Pretrained01FlatDQNAgent(FlatDQNAgent):
-    """
-    A FlatDQNAgent that is initialized with the pre-trained model from main.py.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.load_pretrained_file()

@@ -1,15 +1,34 @@
 import os
 import random
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from utils.misc import resolve_path
+from utils.subargs import SubargsBase
 
+import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
+
+
+@dataclass
+class TrainableAgentParams(SubargsBase):
+    # Just used to display a user friendly name
+    nick: Optional[str] = None
+    # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
+    wandb_alias: Optional[str] = None
+    # If a filename is provided, the model will be loaded from disc
+    model_filename: Optional[str] = None
+    # Directory where wandb models are stored
+    wandb_dir: str = "wandbmodels"
+    # Directory where local models are stored
+    model_dir: str = "models"
 
 
 class AbstractTrainableAgent(Agent):
@@ -26,6 +45,8 @@ class AbstractTrainableAgent(Agent):
         batch_size=64,
         update_target_every=100,
         assign_negative_reward=False,
+        training_mode=False,
+        params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
         super().__init__()
@@ -40,9 +61,13 @@ class AbstractTrainableAgent(Agent):
         self.assign_negative_reward = assign_negative_reward
         self.final_reward_multiplier = 1
         self.action_size = self._calculate_action_size()
+        self.training_mode = training_mode
+        self.params = params
 
         # Setup device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.fetch_model_from_wand_and_update_params()
 
         # Initialize networks
         self.online_network = self._create_network()
@@ -56,10 +81,10 @@ class AbstractTrainableAgent(Agent):
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
         self.replay_buffer = ReplayBuffer(capacity=10000)
-        self.training_mode = False
         self.episodes_rewards = []
         self.train_call_losses = []
         self.reset_episode_related_info()
+        self.resolve_and_load_model()
 
     def reset_episode_related_info(self):
         self.current_episode_reward = 0
@@ -134,6 +159,16 @@ class AbstractTrainableAgent(Agent):
         )
 
         return avg_loss, avg_reward
+
+    def model_hyperparameters(self):
+        return {
+            "epsilon_min": self.epsilon_min,
+            "epsilon_decay": self.epsilon_decay,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "update_target_every": self.update_target_every,
+            "assign_negative_reward": self.assign_negative_reward,
+        }
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -280,11 +315,16 @@ class AbstractTrainableAgent(Agent):
     def model_name(self):
         raise NotImplementedError("Trainable agents should return a model name")
 
+    def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
+        return f"{self.model_id()}_{artifact.digest[:5]}.pt"
+
     def resolve_filename(self, suffix):
         return f"{self.model_id()}_{suffix}.pt"
 
     def save_model(self, path):
         """Save the model to disk."""
+        # Create directory for saving models if it doesn't exist
+        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
         torch.save(self.online_network.state_dict(), path)
 
     def load_model(self, path):
@@ -293,10 +333,57 @@ class AbstractTrainableAgent(Agent):
         self.online_network.load_state_dict(torch.load(path))
         self.update_target_network()
 
-    def load_pretrained_file(self):
-        filename = self.resolve_filename("final")
-        model_path = Path(__file__).resolve().parents[4] / "models" / filename
-        if os.path.exists(model_path):
-            self.load_model(model_path)
+    def resolve_and_load_model(self):
+        """Figure out what model needs to be loaded based on the settings and loads it."""
+        if self.params.model_filename:
+            filename = self.params.model_filename
         else:
-            raise FileNotFoundError(f"Model file {model_path} not found. Please provide the weights file.")
+            # If no filename is passed in training mode, assume we are not loading a model
+            if self.training_mode:
+                return
+
+            # If it's not training mode, we definitely need to load a pretrained model, so try the
+            # default path for local files
+            filename = resolve_path(self.params.model_dir, self.resolve_filename("final"))
+
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"Model file {filename} not found.")
+
+        self.load_model(filename)
+
+    @classmethod
+    def params_class(cls):
+        raise NotImplementedError("Trainable agents must implement method params_class")
+
+    def fetch_model_from_wand_and_update_params(self):
+        """
+        This function doesn't do anything if wandb_alias is not set in self.params.
+        Otherwise, it will download the file if there's not a local copy.
+        The params are updated to the artifact metadata.
+
+        """
+        alias = self.params.wandb_alias
+        if not alias:
+            return
+
+        api = wandb.Api()
+        artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
+        local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
+
+        self.params = self.params_class()(**artifact.metadata)
+        self.params.model_filename = str(local_filename)
+
+        if os.path.exists(local_filename):
+            return local_filename
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_dir = artifact.download(root=tmpdir)
+
+            path = artifact.download(root=artifact_dir)
+            tmp_filename = Path(path) / f"{self.model_id()}.pt"
+            if not os.path.exists(tmp_filename):
+                raise FileNotFoundError(f"Model file {tmp_filename} was not downloaded.  Please check the artifact")
+
+            os.rename(tmp_filename, local_filename)
+
+            print(f"Model downloaded from wandb to {local_filename}")

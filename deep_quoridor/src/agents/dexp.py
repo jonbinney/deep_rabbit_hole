@@ -1,13 +1,12 @@
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-from utils.subargs import SubargsBase
 
 from agents.core import AbstractTrainableAgent, rotation
+from agents.core.trainable_agent import TrainableAgentParams
 
 
 class DExpNetwork(nn.Module):
@@ -47,16 +46,17 @@ class DExpNetwork(nn.Module):
 
 
 @dataclass
-class DExpPlayParams(SubargsBase):
+class DExpPlayParams(TrainableAgentParams):
     use_rotate_board: bool = False
     include_turn: bool = False
     split_board: bool = False
-    nick: Optional[str] = None
 
     @classmethod
     def from_str(cls, agent_params_str="000"):
         p = DExpPlayParams(
-            bool(int(agent_params_str[0])), bool(int(agent_params_str[1])), bool(int(agent_params_str[2]))
+            use_rotate_board=bool(int(agent_params_str[0])),
+            include_turn=bool(int(agent_params_str[1])),
+            split_board=bool(int(agent_params_str[2])),
         )
         return p
 
@@ -75,7 +75,7 @@ class DExpAgent(AbstractTrainableAgent):
     ):
         self.use_opponents_actions = use_opponents_actions
         self.params = params
-        super().__init__(**kwargs)
+        super().__init__(params=params, **kwargs)
 
     def name(self):
         if self.params.nick:
@@ -213,13 +213,3 @@ class DExpAgent(AbstractTrainableAgent):
             },
         }
         return yaml.dump(config, indent=2)
-
-
-class DExpPretrainedAgent(DExpAgent):
-    """
-    A DExpAgent that is initialized with the pre-trained model from main.py.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.load_pretrained_file()
