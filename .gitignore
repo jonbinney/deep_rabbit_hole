@@ -172,3 +172,5 @@ mlartifacts
 mlruns
 game_recording.yaml
 .vscode/launch.json
+wandb
+wandbmodels
