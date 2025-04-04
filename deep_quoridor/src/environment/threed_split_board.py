@@ -3,9 +3,11 @@ from pettingzoo.utils.env import AgentID, ObsType
 from pettingzoo.utils.wrappers import BaseWrapper
 
 
-class SplitBoardTo3DWrapper(BaseWrapper):
+class ThreeDSplitBoardWrapper(BaseWrapper):
     """
-    A wrapper that combines my_board and opponent_board into a single 3D one-hot encoded board.
+    This wrapper modifies the observation space of the environment to include a 3D representation
+     of the board, where each layer represents the positions of one player.
+
     """
 
     def __init__(self, env):
@@ -18,8 +20,11 @@ class SplitBoardTo3DWrapper(BaseWrapper):
         observation = obs["observation"].copy()
 
         # Combine my_board and opponent_board into a single 3D board
-        my_board = observation.pop("my_board")
-        opponent_board = observation.pop("opponent_board")
+        board = observation.pop("board")
+        # Create one-hot representations for player and opponent
+        my_board = (board == 1).astype(np.float32)
+        opponent_board = (board == 2).astype(np.float32)
+
         combined_board = np.stack([my_board, opponent_board], axis=-1)
 
         # Add the combined 3D board to the observation
