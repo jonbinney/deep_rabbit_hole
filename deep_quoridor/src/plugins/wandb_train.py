@@ -33,7 +33,7 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
-            avg_reward, avg_loss = self.agent.compute_loss_and_reward(self.update_every)
+            avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
 
             self.run.log(
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},

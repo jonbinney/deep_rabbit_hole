@@ -47,9 +47,9 @@ class DExpNetwork(nn.Module):
 
 @dataclass
 class DExpPlayParams(TrainableAgentParams):
-    use_rotate_board: bool = False
-    include_turn: bool = False
-    split_board: bool = False
+    rotate: bool = False
+    turn: bool = False
+    split: bool = False
 
     @classmethod
     def from_str(cls, agent_params_str="000"):
@@ -61,7 +61,7 @@ class DExpPlayParams(TrainableAgentParams):
         return p
 
     def __str__(self):
-        return f"{int(self.use_rotate_board)}{int(self.include_turn)}{int(self.split_board)}"
+        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
 
 
 class DExpAgent(AbstractTrainableAgent):
@@ -102,7 +102,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        return DExpNetwork(self.board_size, self.action_size, self.params.split_board, self.params.include_turn)
+        return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode or not self.use_opponents_actions:
@@ -151,7 +151,7 @@ class DExpAgent(AbstractTrainableAgent):
         obs = observation["observation"]
 
         # Rotate board and walls if needed for player_1
-        should_rotate = player_id == "player_1" and self.params.use_rotate_board
+        should_rotate = player_id == "player_1" and self.params.rotate
         board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
         walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
 
@@ -165,32 +165,36 @@ class DExpAgent(AbstractTrainableAgent):
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
 
         # Swap positions and walls if not player's turn and include_turn is True
-        if not is_player_turn and self.params.include_turn:
+        if not is_player_turn and self.params.turn:
             my_walls, opponent_walls = opponent_walls, my_walls
             player_board, opponent_board = opponent_board, player_board
 
         # Prepare board representation
-        board = np.stack([player_board, opponent_board]) if self.params.split_board else board
+        board = np.stack([player_board, opponent_board]) if self.params.split else board
 
         # Flatten all components
         board_flat = board.flatten()
         walls_flat = walls.flatten()
-        turn_info = [my_turn] if self.params.include_turn else []
+        turn_info = [my_turn] if self.params.turn else []
 
         # Combine all features into single tensor
         flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
+        # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
         """Convert action mask to tensor, rotating it for player_1."""
-        if self.player_id == "player_0" or not self.params.use_rotate_board:
+        if self.player_id == "player_0" or not self.params.rotate:
+            # print(f"Mask {mask}")
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
+        # print(f"Mask(r) {rotated_mask}")
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         """Convert action index from rotated tensor back to original action space."""
-        if self.player_id == "player_0" or not self.params.use_rotate_board:
+        # print(f"action {action_index_in_tensor}")
+        if self.player_id == "player_0" or not self.params.rotate:
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
@@ -207,9 +211,9 @@ class DExpAgent(AbstractTrainableAgent):
             "training_mode": self.training_mode,
             "final_reward_multiplier": self.final_reward_multiplier,
             "params": {
-                "use_rotate_board": self.params.use_rotate_board,
-                "split_board": self.params.split_board,
-                "include_turn": self.params.include_turn,
+                "use_rotate_board": self.params.rotate,
+                "split_board": self.params.split,
+                "include_turn": self.params.turn,
             },
         }
         return yaml.dump(config, indent=2)
