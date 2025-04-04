@@ -9,13 +9,13 @@ import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, agent: AbstractTrainableAgent):
-        self.agent = agent
+    def __init__(self, update_every: int, total_episodes: int):
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
+        self.agent = None
 
-    def start_arena(self, game, total_games: int):
+    def _initialize(self, game):
         config = {
             "board_size": game.board_size,
             "max_walls": game.max_walls,
@@ -30,6 +30,19 @@ class WandbTrainPlugin(ArenaPlugin):
             config=config,
             tags=[self.agent.model_id()],
         )
+
+    def start_game(self, game, agent1, agent2):
+        if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
+            raise ValueError("WandbTrainPlugin being used for an agent, but another agent is being trained")
+        if self.agent is not None:
+            return
+        if isinstance(agent1, AbstractTrainableAgent) and agent1.training_mode:
+            self.agent = agent1
+        elif isinstance(agent2, AbstractTrainableAgent) and agent2.training_mode:
+            self.agent = agent2
+        else:
+            raise ValueError("WandbTrainPlugin can only be used with a training agent, both agents are not training")
+        self._initialize(game)
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
