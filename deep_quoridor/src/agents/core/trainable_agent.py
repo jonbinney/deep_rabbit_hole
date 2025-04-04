@@ -9,10 +9,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from utils.misc import resolve_path
 from utils.subargs import SubargsBase
 
-import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -46,6 +46,7 @@ class AbstractTrainableAgent(Agent):
         update_target_every=100,
         assign_negative_reward=False,
         training_mode=False,
+        final_reward_multiplier=1,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
@@ -59,7 +60,7 @@ class AbstractTrainableAgent(Agent):
         self.batch_size = batch_size
         self.update_target_every = update_target_every
         self.assign_negative_reward = assign_negative_reward
-        self.final_reward_multiplier = 1
+        self.final_reward_multiplier = final_reward_multiplier
         self.action_size = self._calculate_action_size()
         self.training_mode = training_mode
         self.params = params
