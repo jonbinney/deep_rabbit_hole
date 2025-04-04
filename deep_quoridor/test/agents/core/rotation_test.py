@@ -1,5 +1,4 @@
 import numpy as np
-
 from agents.core.rotation import (
     convert_rotated_action_index_to_original,
     rotate_action_mask,
