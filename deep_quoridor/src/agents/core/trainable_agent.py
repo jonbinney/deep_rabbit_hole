@@ -9,10 +9,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from utils.misc import resolve_path
 from utils.subargs import SubargsBase
 
-import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -46,6 +46,7 @@ class AbstractTrainableAgent(Agent):
         update_target_every=100,
         assign_negative_reward=False,
         training_mode=False,
+        final_reward_multiplier=1,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
@@ -59,7 +60,7 @@ class AbstractTrainableAgent(Agent):
         self.batch_size = batch_size
         self.update_target_every = update_target_every
         self.assign_negative_reward = assign_negative_reward
-        self.final_reward_multiplier = 1
+        self.final_reward_multiplier = final_reward_multiplier
         self.action_size = self._calculate_action_size()
         self.training_mode = training_mode
         self.params = params
@@ -90,6 +91,7 @@ class AbstractTrainableAgent(Agent):
         self.current_episode_reward = 0
         self.player_id = None
         self.games_count = 0
+        self.steps = 0
 
     def is_trainable(self):
         return True
@@ -109,13 +111,16 @@ class AbstractTrainableAgent(Agent):
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
+    def adjust_reward(self, r, game):
+        if game.is_done():
+            r *= self.final_reward_multiplier
+        return r
+
     def handle_step_outcome(self, observation_before_action, action, game):
+        self.steps += 1
         if not self.training_mode:
             return
-        reward = game.rewards[self.player_id]
-
-        if game.is_done():
-            reward *= self.final_reward_multiplier
+        reward = self.adjust_reward(game.rewards[self.player_id], game)
 
         # Handle end of episode
         if action is None:
@@ -203,6 +208,7 @@ class AbstractTrainableAgent(Agent):
         mask = observation["action_mask"]
 
         if random.random() < self.epsilon:
+            # print(f"rnd-mask: {mask}")
             valid_actions = self._get_valid_actions(mask)
             return self._select_random_action(valid_actions)
 

@@ -166,6 +166,8 @@ cython_debug/
 
 # Models
 /models/**/*
+/wandb/**/*
+/wandbmodels/**/*
 
 # MLFlow logging directories
 mlartifacts
