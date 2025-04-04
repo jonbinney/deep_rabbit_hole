@@ -5,7 +5,7 @@ import torch
 from agents import DExpAgent, GreedyAgent, SimpleAgent
 from agents.dexp import DExpPlayParams
 from arena import Arena
-from plugins import SaveModelEveryNEpisodesPlugin
+from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from renderers import TrainingStatusRenderer
 from utils.misc import set_deterministic
 
@@ -21,6 +21,7 @@ def train_dqn(
     save_frequency=100,
     step_rewards=True,
     assign_negative_reward=False,
+    use_wandb=True,
 ):
     """
     Train a DQN agent to play Quoridor.
@@ -55,16 +56,20 @@ def train_dqn(
         update_target_every=update_target_every,
         assign_negative_reward=assign_negative_reward,
         params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
+        training_mode=True,
     )
-    agent2.training_mode = True
     agent2.final_reward_multiplier = 2
     # agent2.use_opponentns_actions = False
     # agent2.load_model("models/dexp_B5W0_base.pt")
     agent3 = GreedyAgent()  # noqa: F841
 
-    save_plugin = SaveModelEveryNEpisodesPlugin(
-        update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
-    )
+    if use_wandb:
+        save_plugin = WandbTrainPlugin(update_every=10, path=save_path, agent=agent2, total_episodes=episodes)
+    else:
+        save_plugin = SaveModelEveryNEpisodesPlugin(
+            update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
+        )
+
     print_plugin = TrainingStatusRenderer(
         update_every=1,
         total_episodes=episodes,
@@ -120,6 +125,12 @@ if __name__ == "__main__":
         default=42,
         help="Initializes the random seed for the training. Default is 42",
     )
+    parser.add_argument(
+        "--no-wandb",
+        action="store_false",
+        default=True,
+        help="Disable Weights & Biases logging",
+    )
 
     args = parser.parse_args()
 
@@ -146,6 +157,7 @@ if __name__ == "__main__":
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
         assign_negative_reward=args.assign_negative_reward,
+        use_wandb=args.no_wandb,
     )
 
     print("Training completed!")
