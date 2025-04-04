@@ -3,7 +3,7 @@ from pettingzoo.utils.env import AgentID, ObsType
 from pettingzoo.utils.wrappers import BaseWrapper
 
 
-class SplitBoardWrapper(BaseWrapper):
+class DictSplitBoardWrapper(BaseWrapper):
     """
     A wrapper that splits the board into one-hot representations with one channel per player.
     """
