@@ -113,9 +113,8 @@ class QuoridorEnv(AECEnv):
             (row, col) = self.positions[agent]
             agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
             (row, col) = self.positions[self.get_opponent(agent)]
-            oponent_distance = self.distance_to_target(row, col, self.get_goal_row(self.get_opponent(agent)), False)
-            self.rewards[agent] = (oponent_distance - agent_distance) / (self.board_size**2)
-            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (self.board_size**2)
+            self.rewards[agent] = self.board_size - agent_distance / self.board_size
+            self.rewards[self.get_opponent(agent)] = 0
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()

@@ -50,11 +50,11 @@ def train_dqn(
         batch_size=batch_size,
         update_target_every=update_target_every,
         assign_negative_reward=assign_negative_reward,
-        params=DExpPlayParams(use_rotate_board=True, split_board=False, include_turn=True),
+        params=DExpPlayParams(rotate=True, turn=True, split=True),
         training_mode=True,
         use_opponents_actions=False,
     )
-    agent2.final_reward_multiplier = 2
+    agent2.final_reward_multiplier = 10
     # agent2.load_model("models/dexp_B5W0_base.pt")
     agent3 = GreedyAgent()  # noqa: F841
 

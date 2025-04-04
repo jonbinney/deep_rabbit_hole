@@ -104,12 +104,6 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
-    def adjust_reward(self, r, game):
-        r = super().adjust_reward(r, game)
-        if game.is_done():
-            r = r - self.steps / self.board_size**2
-        return r
-
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         if not self.training_mode or not self.use_opponents_actions:
             return
