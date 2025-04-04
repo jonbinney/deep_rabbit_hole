@@ -52,3 +52,4 @@ class WandbTrainPlugin(ArenaPlugin):
         wand_file = os.path.join(self.path, self.agent.wandb_local_filename(artifact))
 
         os.rename(save_file, wand_file)
+        print(f"Model saved to {save_file}")
