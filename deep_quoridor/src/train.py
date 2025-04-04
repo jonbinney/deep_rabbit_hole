@@ -1,5 +1,4 @@
 import argparse
-import os
 
 import torch
 from agents import DExpAgent, GreedyAgent, SimpleAgent
@@ -17,7 +16,6 @@ def train_dqn(
     board_size,
     max_walls,
     epsilon_decay=0.9999,
-    save_path="models",
     save_frequency=100,
     step_rewards=True,
     assign_negative_reward=False,
@@ -42,9 +40,6 @@ def train_dqn(
         save_frequency: How often to save the model (in episodes)
         step_rewards: Whether to use step rewards
     """
-    # Create directory for saving models if it doesn't exist
-    os.makedirs(save_path, exist_ok=True)
-
     agent1 = SimpleAgent()
     agent2 = DExpAgent(
         board_size=board_size,
@@ -63,12 +58,20 @@ def train_dqn(
     # agent2.load_model("models/dexp_B5W0_base.pt")
     agent3 = GreedyAgent()  # noqa: F841
 
+    plugins = []
+
     if use_wandb:
-        save_plugin = WandbTrainPlugin(update_every=10, path=save_path, agent=agent2, total_episodes=episodes)
-    else:
-        save_plugin = SaveModelEveryNEpisodesPlugin(
-            update_every=save_frequency, path=save_path, agents=[agent2], board_size=board_size, max_walls=max_walls
+        plugins.append(WandbTrainPlugin(update_every=10, agent=agent2, total_episodes=episodes))
+
+    plugins.append(
+        SaveModelEveryNEpisodesPlugin(
+            update_every=save_frequency,
+            agents=[agent2],
+            board_size=board_size,
+            max_walls=max_walls,
+            save_final=not use_wandb,
         )
+    )
 
     print_plugin = TrainingStatusRenderer(
         update_every=1,
@@ -80,7 +83,7 @@ def train_dqn(
         max_walls=max_walls,
         step_rewards=step_rewards,
         renderers=[print_plugin],
-        plugins=[save_plugin],
+        plugins=plugins,
         swap_players=True,
     )
 
@@ -153,7 +156,6 @@ if __name__ == "__main__":
         board_size=args.board_size,
         max_walls=args.max_walls,
         epsilon_decay=args.epsilon_decay,
-        save_path=args.save_path,
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
         assign_negative_reward=args.assign_negative_reward,

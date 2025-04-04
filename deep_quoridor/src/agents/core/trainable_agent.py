@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from utils.misc import resolve_path
 from utils.subargs import SubargsBase
 
 import wandb
@@ -24,6 +25,10 @@ class TrainableAgentParams(SubargsBase):
     wandb_alias: Optional[str] = None
     # If a filename is provided, the model will be loaded from disc
     model_filename: Optional[str] = None
+    # Directory where wandb models are stored
+    wandb_dir: str = "wandbmodels"
+    # Directory where local models are stored
+    model_dir: str = "models"
 
 
 class AbstractTrainableAgent(Agent):
@@ -318,6 +323,8 @@ class AbstractTrainableAgent(Agent):
 
     def save_model(self, path):
         """Save the model to disk."""
+        # Create directory for saving models if it doesn't exist
+        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
         torch.save(self.online_network.state_dict(), path)
 
     def load_model(self, path):
@@ -337,7 +344,7 @@ class AbstractTrainableAgent(Agent):
 
             # If it's not training mode, we definitely need to load a pretrained model, so try the
             # default path for local files
-            filename = Path(__file__).resolve().parents[4] / "models" / self.resolve_filename("final")
+            filename = resolve_path(self.params.model_dir, self.resolve_filename("final"))
 
         if not os.path.exists(filename):
             raise FileNotFoundError(f"Model file {filename} not found.")
@@ -361,7 +368,7 @@ class AbstractTrainableAgent(Agent):
 
         api = wandb.Api()
         artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
-        local_filename = Path(__file__).resolve().parents[4] / "models" / self.wandb_local_filename(artifact)
+        local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
         self.params = self.params_class()(**artifact.metadata)
         self.params.model_filename = str(local_filename)

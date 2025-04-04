@@ -3,17 +3,17 @@ from dataclasses import asdict
 
 from agents.core.trainable_agent import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
+from utils.misc import resolve_path
 
 import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, agent: AbstractTrainableAgent, path: str):
+    def __init__(self, update_every: int, total_episodes: int, agent: AbstractTrainableAgent):
         self.agent = agent
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
-        self.path = path
 
     def start_arena(self, game, total_games: int):
         config = {
@@ -42,14 +42,20 @@ class WandbTrainPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
-        save_file = os.path.join(self.path, f"{self.agent.model_id()}.pt")
+        # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
+        # once we upload it to wandb and have the digest.
+        save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("temp"))
         self.agent.save_model(save_file)
 
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
-        artifact.add_file(local_path=save_file)
+        artifact.add_file(local_path=str(save_file))
         artifact.save()
 
-        wand_file = os.path.join(self.path, self.agent.wandb_local_filename(artifact))
+        wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
 
+        # Now that we know the digest, rename the file to include it.  Source and target file are in
+        # the same path, just a different file name
         os.rename(save_file, wand_file)
-        print(f"Model saved to {save_file}")
+        print(f"Model saved to {wand_file}")
+
+        wandb.finish()
