@@ -9,10 +9,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
 from utils.misc import resolve_path
 from utils.subargs import SubargsBase
 
+import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -29,6 +29,25 @@ class TrainableAgentParams(SubargsBase):
     wandb_dir: str = "wandbmodels"
     # Directory where local models are stored
     model_dir: str = "models"
+    # Epsilon value for exploration
+    epsilon: float = 0.0
+    # Minimum epsilon value that epsilon can decay to
+    epsilon_min: float = 0.01
+    # Decay rate for epsilon
+    epsilon_decay: float = 0.995
+    # Discount factor for future rewards
+    gamma: float = 0.99
+    # Batch size for training
+    batch_size: int = 64
+    # Number of episodes between target network updates
+    # This is the number of games played, not the number of training steps
+    update_target_every: int = 100
+    # If True, the agent will receive a negative reward when game is lost
+    assign_negative_reward: bool = False
+    # If True, the agent is running in training mode
+    training_mode: bool = False
+    # If True, final reward will be multiplied by this value (positive or negative)
+    final_reward_multiplier: float = 1.0
 
 
 class AbstractTrainableAgent(Agent):
@@ -38,32 +57,24 @@ class AbstractTrainableAgent(Agent):
         self,
         board_size,
         max_walls,
-        epsilon=0,
-        epsilon_min=0.01,
-        epsilon_decay=0.995,
-        gamma=0.99,
-        batch_size=64,
-        update_target_every=100,
-        assign_negative_reward=False,
-        training_mode=False,
-        final_reward_multiplier=1,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
         super().__init__()
         self.board_size = board_size
         self.max_walls = max_walls
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
-        self.gamma = gamma
-        self.batch_size = batch_size
-        self.update_target_every = update_target_every
-        self.assign_negative_reward = assign_negative_reward
-        self.final_reward_multiplier = final_reward_multiplier
-        self.action_size = self._calculate_action_size()
-        self.training_mode = training_mode
+        self.initial_epsilon = params.epsilon
+        self.epsilon = params.epsilon
+        self.epsilon_min = params.epsilon_min
+        self.epsilon_decay = params.epsilon_decay
+        self.gamma = params.gamma
+        self.batch_size = params.batch_size
+        self.update_target_every = params.update_target_every
+        self.assign_negative_reward = params.assign_negative_reward
+        self.final_reward_multiplier = params.final_reward_multiplier
+        self.training_mode = params.training_mode
         self.params = params
+        self.action_size = self._calculate_action_size()
 
         # Setup device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,14 +177,7 @@ class AbstractTrainableAgent(Agent):
         return avg_loss, avg_reward
 
     def model_hyperparameters(self):
-        return {
-            "epsilon_min": self.epsilon_min,
-            "epsilon_decay": self.epsilon_decay,
-            "gamma": self.gamma,
-            "batch_size": self.batch_size,
-            "update_target_every": self.update_target_every,
-            "assign_negative_reward": self.assign_negative_reward,
-        }
+        return {}
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
