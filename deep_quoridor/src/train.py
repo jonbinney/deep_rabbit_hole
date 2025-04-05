@@ -1,11 +1,12 @@
 import argparse
 
+import numpy as np
 import torch
 from agents.core.agent import AgentRegistry
 from arena import Arena
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
-from renderers import TrainingStatusRenderer
+from renderers import Renderer, TrainingStatusRenderer
 from utils.misc import set_deterministic
 
 
@@ -17,6 +18,7 @@ def train_dqn(
     step_rewards=True,
     use_wandb=True,
     players=None,
+    renderers=[],
 ):
     plugins = []
 
@@ -40,7 +42,7 @@ def train_dqn(
         board_size=board_size,
         max_walls=max_walls,
         step_rewards=step_rewards,
-        renderers=[print_plugin],  # PygameRenderer()],
+        renderers=np.concatenate([print_plugin], renderers),
         plugins=plugins,
         swap_players=True,
     )
@@ -79,8 +81,18 @@ if __name__ == "__main__":
         type=player_with_params,
         help=f"List of players to compete against each other. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
+    parser.add_argument(
+        "-r",
+        "--renderers",
+        nargs="+",
+        choices=Renderer.names(),
+        default=["arenaresults"],
+        help="Render modes to be used. Note that TrainingStatusRenderer is always included",
+    )
 
     args = parser.parse_args()
+
+    renderers = [Renderer.create(r) for r in args.renderers]
 
     print("Starting DQN training...")
     print(f"Board size: {args.board_size}x{args.board_size}")
@@ -101,6 +113,7 @@ if __name__ == "__main__":
         step_rewards=args.step_rewards,
         use_wandb=args.no_wandb,
         players=args.players,
+        renderers=renderers,
     )
 
     print("Training completed!")
