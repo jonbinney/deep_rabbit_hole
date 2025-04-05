@@ -31,7 +31,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def _save_models(self, suffix: str):
         for agent in self.agents:
-            if not isinstance(agent, AbstractTrainableAgent):
+            if not isinstance(agent, AbstractTrainableAgent) or not agent.training_mode:
                 continue
             agent_name = agent.name()
             save_file = resolve_path(agent.params.model_dir, agent.resolve_filename(suffix))
