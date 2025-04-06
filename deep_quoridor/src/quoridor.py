@@ -228,29 +228,29 @@ class Quoridor:
         else:
             raise ValueError("Invalid action type")
 
-        self.current_player = Player(1 - self.current_player)
+        self.go_to_next_player()
 
     def is_action_valid(self, action: Action):
         """
         Check whether the given action is valid given the current game state.
         """
         if isinstance(action, MoveAction):
+            assert is_valid_position_type(action.destination)
             player = self.get_current_player()
             current_position = self.board.get_player_position(player)
             opponent = Player(1 - player)
             opponent_position = self.board.get_player_position(opponent)
             opponent_offset = opponent_position - current_position
-            destination_position = np.asarray(action.destination, dtype=np.uint8)
-            position_delta = tuple(destination_position - current_position)  # Tuple so we can use it as a key.
+            position_delta = tuple(action.destination - current_position)  # Tuple so we can use it as a key.
 
             # Destination cell must be free
             is_valid = True
-            if self.board.get_player_cell(destination_position) != Board.FREE:
+            if self.board.get_player_cell(action.destination) != Board.FREE:
                 is_valid = False
 
             elif np.sum(np.abs(position_delta)) == 1:
                 # Moving to an adjacent cell, just make sure no wall is in the way.
-                if self.board.is_wall_between(current_position, destination_position):
+                if self.board.is_wall_between(current_position, action.destination):
                     is_valid = False
 
             elif (tuple(opponent_offset), tuple(position_delta)) in self._jump_checks:
@@ -276,13 +276,14 @@ class Quoridor:
 
         return is_valid
 
-    def set_current_player(self, player: int):
-        if player not in [0, 1]:
-            raise ValueError(f"Invalid player {player}")
-        self.current_player = player
+    def go_to_next_player(self):
+        return Player(1 - self.current_player)
 
     def get_current_player(self) -> int:
         return self.current_player
+
+    def get_goal_row(self, player):
+        return 0 if player == Player.ONE else self.board_size - 1
 
     def __str__(self):
         return str(self.board)

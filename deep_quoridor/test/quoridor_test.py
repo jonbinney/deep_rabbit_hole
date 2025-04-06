@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from deep_quoridor.src.quoridor import Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from deep_quoridor.src.quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
@@ -112,6 +113,17 @@ class TestQuoridor:
                     game_moves.append(position)
 
         np.testing.assert_equal(np.array(game_moves), np.array(potential_moves))
+
+        env = quoridor_env(game.board.board_size, game.board.max_walls, game_start_state=game)
+        N = game.board.board_size
+        action_mask = env.observe("player_0")["action_mask"]
+
+        env_moves = []
+        for i, value in enumerate(action_mask[: N**2]):
+            if value == 1:
+                env_moves.append(divmod(i, N))
+
+        np.testing.assert_equal(np.array(env_moves), np.array(potential_moves))
 
     def _test_wall_placements(self, s):
         game, _, forbidden_walls = parse_board(s)
