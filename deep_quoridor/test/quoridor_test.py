@@ -278,7 +278,6 @@ class TestQuoridor:
             . . 2 . .
         """)
 
-    @pytest.mark.skip(reason="Disabled until Aaron implements blocking testing in Quoridor class")
     def test_forbidden_walls_due_to_blocking(self):
         self._test_wall_placements("""
             . .|1|. .

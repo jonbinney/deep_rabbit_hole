@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 from typing import TypeAlias
 
+import cv2 as cv
 import numpy as np
 
 Position: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
@@ -63,9 +64,7 @@ class Board:
     # The player numbers start at 0 so that they can also be used as indices into the player positions array.
     PLAYER1 = 0
     PLAYER2 = 1
-    # Walls are stored as 10 + player number.We leave 2-9 free for implementing more than 2 players in the future.
-    PLAYER1_WALL = 10
-    PLAYER2_WALL = 11
+    WALL = 10
 
     def __init__(self, board_size: int = 9, max_walls: int = 10):
         self.board_size = board_size
@@ -123,7 +122,7 @@ class Board:
             raise ValueError("Cannot place wall, no walls remaining for player {player}")
 
         if self.can_place_wall(position, orientation):
-            self._grid[self._get_wall_slice(position, orientation)] = 10 + player
+            self._grid[self._get_wall_slice(position, orientation)] = Board.WALL
             self._walls_remaining[player] -= 1
         else:
             raise ValueError("Cannot place wall at position {position} with orientation {orientation}")
@@ -142,6 +141,17 @@ class Board:
         except IndexError:
             return False
 
+    def does_wall_block_all_paths_to_row_for_player(
+        self, position: Position, orientation: WallOrientation, player: Player, row: int
+    ) -> bool:
+        occupancy_grid = self._grid.copy()
+        occupancy_grid[self._get_wall_slice(position, orientation)] = Board.WALL
+        occupancy_grid[self.get_player_position(Player.ONE) * 2] = Board.FREE
+        occupancy_grid[self.get_player_position(Player.TWO) * 2] = Board.FREE
+        occupancy_grid[1::2, 1::2] = Board.WALL
+        cv.floodFill(occupancy_grid, self.get_player_position(player) * 2, 99)
+        return occupancy_grid[row * 2, 0] == 99
+
     def is_wall_between(self, position1: Position, position2: Position) -> bool:
         """
         Check if there is a wall between two positions.
@@ -156,7 +166,7 @@ class Board:
 
         if position1_on_board and position2_on_board:
             wall_position = position1 + position2
-            return self._grid[*wall_position] == Board.PLAYER1_WALL
+            return self._grid[*wall_position] == Board.WALL
         else:
             # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
             # players are allowed to jump diagonally if they are adjacent to another player and the border of the
@@ -193,8 +203,7 @@ class Board:
         """
         display_grid = np.full(self._grid.shape, " ", dtype=str)
         display_grid[::2, ::2] = "."
-        display_grid[self._grid == Board.PLAYER1_WALL] = "w"
-        display_grid[self._grid == Board.PLAYER2_WALL] = "W"
+        display_grid[self._grid == Board.WALL] = "w"
         for player, _ in enumerate(self._player_positions):
             display_grid[*self._player_positions[player] * 2] = str(player + 1)
         return "\n".join([" ".join(row) for row in display_grid]) + "\n"
@@ -234,11 +243,11 @@ class Quoridor:
         """
         Check whether the given action is valid given the current game state.
         """
+        player = self.get_current_player()
+        opponent = Player(1 - player)
         if isinstance(action, MoveAction):
             assert is_valid_position_type(action.destination)
-            player = self.get_current_player()
             current_position = self.board.get_player_position(player)
-            opponent = Player(1 - player)
             opponent_position = self.board.get_player_position(opponent)
             opponent_offset = opponent_position - current_position
             position_delta = tuple(action.destination - current_position)  # Tuple so we can use it as a key.
@@ -269,7 +278,11 @@ class Quoridor:
                 is_valid = False
 
         elif isinstance(action, WallAction):
-            is_valid = self.board.can_place_wall(action.position, action.orientation)
+            is_valid = self.board.can_place_wall(
+                action.position, action.orientation
+            ) and not self.board.does_wall_block_all_paths_to_row_for_player(
+                action.position, action.orientation, opponent, self.get_goal_row(player)
+            )
 
         else:
             raise ValueError("Invalid action type")
