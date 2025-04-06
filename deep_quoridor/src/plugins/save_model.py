@@ -10,24 +10,26 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         board_size: int,
         max_walls: int,
         save_final: bool = True,
+        run_tag: str = "",
     ):
         self.update_every = update_every
         self.episode_count = 0
         self.board_size = board_size
         self.max_walls = max_walls
         self.save_final = save_final
+        self.run_tag = run_tag
 
     def start_game(self, game, agent1, agent2):
         self.agents = [agent1, agent2]
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 and self.episode_count > 0:
-            self._save_models(f"episode_{self.episode_count}")
+            self._save_models(f"{self.run_tag}_episode_{self.episode_count}")
         self.episode_count += 1
 
     def end_arena(self, game, results):
         if self.save_final:
-            self._save_models("final")
+            self._save_models(f"{self.run_tag}_final")
 
     def _save_models(self, suffix: str):
         for agent in self.agents:

@@ -9,11 +9,13 @@ import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int):
+    def __init__(self, update_every: int, total_episodes: int, id: str, run_tag: str = ""):
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
         self.agent = None
+        self.id = id
+        self.run_tag = run_tag
 
     def _initialize(self, game):
         config = {
@@ -28,7 +30,9 @@ class WandbTrainPlugin(ArenaPlugin):
             project="deep_quoridor",
             job_type="train",
             config=config,
-            tags=[self.agent.model_id()],
+            tags=[self.agent.model_id(), f"-{self.run_tag}"],
+            id=self.id,
+            name=f"{self.run_tag}",
         )
 
     def start_game(self, game, agent1, agent2):
