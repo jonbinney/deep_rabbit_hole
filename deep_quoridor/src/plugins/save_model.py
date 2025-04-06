@@ -9,15 +9,16 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         update_every: int,
         board_size: int,
         max_walls: int,
-        agents: list[AbstractTrainableAgent],
         save_final: bool = True,
     ):
-        self.agents = agents
         self.update_every = update_every
         self.episode_count = 0
         self.board_size = board_size
         self.max_walls = max_walls
         self.save_final = save_final
+
+    def start_game(self, game, agent1, agent2):
+        self.agents = [agent1, agent2]
 
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0 and self.episode_count > 0:
@@ -30,6 +31,8 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def _save_models(self, suffix: str):
         for agent in self.agents:
+            if not isinstance(agent, AbstractTrainableAgent) or not agent.training_mode:
+                continue
             agent_name = agent.name()
             save_file = resolve_path(agent.params.model_dir, agent.resolve_filename(suffix))
             agent.save_model(save_file)
