@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
@@ -46,19 +46,20 @@ class DExpNetwork(nn.Module):
 
 
 @dataclass
-class DExpPlayParams(TrainableAgentParams):
+class DExpAgentParams(TrainableAgentParams):
+    # Indicates whether to rotate the board for player_1
     rotate: bool = False
+    # Indicates whether to include the turn information in tensor
     turn: bool = False
+    # Indicates whether to split the board into two channels (one for each player)
     split: bool = False
 
-    @classmethod
-    def from_str(cls, agent_params_str="000"):
-        p = DExpPlayParams(
-            use_rotate_board=bool(int(agent_params_str[0])),
-            include_turn=bool(int(agent_params_str[1])),
-            split_board=bool(int(agent_params_str[2])),
-        )
-        return p
+    # Whether oppoments actions are used for training
+    # This is used for training only, not for playing
+    use_opponents_actions = False
+
+    # Parameters used for training which are required to be used with the same set of values during training
+    #  and playing are used to generate a 'key' to identify the model.
 
     def __str__(self):
         return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
@@ -69,12 +70,9 @@ class DExpAgent(AbstractTrainableAgent):
 
     def __init__(
         self,
-        use_opponents_actions=False,
-        params=DExpPlayParams(),
+        params=DExpAgentParams(),
         **kwargs,
     ):
-        self.use_opponents_actions = use_opponents_actions
-        self.params = params
         super().__init__(params=params, **kwargs)
 
     def name(self):
@@ -87,7 +85,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     @classmethod
     def params_class(cls):
-        return DExpPlayParams
+        return DExpAgentParams
 
     def version(self):
         """Bump this version when compatibility with saved models is broken"""
@@ -105,7 +103,7 @@ class DExpAgent(AbstractTrainableAgent):
         return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
-        if not self.training_mode or not self.use_opponents_actions:
+        if not self.training_mode or not self.params.use_opponents_actions:
             return
 
         opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
@@ -203,17 +201,6 @@ class DExpAgent(AbstractTrainableAgent):
         config = {
             "board_size": self.board_size,
             "max_walls": self.max_walls,
-            "epsilon": self.epsilon,
-            "epsilon_decay": self.epsilon_decay,
-            "gamma": self.gamma,
-            "batch_size": self.batch_size,
-            "update_target_every": self.update_target_every,
-            "training_mode": self.training_mode,
-            "final_reward_multiplier": self.final_reward_multiplier,
-            "params": {
-                "use_rotate_board": self.params.rotate,
-                "split_board": self.params.split,
-                "include_turn": self.params.turn,
-            },
+            "params": asdict(self.params),
         }
         return yaml.dump(config, indent=2)
