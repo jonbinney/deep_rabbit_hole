@@ -9,7 +9,7 @@ import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, id: str, run_id: str = ""):
+    def __init__(self, update_every: int, total_episodes: int, run_id: str = ""):
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
