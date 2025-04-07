@@ -2,7 +2,6 @@ import time
 from threading import Thread
 from typing import Optional
 
-import numpy as np
 from agents import Agent, AgentRegistry, ReplayAgent
 from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
@@ -28,7 +27,7 @@ class Arena:
         self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
         self.renderers = renderers
-        self.plugins = CompositeArenaPlugin([p for p in np.concatenate([plugins, renderers, [saver]]) if p is not None])
+        self.plugins = CompositeArenaPlugin([p for p in plugins + renderers + [saver] if p is not None])
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
