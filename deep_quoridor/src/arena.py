@@ -1,4 +1,6 @@
+import random
 import time
+from enum import Enum
 from threading import Thread
 from typing import Optional
 
@@ -7,6 +9,12 @@ from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
 from quoridor_env import env
 from renderers import PygameRenderer
+
+
+# Add after imports
+class PlayMode(Enum):
+    ALL_VS_ALL = "all_vs_all"  # Legacy mode where all players play against each other
+    FIRST_VS_RANDOM = "first_vs_random"  # First player plays against randomly selected opponents
 
 
 class Arena:
@@ -81,11 +89,8 @@ class Arena:
         self.game.close()
         return result
 
-    def _play_games(self, players: list[str | Agent], times: int):
-        self.plugins.start_arena(self.game, total_games=len(players) * (len(players) - 1) * times // 2)
-
-        match_id = 1
-        results = []
+    # Replace the existing _play_games method
+    def _play_games(self, players: list[str | Agent], times: int, mode: PlayMode):
         agents = []
         for p in players:
             if isinstance(p, Agent):
@@ -95,11 +100,37 @@ class Arena:
                     AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
                 )
 
-        for i in range(len(players)):
-            for j in range(i + 1, len(players)):
-                for t in range(times):
+        if mode == PlayMode.ALL_VS_ALL:
+            total_games = len(agents) * (len(agents) - 1) * times // 2
+        else:  # FIRST_VS_RANDOM mode
+            total_games = (len(agents) - 1) * times
+
+        self.plugins.start_arena(self.game, total_games=total_games)
+
+        match_id = 1
+        results = []
+
+        if mode == PlayMode.ALL_VS_ALL:
+            for i in range(len(agents)):
+                for j in range(i + 1, len(agents)):
+                    for t in range(times):
+                        agent_1, agent_2 = (
+                            (agents[i], agents[j]) if not self.swap_players or t % 2 == 0 else (agents[j], agents[i])
+                        )
+                        result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                        results.append(result)
+                        match_id += 1
+        else:  # FIRST_VS_RANDOM mode
+            first_agent = agents[0]
+            remaining_agents = agents[1:]
+
+            for _ in range(times):
+                for _ in range(len(remaining_agents)):
+                    opponent = random.choice(remaining_agents)
                     agent_1, agent_2 = (
-                        (agents[i], agents[j]) if not self.swap_players or t % 2 == 0 else (agents[j], agents[i])
+                        (first_agent, opponent)
+                        if not self.swap_players or match_id % 2 == 0
+                        else (opponent, first_agent)
                     )
                     result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                     results.append(result)
@@ -133,7 +164,7 @@ class Arena:
 
         self.plugins.end_arena(self.game, results)
 
-    def play_games(self, players: list[str | Agent], times: int):
+    def play_games(self, players: list[str | Agent], times: int, mode: PlayMode = PlayMode.ALL_VS_ALL):
         pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         if pygame_renderer is None:
@@ -141,7 +172,7 @@ class Arena:
         else:
             # When using PygameRenderer, pygame needs to run in the main thread (at least on MacOS),
             # so we need to start a new thread for the game loop.
-            thread = Thread(target=self._play_games, args=(players, times))
+            thread = Thread(target=self._play_games, args=(players, times, mode))
             thread.start()
 
             pygame_renderer.main_thread()
