@@ -1,9 +1,9 @@
 import argparse
 
-import numpy as np
 import torch
 from agents.core.agent import AgentRegistry
 from arena import Arena
+from arena_utils import ArenaPlugin
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from renderers import Renderer, TrainingStatusRenderer
@@ -11,14 +11,14 @@ from utils.misc import set_deterministic
 
 
 def train_dqn(
-    episodes,
-    board_size,
-    max_walls,
-    save_frequency=100,
-    step_rewards=True,
-    use_wandb=True,
-    players=None,
-    renderers=[],
+    episodes: int,
+    board_size: int,
+    max_walls: int,
+    save_frequency: int = 100,
+    step_rewards: bool = True,
+    use_wandb: bool = True,
+    players: list | None = None,
+    renderers: list[ArenaPlugin] = [],
 ):
     plugins = []
 
@@ -42,7 +42,7 @@ def train_dqn(
         board_size=board_size,
         max_walls=max_walls,
         step_rewards=step_rewards,
-        renderers=np.concatenate([print_plugin], renderers),
+        renderers=[print_plugin] + renderers,
         plugins=plugins,
         swap_players=True,
     )
