@@ -20,13 +20,12 @@ def train_dqn(
     use_wandb: bool = True,
     players: list | None = None,
     renderers: list[ArenaPlugin] = [],
-    id: str = "",
-    tag: str = "",
+    run_id: str = "",
 ):
     plugins = []
 
     if use_wandb:
-        plugins.append(WandbTrainPlugin(update_every=10, total_episodes=episodes, id=id, run_tag=tag))
+        plugins.append(WandbTrainPlugin(update_every=10, total_episodes=episodes, run_id=run_id))
 
     plugins.append(
         SaveModelEveryNEpisodesPlugin(
@@ -34,7 +33,7 @@ def train_dqn(
             board_size=board_size,
             max_walls=max_walls,
             save_final=not use_wandb,
-            run_tag=tag,
+            run_id=run_id,
         )
     )
 
@@ -94,27 +93,27 @@ if __name__ == "__main__":
         help="Render modes to be used. Note that TrainingStatusRenderer is always included",
     )
     parser.add_argument(
-        "-tp",
-        "--tag_prefix",
+        "-rp",
+        "--run_prefix",
         required=True,
         type=str,
-        help="Tag prefix to use for this run and model being generated",
+        help="Run prefix to use for this run. This will be used for naming, and tagging artifacts and files",
     )
     parser.add_argument(
-        "--id",
+        "-rs",
+        "--run_suffix",
         type=str,
         default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
-        help="Id of the run. Default is current date and time",
+        help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts and files",
     )
 
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
 
-    tag = args.tag_prefix + "-" + args.id
+    run_id = args.run_prefix + "-" + args.run_suffix
     print("Starting DQN training...")
-    print(f"Identifier: {args.id}")
-    print(f"Using tag: {tag}")
+    print(f"Run Id: {run_id}")
     print(f"Board size: {args.board_size}x{args.board_size}")
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
@@ -134,8 +133,7 @@ if __name__ == "__main__":
         use_wandb=args.no_wandb,
         players=args.players,
         renderers=renderers,
-        id=args.id,
-        tag=tag,
+        run_id=run_id,
     )
 
     print("Training completed!")
