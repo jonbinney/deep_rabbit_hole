@@ -168,7 +168,7 @@ class Arena:
         pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         if pygame_renderer is None:
-            self._play_games(players, times)
+            self._play_games(players, times, mode)
         else:
             # When using PygameRenderer, pygame needs to run in the main thread (at least on MacOS),
             # so we need to start a new thread for the game loop.
