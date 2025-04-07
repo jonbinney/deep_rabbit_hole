@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 from typing import TypeAlias
 
-import cv2 as cv
 import numpy as np
 
 Position: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
@@ -127,6 +126,14 @@ class Board:
         else:
             raise ValueError("Cannot place wall at position {position} with orientation {orientation}")
 
+    def remove_wall(self, player: Player, position: Position, orientation: WallOrientation):
+        assert isinstance(player, Player)
+        assert is_valid_position_type(position)
+        assert isinstance(orientation, WallOrientation)
+
+        self._grid[self._get_wall_slice(position, orientation)] = Board.FREE
+        self._walls_remaining[player] += 1
+
     def can_place_wall(self, position: Position, orientation: WallOrientation) -> bool:
         """
         Returns True if the wall can be placed at the given position and orientation.
@@ -144,13 +151,7 @@ class Board:
     def does_wall_block_all_paths_to_row_for_player(
         self, position: Position, orientation: WallOrientation, player: Player, row: int
     ) -> bool:
-        occupancy_grid = self._grid.copy()
-        occupancy_grid[self._get_wall_slice(position, orientation)] = Board.WALL
-        occupancy_grid[self.get_player_position(Player.ONE) * 2] = Board.FREE
-        occupancy_grid[self.get_player_position(Player.TWO) * 2] = Board.FREE
-        occupancy_grid[1::2, 1::2] = Board.WALL
-        cv.floodFill(occupancy_grid, self.get_player_position(player) * 2, 99)
-        return occupancy_grid[row * 2, 0] == 99
+        pass
 
     def is_wall_between(self, position1: Position, position2: Position) -> bool:
         """
@@ -217,6 +218,7 @@ class Quoridor:
         self.board = board
         self.current_player = Player.ONE
 
+        self._goal_rows = {Player.ONE: self.board.board_size - 1, Player.TWO: 0}
         self._jump_checks = create_jump_checks()
 
     def step(self, action: Action, validate: bool = True):
@@ -245,6 +247,7 @@ class Quoridor:
         """
         player = self.get_current_player()
         opponent = Player(1 - player)
+        is_valid = True
         if isinstance(action, MoveAction):
             assert is_valid_position_type(action.destination)
             current_position = self.board.get_player_position(player)
@@ -253,7 +256,6 @@ class Quoridor:
             position_delta = tuple(action.destination - current_position)  # Tuple so we can use it as a key.
 
             # Destination cell must be free
-            is_valid = True
             if self.board.get_player_cell(action.destination) != Board.FREE:
                 is_valid = False
 
@@ -278,12 +280,17 @@ class Quoridor:
                 is_valid = False
 
         elif isinstance(action, WallAction):
-            is_valid = self.board.can_place_wall(
-                action.position, action.orientation
-            ) and not self.board.does_wall_block_all_paths_to_row_for_player(
-                action.position, action.orientation, opponent, self.get_goal_row(player)
-            )
-
+            if self.board.can_place_wall(action.position, action.orientation):
+                # Temporarily place the wall so that we can easily check for walls
+                self.board.add_wall(self.current_player, action.position, action.orientation)
+                for p in [Player.ONE, Player.TWO]:
+                    if not self.can_reach(self.board.get_player_position(p), self.get_goal_row(p)):
+                        is_valid = False
+                        break
+                # Restore the board to its previous state
+                self.board.remove_wall(self.current_player, action.position, action.orientation)
+            else:
+                is_valid = False
         else:
             raise ValueError("Invalid action type")
 
@@ -295,8 +302,60 @@ class Quoridor:
     def get_current_player(self) -> int:
         return self.current_player
 
-    def get_goal_row(self, player):
-        return 0 if player == Player.ONE else self.board_size - 1
+    def get_goal_row(self, player: Player) -> int:
+        return self._goal_rows[player]
+
+    def can_reach(self, start_position: Position, target_row: int):
+        return self.distance_to_target(start_position, target_row, True) != -1
+
+    def distance_to_target(self, start_position, target_row, any_path=False):
+        """
+        Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
+        If any_path is set to true, the first path to the target row will be returned (faster).
+        Otherwise, the shortest path will be returned (potentially slower)
+        """
+        visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
+        return self._dfs(start_position, target_row, visited, any_path)
+
+    def _dfs(self, start_position: Position, target_row: int, visited: np.ndarray, any_path=True):
+        """
+        Performs a depth-first search to find whether the pawn can reach the target row.
+
+        Args:
+            start_position : The current row of the pawn
+            target_row: The target row to reach
+            visited: A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+            If any_path is set to true, the first path to the target row will be returned (faster).
+            Otherwise, the shortest path will be returned (potentially slower)
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if start_position[0] == target_row:
+            return 0
+
+        visited[*start_position] = True
+
+        # Find out the forward direction to try it first and maybe get to the target faster
+        fwd = 1 if target_row > start_position[0] else -1
+
+        moves = [np.array(start_position + offset) for offset in [(fwd, 0), (0, -1), (0, 1), (-fwd, 0)]]
+        best = -1
+        for new_position in moves:
+            if (
+                self.board.is_position_on_board(new_position)
+                and not self.board.is_wall_between(start_position, new_position)
+                and not visited[*new_position]
+            ):
+                dfs = self._dfs(new_position, target_row, visited)
+                if dfs != -1:
+                    if any_path:
+                        return dfs + 1
+                    if best == -1 or dfs + 1 < best:
+                        best = dfs + 1
+
+        return best
 
     def __str__(self):
         return str(self.board)
