@@ -18,12 +18,13 @@ import time
 import pettingzoo.utils
 import quoridor_env
 import torch
-import wandb
 from gymnasium import spaces
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.torch_layers import FlattenExtractor
+
+import wandb
 from wandb.integration.sb3 import WandbCallback
 
 
@@ -131,6 +132,8 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
 
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
+    run = wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs, sync_tensorboard=True)
+
     env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
     # with ActionMasker. If the wrapper is detected, the masks are automatically
@@ -139,7 +142,10 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     policy_kwargs = {"features_extractor_class": DictFlattenExtractor}
     model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs)
     model.set_random_seed(seed)
-    model.learn(total_timesteps=steps, callback=WandbCallback())
+    model.learn(
+        total_timesteps=steps,
+        callback=WandbCallback(model_save_freq=1000, model_save_path=f"models/{run.id}"),
+    )
 
     model.save(f"{env.unwrapped.metadata.get('name')}_{time.strftime('%Y%m%d-%H%M%S')}")
 
@@ -216,8 +222,6 @@ if __name__ == "__main__":
     env_fn = quoridor_env
 
     env_kwargs = {"board_size": 5, "max_walls": 3}
-
-    wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs)
 
     # Evaluation/training hyperparameter notes:
     # 10k steps: Winrate:  0.76, loss order of 1e-03

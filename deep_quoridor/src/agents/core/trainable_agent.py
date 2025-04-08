@@ -389,10 +389,10 @@ class AbstractTrainableAgent(Agent):
         with tempfile.TemporaryDirectory() as tmpdir:
             artifact_dir = artifact.download(root=tmpdir)
 
-            path = artifact.download(root=artifact_dir)
-            tmp_filename = Path(path) / f"{self.model_id()}.pt"
-            if not os.path.exists(tmp_filename):
-                raise FileNotFoundError(f"Model file {tmp_filename} was not downloaded.  Please check the artifact")
+            # NOTE: This picks the first .pt file it finds in the artifact
+            tmp_filename = next(Path(artifact_dir).glob("**/*.pt"), None)
+            if tmp_filename is None:
+                raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 
             os.rename(tmp_filename, local_filename)
 
