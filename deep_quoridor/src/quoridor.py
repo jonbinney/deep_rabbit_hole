@@ -49,14 +49,6 @@ def is_valid_position_type(position: Position) -> bool:
 
 
 class Board:
-    """
-    Grid which has both walls and possible pawn positions.
-
-    Pawn positions are on even rows and columns, walls are on odd rows and columns. We use negative
-    values to represent free cells and walls, 0 for player 1, and 1 for player 2.
-    integers.
-    """
-
     # Possible values for each cell in the grid.
     OUT_OF_BOUNDS = -2  # Returned if a move is off of the board.
     FREE = -1
@@ -69,12 +61,32 @@ class Board:
         self.board_size = board_size
         self.max_walls = max_walls
 
-        self._grid = np.full((board_size * 2 - 1, board_size * 2 - 1), Board.FREE, dtype=np.int8)
+        # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
+        # To make some checks easier, we add a double border of walls around the grid.
+        self._grid = np.full((board_size * 2 + 3, board_size * 2 + 3), Board.FREE, dtype=np.int8)
+        self._grid[:2, :] = Board.WALL
+        self._grid[-2:, :] = Board.WALL
+        self._grid[:, :2] = Board.WALL
+        self._grid[:, -2:] = Board.WALL
+
         self._players = [Player.ONE, Player.TWO]
         self._player_positions = [np.array([0, board_size // 2]), np.array([board_size - 1, board_size // 2])]
         for player, position in zip(self._players, self._player_positions):
-            self._grid[*position * 2] = player
+            self._grid[*(position * 2 + 2)] = player
         self._walls_remaining = [self.max_walls, self.max_walls]
+
+        self._potential_wall_neighbors = {
+            WallOrientation.VERTICAL: [
+                np.array([(-1, -1), (-2, 0), (-1, 1)]),
+                np.array([(1, -1), (1, 1)]),
+                np.array([(3, -1), (4, 0), (3, 1)]),
+            ],
+            WallOrientation.HORIZONTAL: [
+                np.array([(-1, -1), (-2, 0), (1, -1)]),
+                np.array([(-1, 1), (1, 1)]),
+                np.array([(-1, 3), (-2, 4), (1, 3)]),
+            ],
+        }
 
     def get_player_position(self, player: Player) -> Position:
         """
@@ -94,8 +106,8 @@ class Board:
             raise ValueError(f"Position {new_position} is out of bounds")
 
         old_position = self._player_positions[player]
-        self._grid[*old_position * 2] = Board.FREE
-        self._grid[*new_position * 2] = player
+        self._grid[*old_position * 2 + 2] = Board.FREE
+        self._grid[*new_position * 2 + 2] = player
         self._player_positions[player] = new_position
 
     def get_player_cell(self, position: Position) -> int:
@@ -107,7 +119,7 @@ class Board:
         if not self.is_position_on_board(position):
             raise ValueError(f"Position {position} is out of bounds")
 
-        return self._grid[*position * 2]
+        return self._grid[*position * 2 + 2]
 
     def add_wall(self, player: Player, position: Position, orientation: WallOrientation):
         """
@@ -148,11 +160,6 @@ class Board:
         except IndexError:
             return False
 
-    def does_wall_block_all_paths_to_row_for_player(
-        self, position: Position, orientation: WallOrientation, player: Player, row: int
-    ) -> bool:
-        pass
-
     def is_wall_between(self, position1: Position, position2: Position) -> bool:
         """
         Check if there is a wall between two positions.
@@ -166,7 +173,7 @@ class Board:
         assert position1_on_board or position2_on_board, "At least one position must be on the board"
 
         if position1_on_board and position2_on_board:
-            wall_position = position1 + position2
+            wall_position = position1 + position2 + 2
             return self._grid[*wall_position] == Board.WALL
         else:
             # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
@@ -192,19 +199,29 @@ class Board:
         assert isinstance(orientation, WallOrientation)
 
         if orientation == WallOrientation.VERTICAL:
-            wall_slice = (slice(position[0] * 2, position[0] * 2 + 3), position[1] * 2 + 1)
+            wall_slice = (slice(position[0] * 2 + 2, position[0] * 2 + 5), position[1] * 2 + 3)
         elif orientation == WallOrientation.HORIZONTAL:
-            wall_slice = (position[0] * 2 + 1, slice(position[1] * 2, position[1] * 2 + 3))
+            wall_slice = (position[0] * 2 + 3, slice(position[1] * 2 + 2, position[1] * 2 + 5))
 
         return wall_slice
+
+    def _is_wall_potential_block(self, position, orientation):
+        wall_start_cell = position * 2 + 2
+        touches = 0
+        for neighbor_offsets in self._potential_wall_neighbors[orientation]:
+            neighbors = wall_start_cell + neighbor_offsets
+            if (self._grid[neighbors[:, 0], neighbors[:, 1]] == Board.WALL).any():
+                touches += 1
+        return touches >= 2
 
     def __str__(self):
         """
         Return a pretty-printed string representation of the grid.
         """
-        display_grid = np.full(self._grid.shape, " ", dtype=str)
+        grid_without_border = self._grid[2:-2, 2:-2]
+        display_grid = np.full(grid_without_border.shape, " ", dtype=str)
         display_grid[::2, ::2] = "."
-        display_grid[self._grid == Board.WALL] = "w"
+        display_grid[grid_without_border == Board.WALL] = "#"
         for player, _ in enumerate(self._player_positions):
             display_grid[*self._player_positions[player] * 2] = str(player + 1)
         return "\n".join([" ".join(row) for row in display_grid]) + "\n"
@@ -281,14 +298,15 @@ class Quoridor:
 
         elif isinstance(action, WallAction):
             if self.board.can_place_wall(action.position, action.orientation):
-                # Temporarily place the wall so that we can easily check for walls
-                self.board.add_wall(self.current_player, action.position, action.orientation)
-                for p in [Player.ONE, Player.TWO]:
-                    if not self.can_reach(self.board.get_player_position(p), self.get_goal_row(p)):
-                        is_valid = False
-                        break
-                # Restore the board to its previous state
-                self.board.remove_wall(self.current_player, action.position, action.orientation)
+                if self.board._is_wall_potential_block(action.position, action.orientation):
+                    # Temporarily place the wall so that we can check player paths to their goals.
+                    self.board.add_wall(self.current_player, action.position, action.orientation)
+                    for p in [Player.ONE, Player.TWO]:
+                        if not self.can_reach(self.board.get_player_position(p), self.get_goal_row(p)):
+                            is_valid = False
+                            break
+                    # Restore the board to its previous state
+                    self.board.remove_wall(self.current_player, action.position, action.orientation)
             else:
                 is_valid = False
         else:
