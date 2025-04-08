@@ -2,7 +2,7 @@ import argparse
 import datetime
 
 import torch
-from agents.core.agent import AgentRegistry
+from agents.core import Agent, AgentRegistry
 from arena import Arena
 from arena_utils import ArenaPlugin
 from play import player_with_params
@@ -18,7 +18,7 @@ def train_dqn(
     save_frequency: int = 100,
     step_rewards: bool = True,
     use_wandb: bool = True,
-    players: list | None = None,
+    players: list[str | Agent] = [],
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
 ):

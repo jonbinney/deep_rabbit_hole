@@ -64,7 +64,7 @@ class QuoridorEnv(AECEnv):
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents.copy()
         self.agent_order = self.agents.copy()
-        self.last_action_mask = {a: [] for a in self.agents}
+        self.last_action_mask: dict = {a: [] for a in self.agents}
 
         self.walls = np.zeros((self.wall_size, self.wall_size, 2), dtype=np.int8)
         self.walls_remaining = {agent: self.max_walls for agent in self.agents}
@@ -88,8 +88,8 @@ class QuoridorEnv(AECEnv):
 
     def step(self, action):
         """
-        Players move by selecting an index from 0-80 (9×9 board).
-        Wall placement is mapped to 81-208 (8×8×2).
+        Players move by selecting an index from 0-80 (9x9 board).
+        Wall placement is mapped to 81-208 (8x8x2).
         """
         agent = self.agent_selection
         if self.terminations[agent]:

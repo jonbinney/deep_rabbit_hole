@@ -25,7 +25,4 @@
     ],
     "ruff.trace.server": "messages",
     "python.sortImports.args": ["--profile", "black"],
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit"
-    }
 }

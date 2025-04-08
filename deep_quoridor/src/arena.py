@@ -66,10 +66,13 @@ class Arena:
 
         end_time = time.time()
 
+        winner_idx = self.game.winner()
+        winner = [agent1, agent2][winner_idx].name() if winner_idx is not None else "N/A"
+
         result = GameResult(
             player1=agent1.name(),
             player2=agent2.name(),
-            winner=[agent1, agent2][self.game.winner()].name(),
+            winner=winner,
             steps=step,
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,

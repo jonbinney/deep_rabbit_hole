@@ -93,7 +93,9 @@ class TestQuoridorEnv:
     def _test_pawn_movements(self, s):
         env, potential_moves, _ = parse_board(s)
         N = env.board_size
-        action_mask = env.observe("player_0")["action_mask"]
+        observation = env.observe("player_0")
+        assert observation
+        action_mask = observation["action_mask"]
 
         env_moves = []
         for i, value in enumerate(action_mask[: N**2]):
@@ -106,7 +108,9 @@ class TestQuoridorEnv:
         env, _, forbidden_walls = parse_board(s)
         N = env.board_size
         env.render()
-        action_mask = env.observe("player_0")["action_mask"]
+        observation = env.observe("player_0")
+        assert observation
+        action_mask = observation["action_mask"]
 
         env_walls = []
         for i in range(N**2, len(action_mask)):
@@ -175,7 +179,7 @@ class TestQuoridorEnv:
         self._test_distance_to_target(
             """
             1 . .
-            - - 
+            - -
             . .|.
             . .|2
         """,

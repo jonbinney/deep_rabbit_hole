@@ -16,7 +16,8 @@ class WandbTrainPlugin(ArenaPlugin):
         self.agent = None
         self.run_id = run_id
 
-    def _initialize(self, game):
+    def _initialize(self, game, agent: AbstractTrainableAgent):
+        self.agent = agent
         config = {
             "board_size": game.board_size,
             "max_walls": game.max_walls,
@@ -40,14 +41,14 @@ class WandbTrainPlugin(ArenaPlugin):
         if self.agent is not None:
             return
         if isinstance(agent1, AbstractTrainableAgent) and agent1.training_mode:
-            self.agent = agent1
+            self._initialize(game, agent1)
         elif isinstance(agent2, AbstractTrainableAgent) and agent2.training_mode:
-            self.agent = agent2
+            self._initialize(game, agent2)
         else:
             raise ValueError("WandbTrainPlugin can only be used with a training agent, both agents are not training")
-        self._initialize(game)
 
     def end_game(self, game, result):
+        assert self.agent
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
 
@@ -58,6 +59,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
+        assert self.agent
         # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
         # once we upload it to wandb and have the digest.
         save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("temp"))
