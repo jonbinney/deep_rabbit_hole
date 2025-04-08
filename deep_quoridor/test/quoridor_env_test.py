@@ -31,7 +31,7 @@ def parse_board(board):
     """
     rows = [r for r in board.split("\n") if r.strip()]
     size = len([ch for ch in rows[0] if ch in "12.*"])
-    env = quoridor_env(size)
+    env = quoridor_env(board_size=size)
     potential_moves = []
     forbidden_walls = []
 

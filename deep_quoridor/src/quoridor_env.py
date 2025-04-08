@@ -539,7 +539,10 @@ class QuoridorEnv(AECEnv):
 
 
 # Wrapping the environment for PettingZoo compatibility
-def env(render_mode="human", **kwargs):
+def env(**kwargs):
+    # Extract render_mode from kwargs with a default of "human"
+    render_mode = kwargs.get("render_mode", "human")
+
     if render_mode == "human":
         return wrappers.CaptureStdoutWrapper(QuoridorEnv(**kwargs))
     else:
