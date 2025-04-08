@@ -3,7 +3,7 @@ from dataclasses import asdict
 
 from agents.core.trainable_agent import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
-from utils.misc import resolve_path
+from utils import resolve_path
 
 import wandb
 

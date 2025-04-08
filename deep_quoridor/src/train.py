@@ -1,13 +1,11 @@
 import argparse
 
-import numpy as np
-import torch
 from agents.core.agent import AgentRegistry
 from arena import Arena
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from renderers import Renderer, TrainingStatusRenderer
-from utils.misc import set_deterministic
+from utils import my_device, set_deterministic
 
 
 def train_dqn(
@@ -42,7 +40,7 @@ def train_dqn(
         board_size=board_size,
         max_walls=max_walls,
         step_rewards=step_rewards,
-        renderers=np.concatenate([print_plugin], renderers),
+        renderers=[print_plugin] + renderers,
         plugins=plugins,
         swap_players=True,
     )
@@ -99,7 +97,7 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
     print(f"Using step rewards: {args.step_rewards}")
-    print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
+    print(f"Device: {my_device()}")
     print(f"Initializing random seed {args.seed}")
 
     # Set random seed for reproducibility

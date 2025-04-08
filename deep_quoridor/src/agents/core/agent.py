@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from utils.subargs import parse_subargs
+from utils import parse_subargs
 
 
 class ActionLog:
@@ -10,7 +10,7 @@ class ActionLog:
         Log an action with an associated text.
         """
 
-        action: int
+        action: tuple[int, int, int]  # (row, col, type)
         text: str
 
     @dataclass
@@ -19,7 +19,7 @@ class ActionLog:
         Log a ranking of actions with their scores.
         """
 
-        ranking: list[tuple[int, int, float]]  # rank, action, score
+        ranking: list[tuple[int, tuple[int, int, int], float]]  # rank, action (row, col, type), score
 
     @dataclass
     class Path:
@@ -42,12 +42,12 @@ class ActionLog:
     def is_enabled(self) -> bool:
         return self._enabled
 
-    def action_text(self, action: int, text: str):
+    def action_text(self, action: tuple[int, int, int], text: str):
         if not self.is_enabled():
             return
         self.records.append(self.ActionText(action, text))
 
-    def action_score_ranking(self, action_scores: dict[int, float]):
+    def action_score_ranking(self, action_scores: dict[tuple[int, int, int], float]):
         """
         Log a ranking of actions with their scores.
         action_scores is a dictionary where the key is the action and the value is the score.
