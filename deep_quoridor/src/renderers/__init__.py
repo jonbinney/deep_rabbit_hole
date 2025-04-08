@@ -21,11 +21,26 @@ class Renderer(ArenaPlugin):
         return list(Renderer.renderers.keys())
 
 
+__all__ = [
+    "ArenaResults2Renderer",
+    "ArenaResultsRenderer",
+    "CursesBoardRenderer",
+    "MatchResultsRenderer",
+    "NoneRenderer",
+    "ProgressBarRenderer",
+    "PygameRenderer",
+    "Renderer",
+    "TextBoardRenderer",
+    "TrainingStatusRenderer",
+]
+
+
 from renderers.arena_results import ArenaResultsRenderer  # noqa: E402, F401
 from renderers.arena_results2 import ArenaResults2Renderer  # noqa: E402, F401
 from renderers.curses_board import CursesBoardRenderer  # noqa: E402, F401
 from renderers.match_results import MatchResultsRenderer  # noqa: E402, F401
 from renderers.none import NoneRenderer  # noqa: E402, F401
 from renderers.progress_bar import ProgressBarRenderer  # noqa: E402, F401
-from renderers.text_board import TextBoardRenderer  # noqa: E402, F401
 from renderers.pygame import PygameRenderer  # noqa: E402, F401
+from renderers.text_board import TextBoardRenderer  # noqa: E402, F401
+from renderers.training_status import TrainingStatusRenderer  # noqa: E402, F401

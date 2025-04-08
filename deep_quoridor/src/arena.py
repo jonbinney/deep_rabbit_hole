@@ -3,6 +3,7 @@ from threading import Thread
 from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
+from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
 from quoridor_env import env
 from renderers import PygameRenderer
@@ -37,26 +38,30 @@ class Arena:
         for p, a in agents.items():
             a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
-
         start_time = time.time()
         step = 0
         for player_id in self.game.agent_iter():
             observation, _, termination, truncation, _ = self.game.last()
             agent = agents[player_id]
-
             if termination or truncation:
-                if agent.is_trainable():
+                if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                     # Handle end of game (in case winner was not this agent)
                     agent.handle_step_outcome(observation, None, self.game)
                 break
 
             action = int(agent.get_action(self.game))
+
+            self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
-            if agent.is_trainable():
+            if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                 agent.handle_step_outcome(observation, action, self.game)
 
-            self.plugins.action(self.game, step, player_id, action)
+            opponent_agent = agents[self.game.agent_selection]
+            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
+                opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
+
+            self.plugins.after_action(self.game, step, player_id, action)
             step += 1
 
         end_time = time.time()
@@ -86,7 +91,9 @@ class Arena:
             if isinstance(p, Agent):
                 agents.append(p)
             else:
-                agents.append(AgentRegistry.create(p, board_size=self.board_size, max_walls=self.max_walls))
+                agents.append(
+                    AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
+                )
 
         for i in range(len(players)):
             for j in range(i + 1, len(players)):

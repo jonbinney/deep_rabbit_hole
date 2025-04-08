@@ -1,16 +1,35 @@
+import random
+from dataclasses import dataclass
 from queue import Queue
-from typing import TypeAlias
+from typing import Optional, TypeAlias
 
 import numpy as np
+from utils.subargs import SubargsBase
 
 from agents.core import Agent
 
 Position: TypeAlias = tuple[int, int]
 
 
+@dataclass
+class GreedyParams(SubargsBase):
+    p_random: float = 0.0
+    nick: Optional[str] = None
+
+
 class GreedyAgent(Agent):
-    def __init__(self, **kwargs):
+    def __init__(self, params=GreedyParams(), **kwargs):
         super().__init__()
+        self.params = params
+
+    @classmethod
+    def params_class(cls):
+        return GreedyParams
+
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        return f"greedy (p_random={self.params.p_random})" if self.params.p_random > 0 else "greedy"
 
     def start_game(self, game, player_id):
         self.player_id = player_id
@@ -133,10 +152,40 @@ class GreedyAgent(Agent):
         # No actions found
         return None
 
+    def _log_action(
+        self, game, observation: dict, my_shortest_path: list[Position], opponent_shortest_path: list[Position]
+    ):
+        if not self.action_log.is_enabled():
+            return
+
+        self.action_log.clear()
+
+        # Log the possible next movements
+        movement_mask = observation["action_mask"][: game.board_size**2]
+        for action in np.argwhere(movement_mask == 1).reshape(-1):
+            self.action_log.action_text(int(action), "")
+
+        my_coords = np.argwhere(observation["observation"]["board"] == 1)
+        path = my_shortest_path[:]
+        path.insert(0, (int(my_coords[0][0]), int(my_coords[0][1])))
+        self.action_log.path(path)
+
+        opp_coords = np.argwhere(observation["observation"]["board"] == 2)
+        path = opponent_shortest_path[:]
+        path.insert(0, (int(opp_coords[0][0]), int(opp_coords[0][1])))
+        self.action_log.path(path)
+
     def get_action(self, game):
         observation, _, termination, truncation, _ = game.last()
         if termination or truncation:
             return None
+
+        if random.random() < self.params.p_random:
+            if self.action_log.is_enabled():
+                self.action_log.clear()
+                # TO DO: when we have the functionality in the log to output a message,
+                # use it to say that the move will be random.
+            return game.action_space(game.agent_selection).sample(observation["action_mask"])
 
         goal_row = game.board_size - 1 if self.player_id == "player_0" else 0
         opponent_row = game.board_size - 1 - goal_row
@@ -144,6 +193,8 @@ class GreedyAgent(Agent):
         my_shortest_path = self._shortest_path_from_me(game, observation, goal_row)
         opponent_pos = self._get_opponent_position(game, observation["observation"]["board"])
         opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_row)
+
+        self._log_action(game, observation, my_shortest_path, opponent_shortest_path)
 
         # TODO: use a more elaborate logic to decide whether to block, could be probabilistic
         block = False

@@ -1,28 +1,27 @@
 """
 Quoridor Gym/PettingZoo Environment implementation.
 
-The board size is parameterizable with:
- - Board size (int): size of the square board
- - Max number of walls (int): maximum number of walls that each player can place
-Boards are always square.
-For all explanations below, the default value of 9x9 is assumed.
+The board size and number of walls are parameterizable:
+ - board_size (int): size of the square board
+ - max_walls (int): maximum number of walls that each player can place
 
-The state is implemented in a two-hot encoding, as follows:
- - A 9x9 2D array, each representing a space in the board. All values are 0 except
-   1 where player 1 is placed, and 2 where player 2 is placed.
-   NOTE: This is represented internally in a compact way but converted in the specified
-   observation space format as needed.
- - An 8x8x2 array, representing the vertical and horizontal walls placed in the board, using
-   one-hot encoding.
+The state is a dictionary containing:
+ - "board": A board_size x board_size 2D array, representing the positions of the players.
+            0 indicates an empty space, 1 indicates the player's position, and 2 indicates the opponent's position.
+ - "walls": A (board_size - 1) x (board_size - 1) x 2 array, representing the vertical and horizontal walls placed on the board.
+            The first channel (index 0) represents vertical walls, and the second channel (index 1) represents horizontal walls.
+            A value of 1 indicates the presence of a wall.
+ - "my_walls_remaining": An integer representing the number of walls remaining for the player
+ - "opponent_walls_remaining": An integer representing the number of walls remaining for the opponent.
+ - "my_turn": A boolean indicating whether it is the player's turn
 
-The action is represented as follows, taking a 9x9 board as an example:
-- First 9x9 = 81 values represent player positions
-- The next 8x8 = 64 values reprsent vertical walls and the last 8x8 = 64 values represent horizontal walls
-- The cell position of a wall represnts the first space occupied by a wall, knowing that each cell takes two spaces.
-- For vertical walls, we place the wall starting at the upper right corner of the (row, col) cell
-- For horizontal walls, we place the wall starting at the lower left corner of the (row, col) cell
+The action space is a Discrete space with size board_size**2 + 2*(board_size-1)**2
+Actions are represented as follows:
+- The first board_size**2 actions represent moving to a specific cell on the board.
+- The next (board_size - 1)**2 actions represent placing a vertical wall.
+- The final (board_size - 1)**2 actions represent placing a horizontal wall.
 
-Every time we represent a coordinate as a tuple, it is in the form (row, col)
+The environment uses 0-based indexing for rows and columns, with (0, 0) representing the top-left corner of the board.
 """
 
 import copy
@@ -158,6 +157,7 @@ class QuoridorEnv(AECEnv):
         walls = self.walls.copy()
 
         return {
+            "my_turn": self.agent_selection == agent_id,
             "board": board,
             "walls": walls,
             "my_walls_remaining": self.walls_remaining[agent_id],
@@ -368,6 +368,7 @@ class QuoridorEnv(AECEnv):
             {
                 "observation": spaces.Dict(
                     {
+                        "my_turn": spaces.Discrete(2),
                         # For now: 0 = empty, 1 = player 1, 2 = player 2 in a board_size x board_size grid
                         "board": spaces.Box(0, 2, (self.board_size, self.board_size), dtype=np.int8),
                         # For now: 0 = no wall, 1 = wall on a grid of wall_size x wall_size x orientation (0 = vertical, 1 = horizontal)

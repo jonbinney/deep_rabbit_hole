@@ -1,8 +1,19 @@
 import random
+from pathlib import Path
+from typing import Optional
 
 import gymnasium.utils.seeding
 import numpy as np
 import torch
+
+
+def resolve_path(dir: str, filename: Optional[str] = None) -> Path:
+    path = Path(dir)
+    if not path.is_absolute():
+        # Update this if this file is moved
+        path = Path(__file__).resolve().parents[3] / path
+
+    return path / filename if filename else path
 
 
 def set_deterministic(seed=42):
