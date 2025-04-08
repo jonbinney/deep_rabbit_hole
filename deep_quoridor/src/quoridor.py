@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from typing import TypeAlias
@@ -82,9 +83,9 @@ class Board:
                 np.array([(3, -1), (4, 0), (3, 1)]),
             ],
             WallOrientation.HORIZONTAL: [
-                np.array([(-1, -1), (-2, 0), (1, -1)]),
+                np.array([(-1, -1), (0, -2), (1, -1)]),
                 np.array([(-1, 1), (1, 1)]),
-                np.array([(-1, 3), (-2, 4), (1, 3)]),
+                np.array([(-1, 3), (0, 4), (1, 3)]),
             ],
         }
 
@@ -191,6 +192,20 @@ class Board:
             and (position[1] < self.board_size)
         )
 
+    def _wall_position_to_grid_index(self, position: Position, orientation: WallOrientation) -> tuple[int, int]:
+        """
+        Returns the grid index of the topmost/leftmost cell of the wall.
+        """
+        assert is_valid_position_type(position)
+        assert isinstance(orientation, WallOrientation)
+
+        if orientation == WallOrientation.VERTICAL:
+            return (position[0] * 2 + 2, position[1] * 2 + 3)
+        elif orientation == WallOrientation.HORIZONTAL:
+            return (position[0] * 2 + 3, position[1] * 2 + 2)
+
+        raise ValueError("Invalid wall orientation")
+
     def _get_wall_slice(self, position: Position, orientation: WallOrientation) -> tuple[slice, slice]:
         """
         Get a tuple of slices that correspond to the wall's cells in the grid.
@@ -206,13 +221,15 @@ class Board:
         return wall_slice
 
     def _is_wall_potential_block(self, position, orientation):
-        wall_start_cell = position * 2 + 2
+        wall_start_index = self._wall_position_to_grid_index(position, orientation)
+
         touches = 0
         for neighbor_offsets in self._potential_wall_neighbors[orientation]:
-            neighbors = wall_start_cell + neighbor_offsets
+            neighbors = wall_start_index + neighbor_offsets
             if (self._grid[neighbors[:, 0], neighbors[:, 1]] == Board.WALL).any():
                 touches += 1
-        return touches >= 2
+
+        return touches > 1
 
     def __str__(self):
         """
@@ -224,6 +241,9 @@ class Board:
         display_grid[grid_without_border == Board.WALL] = "#"
         for player, _ in enumerate(self._player_positions):
             display_grid[*self._player_positions[player] * 2] = str(player + 1)
+        for idx, value in np.ndenumerate(grid_without_border):
+            if value >= 5 and value <= 9:
+                display_grid[idx] = str(value)  # Useful for debugging.
         return "\n".join([" ".join(row) for row in display_grid]) + "\n"
 
 
