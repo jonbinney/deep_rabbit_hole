@@ -18,11 +18,13 @@ import time
 import pettingzoo.utils
 import quoridor_env
 import torch
+import wandb
 from gymnasium import spaces
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.torch_layers import FlattenExtractor
+from wandb.integration.sb3 import WandbCallback
 
 
 class DictFlattenExtractor(FlattenExtractor):
@@ -137,7 +139,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     policy_kwargs = {"features_extractor_class": DictFlattenExtractor}
     model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs)
     model.set_random_seed(seed)
-    model.learn(total_timesteps=steps)
+    model.learn(total_timesteps=steps, callback=WandbCallback())
 
     model.save(f"{env.unwrapped.metadata.get('name')}_{time.strftime('%Y%m%d-%H%M%S')}")
 
@@ -213,7 +215,9 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
 if __name__ == "__main__":
     env_fn = quoridor_env
 
-    env_kwargs = {"board_size": 3, "max_walls": 0}
+    env_kwargs = {"board_size": 5, "max_walls": 3}
+
+    wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs)
 
     # Evaluation/training hyperparameter notes:
     # 10k steps: Winrate:  0.76, loss order of 1e-03
@@ -221,7 +225,7 @@ if __name__ == "__main__":
     # 40k steps: Winrate:  0.86, loss order of 7e-06
 
     # Train a model against itself (takes ~20 seconds on a laptop CPU)
-    train_action_mask(env_fn, steps=20_480, seed=0, **env_kwargs)
+    train_action_mask(env_fn, steps=10_480, seed=0, **env_kwargs)
 
     # Evaluate 100 games against a random agent (winrate should be ~80%)
     eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
