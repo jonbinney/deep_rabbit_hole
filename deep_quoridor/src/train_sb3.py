@@ -8,9 +8,6 @@ Taken from Author: Elliot (https://github.com/elliottower)
 TODO:
  - Make it work without flattening the observation space
  - Write down necessary hack for this to work at all or find a better solution
- - Make it possible to render the test plays
- - Integrate as an agent on our LLL environment
- - Learn about PPO and improve model params
  - (future) Implement a Maskable DQN
 """
 
@@ -58,7 +55,7 @@ class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
     - provide a method to get to the action mask
     """
 
-    def __init__(self, env, rewards_multiplier: float = 10):
+    def __init__(self, env, rewards_multiplier: float = 1000):
         super().__init__(env)
         self.rewards_multiplier = rewards_multiplier
 
