@@ -231,6 +231,46 @@ class Board:
 
         return touches > 1
 
+    def _dfs(self, start_position: Position, target_row: int, visited: np.ndarray, any_path=True):
+        """
+        Performs a depth-first search to find whether the pawn can reach the target row.
+
+        Args:
+            start_position : The current row of the pawn
+            target_row: The target row to reach
+            visited: A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+            If any_path is set to true, the first path to the target row will be returned (faster).
+            Otherwise, the shortest path will be returned (potentially slower)
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if start_position[0] == target_row:
+            return 0
+
+        visited[*start_position] = True
+
+        # Find out the forward direction to try it first and maybe get to the target faster
+        fwd = 1 if target_row > start_position[0] else -1
+
+        moves = [np.array(start_position + offset) for offset in [(fwd, 0), (0, -1), (0, 1), (-fwd, 0)]]
+        best = -1
+        for new_position in moves:
+            if (
+                self.is_position_on_board(new_position)
+                and not self.is_wall_between(start_position, new_position)
+                and not visited[*new_position]
+            ):
+                dfs = self._dfs(new_position, target_row, visited)
+                if dfs != -1:
+                    if any_path:
+                        return dfs + 1
+                    if best == -1 or dfs + 1 < best:
+                        best = dfs + 1
+
+        return best
+
     def __str__(self):
         """
         Return a pretty-printed string representation of the grid.
@@ -353,47 +393,7 @@ class Quoridor:
         Otherwise, the shortest path will be returned (potentially slower)
         """
         visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
-        return self._dfs(start_position, target_row, visited, any_path)
-
-    def _dfs(self, start_position: Position, target_row: int, visited: np.ndarray, any_path=True):
-        """
-        Performs a depth-first search to find whether the pawn can reach the target row.
-
-        Args:
-            start_position : The current row of the pawn
-            target_row: The target row to reach
-            visited: A 2D boolean array with the same shape as the board,
-                indicating which positions have been visited
-            If any_path is set to true, the first path to the target row will be returned (faster).
-            Otherwise, the shortest path will be returned (potentially slower)
-
-        Returns:
-            int: Number of steps to reach the target or -1 if it's unreachable
-        """
-        if start_position[0] == target_row:
-            return 0
-
-        visited[*start_position] = True
-
-        # Find out the forward direction to try it first and maybe get to the target faster
-        fwd = 1 if target_row > start_position[0] else -1
-
-        moves = [np.array(start_position + offset) for offset in [(fwd, 0), (0, -1), (0, 1), (-fwd, 0)]]
-        best = -1
-        for new_position in moves:
-            if (
-                self.board.is_position_on_board(new_position)
-                and not self.board.is_wall_between(start_position, new_position)
-                and not visited[*new_position]
-            ):
-                dfs = self._dfs(new_position, target_row, visited)
-                if dfs != -1:
-                    if any_path:
-                        return dfs + 1
-                    if best == -1 or dfs + 1 < best:
-                        best = dfs + 1
-
-        return best
+        return self.board._dfs(start_position, target_row, visited, any_path)
 
     def __str__(self):
         return str(self.board)
