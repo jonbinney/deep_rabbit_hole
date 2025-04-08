@@ -58,6 +58,10 @@ class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
     - provide a method to get to the action mask
     """
 
+    def __init__(self, env, rewards_multiplier: float = 10):
+        super().__init__(env)
+        self.rewards_multiplier = rewards_multiplier
+
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
 
@@ -74,9 +78,22 @@ class SB3ActionMaskWrapper(pettingzoo.utils.BaseWrapper):
         return self.observe(self.agent_selection), {}
 
     def step(self, action):
-        """Gymnasium-like step function, returning observation, reward, termination, truncation, info."""
+        """Gymnasium-like step function, returning observation, reward, termination, truncation, info.
+
+        The observation is for the next agent (used to determine the next action), while the remaining
+        items are for the agent that just acted (used to understand what just happened).
+        """
+        current_agent = self.agent_selection
+
         super().step(action)
-        return super().last()
+
+        return (
+            self.observe(current_agent),
+            self.rewards[current_agent] * self.rewards_multiplier,
+            self.terminations[current_agent],
+            self.truncations[current_agent],
+            self.infos[current_agent],
+        )
 
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
