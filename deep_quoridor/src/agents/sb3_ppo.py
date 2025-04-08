@@ -1,32 +1,62 @@
 import os
 from glob import glob
+from typing import override
 
 from sb3_contrib import MaskablePPO
 
 from agents.core.agent import Agent, AgentRegistry
+from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
 from deep_quoridor.src.train_sb3 import SB3ActionMaskWrapper
 
 
-class SB3PPOAgent(Agent):
+class SB3PPOAgent(AbstractTrainableAgent):
     """
     Agent that uses a trained SB3 PPO model to select actions.
     It loads the most recent trained PPO model and uses it to predict actions.
     """
 
-    def __init__(self, model_prefix=None, deterministic=True, **kwargs):
+    def __init__(self, board_size, max_walls, deterministic=True, params=TrainableAgentParams(), **kwargs):
         """
         Initialize the SB3 PPO agent.
 
         Args:
-            model_prefix: Optional prefix for the model file (default: None, will use env name)
-            deterministic: Whether to use deterministic action selection (default: True)
+            params: Optional parameters for the agent
             **kwargs: Additional arguments to pass to the parent class
         """
-        super().__init__()
-        self.model = None
-        self.model_prefix = model_prefix
+        self.board_size = board_size
+        self.max_walls = max_walls
+        self.params = params
         self.deterministic = deterministic
+        self.model = None
         self.wrapper = None
+        self.steps = 0
+        self.training_mode = False
+        self.episodes_rewards = []
+
+        self.fetch_model_from_wand_and_update_params()
+        self.reset_episode_related_info()
+
+    def end_game(self, game):
+        pass
+
+    def model_name(self):
+        return "sb3ppo"
+
+    def version(self):
+        """Bump this version when compatibility with saved models is broken"""
+        return 0
+
+    @staticmethod
+    def params_class():
+        return TrainableAgentParams
+
+    @staticmethod
+    def get_model_extension():
+        return "zip"
+
+    def _calculate_action_size(self):
+        """Calculate the size of the action space."""
+        return self.board_size**2 + (self.board_size - 1) ** 2 * 2
 
     def start_game(self, game, player_id):
         """
@@ -40,14 +70,10 @@ class SB3PPOAgent(Agent):
             # Wrap the game to get access to action_mask method
             self.wrapper = SB3ActionMaskWrapper(game)
 
-            # Determine the model prefix
-            prefix = self.model_prefix if self.model_prefix is not None else self.wrapper.metadata["name"]
-
             try:
                 # Find the most recent model file
-                latest_policy = max(glob(f"{prefix}*.zip"), key=os.path.getctime)
-                self.model = MaskablePPO.load(latest_policy)
-                print(f"Loaded model from {latest_policy}")
+                self.model = MaskablePPO.load(self.params.model_filename)
+                print(f"Loaded model from {self.params.model_filename}")
             except (ValueError, FileNotFoundError):
                 print("No policy found. The agent will not work correctly.")
                 return

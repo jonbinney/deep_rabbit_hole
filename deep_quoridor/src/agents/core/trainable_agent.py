@@ -365,6 +365,10 @@ class AbstractTrainableAgent(Agent):
     def params_class(cls):
         raise NotImplementedError("Trainable agents must implement method params_class")
 
+    @classmethod
+    def get_model_extension():
+        return "pt"
+
     def fetch_model_from_wand_and_update_params(self):
         """
         This function doesn't do anything if wandb_alias is not set in self.params.
@@ -390,7 +394,7 @@ class AbstractTrainableAgent(Agent):
             artifact_dir = artifact.download(root=tmpdir)
 
             # NOTE: This picks the first .pt file it finds in the artifact
-            tmp_filename = next(Path(artifact_dir).glob("**/*.pt"), None)
+            tmp_filename = next(Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None)
             if tmp_filename is None:
                 raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 

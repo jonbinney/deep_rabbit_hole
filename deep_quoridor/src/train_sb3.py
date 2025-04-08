@@ -14,6 +14,7 @@ TODO:
 import glob
 import os
 import time
+from dataclasses import asdict
 
 import pettingzoo.utils
 import quoridor_env
@@ -121,6 +122,11 @@ def mask_fn(env):
     return env.action_mask()
 
 
+def make_model_id(env_kwargs):
+    # HACK: This is takenfrom trainable_agent model_id()
+    return f"sb3ppo_B{env_kwargs['board_size']}W{env_kwargs['max_walls']}_mv0"
+
+
 def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
     env = env_fn.env(**env_kwargs)
@@ -147,13 +153,13 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
         callback=WandbCallback(gradient_save_freq=1000),
     )
 
-    # HACK: This is takenfrom trainable_agent model_id()
-    model_id = f"sb3ppo_B{env_kwargs['board_size']}W{env_kwargs['max_walls']}_mv0"
+    model_id = make_model_id(env_kwargs)
     local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
     model.save(local_filename)
-    artifact = wandb.Artifact(f"{model_id}", type="model", metadata=(env_kwargs))
+    artifact = wandb.Artifact(f"{model_id}", type="model")
     artifact.add_file(local_path=local_filename)
     artifact.save()
+    wandb.finish()
 
     print(f"Model {model_id} has been saved.")
 
@@ -170,7 +176,8 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
     print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[1]}.")
 
     try:
-        latest_policy = max(glob.glob(f"{env.metadata['name']}*.zip"), key=os.path.getctime)
+        model_id = make_model_id(env_kwargs)
+        latest_policy = max(glob.glob(f"{model_id}*.zip"), key=os.path.getctime)
     except ValueError:
         print("Policy not found.")
         exit(0)
@@ -235,7 +242,7 @@ if __name__ == "__main__":
     # 40k steps: Winrate:  0.86, loss order of 7e-06
 
     # Train a model against itself (takes ~20 seconds on a laptop CPU)
-    train_action_mask(env_fn, steps=10_480, seed=0, **env_kwargs)
+    train_action_mask(env_fn, steps=20_480, seed=0, **env_kwargs)
 
     # Evaluate 100 games against a random agent (winrate should be ~80%)
     eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
