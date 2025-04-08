@@ -1,10 +1,17 @@
 import argparse
 
-import utils
 from agents import AgentRegistry
 from arena import Arena
-from arena_yaml_recorder import ArenaYAMLRecorder
+from plugins.arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
+from utils.misc import set_deterministic
+
+
+def player_with_params(arg):
+    if not AgentRegistry.is_valid_encoded_name(arg):
+        raise argparse.ArgumentTypeError(f"Invalid player name: {arg}")
+    return arg
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deep Quoridor")
@@ -19,13 +26,14 @@ if __name__ == "__main__":
         help="Render modes to be used",
     )
     parser.add_argument("--step_rewards", action="store_true", default=False, help="Enable step rewards")
+
     parser.add_argument(
         "-p",
         "--players",
         nargs="+",
-        choices=AgentRegistry.names(),
+        type=player_with_params,
         default=["random", "simple"],
-        help="List of players to compete against each other",
+        help=f"List of players to compete against each other. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
     parser.add_argument(
         "-A",
@@ -47,7 +55,6 @@ if __name__ == "__main__":
         default="game_recording.yaml",
         help="Save the played games to a file. Use 'None' to disable saving.",
     )
-
     parser.add_argument(
         "-i",
         "--seed",
@@ -58,7 +65,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    utils.set_deterministic(args.seed)
+    set_deterministic(args.seed)
 
     renderers = [Renderer.create(r) for r in args.renderers]
 

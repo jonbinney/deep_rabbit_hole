@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from utils.subargs import parse_subargs
+
 
 class ActionLog:
     @dataclass
@@ -107,6 +109,10 @@ class Agent:
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
+    def yaml_config(self) -> str:
+        """Returns a YAML string representation of the agent's configuration."""
+        return ""
+
 
 class AgentRegistry:
     agents = {}
@@ -114,6 +120,28 @@ class AgentRegistry:
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
         return AgentRegistry.agents[friendly_name](**kwargs)
+
+    @staticmethod
+    def create_from_encoded_name(encoded_name: str, **kwargs) -> Agent:
+        parts = encoded_name.split(":")
+        agent_type = parts[0]
+        if len(parts) == 1:
+            # No subarguments passed
+            return AgentRegistry.agents[agent_type](**kwargs)
+
+        subargs_class = AgentRegistry.agents[agent_type].params_class()
+        if subargs_class is None:
+            raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
+
+        subargs = parse_subargs(parts[1], subargs_class)
+
+        return AgentRegistry.agents[agent_type](params=subargs, **kwargs)
+
+    @staticmethod
+    def is_valid_encoded_name(encoded_name: str):
+        parts = encoded_name.split(":")
+        agent_type = parts[0]
+        return agent_type in AgentRegistry.names()
 
     @staticmethod
     def names():

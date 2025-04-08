@@ -6,3 +6,6 @@ pygame
 pytest
 pyyaml
 torch
+wandb
+sb3_contrib
+stable_baselines3

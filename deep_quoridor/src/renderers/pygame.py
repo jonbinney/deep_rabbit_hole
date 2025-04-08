@@ -41,6 +41,7 @@ COLOR_PLAYER2 = PALETTE_GRAY[6]
 COLOR_ACTIVE_PLAYER = PALETTE_RED[0]
 
 COLOR_BLACK = (0, 0, 0)
+COLOR_GREY = (128, 128, 128)
 
 
 class GameState(Enum):
@@ -161,8 +162,8 @@ class PygameQuoridor:
         positions = message["positions"]
         ys = [self.board_position[1] - 38, self.board_position[1] + self.board_pixels + 6]
         texts = [
-            f"{self.player1} ({message['walls_remaining']['player_0']})",
-            f"{self.player2} ({message['walls_remaining']['player_1']})",
+            f"P0 {self.player1} ({message['walls_remaining']['player_0']})",
+            f"P1 {self.player2} ({message['walls_remaining']['player_1']})",
         ]
         actives = [message["current_player"] == "player_1", message["current_player"] == "player_0"]
         colors = [COLOR_PLAYER1, COLOR_PLAYER2]
