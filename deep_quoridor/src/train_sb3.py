@@ -132,7 +132,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
 
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
-    run = wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs, sync_tensorboard=True)
+    wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs, sync_tensorboard=True)
 
     env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
@@ -144,12 +144,18 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     model.set_random_seed(seed)
     model.learn(
         total_timesteps=steps,
-        callback=WandbCallback(model_save_freq=1000, model_save_path=f"models/{run.id}"),
+        callback=WandbCallback(gradient_save_freq=1000),
     )
 
-    model.save(f"{env.unwrapped.metadata.get('name')}_{time.strftime('%Y%m%d-%H%M%S')}")
+    # HACK: This is takenfrom trainable_agent model_id()
+    model_id = f"sb3ppo_B{env_kwargs['board_size']}W{env_kwargs['max_walls']}_mv0"
+    local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    model.save(local_filename)
+    artifact = wandb.Artifact(f"{model_id}", type="model", metadata=(env_kwargs))
+    artifact.add_file(local_path=local_filename)
+    artifact.save()
 
-    print("Model has been saved.")
+    print(f"Model {model_id} has been saved.")
 
     print(f"Finished training on {str(env.unwrapped.metadata['name'])}.\n")
 
