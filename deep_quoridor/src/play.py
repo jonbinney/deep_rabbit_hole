@@ -4,7 +4,7 @@ from agents import AgentRegistry
 from arena import Arena
 from plugins.arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
-from utils.misc import set_deterministic
+from utils import set_deterministic
 
 
 def player_with_params(arg):

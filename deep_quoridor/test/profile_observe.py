@@ -1,6 +1,7 @@
-from deep_quoridor.src.quoridor_env import env
 import cProfile
 import time
+
+from quoridor_env import env
 
 e = env(9)
 walls = [
