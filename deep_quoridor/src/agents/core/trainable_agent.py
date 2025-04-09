@@ -326,10 +326,10 @@ class AbstractTrainableAgent(Agent):
         raise NotImplementedError("Trainable agents should return a model name")
 
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
-        return f"{self.model_id()}_{artifact.digest[:5]}.pt"
+        return f"{self.model_id()}_{artifact.digest[:5]}.{self.get_model_extension()}"
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_{suffix}.pt"
+        return f"{self.model_id()}_{suffix}.{self.get_model_extension()}"
 
     def save_model(self, path):
         """Save the model to disk."""

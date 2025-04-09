@@ -1,12 +1,77 @@
-import os
-from glob import glob
-from typing import override
-
+from pettingzoo.utils import BaseWrapper
 from sb3_contrib import MaskablePPO
 
 from agents.core.agent import Agent, AgentRegistry
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
-from deep_quoridor.src.train_sb3 import SB3ActionMaskWrapper
+
+
+class SB3ActionMaskWrapper(BaseWrapper):
+    """
+    Wrapper to allow PettingZoo environments to be used with SB3 illegal action masking.
+    In particular it adapts PettingZoo, since the Action Masking part of it is already implemented
+    in SB3_contrib as the MaskablePPO.
+    The required changes are minor:
+    - Present observation_space and action_space as props instead of methods
+    - return last() on step()
+    - return observation on reset()
+    - return only the observation (not the action mask) in observe()
+    - provide a method to get to the action mask
+    """
+
+    def __init__(self, env, rewards_multiplier: float = 1000):
+        super().__init__(env)
+        self.rewards_multiplier = rewards_multiplier
+
+    def reset(self, seed=None, options=None):
+        """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
+
+        This is required as SB3 is designed for single-agent RL and doesn't expect obs/action spaces to be functions
+        """
+        super().reset(seed, options)
+
+        # SB3 needs observation and action spaces as props instead of methods (?)
+        full_observation = super().observation_space(self.possible_agents[0])
+        self.observation_space = full_observation["observation"]
+        self.action_space = super().action_space(self.possible_agents[0])
+
+        # Return initial observation, info (PettingZoo AEC envs do not by default)
+        return self.observe(self.agent_selection), {}
+
+    def step(self, action):
+        """Gymnasium-like step function, returning observation, reward, termination, truncation, info.
+
+        The observation is for the next agent (used to determine the next action), while the remaining
+        items are for the agent that just acted (used to understand what just happened).
+        """
+        current_agent = self.agent_selection
+
+        super().step(action)
+
+        return (
+            self.observe(current_agent),
+            self.rewards[current_agent] * self.rewards_multiplier,
+            self.terminations[current_agent],
+            self.truncations[current_agent],
+            self.infos[current_agent],
+        )
+
+    def observe(self, agent):
+        """Return only raw observation, removing action mask."""
+        obs = super().observe(agent)["observation"]
+        # # Take obs, which is a dict with some arrays, and convert it to a flat numpy array
+        # return np.concatenate(
+        #     [
+        #         obs["board"].flatten(),
+        #         obs["walls"][0].flatten(),
+        #         obs["walls"][1].flatten(),
+        #         [obs["my_walls_remaining"], obs["opponent_walls_remaining"]],
+        #     ]
+        # )
+        return obs
+
+    def action_mask(self):
+        """Separate function used in order to access the action mask."""
+        return super().observe(self.agent_selection)["action_mask"]
 
 
 class SB3PPOAgent(AbstractTrainableAgent):
@@ -33,7 +98,6 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.training_mode = False
         self.episodes_rewards = []
 
-        self.fetch_model_from_wand_and_update_params()
         self.reset_episode_related_info()
 
     def end_game(self, game):
@@ -42,7 +106,8 @@ class SB3PPOAgent(AbstractTrainableAgent):
     def model_name(self):
         return "sb3ppo"
 
-    def version(self):
+    @staticmethod
+    def version():
         """Bump this version when compatibility with saved models is broken"""
         return 0
 
@@ -67,6 +132,8 @@ class SB3PPOAgent(AbstractTrainableAgent):
             player_id: The ID of the player this agent controls
         """
         if self.model is None:
+            self.fetch_model_from_wand_and_update_params()
+
             # Wrap the game to get access to action_mask method
             self.wrapper = SB3ActionMaskWrapper(game)
 
