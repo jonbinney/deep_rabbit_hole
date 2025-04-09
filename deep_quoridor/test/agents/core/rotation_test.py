@@ -128,3 +128,79 @@ def test_rotate_walls():
     # Check rotated positions
     assert rotated[2, 2, 0] == 1  # Rotated vertical wall
     assert rotated[1, 1, 1] == 1  # Center horizontal wall unchanged
+
+
+def test_convert_rotated_action_index_large_board():
+    """Test conversion with a larger board size (5x5)"""
+    board_size = 5
+
+    # Board positions
+    assert convert_rotated_action_index_to_original(board_size, 0) == 24
+    assert convert_rotated_action_index_to_original(board_size, 24) == 0
+    assert convert_rotated_action_index_to_original(board_size, 12) == 12
+
+    # Vertical walls
+    total_actions = board_size * board_size
+    assert convert_rotated_action_index_to_original(board_size, total_actions) == total_actions + 15
+    assert convert_rotated_action_index_to_original(board_size, total_actions + 15) == total_actions
+
+    # Horizontal walls
+    wall_actions = (board_size - 1) ** 2
+    assert (
+        convert_rotated_action_index_to_original(board_size, total_actions + wall_actions)
+        == total_actions + 2 * wall_actions - 1
+    )
+    assert (
+        convert_rotated_action_index_to_original(board_size, total_actions + 2 * wall_actions - 1)
+        == total_actions + wall_actions
+    )
+
+
+def test_rotate_board_empty():
+    """Test board rotation with an empty board"""
+    board_size = 4
+    board = np.zeros((board_size, board_size))
+    rotated = rotate_board(board)
+    np.testing.assert_array_equal(rotated, board)
+
+
+def test_rotate_walls_empty():
+    """Test wall rotation with no walls"""
+    walls = np.zeros((5, 5, 2))
+    rotated = rotate_walls(walls)
+    np.testing.assert_array_equal(rotated, walls)
+
+
+def test_rotate_action_mask_all_zeros():
+    """Test rotate_action_mask with all zeros"""
+    board_size = 4
+    total_actions = board_size * board_size
+    wall_actions = (board_size - 1) ** 2
+    mask = np.zeros(total_actions + 2 * wall_actions)
+    rotated = rotate_action_mask(board_size, mask)
+    np.testing.assert_array_equal(rotated, mask)
+
+
+def test_convert_action_index_and_back():
+    """Test converting action index to rotated and back to original."""
+    board_size = 4
+    total_actions = board_size * board_size
+    wall_actions = (board_size - 1) ** 2
+
+    # Test board positions
+    for original_index in range(total_actions):
+        rotated_index = convert_original_action_index_to_rotated(board_size, original_index)
+        final_index = convert_rotated_action_index_to_original(board_size, rotated_index)
+        assert final_index == original_index
+
+    # Test vertical walls
+    for original_index in range(total_actions, total_actions + wall_actions):
+        rotated_index = convert_original_action_index_to_rotated(board_size, original_index)
+        final_index = convert_rotated_action_index_to_original(board_size, rotated_index)
+        assert final_index == original_index
+
+    # Test horizontal walls
+    for original_index in range(total_actions + wall_actions, total_actions + 2 * wall_actions):
+        rotated_index = convert_original_action_index_to_rotated(board_size, original_index)
+        final_index = convert_rotated_action_index_to_original(board_size, rotated_index)
+        assert final_index == original_index

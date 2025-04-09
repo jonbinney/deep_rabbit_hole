@@ -231,7 +231,7 @@ class AbstractTrainableAgent(Agent):
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         return action_index_in_tensor
-    
+
     def convert_to_tensor_index_from_action(self, action):
         return action
 
