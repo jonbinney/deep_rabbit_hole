@@ -9,8 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils.misc import resolve_path
-from utils.subargs import SubargsBase
+from utils import SubargsBase, my_device, resolve_path
 
 import wandb
 from agents.core.agent import Agent
@@ -77,8 +76,7 @@ class AbstractTrainableAgent(Agent):
         self.action_size = self._calculate_action_size()
 
         # Setup device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.device = my_device()
         self.fetch_model_from_wand_and_update_params()
 
         # Initialize networks
@@ -216,7 +214,7 @@ class AbstractTrainableAgent(Agent):
             valid_actions = self._get_valid_actions(mask)
             return self._select_random_action(valid_actions)
 
-        return self._get_best_action(observation, mask)
+        return self._get_best_action(game, observation, mask)
 
     def _get_valid_actions(self, mask):
         """Get valid actions from the action mask."""
@@ -235,7 +233,7 @@ class AbstractTrainableAgent(Agent):
     def convert_to_tensor_index_from_action(self, action):
         return action
 
-    def _log_action(self, q_values):
+    def _log_action(self, game, q_values):
         if not self.action_log.is_enabled():
             return
 
@@ -244,13 +242,13 @@ class AbstractTrainableAgent(Agent):
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {
-            int(self.convert_to_action_from_tensor_index(i.item())): v.item()
+            game.action_index_to_params(int(self.convert_to_action_from_tensor_index(i.item()))): v.item()
             for v, i in zip(top_values, top_indices)
             if v.item() >= -100
         }
         self.action_log.action_score_ranking(scores)
 
-    def _get_best_action(self, observation, mask):
+    def _get_best_action(self, game, observation, mask):
         """Get the best action based on Q-values."""
         state = self.observation_to_tensor(observation)
         with torch.no_grad():
@@ -258,7 +256,7 @@ class AbstractTrainableAgent(Agent):
 
         mask_tensor = self.convert_action_mask_to_tensor(mask)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
-        self._log_action(q_values)
+        self._log_action(game, q_values)
 
         selected_action = torch.argmax(q_values).item()
         idx = self.convert_to_action_from_tensor_index(selected_action)
@@ -343,7 +341,7 @@ class AbstractTrainableAgent(Agent):
     def load_model(self, path):
         """Load the model from disk."""
         print(f"Loading pre-trained model from {path}")
-        self.online_network.load_state_dict(torch.load(path))
+        self.online_network.load_state_dict(torch.load(path, map_location=my_device()))
         self.update_target_network()
 
     def resolve_and_load_model(self):
@@ -369,7 +367,7 @@ class AbstractTrainableAgent(Agent):
         raise NotImplementedError("Trainable agents must implement method params_class")
 
     @classmethod
-    def get_model_extension():
+    def get_model_extension(cls):
         return "pt"
 
     def fetch_model_from_wand_and_update_params(self):
