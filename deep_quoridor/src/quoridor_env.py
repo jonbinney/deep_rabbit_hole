@@ -165,13 +165,26 @@ class QuoridorEnv(AECEnv):
         }
 
     def _get_observation(self, agent_id):
+        player = self.agent_to_player[agent_id]
+        opponent_player = self.agent_to_player[self.get_opponent(agent_id)]
         # TODO: Do we need to make copies of the state or can we return references directly?
+
+        # Calculate board from self.positions
+        # NOTE: The board uses 1 to indicate where the agent is and 2 to indicate where the opponent is
+        # Obviously, this will be different for each player
+        board = np.zeros((self.game.board.board_size, self.game.board.board_size), dtype=np.int8)
+        board[self.game.board.get_player_position(player)] = 1
+        board[self.game.board.get_player_position(opponent_player)] = 2
+
+        # Make a copy of walls
+        walls = self.game.board.get_old_style_walls()
+
         return {
             "my_turn": self.agent_selection == agent_id,
             "board": board,
             "walls": walls,
-            "my_walls_remaining": self.walls_remaining[agent_id],
-            "opponent_walls_remaining": self.walls_remaining[self.get_opponent(agent_id)],
+            "my_walls_remaining": self.game.board.get_walls_remaining(player),
+            "opponent_walls_remaining": self.game.board.get_walls_remaining(opponent_player),
         }
 
     def is_wall_between(self, row_a, col_a, row_b, col_b):

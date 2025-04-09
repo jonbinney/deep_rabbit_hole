@@ -114,7 +114,7 @@ class TestQuoridor:
 
         np.testing.assert_equal(np.array(game_moves), np.array(potential_moves))
 
-        env = quoridor_env(game.board.board_size, game.board.max_walls, game_start_state=game)
+        env = quoridor_env(board_size=game.board.board_size, max_walls=game.board.max_walls, game_start_state=game)
         N = game.board.board_size
         action_mask = env.observe("player_0")["action_mask"]
 

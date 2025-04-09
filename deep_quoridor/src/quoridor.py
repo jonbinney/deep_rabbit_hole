@@ -70,6 +70,10 @@ class Board:
         self._grid[:, :2] = Board.WALL
         self._grid[:, -2:] = Board.WALL
 
+        # We also keep track of the walls in a (row x col x orientation) array so that we can give that
+        # representation to agents that expect it.
+        self._old_style_walls = np.zeros((self.board_size - 1, self.board_size - 1, 2), dtype=np.int8)
+
         self._players = [Player.ONE, Player.TWO]
         self._player_positions = [np.array([0, board_size // 2]), np.array([board_size - 1, board_size // 2])]
         for player, position in zip(self._players, self._player_positions):
@@ -122,6 +126,13 @@ class Board:
 
         return self._grid[*position * 2 + 2]
 
+    def get_walls_remaining(self, player: Player) -> int:
+        """
+        Get the number of walls remaining for the player.
+        """
+        assert isinstance(player, Player)
+        return self._walls_remaining[player]
+
     def add_wall(self, player: Player, position: Position, orientation: WallOrientation):
         """
         Mark the grid cells corresponding to the wall as occupied.
@@ -139,6 +150,9 @@ class Board:
         else:
             raise ValueError("Cannot place wall at position {position} with orientation {orientation}")
 
+        # Update the old-style wall representation.
+        self._old_style_walls[*position, orientation] = 1
+
     def remove_wall(self, player: Player, position: Position, orientation: WallOrientation):
         assert isinstance(player, Player)
         assert is_valid_position_type(position)
@@ -146,6 +160,9 @@ class Board:
 
         self._grid[self._get_wall_slice(position, orientation)] = Board.FREE
         self._walls_remaining[player] += 1
+
+        # Update the old-style wall representation.
+        self._old_style_walls[*position, orientation] = 1
 
     def can_place_wall(self, position: Position, orientation: WallOrientation) -> bool:
         """
@@ -181,6 +198,9 @@ class Board:
             # players are allowed to jump diagonally if they are adjacent to another player and the border of the
             # board is on the other side of that player.
             return True
+
+    def get_old_style_walls(self):
+        return copy.copy(self._old_style_walls)
 
     def is_position_on_board(self, position: Position) -> bool:
         assert is_valid_position_type(position)
