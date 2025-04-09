@@ -6,7 +6,7 @@ import numpy as np
 from deep_quoridor.src.quoridor import Player, WallOrientation
 from deep_quoridor.src.quoridor_env import env
 
-e = env(9)
+e = env()
 walls = [
     ((3, 0), WallOrientation.HORIZONTAL),
     ((3, 2), WallOrientation.HORIZONTAL),
