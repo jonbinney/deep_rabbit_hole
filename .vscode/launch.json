@@ -2,16 +2,40 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}",
+            "justMyCode": false
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "Test water level model (dataset)",
             "type": "debugpy",
             "request": "launch",
             "program": "deep_water_level/src/deep_water_level/infer.py",
             "console": "integratedTerminal",
             "args": [
-                "--crop_box", "130", "275", "140", "140",
-                "--model_path", "model.pth",
-                "--dataset_dir", "datasets/water_test_set5",
-                "--annotations_file", "filtered.csv",
+                "--crop_box",
+                "130",
+                "275",
+                "140",
+                "140",
+                "--model_path",
+                "model.pth",
+                "--dataset_dir",
+                "datasets/water_test_set5",
+                "--annotations_file",
+                "filtered.csv",
             ]
         },
         {
@@ -21,26 +45,43 @@
             "program": "deep_water_level/src/deep_water_level/infer.py",
             "console": "integratedTerminal",
             "args": [
-                "--crop_box", "130", "275", "140", "140",
-                "--model_path", "model.pth",
+                "--crop_box",
+                "130",
+                "275",
+                "140",
+                "140",
+                "--model_path",
+                "model.pth",
             ]
         },
-         {
+        {
             "name": "Train water level model",
             "type": "debugpy",
             "request": "launch",
             "program": "deep_water_level/src/deep_water_level/train.py",
             "console": "integratedTerminal",
             "args": [
-                "--train_dataset_dir", "datasets/water_train_set4",
-                "--test_dataset_dir", "datasets/water_test_set5",
-                "--annotations_file", "filtered.csv",
-                "--crop_box", "130", "275", "140", "140",
-                "--log_transformed_images", "False",
-                "--n_conv_layers", "3",
-                "--conv_kernel_size", "7",
-                "--dropout_p", "0",
-                "--n_epochs", "100",
+                "--train_dataset_dir",
+                "datasets/water_train_set4",
+                "--test_dataset_dir",
+                "datasets/water_test_set5",
+                "--annotations_file",
+                "filtered.csv",
+                "--crop_box",
+                "130",
+                "275",
+                "140",
+                "140",
+                "--log_transformed_images",
+                "False",
+                "--n_conv_layers",
+                "3",
+                "--conv_kernel_size",
+                "7",
+                "--dropout_p",
+                "0",
+                "--n_epochs",
+                "100",
             ]
         },
         {
@@ -163,14 +204,16 @@
             ]
         },
         {
-                "name": "PyTest Deep Quoridor",
-                "type": "debugpy",
-                "request": "launch",
-                "module": "pytest",
-                "console": "integratedTerminal",
-                "cwd": "${workspaceFolder}",
-                "args": ["deep_quoridor", "-s"]
-
+            "name": "PyTest Deep Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "deep_quoridor",
+                "-s"
+            ]
         }
     ],
     "inputs": [
