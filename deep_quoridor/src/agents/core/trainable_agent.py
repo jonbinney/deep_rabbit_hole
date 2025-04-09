@@ -326,10 +326,10 @@ class AbstractTrainableAgent(Agent):
         raise NotImplementedError("Trainable agents should return a model name")
 
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
-        return f"{self.model_id()}_{artifact.digest[:5]}.pt"
+        return f"{self.model_id()}_{artifact.digest[:5]}.{self.get_model_extension()}"
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_{suffix}.pt"
+        return f"{self.model_id()}_{suffix}.{self.get_model_extension()}"
 
     def save_model(self, path):
         """Save the model to disk."""
@@ -365,6 +365,10 @@ class AbstractTrainableAgent(Agent):
     def params_class(cls):
         raise NotImplementedError("Trainable agents must implement method params_class")
 
+    @classmethod
+    def get_model_extension():
+        return "pt"
+
     def fetch_model_from_wand_and_update_params(self):
         """
         This function doesn't do anything if wandb_alias is not set in self.params.
@@ -389,10 +393,10 @@ class AbstractTrainableAgent(Agent):
         with tempfile.TemporaryDirectory() as tmpdir:
             artifact_dir = artifact.download(root=tmpdir)
 
-            path = artifact.download(root=artifact_dir)
-            tmp_filename = Path(path) / f"{self.model_id()}.pt"
-            if not os.path.exists(tmp_filename):
-                raise FileNotFoundError(f"Model file {tmp_filename} was not downloaded.  Please check the artifact")
+            # NOTE: This picks the first .pt file it finds in the artifact
+            tmp_filename = next(Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None)
+            if tmp_filename is None:
+                raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 
             os.rename(tmp_filename, local_filename)
 
