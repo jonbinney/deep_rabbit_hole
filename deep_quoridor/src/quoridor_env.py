@@ -301,8 +301,9 @@ class QuoridorEnv(AECEnv):
         return action
 
     def _check_win(self, agent):
-        row, _ = self.positions[agent]
-        return row == self.game.get_goal_row(agent)
+        player = self.agent_to_player[agent]
+        row, _ = self.game.board.get_player_position(player)
+        return row == self.game.get_goal_row(player)
 
     def winner(self) -> Optional[int]:
         """
