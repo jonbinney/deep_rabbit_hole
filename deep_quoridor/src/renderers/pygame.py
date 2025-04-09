@@ -76,6 +76,8 @@ class HumanInput:
 
 
 class PygameQuoridor:
+    _instance = None
+
     def __init__(self):
         self.board_pixels = 530
         self.board_position = (50, 50)
@@ -87,7 +89,17 @@ class PygameQuoridor:
         }
         self.state: Optional[BoardState] = None
         self.human_input = HumanInput
-        self.running = False
+        self.running = True
+        PygameQuoridor._instance = self
+
+    @classmethod
+    def instance(cls) -> "PygameQuoridor":
+        assert cls._instance
+        return cls._instance
+
+    @classmethod
+    def active(cls) -> bool:
+        return cls._instance is not None
 
     def start(self, game):
         self.board_size = game.board_size
@@ -426,7 +438,6 @@ class PygameQuoridor:
 
         clock = pygame.time.Clock()
 
-        self.running = True
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -462,7 +473,7 @@ class PygameRenderer(Renderer):
     def start_arena(self, game, total_games: int):
         self.gui_created.wait()
 
-        self.gui.start(game)
+        PygameQuoridor.instance().start(game)
 
     def _wait_not_in_states(self, states: List[GameState] | GameState):
         """Wait until the game reaches one of the specified states.
@@ -473,16 +484,19 @@ class PygameRenderer(Renderer):
         while True:
             if self.terminated.is_set():
                 exit()
-            if self.gui.game_state not in wait_states:
+            if PygameQuoridor.instance().game_state not in wait_states:
                 break
 
             time.sleep(0.01)
 
     def start_game(self, game, agent1: Agent, agent2: Agent):
+        gui = PygameQuoridor.instance()
+
         # We always enable the log from the agents and decide later if we want to show it, since it's
         # easier and the performance impact of logging is negligible when compared to the rendering.
         agent1.action_log.set_enabled()
         agent2.action_log.set_enabled()
+        self.has_human_player = isinstance(agent1, HumanAgent) or isinstance(agent2, HumanAgent)
 
         initial_state = BoardState(
             p1_position=game.positions["player_0"],
@@ -492,23 +506,24 @@ class PygameRenderer(Renderer):
             is_p1_turn=True,
             walls=game.walls,
         )
-        self.gui.start_game(agent1.name(), agent2.name(), initial_state)
+        gui.start_game(agent1.name(), agent2.name(), initial_state)
 
-        if isinstance(agent1, HumanAgent) or isinstance(agent2, HumanAgent):
-            self.gui.game_state = GameState.RUNNING
+        if self.has_human_player:
+            gui.game_state = GameState.RUNNING
 
         self._wait_not_in_states(GameState.READY)
 
-        if self.gui.game_state == GameState.STEP:
-            self.gui.game_state = GameState.PAUSED
+        if gui.game_state == GameState.STEP:
+            gui.game_state = GameState.PAUSED
 
     def end_game(self, game, result: GameResult):
-        self.gui.end_game(game, result)
+        PygameQuoridor.instance().end_game(game, result)
         self._wait_not_in_states(GameState.FINISHED)
 
     def before_action(self, game, agent):
-        self.gui.update_log(agent.action_log)
-        self.gui.update_turn(game.agent_selection == "player_0")
+        gui = PygameQuoridor.instance()
+        gui.update_log(agent.action_log)
+        gui.update_turn(game.agent_selection == "player_0")
         if isinstance(agent, HumanAgent):
             # The human can play as soon as their turn is ready, no need to wait.
             # Set the last action time so the wait is just for the other agent.
@@ -517,20 +532,23 @@ class PygameRenderer(Renderer):
 
         self._wait_not_in_states([GameState.READY, GameState.PAUSED])
 
-        if self.gui.game_state == GameState.STEP:
-            self.gui.game_state = GameState.PAUSED
+        if gui.game_state == GameState.STEP:
+            gui.game_state = GameState.PAUSED
         else:
-            # Wait for the minimum time to pass before the next move, but don't limit if the game is
-            # in step mode, so that the user can go as fast as they want
-            while (time.time() - self.last_action_time) < (self.min_time_ms_per_move / 1000.0):
-                time.sleep(0.01)
-            self.last_action_time = time.time()
+            # When we have a human and we're not logging there's no need to wait
+            if not self.has_human_player or PygameQuoridor.instance().log_actions:
+                # Wait for the minimum time to pass before the next move, but don't limit if the game is
+                # in step mode, so that the user can go as fast as they want
+                while (time.time() - self.last_action_time) < (self.min_time_ms_per_move / 1000.0):
+                    time.sleep(0.01)
+                self.last_action_time = time.time()
 
     def after_action(self, game, step, agent_id, action):
-        self.gui.update_log(None)
-        self.gui.update_turn(game.agent_selection == "player_0")
+        gui = PygameQuoridor.instance()
+        gui.update_log(None)
+        gui.update_turn(game.agent_selection == "player_0")
 
-        self.gui.update_players_state(
+        gui.update_players_state(
             p1_position=game.positions["player_0"],
             p1_walls_remaining=game.walls_remaining["player_0"],
             p2_position=game.positions["player_1"],
@@ -539,7 +557,7 @@ class PygameRenderer(Renderer):
         )
 
     def main_thread(self):
-        self.gui = PygameQuoridor()
+        PygameQuoridor()
         self.gui_created.set()
-        self.gui.run()
+        PygameQuoridor.instance().run()
         self.terminated.set()

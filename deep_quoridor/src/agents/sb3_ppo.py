@@ -2,9 +2,9 @@ import os
 from glob import glob
 
 from sb3_contrib import MaskablePPO
+from train_sb3 import SB3ActionMaskWrapper
 
 from agents.core.agent import Agent, AgentRegistry
-from deep_quoridor.src.train_sb3 import SB3ActionMaskWrapper
 
 
 class SB3PPOAgent(Agent):

@@ -1,4 +1,4 @@
-from deep_quoridor.src.quoridor_env import env as quoridor_env
+from quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
@@ -175,7 +175,7 @@ class TestQuoridorEnv:
         self._test_distance_to_target(
             """
             1 . .
-            - - 
+            - -
             . .|.
             . .|2
         """,

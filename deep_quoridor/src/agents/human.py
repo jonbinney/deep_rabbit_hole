@@ -12,13 +12,9 @@ class HumanParams(SubargsBase):
 
 
 class HumanAgent(Agent):
-    def __init__(self, gui, params=HumanParams(), **kwargs):
+    def __init__(self, params=HumanParams(), **kwargs):
         super().__init__()
-        if gui is None:
-            raise ValueError("Human agent requires pygame to play")
-
         self.params = params
-        self.gui = gui
 
     @classmethod
     def params_class(cls):
@@ -30,6 +26,9 @@ class HumanAgent(Agent):
         return "Human"
 
     def get_action(self, game):
+        # Import this here to avoid circular dependencies
+        from renderers.pygame import PygameQuoridor
+
         observation, _, termination, truncation, _ = game.last()
         if termination or truncation:
             return None
@@ -41,6 +40,6 @@ class HumanAgent(Agent):
                 r, c, type = game.action_index_to_params(action)
                 valid_moves.add((r, c, type))
 
-        result = self.gui.get_human_input(valid_moves)
+        result = PygameQuoridor.instance().get_human_input(valid_moves)
 
         return None if result is None else game.action_params_to_index(*result)

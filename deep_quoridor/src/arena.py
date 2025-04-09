@@ -83,7 +83,6 @@ class Arena:
 
     def _play_games(self, players: list[str | Agent], times: int):
         self.plugins.start_arena(self.game, total_games=len(players) * (len(players) - 1) * times // 2)
-        pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         match_id = 1
         results = []
@@ -93,12 +92,7 @@ class Arena:
                 agents.append(p)
             else:
                 agents.append(
-                    AgentRegistry.create_from_encoded_name(
-                        p,
-                        board_size=self.board_size,
-                        max_walls=self.max_walls,
-                        gui=pygame_renderer.gui if pygame_renderer else None,
-                    )
+                    AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
                 )
 
         for i in range(len(players)):
