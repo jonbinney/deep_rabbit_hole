@@ -196,6 +196,11 @@ class DExpAgent(AbstractTrainableAgent):
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
+    def convert_to_tensor_index_from_action(self, action):
+        if self.player_id == "player_0" or not self.params.rotate:
+            return super().convert_to_tensor_index_from_action(action)
+        return rotation.convert_original_action_index_to_rotated(self.board_size, action)
+
     def yaml_config(self) -> str:
         config = {
             "board_size": self.board_size,
