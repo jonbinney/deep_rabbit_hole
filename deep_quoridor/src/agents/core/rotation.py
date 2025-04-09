@@ -81,6 +81,55 @@ def convert_rotated_action_index_to_original(board_size, rotated_action_index):
         return _map_rotated_index_to_original(wall_index, board_size - 1, total_actions + wall_actions)
 
 
+def _map_original_index_to_rotated(index, grid_size, offset=0):
+    """
+    Helper method to convert original indices to rotated space.
+
+    Args:
+        index: The index within the original section (board/walls)
+        grid_size: Size of the grid for this section (board_size or board_size-1)
+        offset: Offset to add to final result (0 for board moves, total_actions for walls)
+    """
+    row, col = divmod(index - offset, grid_size)
+    rotated_row = grid_size - 1 - row
+    rotated_col = grid_size - 1 - col
+    return offset + rotated_row * grid_size + rotated_col
+
+
+def convert_original_action_index_to_rotated(board_size, original_action_index):
+    """Convert action index from original tensor to rotated action space.
+
+    This function maps an action index from the original board representation to
+    the rotated action space. It handles three types of actions:
+    1. Board movement actions (0 to board_size^2 - 1)
+    2. Vertical wall placements (board_size^2 to board_size^2 + (board_size-1)^2 - 1)
+    3. Horizontal wall placements (board_size^2 + (board_size-1)^2 to board_size^2 + 2*(board_size-1)^2 - 1)
+
+    Args:
+        board_size (int): Size of the game board (N for an NxN board)
+        original_action_index (int): Action index in the original space to be converted
+
+    Returns:
+        int: Corresponding action index in the rotated action space
+    """
+
+    total_actions = board_size * board_size
+    wall_actions = (board_size - 1) ** 2
+
+    # Determine which section of the action space we're in
+    if original_action_index < total_actions:
+        # Board movement action
+        return _map_original_index_to_rotated(original_action_index, board_size)
+
+    elif original_action_index < total_actions + wall_actions:
+        # Vertical wall action
+        return _map_original_index_to_rotated(original_action_index, board_size - 1, total_actions)
+
+    else:
+        # Horizontal wall action
+        return _map_original_index_to_rotated(original_action_index, board_size - 1, total_actions + wall_actions)
+
+
 def rotate_board(board):
     return np.rot90(board, k=2)
 

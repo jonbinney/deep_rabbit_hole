@@ -97,6 +97,9 @@ class QuoridorEnv(AECEnv):
         if self.last_action_mask[agent][action] != 1:
             raise RuntimeError(f"Action not allowed by mask {action}")
 
+        step_reward_calculator = StepRewardCalculator(self)
+        if self.step_rewards:
+            step_reward_calculator.before_step()
         (row, col, action_type) = self.action_index_to_params(action)
         if action_type == 0:
             self._move(agent, (row, col))
@@ -110,10 +113,7 @@ class QuoridorEnv(AECEnv):
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
-            (row, col) = self.positions[agent]
-            agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
-            (row, col) = self.positions[self.get_opponent(agent)]
-            self.rewards[agent] = self.board_size - agent_distance / self.board_size
+            self.rewards[agent] = step_reward_calculator.after_step()
             self.rewards[self.get_opponent(agent)] = 0
 
         # TODO: Confirm if this is needed and if it's doing anything
@@ -538,3 +538,27 @@ class QuoridorEnv(AECEnv):
 # Wrapping the environment for PettingZoo compatibility
 def env(board_size: int = 9, max_walls: int = 10, step_rewards: bool = False):
     return wrappers.CaptureStdoutWrapper(QuoridorEnv(board_size, max_walls, step_rewards))
+
+
+class StepRewardCalculator:
+    def __init__(self, env: QuoridorEnv = None):
+        self.env = env
+
+    def before_step(self):
+        agent = self.env.agent_selection
+        (row, col) = self.env.positions[agent]
+        self.orig_agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+        (row, col) = self.env.positions[self.env.get_opponent(agent)]
+        self.orig_opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+
+    def after_step(self):
+        # After step agents are reversed
+        agent = self.env.agent_selection
+        (row, col) = self.env.positions[agent]
+        opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+        (row, col) = self.env.positions[self.env.get_opponent(agent)]
+        agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+
+        # Calculate the reward based on the distance to the goal
+        reward = (self.orig_agent_distance - agent_distance) - (self.orig_opponent_distance - opponent_distance)
+        return reward

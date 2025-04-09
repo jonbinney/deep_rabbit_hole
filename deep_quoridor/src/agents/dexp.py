@@ -30,9 +30,11 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 1024),
+            nn.Linear(flat_input_size, 2048),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
+            nn.Linear(2048, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, 1024),
             nn.ReLU(),
             nn.Linear(1024, 512),
             nn.ReLU(),
@@ -105,6 +107,7 @@ class DExpAgent(AbstractTrainableAgent):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
+        # print(game.render())
         opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
 
         reward = self.adjust_reward(game.rewards[opponent_player], game)
@@ -115,6 +118,9 @@ class DExpAgent(AbstractTrainableAgent):
         )
         state_after_action = self.observation_to_tensor_by_player(observation_after_action, False, opponent_player)
         done = game.is_done()
+
+        if opponent_player == "player_1" and self.params.rotate:
+            action = rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
@@ -187,6 +193,11 @@ class DExpAgent(AbstractTrainableAgent):
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
+
+    def convert_to_tensor_index_from_action(self, action):
+        if self.player_id == "player_0" or not self.params.rotate:
+            return super().convert_to_tensor_index_from_action(action)
+        return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def yaml_config(self) -> str:
         config = {
