@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import yaml
+from utils import my_device
 
 from agents.core import AbstractTrainableAgent, rotation
 from agents.core.trainable_agent import TrainableAgentParams
@@ -40,8 +41,7 @@ class DExpNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(512, action_size),
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
+        self.model.to(my_device())
 
     def forward(self, x):
         return self.model(x)

@@ -1,4 +1,4 @@
-from deep_quoridor.src.quoridor_env import env as quoridor_env
+from quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
@@ -31,7 +31,7 @@ def parse_board(board):
     """
     rows = [r for r in board.split("\n") if r.strip()]
     size = len([ch for ch in rows[0] if ch in "12.*"])
-    env = quoridor_env(size)
+    env = quoridor_env(board_size=size)
     potential_moves = []
     forbidden_walls = []
 
@@ -175,7 +175,7 @@ class TestQuoridorEnv:
         self._test_distance_to_target(
             """
             1 . .
-            - - 
+            - -
             . .|.
             . .|2
         """,
