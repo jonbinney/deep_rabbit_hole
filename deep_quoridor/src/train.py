@@ -2,7 +2,7 @@ import argparse
 import datetime
 
 from agents.core.agent import AgentRegistry
-from arena import Arena
+from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
@@ -49,7 +49,7 @@ def train_dqn(
         swap_players=True,
     )
 
-    arena.play_games(players=players, times=episodes)
+    arena.play_games(players=players, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
     return
 
 

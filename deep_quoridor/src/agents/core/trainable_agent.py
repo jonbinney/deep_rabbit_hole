@@ -147,7 +147,7 @@ class AbstractTrainableAgent(Agent):
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            action,
+            self.convert_to_tensor_index_from_action(action),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
@@ -229,6 +229,9 @@ class AbstractTrainableAgent(Agent):
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         return action_index_in_tensor
+
+    def convert_to_tensor_index_from_action(self, action):
+        return action
 
     def _log_action(self, game, q_values):
         if not self.action_log.is_enabled():
