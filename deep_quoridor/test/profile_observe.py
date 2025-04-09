@@ -1,8 +1,9 @@
-from deep_quoridor.src.quoridor_env import env
 import cProfile
 import time
 
-e = env(9)
+from deep_quoridor.src.quoridor_env import env
+
+e = env()
 walls = [
     ((3, 0), 1),
     ((3, 2), 1),
@@ -36,5 +37,5 @@ def run():
 # Using _is_wall_potential_block optimization: 25,000 usec
 
 # Switch the comments to do a profiling
-run()
-# cProfile.run("run()", sort="tottime")
+# run()
+cProfile.run("run()", sort="tottime")

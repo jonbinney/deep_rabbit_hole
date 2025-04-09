@@ -28,12 +28,14 @@ exclude = [
     "venv",
 ]
 
+src=["deep_quoridor/src", "deep_quoridor/test"]
+
 # Same as Black.
 line-length = 120
 indent-width = 4
 
-# Assume Python 3.11
-target-version = "py311"
+# Assume Python 3.12
+target-version = "py312"
 
 [lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

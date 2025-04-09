@@ -9,12 +9,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils.misc import resolve_path
-from utils.subargs import SubargsBase
 
 import wandb
 from agents.core.agent import Agent
 from agents.core.replay_buffer import ReplayBuffer
+from utils.misc import resolve_path
+from utils.subargs import SubargsBase
 
 
 @dataclass

@@ -1,4 +1,5 @@
 import yaml
+
 from agents import Agent
 from arena_utils import ArenaPlugin, GameResult
 

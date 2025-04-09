@@ -16,13 +16,14 @@ import os
 import time
 
 import pettingzoo.utils
-import quoridor_env
 import torch
 from gymnasium import spaces
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.torch_layers import FlattenExtractor
+
+import quoridor_env
 
 
 class DictFlattenExtractor(FlattenExtractor):

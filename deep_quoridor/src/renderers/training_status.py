@@ -1,5 +1,4 @@
 from agents.core.trainable_agent import AbstractTrainableAgent
-
 from renderers import Renderer
 
 

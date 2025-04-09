@@ -1,6 +1,5 @@
 from agents import Agent
 from arena import GameResult
-
 from renderers import Renderer
 
 

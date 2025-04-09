@@ -1,6 +1,7 @@
-from agents.core import rotation
 from pettingzoo.utils.env import ActionType, AgentID, ObsType
 from pettingzoo.utils.wrappers import BaseWrapper
+
+from agents.core import rotation
 
 
 class RotateWrapper(BaseWrapper):

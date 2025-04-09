@@ -73,6 +73,7 @@ class DExpAgent(AbstractTrainableAgent):
         **kwargs,
     ):
         super().__init__(params=params, **kwargs)
+        self.params: DExpAgentParams
 
     def name(self):
         if self.params.nick:

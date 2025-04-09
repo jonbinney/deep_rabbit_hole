@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from deep_quoridor.src.quoridor import Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 
 
