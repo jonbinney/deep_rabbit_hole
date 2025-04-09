@@ -4,9 +4,9 @@ from queue import Queue
 from typing import Optional, TypeAlias
 
 import numpy as np
-from utils.subargs import SubargsBase
 
 from agents.core import Agent
+from utils.subargs import SubargsBase
 
 Position: TypeAlias = tuple[int, int]
 

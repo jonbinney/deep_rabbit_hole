@@ -2,6 +2,7 @@ import argparse
 import datetime
 
 import torch
+
 from agents.core import Agent, AgentRegistry
 from arena import Arena
 from arena_utils import ArenaPlugin

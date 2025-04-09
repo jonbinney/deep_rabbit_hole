@@ -1,8 +1,8 @@
 from collections import defaultdict
 
-from arena import GameResult
 from prettytable import PrettyTable
 
+from arena import GameResult
 from renderers import Renderer
 
 

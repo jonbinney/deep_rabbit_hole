@@ -1,5 +1,4 @@
 from arena import GameResult
-
 from renderers import Renderer
 
 

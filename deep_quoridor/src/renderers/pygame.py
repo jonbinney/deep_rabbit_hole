@@ -5,9 +5,9 @@ from threading import Event
 from typing import List, Optional
 
 import pygame
+
 from agents import ActionLog, Agent
 from arena import GameResult
-
 from renderers import Renderer
 
 WALL_TO_CELL_RATIO = 5

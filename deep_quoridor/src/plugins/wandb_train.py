@@ -1,11 +1,10 @@
 import os
 from dataclasses import asdict
 
+import wandb
 from agents.core.trainable_agent import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
 from utils.misc import resolve_path
-
-import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
