@@ -41,10 +41,18 @@ def split_agent():
     return agent
 
 
-def test_base_observation_conversion(base_agent, mock_observation):
-    result = base_agent.observation_to_tensor_by_player(
-        mock_observation, is_source_state=True, obs_player_id="player_0"
+@pytest.fixture
+def target_as_source_agent():
+    params = DExpAgentParams(
+        rotate=True, turn=False, split=False, target_as_source_for_opponent=True, training_mode=True
     )
+    agent = DExpAgent(params=params, board_size=3, max_walls=5)
+    agent.device = torch.device("cpu")
+    return agent
+
+
+def test_base_observation_conversion(base_agent, mock_observation):
+    result = base_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
 
     # Expected tensor size: board (9) + walls (8) + wall counts (2) = 19
     assert result.shape == torch.Size([19])
@@ -57,9 +65,7 @@ def test_base_observation_conversion(base_agent, mock_observation):
 
 
 def test_rotation_for_player1(rotate_agent, mock_observation):
-    result = rotate_agent.observation_to_tensor_by_player(
-        mock_observation, is_source_state=True, obs_player_id="player_1"
-    )
+    result = rotate_agent.observation_to_tensor(mock_observation, obs_player_id="player_1")
 
     # For player_1 with rotation, the board should be rotated 180 degrees
     board_part = result[:9].numpy()
@@ -68,9 +74,7 @@ def test_rotation_for_player1(rotate_agent, mock_observation):
 
 
 def test_split_board_representation(split_agent, mock_observation):
-    result = split_agent.observation_to_tensor_by_player(
-        mock_observation, is_source_state=True, obs_player_id="player_0"
-    )
+    result = split_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
 
     # Expected tensor size: split board (18) + walls (8) + wall counts (2) = 28
     assert result.shape == torch.Size([28])
@@ -86,14 +90,16 @@ def test_split_board_representation(split_agent, mock_observation):
     np.testing.assert_array_almost_equal(opponent_channel, expected_opponent)
 
 
-def test_state_conversion_with_turn_swap(base_agent, mock_observation):
-    result = base_agent.observation_to_tensor_by_player(
-        mock_observation,
-        is_source_state=False,  # This should swap player/opponent perspectives
-        obs_player_id="player_0",
-    )
+def test_state_conversion_with_target_as_source(target_as_source_agent, mock_observation):
+    # Test when it's not my turn (target state)
+    mock_observation["observation"]["my_turn"] = False
 
-    # Check wall counts are swapped
+    # When it's not my turn and target_as_source_for_opponent is True,
+    # the board should be from opponent's perspective
+
+    # As player_0
+    result = target_as_source_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
     wall_counts = result[-2:].numpy()
+    # Wall counts should be swapped because this is a target state
     assert wall_counts[0] == mock_observation["observation"]["opponent_walls_remaining"]
     assert wall_counts[1] == mock_observation["observation"]["my_walls_remaining"]
