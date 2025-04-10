@@ -30,11 +30,9 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 2048),
+            nn.Linear(flat_input_size, 1024),
             nn.ReLU(),
-            nn.Linear(2048, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, 1024),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
             nn.Linear(1024, 512),
             nn.ReLU(),
