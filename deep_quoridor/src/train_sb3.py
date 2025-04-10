@@ -18,6 +18,7 @@ import os
 import time
 
 import quoridor_env
+from agents.core.rotation import convert_rotated_action_index_to_original
 from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
@@ -148,7 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
     parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
-    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip training and only run evaluation")
+    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip uploading artifacts to wandb")
     parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
     parser.add_argument(
         "-rp",
