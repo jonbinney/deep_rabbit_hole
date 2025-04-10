@@ -6,6 +6,7 @@ from stable_baselines3.common.torch_layers import FlattenExtractor
 
 from agents.core.agent import ActionLog, Agent, AgentRegistry
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
+from deep_quoridor.src.environment.dict_split_board_wrapper import DictSplitBoardWrapper
 
 
 class SB3ActionMaskWrapper(BaseWrapper):
@@ -113,7 +114,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 0
+        return 1
 
     @staticmethod
     def params_class():
@@ -178,6 +179,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
 
 
 def wrap_env(env):
+    env = DictSplitBoardWrapper(env)
     env = SB3ActionMaskWrapper(env)
     return env
 

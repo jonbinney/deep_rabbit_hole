@@ -36,7 +36,7 @@ def mask_fn(env):
     return env.action_mask()
 
 
-def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
+def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
     env = env_fn(**env_kwargs)
 
@@ -62,10 +62,12 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     model_id = SB3PPOAgent(**env_kwargs).model_id()
     local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
     model.save(local_filename)
-    artifact = wandb.Artifact(f"{model_id}", type="model")
-    artifact.add_file(local_path=local_filename)
-    artifact.save()
-    wandb.finish()
+
+    if upload_to_wandb:
+        artifact = wandb.Artifact(f"{model_id}", type="model")
+        artifact.add_file(local_path=local_filename)
+        artifact.save()
+        wandb.finish()
 
     print(f"Model {model_id} has been saved.")
 
@@ -74,11 +76,11 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     env.close()
 
 
-def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
+def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kwargs):
     # Evaluate a trained agent vs a random agent
     env = env_fn(render_mode=render_mode, **env_kwargs)
 
-    print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[1]}.")
+    print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[player]}.")
 
     try:
         model_id = SB3PPOAgent(**env_kwargs).model_id()
@@ -115,7 +117,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
                 round_rewards.append(env.rewards)
                 break
             else:
-                if agent == env.possible_agents[0]:
+                if agent == env.possible_agents[1 - player]:
                     space = env.action_space
                     act = space.sample(action_mask)
                 else:
@@ -128,7 +130,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
     if sum(scores.values()) == 0:
         winrate = 0
     else:
-        winrate = scores[env.possible_agents[1]] / sum(scores.values())
+        winrate = scores[env.possible_agents[player]] / sum(scores.values())
     print("Rewards by round: ", round_rewards)
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Winrate: ", winrate)
@@ -144,9 +146,9 @@ if __name__ == "__main__":
     parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
     parser.add_argument("-e", "--steps", type=int, default=20_480, help="Number of steps to train for")
     parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
-    parser.add_argument("-v", "--visualize", type=int, default=2, help="Number of games to visualize after evaluation")
     parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
+    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip training and only run evaluation")
     parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
     parser.add_argument(
         "-rp",
@@ -179,14 +181,10 @@ if __name__ == "__main__":
     # Train a model against itself
     if not args.no_train:
         print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
-        train_action_mask(env_fn, steps=args.steps, seed=args.seed, **env_kwargs)
+        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=not args.no_upload, **env_kwargs)
 
     # Evaluate games against a random agent
     if not args.no_eval:
         print(f"\nEvaluating {args.num_games} games against a random agent...")
-        eval_action_mask(env_fn, num_games=args.num_games, render_mode=None, **env_kwargs)
-
-    # Watch visualized games vs a random agent
-    if args.visualize > 0 and not args.no_eval:
-        print(f"\nVisualizing {args.visualize} games vs a random agent...")
-        eval_action_mask(env_fn, num_games=args.visualize, render_mode="human", **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=0, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=1, **env_kwargs)
