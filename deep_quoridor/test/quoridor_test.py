@@ -59,7 +59,7 @@ def parse_board(board):
                     # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                     # the second time is off by one position. Checking whether we can place it stops us
                     # placing the second wall.
-                    if board.can_place_wall(np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL):
+                    if board.can_place_wall(Player.ONE, np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL):
                         board.add_wall(Player.ONE, np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL)
 
                 if ch == ">" or ch == "-":
@@ -79,7 +79,7 @@ def parse_board(board):
                         # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                         # the second time is off by one position. Checking whether we can place it stops us
                         # placing the second wall.
-                        if board.can_place_wall(np.array((row_n, col_n - 1)), WallOrientation.VERTICAL):
+                        if board.can_place_wall(Player.ONE, np.array((row_n, col_n - 1)), WallOrientation.VERTICAL):
                             board.add_wall(Player.ONE, np.array((row_n, col_n - 1)), WallOrientation.VERTICAL)
                     continue
 

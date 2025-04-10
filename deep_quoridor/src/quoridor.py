@@ -133,22 +133,17 @@ class Board:
         assert isinstance(player, Player)
         return self._walls_remaining[player]
 
-    def add_wall(self, player: Player, position: Position, orientation: WallOrientation):
+    def add_wall(self, player: Player, position: Position, orientation: WallOrientation, check_if_valid=True):
         """
         Mark the grid cells corresponding to the wall as occupied.
         """
         assert isinstance(player, Player)
         assert is_valid_position_type(position)
         assert isinstance(orientation, WallOrientation)
+        assert (not check_if_valid) or self.can_place_wall(player, position, orientation)
 
-        if self._walls_remaining[player] < 1:
-            raise ValueError("Cannot place wall, no walls remaining for player {player}")
-
-        if self.can_place_wall(position, orientation):
-            self._grid[self._get_wall_slice(position, orientation)] = Board.WALL
-            self._walls_remaining[player] -= 1
-        else:
-            raise ValueError("Cannot place wall at position {position} with orientation {orientation}")
+        self._grid[self._get_wall_slice(position, orientation)] = Board.WALL
+        self._walls_remaining[player] -= 1
 
         # Update the old-style wall representation.
         self._old_style_walls[*position, orientation] = 1
@@ -164,7 +159,7 @@ class Board:
         # Update the old-style wall representation.
         self._old_style_walls[*position, orientation] = 1
 
-    def can_place_wall(self, position: Position, orientation: WallOrientation) -> bool:
+    def can_place_wall(self, player: Player, position: Position, orientation: WallOrientation) -> bool:
         """
         Returns True if the wall can be placed at the given position and orientation.
 
@@ -173,10 +168,10 @@ class Board:
         assert is_valid_position_type(position)
         assert isinstance(orientation, WallOrientation)
 
-        try:
-            return (self._grid[self._get_wall_slice(position, orientation)] == Board.FREE).all()
-        except IndexError:
+        if self._walls_remaining[player] < 1:
             return False
+
+        return (self._grid[self._get_wall_slice(position, orientation)] == Board.FREE).all()
 
     def is_wall_between(self, position1: Position, position2: Position) -> bool:
         """
@@ -344,6 +339,7 @@ class Quoridor:
         """
         player = self.get_current_player()
         opponent = Player(1 - player)
+
         is_valid = True
         if isinstance(action, MoveAction):
             assert is_valid_position_type(action.destination)
@@ -377,10 +373,10 @@ class Quoridor:
                 is_valid = False
 
         elif isinstance(action, WallAction):
-            if self.board.can_place_wall(action.position, action.orientation):
+            if self.board.can_place_wall(player, action.position, action.orientation):
                 if self.board._is_wall_potential_block(action.position, action.orientation):
                     # Temporarily place the wall so that we can check player paths to their goals.
-                    self.board.add_wall(self.current_player, action.position, action.orientation)
+                    self.board.add_wall(self.current_player, action.position, action.orientation, check_if_valid=False)
                     for p in [Player.ONE, Player.TWO]:
                         if not self.can_reach(self.board.get_player_position(p), self.get_goal_row(p)):
                             is_valid = False
