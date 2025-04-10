@@ -5,8 +5,10 @@ from sb3_contrib import MaskablePPO
 from stable_baselines3.common.torch_layers import FlattenExtractor
 
 from agents.core.agent import ActionLog, Agent, AgentRegistry
+from agents.core.rotation import convert_rotated_action_index_to_original
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
 from deep_quoridor.src.environment.dict_split_board_wrapper import DictSplitBoardWrapper
+from deep_quoridor.src.environment.rotate_wrapper import RotateWrapper
 
 
 class SB3ActionMaskWrapper(BaseWrapper):
@@ -114,7 +116,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 1
+        return 2
 
     @staticmethod
     def params_class():
@@ -136,6 +138,8 @@ class SB3PPOAgent(AbstractTrainableAgent):
             game: The game environment
             player_id: The ID of the player this agent controls
         """
+        self.player_id = player_id
+
         if self.model is None:
             self.fetch_model_from_wand_and_update_params()
 
@@ -175,10 +179,14 @@ class SB3PPOAgent(AbstractTrainableAgent):
         # Use the model to predict the action
         action = int(self.model.predict(observation, action_masks=action_mask, deterministic=self.deterministic)[0])
 
+        if self.player_id == "player_1":
+            action = convert_rotated_action_index_to_original(self.board_size, action)
+
         return action
 
 
 def wrap_env(env):
+    env = RotateWrapper(env)
     env = DictSplitBoardWrapper(env)
     env = SB3ActionMaskWrapper(env)
     return env
