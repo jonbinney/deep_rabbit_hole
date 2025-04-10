@@ -18,35 +18,15 @@ import os
 import time
 
 import quoridor_env
-import torch
-from agents.sb3_ppo import SB3ActionMaskWrapper
-from gymnasium import spaces
+from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
-from stable_baselines3.common.torch_layers import FlattenExtractor
 from utils import set_deterministic
 
 import wandb
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
 from wandb.integration.sb3 import WandbCallback
-
-
-class DictFlattenExtractor(FlattenExtractor):
-    """
-    This class is necessary because the default FlattenExtractor does not work with dict spaces.
-    It just tries to call "flatten" directly which of course doesn't exist on a dict.
-    NOTE: It is important to be careful to not flatten the batch dimension (first one).
-    """
-
-    def __init__(self, observation_space: spaces.Box):
-        super().__init__(observation_space)
-
-    def forward(self, obs: dict) -> torch.Tensor:
-        thobs = torch.tensor([], device=list(obs.values())[0].device)
-        for v in obs.values():
-            thobs = torch.cat((thobs, torch.tensor(v).flatten(start_dim=1)), dim=1)
-        return thobs
 
 
 def mask_fn(env):
@@ -58,12 +38,9 @@ def mask_fn(env):
 
 def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
-    env = env_fn.env(**env_kwargs)
+    env = env_fn(**env_kwargs)
 
     print(f"Starting training on {str(env.metadata['name'])}.")
-
-    # Custom wrapper to convert PettingZoo envs to work with SB3 action masking
-    env = SB3ActionMaskWrapper(env)
 
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
@@ -99,8 +76,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
 
 def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
     # Evaluate a trained agent vs a random agent
-    env = env_fn.env(render_mode=render_mode, **env_kwargs)
-    env = SB3ActionMaskWrapper(env)
+    env = env_fn(render_mode=render_mode, **env_kwargs)
 
     print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[1]}.")
 
@@ -189,7 +165,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    env_fn = quoridor_env
+    env_fn = make_env_fn(quoridor_env.env)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 
     # Set random seed for reproducibility
