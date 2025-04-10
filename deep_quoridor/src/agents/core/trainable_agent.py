@@ -47,6 +47,8 @@ class TrainableAgentParams(SubargsBase):
     training_mode: bool = False
     # If True, final reward will be multiplied by this value (positive or negative)
     final_reward_multiplier: float = 1.0
+    # If True, the target q-value function will substract maxq_a'(s', a') instead of adding it
+    use_negative_qvalue_function: bool = False
 
 
 class AbstractTrainableAgent(Agent):
@@ -309,7 +311,8 @@ class AbstractTrainableAgent(Agent):
         """Compute target Q-values."""
         with torch.no_grad():
             next_q_values = self.target_network(next_states).max(1)[0]
-            return rewards - (1 - dones) * self.gamma * next_q_values
+            negate = -1 if self.params.use_negative_qvalue_function else 1
+            return rewards + negate * (1 - dones) * self.gamma * next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
