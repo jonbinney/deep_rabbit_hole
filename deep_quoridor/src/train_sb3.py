@@ -11,6 +11,8 @@ TODO:
  - (future) Implement a Maskable DQN
 """
 
+import argparse
+import datetime
 import glob
 import os
 import time
@@ -23,6 +25,7 @@ from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.torch_layers import FlattenExtractor
+from utils import set_deterministic
 
 import wandb
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
@@ -158,20 +161,56 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train and evaluate SB3 agents in Quoridor using invalid action masking"
+    )
+    parser.add_argument("-N", "--board_size", type=int, default=3, help="Board Size")
+    parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
+    parser.add_argument("-e", "--steps", type=int, default=20_480, help="Number of steps to train for")
+    parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
+    parser.add_argument("-v", "--visualize", type=int, default=2, help="Number of games to visualize after evaluation")
+    parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
+    parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
+    parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
+    parser.add_argument(
+        "-rp",
+        "--run_prefix",
+        type=str,
+        default="sb3-ppo",
+        help="Run prefix to use for this run. This will be used for naming, and tagging artifacts",
+    )
+    parser.add_argument(
+        "-rs",
+        "--run_suffix",
+        type=str,
+        default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
+        help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts",
+    )
+
+    args = parser.parse_args()
+
     env_fn = quoridor_env
+    env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 
-    env_kwargs = {"board_size": 5, "max_walls": 3}
+    # Set random seed for reproducibility
+    set_deterministic(args.seed)
 
-    # Evaluation/training hyperparameter notes:
-    # 10k steps: Winrate:  0.76, loss order of 1e-03
-    # 20k steps: Winrate:  0.86, loss order of 1e-04
-    # 40k steps: Winrate:  0.86, loss order of 7e-06
+    print("\nRunning SB3 training/evaluation with:")
+    print(f"Board size: {args.board_size}x{args.board_size}")
+    print(f"Max walls: {args.max_walls}")
+    print(f"Run ID: {args.run_prefix}-{args.run_suffix}")
 
-    # Train a model against itself (takes ~20 seconds on a laptop CPU)
-    train_action_mask(env_fn, steps=20_480, seed=0, **env_kwargs)
+    # Train a model against itself
+    if not args.no_train:
+        print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
+        train_action_mask(env_fn, steps=args.steps, seed=args.seed, **env_kwargs)
 
-    # Evaluate 100 games against a random agent (winrate should be ~80%)
-    eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
+    # Evaluate games against a random agent
+    if not args.no_eval:
+        print(f"\nEvaluating {args.num_games} games against a random agent...")
+        eval_action_mask(env_fn, num_games=args.num_games, render_mode=None, **env_kwargs)
 
-    # Watch two games vs a random agent
-    eval_action_mask(env_fn, num_games=2, render_mode="human", **env_kwargs)
+    # Watch visualized games vs a random agent
+    if args.visualize > 0 and not args.no_eval:
+        print(f"\nVisualizing {args.visualize} games vs a random agent...")
+        eval_action_mask(env_fn, num_games=args.visualize, render_mode="human", **env_kwargs)

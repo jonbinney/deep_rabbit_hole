@@ -1,7 +1,7 @@
 from pettingzoo.utils import BaseWrapper
 from sb3_contrib import MaskablePPO
 
-from agents.core.agent import Agent, AgentRegistry
+from agents.core.agent import ActionLog, Agent, AgentRegistry
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
 
 
@@ -88,6 +88,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
             params: Optional parameters for the agent
             **kwargs: Additional arguments to pass to the parent class
         """
+        self.action_log = ActionLog()
         self.board_size = board_size
         self.max_walls = max_walls
         self.params = params
