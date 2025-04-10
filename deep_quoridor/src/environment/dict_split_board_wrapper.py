@@ -1,4 +1,5 @@
 import numpy as np
+from gymnasium import spaces
 from pettingzoo.utils.env import AgentID, ObsType
 from pettingzoo.utils.wrappers import BaseWrapper
 
@@ -28,18 +29,24 @@ class DictSplitBoardWrapper(BaseWrapper):
 
         return {"observation": observation, "action_mask": obs["action_mask"]}
 
-    def observation_space(self):
+    def observation_space(self, agent):
         """Define the observation space for the transformed observations."""
-        original_space = self.env.observation_space
+        original_space = self.env.observation_space(agent)
         board_shape = (self.board_size, self.board_size)  # Shape for each board (player and opponent)
         return {
-            "observation": {
-                "my_turn": original_space["observation"]["my_turn"],
-                "my_board": original_space["observation"]["board"].__class__(shape=board_shape, dtype=np.float32),
-                "opponent_board": original_space["observation"]["board"].__class__(shape=board_shape, dtype=np.float32),
-                "walls": original_space["observation"]["walls"],
-                "my_walls_remaining": original_space["observation"]["my_walls_remaining"],
-                "opponent_walls_remaining": original_space["observation"]["opponent_walls_remaining"],
-            },
+            "observation": spaces.Dict(
+                {
+                    "my_turn": original_space["observation"]["my_turn"],
+                    "my_board": original_space["observation"]["board"].__class__(
+                        0, 1, shape=board_shape, dtype=np.float32
+                    ),
+                    "opponent_board": original_space["observation"]["board"].__class__(
+                        0, 1, shape=board_shape, dtype=np.float32
+                    ),
+                    "walls": original_space["observation"]["walls"],
+                    "my_walls_remaining": original_space["observation"]["my_walls_remaining"],
+                    "opponent_walls_remaining": original_space["observation"]["opponent_walls_remaining"],
+                }
+            ),
             "action_mask": original_space["action_mask"],
         }
