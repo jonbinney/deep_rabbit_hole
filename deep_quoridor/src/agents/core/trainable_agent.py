@@ -129,10 +129,14 @@ class AbstractTrainableAgent(Agent):
         self.steps += 1
         if not self.training_mode:
             return
-        reward = self.adjust_reward(game.rewards[self.player_id], game)
+        return self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
+
+    def handle_step_outcome_all(self, observation_before_action, action, game, player_id):
+        reward = self.adjust_reward(game.rewards[player_id], game)
 
         # Handle end of episode
         if action is None:
+            ## FIX THIS
             if self.assign_negative_reward and len(self.replay_buffer) > 0:
                 last = self.replay_buffer.get_last()
                 last[2] = reward  # update final reward
@@ -140,8 +144,8 @@ class AbstractTrainableAgent(Agent):
                 self.current_episode_reward += reward
             return
 
-        state_before_action = self.observation_to_tensor(observation_before_action)
-        state_after_action = self.observation_to_tensor(game.observe(self.player_id))
+        state_before_action = self.observation_to_tensor(observation_before_action, player_id)
+        state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
         done = game.is_done()
         self.current_episode_reward += reward
 
@@ -193,7 +197,7 @@ class AbstractTrainableAgent(Agent):
         """Create the loss criterion."""
         return nn.MSELoss().to(self.device)
 
-    def observation_to_tensor(self, observation):
+    def observation_to_tensor(self, observation, obs_player_id):
         """Convert observation to tensor format."""
         raise NotImplementedError("Subclasses must implement observation_to_tensor")
 
@@ -250,7 +254,7 @@ class AbstractTrainableAgent(Agent):
 
     def _get_best_action(self, game, observation, mask):
         """Get the best action based on Q-values."""
-        state = self.observation_to_tensor(observation)
+        state = self.observation_to_tensor(observation, self.player_id)
         with torch.no_grad():
             q_values = self.online_network(state)
 
@@ -303,7 +307,7 @@ class AbstractTrainableAgent(Agent):
         """Compute target Q-values."""
         with torch.no_grad():
             next_q_values = self.target_network(next_states).max(1)[0]
-            return rewards + (1 - dones) * self.gamma * next_q_values
+            return rewards - (1 - dones) * self.gamma * next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""

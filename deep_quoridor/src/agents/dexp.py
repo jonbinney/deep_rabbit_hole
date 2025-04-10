@@ -107,43 +107,43 @@ class DExpAgent(AbstractTrainableAgent):
 
         opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
 
-        reward = self.adjust_reward(game.rewards[opponent_player], game)
+        self.handle_step_outcome_all(opponent_observation_before_action, action, game, opponent_player)
 
-        observation_after_action = game.observe(opponent_player)
-        state_before_action = self.observation_to_tensor_by_player(
-            opponent_observation_before_action, True, opponent_player
-        )
-        state_after_action = self.observation_to_tensor_by_player(observation_after_action, False, opponent_player)
-        done = game.is_done()
-        if opponent_player == "player_1" and self.params.rotate:
-            action = rotation.convert_original_action_index_to_rotated(self.board_size, action)
+        # reward = self.adjust_reward(game.rewards[opponent_player], game)
 
-        self.replay_buffer.add(
-            state_before_action.cpu().numpy(),
-            action,
-            reward,
-            state_after_action.cpu().numpy()
-            if state_after_action is not None
-            else np.zeros_like(state_before_action.cpu().numpy()),
-            float(done),
-        )
+        # observation_after_action = game.observe(opponent_player)
+        # state_before_action = self.observation_to_tensor_by_player(
+        #    opponent_observation_before_action, True, opponent_player
+        # )
+        # state_after_action = self.observation_to_tensor_by_player(observation_after_action, False, opponent_player)
+        # done = game.is_done()
+        # if opponent_player == "player_1" and self.params.rotate:
+        #    action = rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
-        if len(self.replay_buffer) > self.batch_size:
-            loss = self.train(self.batch_size)
-            if loss is not None:
-                self.train_call_losses.append(loss)
+        # self.replay_buffer.add(
+        #    state_before_action.cpu().numpy(),
+        #    action,
+        #    reward,
+        #    state_after_action.cpu().numpy()
+        #    if state_after_action is not None
+        #    else np.zeros_like(state_before_action.cpu().numpy()),
+        #    float(done),
+        # )
 
-    def observation_to_tensor(self, observation):
+        # if len(self.replay_buffer) > self.batch_size:
+        #    loss = self.train(self.batch_size)
+        #    if loss is not None:
+        #        self.train_call_losses.append(loss)
+
+    def observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
-        my_turn = 1 if obs["my_turn"] else 0
-        return self.observation_to_tensor_by_player(observation, my_turn, self.player_id)
-
-    def observation_to_tensor_by_player(self, observation, obs_player_turn, obs_player_id):
+        obs_player_turn = 1 if obs["my_turn"] else 0
         obs = observation["observation"]
 
-        # Rotate board and walls if needed for player_1
-        should_rotate = obs_player_id == "player_1" and self.params.rotate
+        # Rotate board and walls if needed for player_1 xor (not players turn)
+        # This ensures board always faces to the player that will act on it
+        should_rotate = ((obs_player_id == "player_1") ^ (not obs_player_turn)) and self.params.rotate
         board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
         walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
 
@@ -152,8 +152,14 @@ class DExpAgent(AbstractTrainableAgent):
         opponent_board = (board == 2).astype(np.float32)
 
         # Get wall counts
-        my_walls = np.array([obs["my_walls_remaining"]])
+        player_walls = np.array([obs["my_walls_remaining"]])
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
+
+        # Swap boards and walls if not player's turn. It means this is a target state
+        # Target states are played by the opponents, so board and walls should be in the opponents POV
+        if not obs_player_turn:
+            player_walls, opponent_walls = opponent_walls, player_walls
+            player_board, opponent_board = opponent_board, player_board
 
         # Prepare board representation
         board = np.stack([player_board, opponent_board]) if self.params.split else board
@@ -164,12 +170,15 @@ class DExpAgent(AbstractTrainableAgent):
         turn_info = [obs_player_turn] if self.params.turn else []
 
         # Combine all features into single tensor
-        flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
+        flat_obs = np.concatenate([turn_info, board_flat, walls_flat, player_walls, opponent_walls])
         # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
     def convert_action_mask_to_tensor(self, mask):
-        """Convert action mask to tensor, rotating it for player_1."""
+        """
+        Convert action mask to tensor, rotating it for player_1.
+        This method should be call only when it is agent's turn.
+        """
         if self.player_id == "player_0" or not self.params.rotate:
             # print(f"Mask {mask}")
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
