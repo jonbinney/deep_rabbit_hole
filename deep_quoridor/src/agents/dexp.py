@@ -31,9 +31,11 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 1024),
+            nn.Linear(flat_input_size, 2048),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
+            nn.Linear(2048, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, 1024),
             nn.ReLU(),
             nn.Linear(1024, 512),
             nn.ReLU(),
@@ -139,10 +141,10 @@ class DExpAgent(AbstractTrainableAgent):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
         obs_player_turn = 1 if obs["my_turn"] else 0
-        obs = observation["observation"]
 
         # Rotate board and walls if needed for player_1 xor (not players turn)
         # This ensures board always faces to the player that will act on it
+        #
         should_rotate = ((obs_player_id == "player_1") ^ (not obs_player_turn)) and self.params.rotate
         board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
         walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
@@ -194,9 +196,9 @@ class DExpAgent(AbstractTrainableAgent):
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
-    def convert_to_tensor_index_from_action(self, action):
-        if self.player_id == "player_0" or not self.params.rotate:
-            return super().convert_to_tensor_index_from_action(action)
+    def convert_to_tensor_index_from_action(self, action, action_player_id):
+        if action_player_id == "player_0" or not self.params.rotate:
+            return super().convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def yaml_config(self) -> str:

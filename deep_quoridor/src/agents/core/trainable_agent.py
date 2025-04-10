@@ -129,29 +129,30 @@ class AbstractTrainableAgent(Agent):
         self.steps += 1
         if not self.training_mode:
             return
-        return self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
+        reward = self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
+        self.current_episode_reward += reward
 
     def handle_step_outcome_all(self, observation_before_action, action, game, player_id):
         reward = self.adjust_reward(game.rewards[player_id], game)
 
         # Handle end of episode
         if action is None:
-            ## FIX THIS
-            if self.assign_negative_reward and len(self.replay_buffer) > 0:
-                last = self.replay_buffer.get_last()
-                last[2] = reward  # update final reward
-                last[4] = 1.0  # mark as done
-                self.current_episode_reward += reward
-            return
+            return 0
+        #            ## FIX THIS
+        #            if self.assign_negative_reward and len(self.replay_buffer) > 0:
+        #                last = self.replay_buffer.get_last()
+        #                last[2] = reward  # update final reward
+        #                last[4] = 1.0  # mark as done
+        #                self.current_episode_reward += reward
+        #            return
 
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
         state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
         done = game.is_done()
-        self.current_episode_reward += reward
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            self.convert_to_tensor_index_from_action(action),
+            self.convert_to_tensor_index_from_action(action, player_id),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
@@ -163,6 +164,7 @@ class AbstractTrainableAgent(Agent):
             loss = self.train(self.batch_size)
             if loss is not None:
                 self.train_call_losses.append(loss)
+        return reward
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         avg_reward = (
@@ -234,7 +236,7 @@ class AbstractTrainableAgent(Agent):
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         return action_index_in_tensor
 
-    def convert_to_tensor_index_from_action(self, action):
+    def convert_to_tensor_index_from_action(self, action, player_id):
         return action
 
     def _log_action(self, game, q_values):
