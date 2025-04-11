@@ -49,22 +49,81 @@ def is_valid_position_type(position: Position) -> bool:
     return isinstance(position, np.ndarray) and position.shape == (2,)
 
 
+class ActionEncoder:
+    def __init__(self, board_size: int):
+        self._board_size = board_size
+        self._wall_size = board_size - 1
+
+    def action_to_index(self, action) -> int:
+        """
+        Converts an action object to an action index
+        """
+        if isinstance(action, MoveAction):
+            return action.destination[0] * self._board_size + action.destination[1]
+        elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
+            return self._board_size**2 + action.position[0] * self._wall_size + action.position[1]
+        elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
+            return self._board_size**2 + self._wall_size**2 + action.position[0] * self._wall_size + action.position[1]
+        else:
+            raise ValueError(f"Invalid action type: {action}")
+
+    def index_to_action(self, idx) -> Action:
+        """
+        Converts an action index to an action object.
+        """
+        action = None
+        if idx < self._board_size**2:  # Pawn movement
+            action = MoveAction(np.array(divmod(idx, self._board_size)))
+        elif idx >= self._board_size**2 and idx < self._board_size**2 + self._wall_size**2:
+            action = WallAction(np.array(divmod(idx - self._board_size**2, self._wall_size)), WallOrientation.VERTICAL)
+        elif idx >= self._board_size**2 + self._wall_size**2 and idx < self._board_size**2 + (self._wall_size**2) * 2:
+            action = WallAction(
+                np.array(divmod(idx - self._board_size**2 - self._wall_size**2, self._wall_size)),
+                WallOrientation.HORIZONTAL,
+            )
+        else:
+            raise ValueError(f"Invalid action index: {idx}")
+
+        return action
+
+
 class Board:
     # Possible values for each cell in the grid.
-    OUT_OF_BOUNDS = -2  # Returned if a move is off of the board.
     FREE = -1
     # The player numbers start at 0 so that they can also be used as indices into the player positions array.
     PLAYER1 = 0
     PLAYER2 = 1
     WALL = 10
 
-    def __init__(self, board_size: int = 9, max_walls: int = 10):
-        self.board_size = board_size
-        self.max_walls = max_walls
+    # When we check whether a new wall could potentially block all routes to the goal for a player,
+    # we first check to see whether it spans between two walls already on the board, or between
+    # one wall on the board and the border of the board. There are three possible places a new wall
+    # could touch an existing wall (or the border). At the start of the new wall, in the middle of the
+    # new wall, or at the end of the new wall. To simplify these checks, we create this list of wall
+    # grid cells that touch each of those three places on a new wall. THe positions here are relative
+    # to the starting position of the new wall.
+    _potential_wall_neighbors = {
+        WallOrientation.VERTICAL: [
+            np.array([(-1, -1), (-2, 0), (-1, 1)]),
+            np.array([(1, -1), (1, 1)]),
+            np.array([(3, -1), (4, 0), (3, 1)]),
+        ],
+        WallOrientation.HORIZONTAL: [
+            np.array([(-1, -1), (0, -2), (1, -1)]),
+            np.array([(-1, 1), (1, 1)]),
+            np.array([(-1, 3), (0, 4), (1, 3)]),
+        ],
+    }
+
+    def __init__(self, board_size: int = 9, max_walls: int = 10, from_observation: dict = None):
+        if from_observation is None:
+            self.board_size = board_size
+        else:
+            self.board_size = from_observation["board"].shape[0]
 
         # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
         # To make some checks easier, we add a double border of walls around the grid.
-        self._grid = np.full((board_size * 2 + 3, board_size * 2 + 3), Board.FREE, dtype=np.int8)
+        self._grid = np.full((self.board_size * 2 + 3, self.board_size * 2 + 3), Board.FREE, dtype=np.int8)
         self._grid[:2, :] = Board.WALL
         self._grid[-2:, :] = Board.WALL
         self._grid[:, :2] = Board.WALL
@@ -78,20 +137,23 @@ class Board:
         self._player_positions = [np.array([0, board_size // 2]), np.array([board_size - 1, board_size // 2])]
         for player, position in zip(self._players, self._player_positions):
             self._grid[*(position * 2 + 2)] = player
-        self._walls_remaining = [self.max_walls, self.max_walls]
 
-        self._potential_wall_neighbors = {
-            WallOrientation.VERTICAL: [
-                np.array([(-1, -1), (-2, 0), (-1, 1)]),
-                np.array([(1, -1), (1, 1)]),
-                np.array([(3, -1), (4, 0), (3, 1)]),
-            ],
-            WallOrientation.HORIZONTAL: [
-                np.array([(-1, -1), (0, -2), (1, -1)]),
-                np.array([(-1, 1), (1, 1)]),
-                np.array([(-1, 3), (0, 4), (1, 3)]),
-            ],
-        }
+        if from_observation is None:
+            self._walls_remaining = [max_walls, max_walls]
+        else:
+            self.init_from_observation(from_observation)
+
+    def init_from_observation(self, observation: dict):
+        for row, col in np.argwhere(observation["board"] > 0):
+            player = observation["board"][row, col] - 1  # Players are 1 and 2 on the board, but we use 0 and 1.
+            self._player_positions[player] = np.array((row, col))
+            self._grid[row * 2 + 2, col * 2 + 2] = player
+
+        self._old_style_walls = observation["walls"].copy()
+        for row, col, orientation in np.argwhere(observation["walls"] == 1):
+            self._grid[self._get_wall_slice(np.array((row, col)), WallOrientation(orientation))] = Board.WALL
+
+        self._walls_remaining = [observation["walls_remaining"], observation["opponent_walls_remaining"]]
 
     def get_player_position(self, player: Player) -> Position:
         """
@@ -157,7 +219,7 @@ class Board:
         self._walls_remaining[player] += 1
 
         # Update the old-style wall representation.
-        self._old_style_walls[*position, orientation] = 1
+        self._old_style_walls[*position, orientation] = 0
 
     def can_place_wall(self, player: Player, position: Position, orientation: WallOrientation) -> bool:
         """
@@ -239,7 +301,7 @@ class Board:
         wall_start_index = self._wall_position_to_grid_index(position, orientation)
 
         touches = 0
-        for neighbor_offsets in self._potential_wall_neighbors[orientation]:
+        for neighbor_offsets in Board._potential_wall_neighbors[orientation]:
             neighbors = wall_start_index + neighbor_offsets
             if (self._grid[neighbors[:, 0], neighbors[:, 1]] == Board.WALL).any():
                 touches += 1
@@ -333,11 +395,14 @@ class Quoridor:
 
         self.go_to_next_player()
 
-    def is_action_valid(self, action: Action):
+    def is_action_valid(self, action: Action, for_player: Player = None) -> bool:
         """
         Check whether the given action is valid given the current game state.
         """
-        player = self.get_current_player()
+        if for_player is None:
+            player = self.get_current_player()
+        else:
+            player = for_player
         opponent = Player(1 - player)
 
         is_valid = True
@@ -391,13 +456,17 @@ class Quoridor:
         return is_valid
 
     def go_to_next_player(self):
-        return Player(1 - self.current_player)
+        self.current_player = Player(1 - self.current_player)
 
     def get_current_player(self) -> int:
         return self.current_player
 
     def get_goal_row(self, player: Player) -> int:
         return self._goal_rows[player]
+
+    def check_win(self, player):
+        row, _ = self.board.get_player_position(player)
+        return row == self.get_goal_row(player)
 
     def can_reach(self, start_position: Position, target_row: int):
         return self.distance_to_target(start_position, target_row, True) != -1

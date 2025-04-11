@@ -49,7 +49,7 @@ class Arena:
                     agent.handle_step_outcome(observation, None, self.game)
                 break
 
-            action = int(agent.get_action(self.game))
+            action = int(agent.get_action(observation["observation"], observation["action_mask"]))
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
@@ -92,7 +92,14 @@ class Arena:
                 agents.append(p)
             else:
                 agents.append(
-                    AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
+                    AgentRegistry.create_from_encoded_name(
+                        p,
+                        board_size=self.board_size,
+                        max_walls=self.max_walls,
+                        action_space=self.game.action_space(
+                            None
+                        ),  # Action space doesn't depend on the player so we just pass None
+                    )
                 )
 
         for i in range(len(players)):

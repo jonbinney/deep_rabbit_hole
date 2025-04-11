@@ -34,7 +34,7 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 
-from deep_quoridor.src.quoridor import Action, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 
 
 class QuoridorEnv(AECEnv):
@@ -66,6 +66,8 @@ class QuoridorEnv(AECEnv):
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
         self.max_walls = max_walls  # Each player gets 10 walls
+
+        self._action_encoder = ActionEncoder(board_size)
 
         self._game_start_state = game_start_state
         if self._game_start_state is not None:
@@ -119,10 +121,13 @@ class QuoridorEnv(AECEnv):
         if self.last_action_mask[agent][action_index] != 1:
             raise RuntimeError(f"Action not allowed by mask {action_index}")
 
-        action = self.action_index_to_params(action_index)
+        # If the environment and game get out of step, wierd things happen.
+        assert player == self.game.get_current_player()
+
+        action = self._action_encoder.index_to_action(action_index)
         self.game.step(action)
 
-        if self._check_win(agent):
+        if self.game.check_win(player):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             for a in self.agents:
@@ -166,15 +171,17 @@ class QuoridorEnv(AECEnv):
 
     def _get_observation(self, agent_id):
         player = self.agent_to_player[agent_id]
-        opponent_player = self.agent_to_player[self.get_opponent(agent_id)]
+        opponent = self.agent_to_player[self.get_opponent(agent_id)]
         # TODO: Do we need to make copies of the state or can we return references directly?
 
         # Calculate board from self.positions
         # NOTE: The board uses 1 to indicate where the agent is and 2 to indicate where the opponent is
         # Obviously, this will be different for each player
         board = np.zeros((self.game.board.board_size, self.game.board.board_size), dtype=np.int8)
-        board[self.game.board.get_player_position(player)] = 1
-        board[self.game.board.get_player_position(opponent_player)] = 2
+        player_row, player_col = self.game.board.get_player_position(player)
+        opponent_row, opponent_col = self.game.board.get_player_position(opponent)
+        board[player_row, player_col] = 1
+        board[opponent_row, opponent_col] = 2
 
         # Make a copy of walls
         walls = self.game.board.get_old_style_walls()
@@ -183,33 +190,9 @@ class QuoridorEnv(AECEnv):
             "my_turn": self.agent_selection == agent_id,
             "board": board,
             "walls": walls,
-            "my_walls_remaining": self.game.board.get_walls_remaining(player),
-            "opponent_walls_remaining": self.game.board.get_walls_remaining(opponent_player),
+            "walls_remaining": self.game.board.get_walls_remaining(player),
+            "opponent_walls_remaining": self.game.board.get_walls_remaining(opponent),
         }
-
-    def is_wall_between(self, row_a, col_a, row_b, col_b):
-        """
-        Returns True if there is a wall between pos_a and pos_b
-        NOTE: The min and max tricks there are just a lazy way to avoid overindexing
-        Since the wall grid is one smaller than the board (because boards take two spaces)
-        """
-        if row_a == row_b:  # Horizontal movement - check vertical walls
-            wall_col = min(col_a, col_b)
-            return (
-                self.walls[min(row_a, self.wall_size - 1), wall_col, 0] == 1
-                or self.walls[max(row_a - 1, 0), wall_col, 0] == 1
-            )
-        elif col_a == col_b:  # Vertical movement - check horizontal walls
-            wall_row = min(row_a, row_b)
-            return (
-                self.walls[wall_row, min(col_a, self.wall_size - 1), 1] == 1
-                or self.walls[wall_row, max(col_a - 1, 0), 1] == 1
-            )
-        else:
-            raise ValueError(f"Invalid movement from {row_a, col_a} to {row_b, col_b}")
-
-    def is_in_board(self, row, col):
-        return 0 <= row < self.board_size and 0 <= col < self.board_size
 
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
@@ -223,16 +206,16 @@ class QuoridorEnv(AECEnv):
                 destination = current_position + np.array((delta_row, delta_col))
                 if self.game.board.is_position_on_board(destination):
                     move_action = MoveAction(destination)
-                    if self.game.is_action_valid(move_action):
-                        mask[self.action_params_to_index(move_action)] = 1
+                    if self.game.is_action_valid(move_action, player):
+                        mask[self._action_encoder.action_to_index(move_action)] = 1
 
         # Calculate valid wall placements
         for row, col in np.ndindex((self.game.board.board_size - 1, self.game.board.board_size - 1)):
             for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
                 wall_position = np.array((row, col))
                 wall_action = WallAction(wall_position, orientation)
-                if self.game.is_action_valid(wall_action):
-                    mask[self.action_params_to_index(wall_action)] = 1
+                if self.game.is_action_valid(wall_action, player):
+                    mask[self._action_encoder.action_to_index(wall_action)] = 1
 
         self.last_action_mask[agent_id] = mask
         return mask
@@ -268,49 +251,13 @@ class QuoridorEnv(AECEnv):
     def action_space(self, agent):
         return spaces.Discrete(self.board_size**2 + (self.wall_size**2) * 2, seed=random.randint(0, 2**32 - 1))
 
-    def action_params_to_index(self, action) -> int:
-        """
-        Converts an action object to an action index
-        """
-        if isinstance(action, MoveAction):
-            return action.destination[0] * self.board_size + action.destination[1]
-        elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
-            return self.board_size**2 + action.position[0] * self.wall_size + action.position[1]
-        elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
-            return self.board_size**2 + self.wall_size**2 + action.position[0] * self.wall_size + action.position[1]
-        else:
-            raise ValueError(f"Invalid action type: {action}")
-
-    def action_index_to_params(self, idx) -> Action:
-        """
-        Converts an action index to an action object.
-        """
-        action = None
-        if idx < self.board_size**2:  # Pawn movement
-            action = MoveAction(np.array(divmod(idx, self.board_size)))
-        elif idx >= self.board_size**2 and idx < self.board_size**2 + self.wall_size**2:
-            action = WallAction(np.array(divmod(idx - self.board_size**2, self.wall_size)), WallOrientation.VERTICAL)
-        elif idx >= self.board_size**2 + self.wall_size**2 and idx < self.board_size**2 + (self.wall_size**2) * 2:
-            action = WallAction(
-                np.array(divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size)),
-                WallOrientation.HORIZONTAL,
-            )
-        else:
-            raise ValueError(f"Invalid action index: {idx}")
-
-        return action
-
-    def _check_win(self, agent):
-        player = self.agent_to_player[agent]
-        row, _ = self.game.board.get_player_position(player)
-        return row == self.game.get_goal_row(player)
-
     def winner(self) -> Optional[int]:
         """
         Return the index of the winner (0 for player 1, 1 for player 2) or None if there's no winner
         """
         for idx, agent in enumerate(self.agent_order):
-            if self._check_win(agent):
+            player = self.agent_to_player[agent]
+            if self.game.check_win(player):
                 return idx
 
         return None
@@ -321,59 +268,6 @@ class QuoridorEnv(AECEnv):
 
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
-
-    def _dfs(self, row, col, target_row, visited, any_path=True):
-        """
-        Performs a depth-first search to find whether the pawn can reach the target row.
-
-        Args:
-            row (int): The current row of the pawn
-            col (int): The current column of the pawn
-            target_row (int): The target row to reach
-            visited (numpy.array): A 2D boolean array with the same shape as the board,
-                indicating which positions have been visited
-            If any_path is set to true, the first path to the target row will be returned (faster).
-            Otherwise, the shortest path will be returned (potentially slower)
-
-        Returns:
-            int: Number of steps to reach the target or -1 if it's unreachable
-        """
-        if row == target_row:
-            return 0
-
-        visited[row, col] = True
-
-        # Find out the forward direction to try it first and maybe get to the target faster
-        fwd = 1 if target_row > row else -1
-
-        moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-        best = -1
-        for new_row, new_col in moves:
-            if (
-                self.game.is_position_on_board(new_row, new_col)
-                and not self.is_wall_between(row, col, new_row, new_col)
-                and not visited[new_row, new_col]
-            ):
-                dfs = self._dfs(new_row, new_col, target_row, visited)
-                if dfs != -1:
-                    if any_path:
-                        return dfs + 1
-                    if best == -1 or dfs + 1 < best:
-                        best = dfs + 1
-
-        return best
-
-    def can_reach(self, row, col, target_row):
-        return self.distance_to_target(row, col, target_row, True) != -1
-
-    def distance_to_target(self, row, col, target_row, any_path=False):
-        """
-        Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
-        If any_path is set to true, the first path to the target row will be returned (faster).
-        Otherwise, the shortest path will be returned (potentially slower)
-        """
-        visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        return self._dfs(row, col, target_row, visited, any_path)
 
 
 # Wrapping the environment for PettingZoo compatibility
