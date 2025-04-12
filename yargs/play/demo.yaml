@@ -1,0 +1,2 @@
+human_vs_greedy:
+  args: -t 1 -r pygame --players human greedy
