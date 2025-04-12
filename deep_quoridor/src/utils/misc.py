@@ -78,7 +78,7 @@ def yargs(parser: argparse.ArgumentParser, default_path: str):
     """
     parser.add_argument(
         "-yp",
-        "--yargs_path",
+        "--yargs-path",
         nargs="?",
         default=None,
         const="",
@@ -86,7 +86,7 @@ def yargs(parser: argparse.ArgumentParser, default_path: str):
     )
     parser.add_argument(
         "-yi",
-        "--yargs_ids",
+        "--yargs-ids",
         nargs="+",
         default=None,
         help="List of ids to run",
