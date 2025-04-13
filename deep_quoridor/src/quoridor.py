@@ -160,16 +160,12 @@ class Board:
         """
         Get the position of the player's pawn.
         """
-        assert isinstance(player, Player)
         return self._player_positions[player]
 
     def move_player(self, player: Player, new_position: Position):
         """
         Move the player's pawn. Doesn't check if the move is valid according to game rules.
         """
-        assert isinstance(player, Player)
-        assert is_valid_position_type(new_position)
-
         if not self.is_position_on_board(new_position):
             raise ValueError(f"Position {new_position} is out of bounds")
 
@@ -182,8 +178,6 @@ class Board:
         """
         Get the value of a "player cell" in the grid.
         """
-        assert is_valid_position_type(position)
-
         if not self.is_position_on_board(position):
             raise ValueError(f"Position {position} is out of bounds")
 
@@ -193,16 +187,12 @@ class Board:
         """
         Get the number of walls remaining for the player.
         """
-        assert isinstance(player, Player)
         return self._walls_remaining[player]
 
     def add_wall(self, player: Player, position: Position, orientation: WallOrientation, check_if_valid=True):
         """
         Mark the grid cells corresponding to the wall as occupied.
         """
-        assert isinstance(player, Player)
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
         assert (not check_if_valid) or self.can_place_wall(player, position, orientation)
 
         self._grid[self._get_wall_slice(position, orientation)] = Board.WALL
@@ -212,10 +202,6 @@ class Board:
         self._old_style_walls[*position, orientation] = 1
 
     def remove_wall(self, player: Player, position: Position, orientation: WallOrientation):
-        assert isinstance(player, Player)
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
-
         self._grid[self._get_wall_slice(position, orientation)] = Board.FREE
         self._walls_remaining[player] += 1
 
@@ -228,9 +214,6 @@ class Board:
 
         Checks that the player has walls remaining, the wall is within the bounds of the board, and doesn't overlap with other walls.
         """
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
-
         if self._walls_remaining[player] < 1:
             return False
 
@@ -240,8 +223,6 @@ class Board:
         """
         Check if there is a wall between two positions.
         """
-        assert is_valid_position_type(position1)
-        assert is_valid_position_type(position2)
         assert np.sum(np.abs(position1 - position2)) == 1, "Positions must be adjacent"
 
         position1_on_board = self.is_position_on_board(position1)
@@ -261,8 +242,6 @@ class Board:
         return copy.copy(self._old_style_walls)
 
     def is_position_on_board(self, position: Position) -> bool:
-        assert is_valid_position_type(position)
-
         return (
             (position[0] >= 0)
             and (position[0] < self.board_size)
@@ -274,9 +253,6 @@ class Board:
         """
         Returns the grid index of the topmost/leftmost cell of the wall.
         """
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
-
         if orientation == WallOrientation.VERTICAL:
             return (position[0] * 2 + 2, position[1] * 2 + 3)
         elif orientation == WallOrientation.HORIZONTAL:
@@ -288,9 +264,6 @@ class Board:
         """
         Get a tuple of slices that correspond to the wall's cells in the grid.
         """
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
-
         if orientation == WallOrientation.VERTICAL:
             wall_slice = (slice(position[0] * 2 + 2, position[0] * 2 + 5), position[1] * 2 + 3)
         elif orientation == WallOrientation.HORIZONTAL:
