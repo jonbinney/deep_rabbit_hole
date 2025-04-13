@@ -33,8 +33,7 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
-
-from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 
 
 class QuoridorEnv(AECEnv):
