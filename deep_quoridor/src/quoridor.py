@@ -120,6 +120,7 @@ class Board:
             self.board_size = board_size
         else:
             self.board_size = from_observation["board"].shape[0]
+        self.max_walls = max_walls
 
         # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
         # To make some checks easier, we add a double border of walls around the grid.

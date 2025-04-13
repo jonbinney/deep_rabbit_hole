@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from deep_quoridor.src.quoridor import Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 from deep_quoridor.src.quoridor_env import env as quoridor_env
 
 
@@ -125,8 +125,10 @@ class TestQuoridor:
 
         np.testing.assert_equal(np.array(env_moves), np.array(potential_moves))
 
-    def _test_wall_placements(self, s):
+    def _test_wall_placements(self, s, just_highlighted=False):
         game, _, forbidden_walls = parse_board(s)
+        N = game.board.board_size
+        action_encoder = ActionEncoder(N)
         print(str(game))
 
         game_walls = []
@@ -137,6 +139,22 @@ class TestQuoridor:
                         game_walls.append((row, col, orientation))
 
         assert set(game_walls) == set(forbidden_walls)
+
+        env = quoridor_env(board_size=game.board.board_size, max_walls=game.board.max_walls, game_start_state=game)
+        action_mask = env.observe("player_0")["action_mask"]
+
+        env_walls = []
+        for i in range(N**2, len(action_mask)):
+            if action_mask[i] == 0:
+                wall_action = action_encoder.index_to_action(i)
+
+                env_walls.append((wall_action.position[0], wall_action.position[1], wall_action.orientation))
+
+        if just_highlighted:
+            diff = set(forbidden_walls).difference(set(env_walls))
+            assert not diff
+        else:
+            assert set(env_walls) == set(forbidden_walls)
 
     def test_corner_movements(self):
         self._test_pawn_movements("""
