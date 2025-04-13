@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import yaml
+from utils import my_device
 
 from agents.core import AbstractTrainableAgent, rotation
 from agents.core.trainable_agent import TrainableAgentParams
@@ -38,8 +39,7 @@ class DExpNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(512, action_size),
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
+        self.model.to(my_device())
 
     def forward(self, x):
         return self.model(x)
@@ -56,7 +56,7 @@ class DExpAgentParams(TrainableAgentParams):
 
     # Whether oppoments actions are used for training
     # This is used for training only, not for playing
-    use_opponents_actions = False
+    use_opponents_actions: bool = False
 
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
@@ -101,27 +101,22 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
-    def handle_opponent_step_outcome(self, observation_before_action, action, game):
+    def handle_opponent_step_outcome(self, opponent_observation_before_action, action, game):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
         opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
 
-        reward = game.rewards[opponent_player]
+        reward = self.adjust_reward(game.rewards[opponent_player], game)
 
-        # Handle end of episode
-        if action is None:
-            # TODO: Check whether it is worth it
-            # if self.assign_negative_reward and len(self.replay_buffer) > 0:
-            #    last = self.replay_buffer.get_last()
-            #    last[2] = reward  # update final reward
-            #    last[4] = 1.0  # mark as done
-            #    self.current_episode_reward += reward
-            return
-
-        state_before_action = self.observation_to_tensor_by_player(observation_before_action, True, opponent_player)
-        state_after_action = self.observation_to_tensor_by_player(game.observe(opponent_player), False, opponent_player)
+        observation_after_action = game.observe(opponent_player)
+        state_before_action = self.observation_to_tensor_by_player(
+            opponent_observation_before_action, True, opponent_player
+        )
+        state_after_action = self.observation_to_tensor_by_player(observation_after_action, False, opponent_player)
         done = game.is_done()
+        if opponent_player == "player_1" and self.params.rotate:
+            action = rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
@@ -144,27 +139,21 @@ class DExpAgent(AbstractTrainableAgent):
         my_turn = 1 if obs["my_turn"] else 0
         return self.observation_to_tensor_by_player(observation, my_turn, self.player_id)
 
-    def observation_to_tensor_by_player(self, observation, my_turn, player_id):
+    def observation_to_tensor_by_player(self, observation, obs_player_turn, obs_player_id):
         obs = observation["observation"]
 
         # Rotate board and walls if needed for player_1
-        should_rotate = player_id == "player_1" and self.params.rotate
+        should_rotate = obs_player_id == "player_1" and self.params.rotate
         board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
         walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
 
         # Create position matrices for player and opponent
-        is_player_turn = my_turn
-        player_board = (board == 1 if is_player_turn else board == 2).astype(np.float32)
-        opponent_board = (board == 2 if is_player_turn else board == 1).astype(np.float32)
+        player_board = (board == 1).astype(np.float32)
+        opponent_board = (board == 2).astype(np.float32)
 
         # Get wall counts
         my_walls = np.array([obs["my_walls_remaining"]])
         opponent_walls = np.array([obs["opponent_walls_remaining"]])
-
-        # Swap positions and walls if not player's turn and include_turn is True
-        if not is_player_turn and self.params.turn:
-            my_walls, opponent_walls = opponent_walls, my_walls
-            player_board, opponent_board = opponent_board, player_board
 
         # Prepare board representation
         board = np.stack([player_board, opponent_board]) if self.params.split else board
@@ -172,7 +161,7 @@ class DExpAgent(AbstractTrainableAgent):
         # Flatten all components
         board_flat = board.flatten()
         walls_flat = walls.flatten()
-        turn_info = [my_turn] if self.params.turn else []
+        turn_info = [obs_player_turn] if self.params.turn else []
 
         # Combine all features into single tensor
         flat_obs = np.concatenate([turn_info, board_flat, walls_flat, my_walls, opponent_walls])
@@ -195,6 +184,11 @@ class DExpAgent(AbstractTrainableAgent):
             return super().convert_to_action_from_tensor_index(action_index_in_tensor)
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
+
+    def convert_to_tensor_index_from_action(self, action):
+        if self.player_id == "player_0" or not self.params.rotate:
+            return super().convert_to_tensor_index_from_action(action)
+        return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def yaml_config(self) -> str:
         config = {

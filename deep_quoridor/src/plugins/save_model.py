@@ -1,6 +1,6 @@
 from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
-from utils.misc import resolve_path
+from utils import resolve_path
 
 
 class SaveModelEveryNEpisodesPlugin(ArenaPlugin):

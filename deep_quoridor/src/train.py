@@ -1,14 +1,13 @@
 import argparse
 import datetime
 
-import torch
 from agents.core.agent import AgentRegistry
-from arena import Arena
+from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from renderers import Renderer, TrainingStatusRenderer
-from utils.misc import set_deterministic
+from utils import my_device, set_deterministic
 
 
 def train_dqn(
@@ -50,7 +49,7 @@ def train_dqn(
         swap_players=True,
     )
 
-    arena.play_games(players=players, times=episodes)
+    arena.play_games(players=players, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
     return
 
 
@@ -118,7 +117,7 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
     print(f"Using step rewards: {args.step_rewards}")
-    print(f"Device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
+    print(f"Device: {my_device()}")
     print(f"Initializing random seed {args.seed}")
 
     # Set random seed for reproducibility

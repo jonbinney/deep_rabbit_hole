@@ -4,7 +4,7 @@ from queue import Queue
 from typing import Optional, TypeAlias
 
 import numpy as np
-from utils.subargs import SubargsBase
+from utils import SubargsBase
 
 from agents.core import Agent
 from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
@@ -168,7 +168,7 @@ class GreedyAgent(Agent):
         # Log the possible next movements
         movement_mask = observation["action_mask"][: self.board_size**2]
         for action in np.argwhere(movement_mask == 1).reshape(-1):
-            self.action_log.action_text(int(action), "")
+            self.action_log.action_text(game.action_index_to_params(int(action)), "")
 
         my_coords = np.argwhere(observation["observation"]["board"] == 1)
         path = my_shortest_path[:]

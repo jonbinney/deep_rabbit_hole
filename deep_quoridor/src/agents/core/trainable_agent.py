@@ -9,8 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils.misc import resolve_path
-from utils.subargs import SubargsBase
+from utils import SubargsBase, my_device, resolve_path
 
 import wandb
 from agents.core.agent import Agent
@@ -77,8 +76,7 @@ class AbstractTrainableAgent(Agent):
         self.action_size = self._calculate_action_size()
 
         # Setup device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.device = my_device()
         self.fetch_model_from_wand_and_update_params()
 
         # Initialize networks
@@ -149,7 +147,7 @@ class AbstractTrainableAgent(Agent):
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            action,
+            self.convert_to_tensor_index_from_action(action),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
@@ -216,7 +214,7 @@ class AbstractTrainableAgent(Agent):
             valid_actions = self._get_valid_actions(mask)
             return self._select_random_action(valid_actions)
 
-        return self._get_best_action(observation, mask)
+        return self._get_best_action(game, observation, mask)
 
     def _get_valid_actions(self, mask):
         """Get valid actions from the action mask."""
@@ -232,7 +230,10 @@ class AbstractTrainableAgent(Agent):
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         return action_index_in_tensor
 
-    def _log_action(self, q_values):
+    def convert_to_tensor_index_from_action(self, action):
+        return action
+
+    def _log_action(self, game, q_values):
         if not self.action_log.is_enabled():
             return
 
@@ -241,13 +242,13 @@ class AbstractTrainableAgent(Agent):
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {
-            int(self.convert_to_action_from_tensor_index(i.item())): v.item()
+            game.action_index_to_params(int(self.convert_to_action_from_tensor_index(i.item()))): v.item()
             for v, i in zip(top_values, top_indices)
             if v.item() >= -100
         }
         self.action_log.action_score_ranking(scores)
 
-    def _get_best_action(self, observation, mask):
+    def _get_best_action(self, game, observation, mask):
         """Get the best action based on Q-values."""
         state = self.observation_to_tensor(observation)
         with torch.no_grad():
@@ -255,7 +256,7 @@ class AbstractTrainableAgent(Agent):
 
         mask_tensor = self.convert_action_mask_to_tensor(mask)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
-        self._log_action(q_values)
+        self._log_action(game, q_values)
 
         selected_action = torch.argmax(q_values).item()
         idx = self.convert_to_action_from_tensor_index(selected_action)
@@ -326,10 +327,10 @@ class AbstractTrainableAgent(Agent):
         raise NotImplementedError("Trainable agents should return a model name")
 
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
-        return f"{self.model_id()}_{artifact.digest[:5]}.pt"
+        return f"{self.model_id()}_{artifact.digest[:5]}.{self.get_model_extension()}"
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_{suffix}.pt"
+        return f"{self.model_id()}_{suffix}.{self.get_model_extension()}"
 
     def save_model(self, path):
         """Save the model to disk."""
@@ -340,7 +341,7 @@ class AbstractTrainableAgent(Agent):
     def load_model(self, path):
         """Load the model from disk."""
         print(f"Loading pre-trained model from {path}")
-        self.online_network.load_state_dict(torch.load(path))
+        self.online_network.load_state_dict(torch.load(path, map_location=my_device()))
         self.update_target_network()
 
     def resolve_and_load_model(self):
@@ -364,6 +365,10 @@ class AbstractTrainableAgent(Agent):
     @classmethod
     def params_class(cls):
         raise NotImplementedError("Trainable agents must implement method params_class")
+
+    @classmethod
+    def get_model_extension(cls):
+        return "pt"
 
     def fetch_model_from_wand_and_update_params(self):
         """
@@ -389,10 +394,10 @@ class AbstractTrainableAgent(Agent):
         with tempfile.TemporaryDirectory() as tmpdir:
             artifact_dir = artifact.download(root=tmpdir)
 
-            path = artifact.download(root=artifact_dir)
-            tmp_filename = Path(path) / f"{self.model_id()}.pt"
-            if not os.path.exists(tmp_filename):
-                raise FileNotFoundError(f"Model file {tmp_filename} was not downloaded.  Please check the artifact")
+            # NOTE: This picks the first .pt file it finds in the artifact
+            tmp_filename = next(Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None)
+            if tmp_filename is None:
+                raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 
             os.rename(tmp_filename, local_filename)
 

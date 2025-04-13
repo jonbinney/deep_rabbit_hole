@@ -4,7 +4,7 @@ from agents import AgentRegistry
 from arena import Arena
 from plugins.arena_yaml_recorder import ArenaYAMLRecorder
 from renderers import Renderer
-from utils.misc import set_deterministic
+from utils import set_deterministic, yargs
 
 
 def player_with_params(arg):
@@ -63,27 +63,30 @@ if __name__ == "__main__":
         help="Initializes the random seed for the training. Default is 42",
     )
 
-    args = parser.parse_args()
+    args_dict = yargs(parser, "yargs/play")
 
-    set_deterministic(args.seed)
+    for id, args in args_dict.items():
+        if id:
+            print(f"====< Running {id} >====")
+        set_deterministic(args.seed)
 
-    renderers = [Renderer.create(r) for r in args.renderers]
+        renderers = [Renderer.create(r) for r in args.renderers]
 
-    saver = None
-    if args.games_output_filename != "None":
-        saver = ArenaYAMLRecorder(args.games_output_filename)
+        saver = None
+        if args.games_output_filename != "None":
+            saver = ArenaYAMLRecorder(args.games_output_filename)
 
-    players = AgentRegistry.names() if args.all else args.players
+        players = AgentRegistry.names() if args.all else args.players
 
-    arena_args = {
-        "board_size": args.board_size,
-        "max_walls": args.max_walls,
-        "step_rewards": args.step_rewards,
-        "renderers": renderers,
-        "saver": saver,
-    }
+        arena_args = {
+            "board_size": args.board_size,
+            "max_walls": args.max_walls,
+            "step_rewards": args.step_rewards,
+            "renderers": renderers,
+            "saver": saver,
+        }
 
-    arena_args = {k: v for k, v in arena_args.items() if v is not None}
-    arena = Arena(**arena_args)
+        arena_args = {k: v for k, v in arena_args.items() if v is not None}
+        arena = Arena(**arena_args)
 
-    arena.play_games(players, args.times)
+        arena.play_games(players, args.times)

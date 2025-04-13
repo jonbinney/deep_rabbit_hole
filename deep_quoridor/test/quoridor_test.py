@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
-
-from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
-from deep_quoridor.src.quoridor_env import env as quoridor_env
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
