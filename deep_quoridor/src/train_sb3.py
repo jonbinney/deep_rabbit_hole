@@ -18,7 +18,6 @@ import os
 import time
 
 import quoridor_env
-from agents.core.rotation import convert_rotated_action_index_to_original
 from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
