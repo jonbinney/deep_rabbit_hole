@@ -391,6 +391,7 @@ class AbstractTrainableAgent(Agent):
             return
 
         api = wandb.Api()
+        print(f"Fetching model from wandb: the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}")
         artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
