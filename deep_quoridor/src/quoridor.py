@@ -135,7 +135,10 @@ class Board:
         self._old_style_walls = np.zeros((self.board_size - 1, self.board_size - 1, 2), dtype=np.int8)
 
         self._players = [Player.ONE, Player.TWO]
-        self._player_positions = [np.array([0, board_size // 2]), np.array([board_size - 1, board_size // 2])]
+        self._player_positions = [
+            np.array([0, self.board_size // 2]),
+            np.array([self.board_size - 1, self.board_size // 2]),
+        ]
         for player, position in zip(self._players, self._player_positions):
             self._grid[*(position * 2 + 2)] = player
 
@@ -154,7 +157,7 @@ class Board:
         for row, col, orientation in np.argwhere(observation["walls"] == 1):
             self._grid[self._get_wall_slice(np.array((row, col)), WallOrientation(orientation))] = Board.WALL
 
-        self._walls_remaining = [observation["walls_remaining"], observation["opponent_walls_remaining"]]
+        self._walls_remaining = [observation["my_walls_remaining"], observation["opponent_walls_remaining"]]
 
     def get_player_position(self, player: Player) -> Position:
         """

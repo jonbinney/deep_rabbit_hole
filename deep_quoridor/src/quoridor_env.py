@@ -113,6 +113,7 @@ class QuoridorEnv(AECEnv):
         """
         agent = self.agent_selection
         player = self.agent_to_player[agent]
+        opponent_player = self.agent_to_player[self.get_opponent(agent)]
         if self.terminations[agent]:
             self.game.go_to_next_player()
             return
@@ -136,10 +137,10 @@ class QuoridorEnv(AECEnv):
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
             position = self.game.board.get_player_position(player)
-            agent_distance = self.distance_to_target(position, self.game.get_goal_row(player), False)
-            opponent_position = self.positions[self.get_opponent(agent)]
-            oponent_distance = self.distance_to_target(
-                opponent_position, self.game.get_goal_row(self.get_opponent(agent)), False
+            agent_distance = self.game.distance_to_target(position, self.game.get_goal_row(player), False)
+            opponent_position = self.game.board.get_player_position(opponent_player)
+            oponent_distance = self.game.distance_to_target(
+                opponent_position, self.game.get_goal_row(opponent_player), False
             )
             self.rewards[agent] = (oponent_distance - agent_distance) / (self.board_size**2)
             self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (self.board_size**2)
@@ -189,7 +190,7 @@ class QuoridorEnv(AECEnv):
             "my_turn": self.agent_selection == agent_id,
             "board": board,
             "walls": walls,
-            "walls_remaining": self.game.board.get_walls_remaining(player),
+            "my_walls_remaining": self.game.board.get_walls_remaining(player),
             "opponent_walls_remaining": self.game.board.get_walls_remaining(opponent),
         }
 
