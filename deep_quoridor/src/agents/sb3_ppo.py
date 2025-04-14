@@ -1,8 +1,14 @@
+import torch
+from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from sb3_contrib import MaskablePPO
+from stable_baselines3.common.torch_layers import FlattenExtractor
 
-from agents.core.agent import Agent, AgentRegistry
+from agents.core.agent import ActionLog, Agent, AgentRegistry
+from agents.core.rotation import convert_rotated_action_index_to_original
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
+from deep_quoridor.src.environment.dict_split_board_wrapper import DictSplitBoardWrapper
+from deep_quoridor.src.environment.rotate_wrapper import RotateWrapper
 
 
 class SB3ActionMaskWrapper(BaseWrapper):
@@ -88,6 +94,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
             params: Optional parameters for the agent
             **kwargs: Additional arguments to pass to the parent class
         """
+        self.action_log = ActionLog()
         self.board_size = board_size
         self.max_walls = max_walls
         self.params = params
@@ -109,7 +116,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 0
+        return 2
 
     @staticmethod
     def params_class():
@@ -131,14 +138,17 @@ class SB3PPOAgent(AbstractTrainableAgent):
             game: The game environment
             player_id: The ID of the player this agent controls
         """
+        self.player_id = player_id
+
         if self.model is None:
             self.fetch_model_from_wand_and_update_params()
 
             # Wrap the game to get access to action_mask method
-            self.wrapper = SB3ActionMaskWrapper(game)
+            self.wrapper = wrap_env(game)
 
             try:
                 # Find the most recent model file
+                print(f"Loading model from {self.params.model_filename}")
                 self.model = MaskablePPO.load(self.params.model_filename)
                 print(f"Loaded model from {self.params.model_filename}")
             except (ValueError, FileNotFoundError):
@@ -170,7 +180,43 @@ class SB3PPOAgent(AbstractTrainableAgent):
         # Use the model to predict the action
         action = int(self.model.predict(observation, action_masks=action_mask, deterministic=self.deterministic)[0])
 
+        if self.player_id == "player_1":
+            action = convert_rotated_action_index_to_original(self.board_size, action)
+
         return action
+
+
+def wrap_env(env):
+    env = RotateWrapper(env)
+    env = DictSplitBoardWrapper(env)
+    env = SB3ActionMaskWrapper(env)
+    return env
+
+
+def make_env_fn(env_constructor):
+    def env_fn(**kwargs):
+        env = env_constructor(**kwargs)
+        env = wrap_env(env)
+        return env
+
+    return env_fn
+
+
+class DictFlattenExtractor(FlattenExtractor):
+    """
+    This class is necessary because the default FlattenExtractor does not work with dict spaces.
+    It just tries to call "flatten" directly which of course doesn't exist on a dict.
+    NOTE: It is important to be careful to not flatten the batch dimension (first one).
+    """
+
+    def __init__(self, observation_space: spaces.Box):
+        super().__init__(observation_space)
+
+    def forward(self, obs: dict) -> torch.Tensor:
+        thobs = torch.tensor([], device=list(obs.values())[0].device)
+        for v in obs.values():
+            thobs = torch.cat((thobs, torch.tensor(v).flatten(start_dim=1)), dim=1)
+        return thobs
 
 
 # Register the agent with the registry

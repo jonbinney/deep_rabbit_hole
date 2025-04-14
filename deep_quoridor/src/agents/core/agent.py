@@ -112,10 +112,6 @@ class Agent:
     def get_action(self, game) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
-    def yaml_config(self) -> str:
-        """Returns a YAML string representation of the agent's configuration."""
-        return ""
-
 
 class AgentRegistry:
     agents = {}
