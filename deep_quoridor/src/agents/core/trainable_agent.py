@@ -47,6 +47,8 @@ class TrainableAgentParams(SubargsBase):
     training_mode: bool = False
     # If True, final reward will be multiplied by this value (positive or negative)
     final_reward_multiplier: float = 1.0
+    # If True, the target q-value function will substract maxq_a'(s', a') instead of adding it
+    use_negative_qvalue_function: bool = False
 
 
 class AbstractTrainableAgent(Agent):
@@ -129,25 +131,30 @@ class AbstractTrainableAgent(Agent):
         self.steps += 1
         if not self.training_mode:
             return
-        reward = self.adjust_reward(game.rewards[self.player_id], game)
+        reward = self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
+        self.current_episode_reward += reward
+
+    def handle_step_outcome_all(self, observation_before_action, action, game, player_id):
+        reward = self.adjust_reward(game.rewards[player_id], game)
 
         # Handle end of episode
         if action is None:
+            ## TODO: Revisit this since it won't work for the case in which
+            ## opponents actions are used
             if self.assign_negative_reward and len(self.replay_buffer) > 0:
                 last = self.replay_buffer.get_last()
                 last[2] = reward  # update final reward
                 last[4] = 1.0  # mark as done
                 self.current_episode_reward += reward
-            return
+            return reward
 
-        state_before_action = self.observation_to_tensor(observation_before_action)
-        state_after_action = self.observation_to_tensor(game.observe(self.player_id))
+        state_before_action = self.observation_to_tensor(observation_before_action, player_id)
+        state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
         done = game.is_done()
-        self.current_episode_reward += reward
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            self.convert_to_tensor_index_from_action(action),
+            self.convert_to_tensor_index_from_action(action, player_id),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
@@ -159,6 +166,7 @@ class AbstractTrainableAgent(Agent):
             loss = self.train(self.batch_size)
             if loss is not None:
                 self.train_call_losses.append(loss)
+        return reward
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         avg_reward = (
@@ -193,7 +201,7 @@ class AbstractTrainableAgent(Agent):
         """Create the loss criterion."""
         return nn.MSELoss().to(self.device)
 
-    def observation_to_tensor(self, observation):
+    def observation_to_tensor(self, observation, obs_player_id):
         """Convert observation to tensor format."""
         raise NotImplementedError("Subclasses must implement observation_to_tensor")
 
@@ -230,7 +238,7 @@ class AbstractTrainableAgent(Agent):
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
         return action_index_in_tensor
 
-    def convert_to_tensor_index_from_action(self, action):
+    def convert_to_tensor_index_from_action(self, action, player_id):
         return action
 
     def _log_action(self, game, q_values):
@@ -250,7 +258,7 @@ class AbstractTrainableAgent(Agent):
 
     def _get_best_action(self, game, observation, mask):
         """Get the best action based on Q-values."""
-        state = self.observation_to_tensor(observation)
+        state = self.observation_to_tensor(observation, self.player_id)
         with torch.no_grad():
             q_values = self.online_network(state)
 
@@ -303,7 +311,8 @@ class AbstractTrainableAgent(Agent):
         """Compute target Q-values."""
         with torch.no_grad():
             next_q_values = self.target_network(next_states).max(1)[0]
-            return rewards + (1 - dones) * self.gamma * next_q_values
+            negate = -1 if self.params.use_negative_qvalue_function else 1
+            return rewards + negate * (1 - dones) * self.gamma * next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
@@ -382,6 +391,7 @@ class AbstractTrainableAgent(Agent):
             return
 
         api = wandb.Api()
+        print(f"Fetching model from wandb: the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}")
         artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 

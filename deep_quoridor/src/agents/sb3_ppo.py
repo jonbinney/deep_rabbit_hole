@@ -148,6 +148,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
 
             try:
                 # Find the most recent model file
+                print(f"Loading model from {self.params.model_filename}")
                 self.model = MaskablePPO.load(self.params.model_filename)
                 print(f"Loaded model from {self.params.model_filename}")
             except (ValueError, FileNotFoundError):
