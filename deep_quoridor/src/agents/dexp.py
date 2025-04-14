@@ -55,11 +55,11 @@ class DExpAgentParams(TrainableAgentParams):
 
     # Whether oppoments actions are used for training
     # This is used for training only, not for playing
-    # This should not be combined with assign_negative_rewards
+    # This should not be combined with assign_negative_reward
     use_opponents_actions: bool = False
 
     # Whether the target state generated for a player should match the source state of the opponent
-    # in the next step. This should not be combined with assign_negative_rewards
+    # in the next step. This should not be combined with assign_negative_reward
     target_as_source_for_opponent: bool = False
 
     # Parameters used for training which are required to be used with the same set of values during training
@@ -76,14 +76,14 @@ class DExpAgent(AbstractTrainableAgent):
         Check the configuration of the agent.
         This is used to check if the agent is configured correctly.
         """
-        if self.params.use_opponents_actions and self.params.assign_negative_rewards:
+        if self.params.use_opponents_actions and self.params.assign_negative_reward:
             raise ValueError(
-                "use_opponents_actions and assign_negative_rewards cannot be used together. "
+                "use_opponents_actions and assign_negative_reward cannot be used together. "
                 "use_opponents_actions is used for training only, not for playing."
             )
-        if self.params.target_as_source_for_opponent and self.params.assign_negative_rewards:
+        if self.params.target_as_source_for_opponent and self.params.assign_negative_reward:
             raise ValueError(
-                "target_as_source_for_opponent and assign_negative_rewards cannot be used together. "
+                "target_as_source_for_opponent and assign_negative_reward cannot be used together. "
                 "target_as_source_for_opponent is used for training only, not for playing."
             )
 
