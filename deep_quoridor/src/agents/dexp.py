@@ -71,12 +71,29 @@ class DExpAgentParams(TrainableAgentParams):
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
 
+    def check_congiguration(self):
+        """
+        Check the configuration of the agent.
+        This is used to check if the agent is configured correctly.
+        """
+        if self.params.use_opponents_actions and self.params.assign_negative_rewards:
+            raise ValueError(
+                "use_opponents_actions and assign_negative_rewards cannot be used together. "
+                "use_opponents_actions is used for training only, not for playing."
+            )
+        if self.params.target_as_source_for_opponent and self.params.assign_negative_rewards:
+            raise ValueError(
+                "target_as_source_for_opponent and assign_negative_rewards cannot be used together. "
+                "target_as_source_for_opponent is used for training only, not for playing."
+            )
+
     def __init__(
         self,
         params=DExpAgentParams(),
         **kwargs,
     ):
         super().__init__(params=params, **kwargs)
+        self.check_congiguration()
 
     def name(self):
         if self.params.nick:

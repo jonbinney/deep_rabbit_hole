@@ -21,7 +21,6 @@ def mock_observation():
 def base_agent():
     params = DExpAgentParams(rotate=False, turn=False, split=False, training_mode=True)
     agent = DExpAgent(params=params, board_size=3, max_walls=5)
-    agent.device = torch.device("cpu")
     return agent
 
 
@@ -29,7 +28,6 @@ def base_agent():
 def rotate_agent():
     params = DExpAgentParams(rotate=True, turn=False, split=False, training_mode=True)
     agent = DExpAgent(params=params, board_size=3, max_walls=5)
-    agent.device = torch.device("cpu")
     return agent
 
 
@@ -37,7 +35,6 @@ def rotate_agent():
 def split_agent():
     params = DExpAgentParams(rotate=False, turn=False, split=True, training_mode=True)
     agent = DExpAgent(params=params, board_size=3, max_walls=5)
-    agent.device = torch.device("cpu")
     return agent
 
 
@@ -47,7 +44,6 @@ def target_as_source_agent():
         rotate=True, turn=False, split=False, target_as_source_for_opponent=True, training_mode=True
     )
     agent = DExpAgent(params=params, board_size=3, max_walls=5)
-    agent.device = torch.device("cpu")
     return agent
 
 

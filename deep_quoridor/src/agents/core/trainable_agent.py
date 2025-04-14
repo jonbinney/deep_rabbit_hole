@@ -139,14 +139,14 @@ class AbstractTrainableAgent(Agent):
 
         # Handle end of episode
         if action is None:
-            return 0
-        #            ## FIX THIS
-        #            if self.assign_negative_reward and len(self.replay_buffer) > 0:
-        #                last = self.replay_buffer.get_last()
-        #                last[2] = reward  # update final reward
-        #                last[4] = 1.0  # mark as done
-        #                self.current_episode_reward += reward
-        #            return
+            ## TODO: Revisit this since it won't work for the case in which
+            ## opponents actions are used
+            if self.assign_negative_reward and len(self.replay_buffer) > 0:
+                last = self.replay_buffer.get_last()
+                last[2] = reward  # update final reward
+                last[4] = 1.0  # mark as done
+                self.current_episode_reward += reward
+            return reward
 
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
         state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
