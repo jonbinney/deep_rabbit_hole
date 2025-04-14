@@ -1,0 +1,5 @@
+benchmark_B5W3:
+  args: -t 100 -N 5 -W 3 --players greedy greedy:p_random=0.1,nick=greedy-ish sb3ppo:wandb_alias=latest dexp:wandb_alias=best
+
+benchmark_B9W10:
+  args: -t 100 --players greedy greedy:p_random=0.1,nick=greedy-ish dexp:wandb_alias=latest

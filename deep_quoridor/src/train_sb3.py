@@ -11,39 +11,22 @@ TODO:
  - (future) Implement a Maskable DQN
 """
 
+import argparse
+import datetime
 import glob
 import os
 import time
 
 import quoridor_env
-import torch
-from agents.sb3_ppo import SB3ActionMaskWrapper
-from gymnasium import spaces
+from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
-from stable_baselines3.common.torch_layers import FlattenExtractor
+from utils import set_deterministic
 
 import wandb
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
 from wandb.integration.sb3 import WandbCallback
-
-
-class DictFlattenExtractor(FlattenExtractor):
-    """
-    This class is necessary because the default FlattenExtractor does not work with dict spaces.
-    It just tries to call "flatten" directly which of course doesn't exist on a dict.
-    NOTE: It is important to be careful to not flatten the batch dimension (first one).
-    """
-
-    def __init__(self, observation_space: spaces.Box):
-        super().__init__(observation_space)
-
-    def forward(self, obs: dict) -> torch.Tensor:
-        thobs = torch.tensor([], device=list(obs.values())[0].device)
-        for v in obs.values():
-            thobs = torch.cat((thobs, torch.tensor(v).flatten(start_dim=1)), dim=1)
-        return thobs
 
 
 def mask_fn(env):
@@ -53,14 +36,11 @@ def mask_fn(env):
     return env.action_mask()
 
 
-def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
+def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
-    env = env_fn.env(**env_kwargs)
+    env = env_fn(**env_kwargs)
 
     print(f"Starting training on {str(env.metadata['name'])}.")
-
-    # Custom wrapper to convert PettingZoo envs to work with SB3 action masking
-    env = SB3ActionMaskWrapper(env)
 
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
@@ -82,10 +62,12 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     model_id = SB3PPOAgent(**env_kwargs).model_id()
     local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
     model.save(local_filename)
-    artifact = wandb.Artifact(f"{model_id}", type="model")
-    artifact.add_file(local_path=local_filename)
-    artifact.save()
-    wandb.finish()
+
+    if upload_to_wandb:
+        artifact = wandb.Artifact(f"{model_id}", type="model")
+        artifact.add_file(local_path=local_filename)
+        artifact.save()
+        wandb.finish()
 
     print(f"Model {model_id} has been saved.")
 
@@ -94,12 +76,11 @@ def train_action_mask(env_fn, steps=10_000, seed=0, **env_kwargs):
     env.close()
 
 
-def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
+def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kwargs):
     # Evaluate a trained agent vs a random agent
-    env = env_fn.env(render_mode=render_mode, **env_kwargs)
-    env = SB3ActionMaskWrapper(env)
+    env = env_fn(render_mode=render_mode, **env_kwargs)
 
-    print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[1]}.")
+    print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[player]}.")
 
     try:
         model_id = SB3PPOAgent(**env_kwargs).model_id()
@@ -136,7 +117,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
                 round_rewards.append(env.rewards)
                 break
             else:
-                if agent == env.possible_agents[0]:
+                if agent == env.possible_agents[1 - player]:
                     space = env.action_space
                     act = space.sample(action_mask)
                 else:
@@ -149,7 +130,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
     if sum(scores.values()) == 0:
         winrate = 0
     else:
-        winrate = scores[env.possible_agents[1]] / sum(scores.values())
+        winrate = scores[env.possible_agents[player]] / sum(scores.values())
     print("Rewards by round: ", round_rewards)
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Winrate: ", winrate)
@@ -158,20 +139,52 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs):
 
 
 if __name__ == "__main__":
-    env_fn = quoridor_env
+    parser = argparse.ArgumentParser(
+        description="Train and evaluate SB3 agents in Quoridor using invalid action masking"
+    )
+    parser.add_argument("-N", "--board_size", type=int, default=3, help="Board Size")
+    parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
+    parser.add_argument("-e", "--steps", type=int, default=20_480, help="Number of steps to train for")
+    parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
+    parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
+    parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
+    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip uploading artifacts to wandb")
+    parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
+    parser.add_argument(
+        "-rp",
+        "--run_prefix",
+        type=str,
+        default="sb3-ppo",
+        help="Run prefix to use for this run. This will be used for naming, and tagging artifacts",
+    )
+    parser.add_argument(
+        "-rs",
+        "--run_suffix",
+        type=str,
+        default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
+        help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts",
+    )
 
-    env_kwargs = {"board_size": 5, "max_walls": 3}
+    args = parser.parse_args()
 
-    # Evaluation/training hyperparameter notes:
-    # 10k steps: Winrate:  0.76, loss order of 1e-03
-    # 20k steps: Winrate:  0.86, loss order of 1e-04
-    # 40k steps: Winrate:  0.86, loss order of 7e-06
+    env_fn = make_env_fn(quoridor_env.env)
+    env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 
-    # Train a model against itself (takes ~20 seconds on a laptop CPU)
-    train_action_mask(env_fn, steps=20_480, seed=0, **env_kwargs)
+    # Set random seed for reproducibility
+    set_deterministic(args.seed)
 
-    # Evaluate 100 games against a random agent (winrate should be ~80%)
-    eval_action_mask(env_fn, num_games=100, render_mode=None, **env_kwargs)
+    print("\nRunning SB3 training/evaluation with:")
+    print(f"Board size: {args.board_size}x{args.board_size}")
+    print(f"Max walls: {args.max_walls}")
+    print(f"Run ID: {args.run_prefix}-{args.run_suffix}")
 
-    # Watch two games vs a random agent
-    eval_action_mask(env_fn, num_games=2, render_mode="human", **env_kwargs)
+    # Train a model against itself
+    if not args.no_train:
+        print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
+        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=not args.no_upload, **env_kwargs)
+
+    # Evaluate games against a random agent
+    if not args.no_eval:
+        print(f"\nEvaluating {args.num_games} games against a random agent...")
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=0, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=1, **env_kwargs)
