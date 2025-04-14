@@ -77,15 +77,9 @@ class DExpAgent(AbstractTrainableAgent):
         This is used to check if the agent is configured correctly.
         """
         if self.params.use_opponents_actions and self.params.assign_negative_reward:
-            raise ValueError(
-                "use_opponents_actions and assign_negative_reward cannot be used together. "
-                "use_opponents_actions is used for training only, not for playing."
-            )
+            raise ValueError("use_opponents_actions and assign_negative_reward cannot be used together. ")
         if self.params.target_as_source_for_opponent and self.params.assign_negative_reward:
-            raise ValueError(
-                "target_as_source_for_opponent and assign_negative_reward cannot be used together. "
-                "target_as_source_for_opponent is used for training only, not for playing."
-            )
+            raise ValueError("target_as_source_for_opponent and assign_negative_reward cannot be used together. ")
 
     def __init__(
         self,
