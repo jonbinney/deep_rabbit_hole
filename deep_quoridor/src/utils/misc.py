@@ -1,10 +1,13 @@
+import argparse
 import random
+from glob import glob
 from pathlib import Path
 from typing import Optional
 
 import gymnasium.utils.seeding
 import numpy as np
 import torch
+import yaml
 
 
 def resolve_path(dir: str, filename: Optional[str] = None) -> Path:
@@ -35,3 +38,81 @@ def my_device():
         return torch.device("mps")
 
     return torch.device("cpu")
+
+
+def yargs(parser: argparse.ArgumentParser, default_path: str):
+    """
+    This function enhances the command line argument parsing by allowing arguments to be
+    specified in YAML configuration files. It supports both single file and directory inputs,
+    where multiple YAML configurations can be defined.
+
+    Args:
+        parser (argparse.ArgumentParser): The argument parser to augment with YAML support
+        default_path (str): The default path to look for YAML configuration files
+
+    Returns:
+        dict: A dictionary mapping configuration IDs to their parsed arguments. If no YAML
+            configuration is used, returns a dictionary with an empty string key and the
+            parsed command line arguments as value.
+
+    The function adds two optional arguments to the parser:
+        -yp/--yargs_path: Path to the YAML configuration file or directory (if none, the default_path will be used)
+        -yi/--yargs_ids: List of configuration IDs to run (if None, runs all configs)
+
+    Example yaml file:
+        benchmark_B5W3:
+            args: -t 100 -N 5 -W 3 --players greedy greedy:p_random=0.1,nick=greedy-ish
+        benchmark_B9W10:
+            args: -t 100 -N 9 -W 10 --players greedy greedy:p_random=0.1,nick=greedy-ish
+
+    Example calls from the command line:
+        # Execute all the entries in all the yaml files in default_path
+        python myapp.py -yp
+
+        # Execute all the entries in the file {default_path}/agent_benchmark.yaml
+        python myapp.py -yp agent_benchmark.yaml
+
+        # Execute the entries benchmark_B5W3 benchmark_B9W10 (should be found in the files in the default_path)
+        python myapp.py -yi benchmark_B5W3 benchmark_B9W10
+
+    """
+    parser.add_argument(
+        "-yp",
+        "--yargs-path",
+        nargs="?",
+        default=None,
+        const="",
+        help=f"File name to read the yaml configuration, relative to {default_path}",
+    )
+    parser.add_argument(
+        "-yi",
+        "--yargs-ids",
+        nargs="+",
+        default=None,
+        help="List of ids to run",
+    )
+
+    args = parser.parse_args()
+    if args.yargs_path is None and args.yargs_ids is None:
+        # Not using yargs
+        return {"": args}
+
+    if args.yargs_path is None:
+        path = Path(default_path)
+    else:
+        path = Path(default_path) / args.yargs_path
+
+    if path.is_dir():
+        files = glob(str(path / "*.yaml"))
+    else:
+        files = [str(path)]
+
+    args_dict = {}
+    for file in files:
+        with open(file, "r") as f:
+            file_dict = yaml.load(f, Loader=yaml.FullLoader)
+            for k, v in file_dict.items():
+                if args.yargs_ids is None or k in args.yargs_ids:
+                    args_dict[k] = parser.parse_args(v["args"].split(" "))
+
+    return args_dict
