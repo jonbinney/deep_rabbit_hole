@@ -67,6 +67,16 @@ class DExpAgentParams(TrainableAgentParams):
     def __str__(self):
         return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
 
+    def training_only_params(cls) -> set[str]:
+        """
+        Returns a set of parameters that are used only during training.
+        These parameters should not be used during playing.
+        """
+        return super().training_only_params() | {
+            "use_opponents_actions",
+            "target_as_source_for_opponent",
+        }
+
 
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
