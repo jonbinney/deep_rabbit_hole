@@ -52,6 +52,7 @@ class TrainableAgentParams(SubargsBase):
 
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
+        # TODO: we should ideally have two set of params: one for training and one for inference
         return {
             "epsilon",
             "epsilon_min",
@@ -159,12 +160,11 @@ class AbstractTrainableAgent(Agent):
             ## TODO: Revisit this since it won't work for the case in which
             ## opponents actions are used
             if self.assign_negative_reward:
-                if self.assign_negative_reward:
-                    if len(self.replay_buffer) > 0:
-                        last = self.replay_buffer.get_last()
-                        last[2] = reward  # update final reward
-                        last[4] = 1.0  # mark as done
-                        return reward
+                if len(self.replay_buffer) > 0:
+                    last = self.replay_buffer.get_last()
+                    last[2] = reward  # update final reward
+                    last[4] = 1.0  # mark as done
+                    return reward
             return 0
 
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
