@@ -98,10 +98,6 @@ class DExpAgent(AbstractTrainableAgent):
     ):
         super().__init__(params=params, **kwargs)
         self.check_congiguration()
-        # Print all parameters, including those from the parent class
-        print("All parameters:")
-        for param_name, param_value in self.params.__dict__.items():
-            print(f"  {param_name}: {param_value}")
 
     def name(self):
         if self.params.nick:
