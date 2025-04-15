@@ -50,6 +50,24 @@ class TrainableAgentParams(SubargsBase):
     # If True, the target q-value function will substract maxq_a'(s', a') instead of adding it
     use_negative_qvalue_function: bool = False
 
+    def training_only_params(cls) -> set[str]:
+        """Returns a set of parameter names that are only used during training."""
+        # TODO: we should ideally have two set of params: one for training and one for inference
+        return {
+            "epsilon",
+            "epsilon_min",
+            "epsilon_decay",
+            "gamma",
+            "batch_size",
+            "update_target_every",
+            "assign_negative_reward",
+            "training_mode",
+            "final_reward_multiplier",
+            "use_negative_qvalue_function",
+            "wandb_dir",
+            "model_dir",
+        }
+
 
 class AbstractTrainableAgent(Agent):
     """Base class for trainable agents using neural networks."""
@@ -142,12 +160,11 @@ class AbstractTrainableAgent(Agent):
             ## TODO: Revisit this since it won't work for the case in which
             ## opponents actions are used
             if self.assign_negative_reward:
-                if self.assign_negative_reward:
-                    if len(self.replay_buffer) > 0:
-                        last = self.replay_buffer.get_last()
-                        last[2] = reward  # update final reward
-                        last[4] = 1.0  # mark as done
-                        return reward
+                if len(self.replay_buffer) > 0:
+                    last = self.replay_buffer.get_last()
+                    last[2] = reward  # update final reward
+                    last[4] = 1.0  # mark as done
+                    return reward
             return 0
 
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
@@ -397,7 +414,13 @@ class AbstractTrainableAgent(Agent):
         artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
-        self.params = self.params_class()(**artifact.metadata)
+        all_params = self.params_class()(**artifact.metadata)
+
+        # Override params, but only the ones that are not training only
+        for key, value in artifact.metadata.items():
+            if key not in all_params.training_only_params():
+                setattr(self.params, key, value)
+
         self.params.model_filename = str(local_filename)
 
         if os.path.exists(local_filename):
