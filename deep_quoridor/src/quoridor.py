@@ -432,6 +432,38 @@ class Quoridor:
 
         return is_valid
 
+    def get_valid_move_actions(self, player: Player = None) -> list[MoveAction]:
+        if player is None:
+            player = self.get_current_player()
+
+        position = self.board.get_player_position(player)
+
+        valid_moves = []
+        for delta_row in range(-2, 3):
+            for delta_col in range(-2, 3):
+                destination = position + np.array((delta_row, delta_col))
+                if self.board.is_position_on_board(destination):
+                    move_action = MoveAction(destination)
+                    if self.is_action_valid(move_action, player):
+                        valid_moves.append(move_action)
+        return valid_moves
+
+    def get_valid_wall_actions(self, player: Player = None) -> list[WallAction]:
+        if player is None:
+            player = self.get_current_player()
+
+        valid_wall_actions = []
+        for row in range(self.board.board_size - 1):
+            for col in range(self.board.board_size - 1):
+                for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
+                    wall_action = WallAction(np.array((row, col)), WallOrientation.VERTICAL)
+                    if self.is_action_valid(wall_action, player):
+                        valid_wall_actions.append(wall_action)
+        return valid_wall_actions
+
+    def get_valid_actions(self, player: Player = None) -> list[Action]:
+        return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
+
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)
 
@@ -456,6 +488,9 @@ class Quoridor:
         """
         visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
         return self.board._dfs(start_position, target_row, visited, any_path)
+
+    def is_game_over(self):
+        return self.check_win(Player.ONE) or self.check_win(Player.TWO)
 
     def __str__(self):
         return str(self.board)

@@ -1,30 +1,32 @@
+import numpy as np
+from quoridor import ActionEncoder, Board, Quoridor
+
 from agents.core import Agent
 
 
-def sample_random_action_sequence(game, max_path_length):
+def sample_random_action_sequence(game: Quoridor, max_path_length: int):
     """
     Sample a random sequence of actions for a given game. Stops early if the game terminates."""
-    agent_name = game.agent_selection
+    player = game.get_current_player()
 
     action_sequence = []
     total_reward = 0.0
     while len(action_sequence) < max_path_length:
-        observation, reward, termination, truncation, _ = game.last()
-        mask = observation["action_mask"]
-
         # For now, assume the other agent takes random actions.
-        if game.agent_selection != agent_name:
-            action = game.action_space(game.agent_selection).sample(mask)
-            game.step(action)
-            continue
+        valid_actions = game.get_valid_actions()
+        assert len(valid_actions) > 0, "No valid actions available... this shouldn't be possible."
 
-        total_reward += reward
-        if termination or truncation:
-            break
+        action = np.random.choice(valid_actions)
+        if game.get_current_player() == player:
+            action_sequence.append(action)
 
-        action = game.action_space(game.agent_selection).sample(mask)
-        action_sequence.append(action)
         game.step(action)
+
+        # TODO: Implement a reward function
+        total_reward += 0
+
+        if game.is_game_over():
+            break
 
     return action_sequence, total_reward
 
@@ -34,17 +36,18 @@ class SimpleAgent(Agent):
         super().__init__()
         self.sequence_length = sequence_length
         self.num_sequences = num_sequences
+        self.board_size = kwargs["board_size"]
+        self.action_encoder = ActionEncoder(self.board_size)
 
-    def get_action(self, game):
-        _, _, termination, truncation, _ = game.last()
-        if termination or truncation:
-            return None
+    def get_action(self, observation, action_mask):
+        # Reconstruct the game from the observation.
+        game = Quoridor(Board(from_observation=observation))
 
         possible_action_sequences = []
         for _ in range(self.num_sequences):
-            action_sequence, total_reward = sample_random_action_sequence(game.copy(), self.sequence_length)
+            action_sequence, total_reward = sample_random_action_sequence(game, self.sequence_length)
             possible_action_sequences.append((action_sequence, total_reward))
 
         # Choose the action sequence with the highest reward.
         best_sequence, _ = max(possible_action_sequences, key=lambda x: x[1])
-        return best_sequence[0]
+        return self.action_encoder.action_to_index(best_sequence[0])
