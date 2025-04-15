@@ -24,23 +24,13 @@ class Action:
     pass
 
 
-@dataclass
+@dataclass(frozen=True)  # Frozen to make it hashable.
 class MoveAction(Action):
-    def __init__(self, destination: Position):
-        assert is_valid_position_type(destination)
-        self.destination = destination
-
     destination: Position
 
 
-@dataclass
+@dataclass(frozen=True)  # Frozen to make it hashable.
 class WallAction(Action):
-    def __init__(self, position: Position, orientation: WallOrientation):
-        assert is_valid_position_type(position)
-        assert isinstance(orientation, WallOrientation)
-        self.position = np.array((position))
-        self.orientation = orientation
-
     position: Position  # Start of wall
     orientation: WallOrientation
 
