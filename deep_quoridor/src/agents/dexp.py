@@ -67,6 +67,16 @@ class DExpAgentParams(TrainableAgentParams):
     def __str__(self):
         return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
 
+    def training_only_params(cls) -> set[str]:
+        """
+        Returns a set of parameters that are used only during training.
+        These parameters should not be used during playing.
+        """
+        return super().training_only_params() | {
+            "use_opponents_actions",
+            "target_as_source_for_opponent",
+        }
+
 
 class DExpAgent(AbstractTrainableAgent):
     """Diego experimental Agent using DRL."""
@@ -88,6 +98,10 @@ class DExpAgent(AbstractTrainableAgent):
     ):
         super().__init__(params=params, **kwargs)
         self.check_congiguration()
+        # Print all parameters, including those from the parent class
+        print("All parameters:")
+        for param_name, param_value in self.params.__dict__.items():
+            print(f"  {param_name}: {param_value}")
 
     def name(self):
         if self.params.nick:
