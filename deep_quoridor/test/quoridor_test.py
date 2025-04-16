@@ -58,8 +58,8 @@ def parse_board(board):
                     # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                     # the second time is off by one position. Checking whether we can place it stops us
                     # placing the second wall.
-                    if board.can_place_wall(Player.ONE, np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL):
-                        board.add_wall(Player.ONE, np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL)
+                    if board.can_place_wall(Player.ONE, (row_n - 1, col_n), WallOrientation.HORIZONTAL):
+                        board.add_wall(Player.ONE, (row_n - 1, col_n), WallOrientation.HORIZONTAL)
 
                 if ch == ">" or ch == "-":
                     forbidden_walls.append((row_n - 1, col_n, WallOrientation.HORIZONTAL))
@@ -78,16 +78,16 @@ def parse_board(board):
                         # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                         # the second time is off by one position. Checking whether we can place it stops us
                         # placing the second wall.
-                        if board.can_place_wall(Player.ONE, np.array((row_n, col_n - 1)), WallOrientation.VERTICAL):
-                            board.add_wall(Player.ONE, np.array((row_n, col_n - 1)), WallOrientation.VERTICAL)
+                        if board.can_place_wall(Player.ONE, (row_n, col_n - 1), WallOrientation.VERTICAL):
+                            board.add_wall(Player.ONE, (row_n, col_n - 1), WallOrientation.VERTICAL)
                     continue
 
                 if ch == "*":
-                    potential_moves.append(np.array((row_n, col_n)))
+                    potential_moves.append((row_n, col_n))
                 elif ch == "1":
-                    board.move_player(Player.ONE, np.array((row_n, col_n)))
+                    board.move_player(Player.ONE, (row_n, col_n))
                 elif ch == "2":
-                    board.move_player(Player.TWO, np.array((row_n, col_n)))
+                    board.move_player(Player.TWO, (row_n, col_n))
 
                 col_positions[i] = col_n
                 col_n += 1
@@ -107,11 +107,11 @@ class TestQuoridor:
         game_moves = []
         for row in range(0, game.board.board_size):
             for col in range(0, game.board.board_size):
-                position = np.array((row, col))
+                position = (row, col)
                 if game.is_action_valid(MoveAction(position)):
                     game_moves.append(position)
 
-        np.testing.assert_equal(np.array(game_moves), np.array(potential_moves))
+        assert game_moves == potential_moves
 
         env = quoridor_env(board_size=game.board.board_size, max_walls=game.board.max_walls, game_start_state=game)
         N = game.board.board_size
@@ -122,7 +122,7 @@ class TestQuoridor:
             if value == 1:
                 env_moves.append(divmod(i, N))
 
-        np.testing.assert_equal(np.array(env_moves), np.array(potential_moves))
+        assert env_moves == potential_moves
 
     def _test_wall_placements(self, s, just_highlighted=False):
         game, _, forbidden_walls = parse_board(s)
@@ -134,7 +134,7 @@ class TestQuoridor:
         for orientation in [WallOrientation.HORIZONTAL, WallOrientation.VERTICAL]:
             for row in range(0, game.board.board_size - 1):
                 for col in range(0, game.board.board_size - 1):
-                    if not game.is_action_valid(WallAction(np.array((row, col)), orientation)):
+                    if not game.is_action_valid(WallAction((row, col), orientation)):
                         game_walls.append((row, col, orientation))
 
         assert set(game_walls) == set(forbidden_walls)
