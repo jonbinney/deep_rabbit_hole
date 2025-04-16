@@ -18,7 +18,7 @@ class TrainingStatusRenderer(Renderer):
     def end_game(self, game, result):
         if self.episode_count % self.update_every == 0:
             for agent in self.agents:
-                if not isinstance(agent, AbstractTrainableAgent):
+                if not isinstance(agent, AbstractTrainableAgent) or not agent.training_mode:
                     continue
                 agent_name = agent.name()
                 avg_loss, avg_reward = agent.compute_loss_and_reward(self.update_every)

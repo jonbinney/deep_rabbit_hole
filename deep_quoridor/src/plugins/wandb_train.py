@@ -66,6 +66,9 @@ class WandbTrainPlugin(ArenaPlugin):
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
         artifact.add_file(local_path=str(save_file))
         artifact.save()
+        print("Model being uploaded to wandb")
+        wandb.log_artifact(artifact).wait()
+        print(f"Model uploaded with version {artifact.version}")
 
         wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
 
