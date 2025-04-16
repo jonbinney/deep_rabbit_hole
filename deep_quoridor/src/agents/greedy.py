@@ -102,7 +102,7 @@ class GreedyAgent(Agent):
         while True:
             last_pos = path[-1]
             prev_pos = coming_from[last_pos]
-            if (prev_pos == pos).all():
+            if prev_pos == pos:
                 break
 
             path.append(prev_pos)
@@ -153,7 +153,7 @@ class GreedyAgent(Agent):
                     if r < 0 or c < 0 or r >= self.wall_size or c >= self.wall_size:
                         continue
 
-                    action = self.action_encoder.action_to_index(WallAction(np.array([r, c]), orientation))
+                    action = self.action_encoder.action_to_index(WallAction((r, c), orientation))
                     if action_mask[action] == 1:
                         return action
         # No actions found
@@ -210,6 +210,4 @@ class GreedyAgent(Agent):
             if action is not None:
                 return action
 
-        return self.action_encoder.action_to_index(
-            MoveAction(np.array([my_shortest_path[0][0], my_shortest_path[0][1]]))
-        )
+        return self.action_encoder.action_to_index(MoveAction((my_shortest_path[0][0], my_shortest_path[0][1])))
