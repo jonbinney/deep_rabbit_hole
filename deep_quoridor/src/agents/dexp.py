@@ -136,8 +136,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
-        obs = observation["observation"]
-        obs_player_turn = 1 if obs["my_turn"] else 0
+        obs_player_turn = 1 if observation["my_turn"] else 0
 
         should_rotate = False
         if self.params.rotate and not self.params.target_as_source_for_opponent:
@@ -147,16 +146,16 @@ class DExpAgent(AbstractTrainableAgent):
             # This ensures board always faces to the player that will act on it
             should_rotate = (obs_player_id == "player_1") ^ (not obs_player_turn)
 
-        board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
-        walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
+        board = rotation.rotate_board(observation["board"]) if should_rotate else observation["board"]
+        walls = rotation.rotate_walls(observation["walls"]) if should_rotate else observation["walls"]
 
         # Create position matrices for player and opponent
         player_board = (board == 1).astype(np.float32)
         opponent_board = (board == 2).astype(np.float32)
 
         # Get wall counts
-        player_walls = np.array([obs["my_walls_remaining"]])
-        opponent_walls = np.array([obs["opponent_walls_remaining"]])
+        player_walls = np.array([observation["my_walls_remaining"]])
+        opponent_walls = np.array([observation["opponent_walls_remaining"]])
 
         # Swap boards and walls if not player's turn. It means this is a target state
         # Target states are played by the opponents, so board and walls should be in the opponents POV

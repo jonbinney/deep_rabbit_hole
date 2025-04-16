@@ -1,4 +1,6 @@
 import torch
+from environment.dict_split_board_wrapper import DictSplitBoardWrapper
+from environment.rotate_wrapper import RotateWrapper
 from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from sb3_contrib import MaskablePPO
@@ -7,8 +9,6 @@ from stable_baselines3.common.torch_layers import FlattenExtractor
 from agents.core.agent import ActionLog, Agent, AgentRegistry
 from agents.core.rotation import convert_rotated_action_index_to_original
 from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
-from environment.dict_split_board_wrapper import DictSplitBoardWrapper
-from environment.rotate_wrapper import RotateWrapper
 
 
 class SB3ActionMaskWrapper(BaseWrapper):
@@ -155,7 +155,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
                 print("No policy found. The agent will not work correctly.")
                 return
 
-    def get_action(self, game):
+    def get_action(self, _observation, _action_mask):
         """
         Get the action to take based on the current game state using the PPO model.
 
