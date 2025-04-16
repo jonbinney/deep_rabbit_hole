@@ -137,6 +137,10 @@ class AbstractTrainableAgent(Agent):
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
 
+    def get_opponent_player_id(self, player_id):
+        """Get the opponent player ID."""
+        return "player_1" if player_id == "player_0" else "player_0"
+
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
@@ -169,6 +173,10 @@ class AbstractTrainableAgent(Agent):
 
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
         state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
+        opponent_state = game.observe(self.get_opponent_player_id(player_id))
+        next_state_mask = self.convert_action_mask_to_tensor_for_player(
+            opponent_state["action_mask"], self.get_opponent_player_id(player_id)
+        )
         done = game.is_done()
 
         self.replay_buffer.add(
@@ -179,6 +187,7 @@ class AbstractTrainableAgent(Agent):
             if state_after_action is not None
             else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
+            next_state_mask.cpu().numpy(),
         )
 
         if len(self.replay_buffer) > self.batch_size:
@@ -252,6 +261,9 @@ class AbstractTrainableAgent(Agent):
         return np.random.choice(valid_actions)
 
     def convert_action_mask_to_tensor(self, mask):
+        return self.convert_action_mask_to_tensor_for_player(mask.self.player_id)
+
+    def convert_action_mask_to_tensor_for_player(self, mask, player_id):
         return torch.tensor(mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
@@ -302,36 +314,44 @@ class AbstractTrainableAgent(Agent):
 
     def _train_on_batch(self, batch):
         """Train the network on a single batch."""
-        states, actions, rewards, next_states, dones = self._prepare_batch(batch)
+        states, actions, rewards, next_states, dones, next_state_masks = self._prepare_batch(batch)
 
         current_q_values = self._compute_current_q_values(states, actions)
-        target_q_values = self._compute_target_q_values(rewards, next_states, dones)
+        target_q_values = self._compute_target_q_values(rewards, next_states, dones, next_state_masks)
 
         loss = self._update_network(current_q_values, target_q_values)
         return loss
 
     def _prepare_batch(self, batch):
         """Prepare batch data for training."""
-        states, actions, rewards, next_states, dones = zip(*batch)
+        states, actions, rewards, next_states, dones, next_state_masks = zip(*batch)
 
         states = torch.stack([torch.FloatTensor(s).to(self.device) for s in states])
         actions = torch.LongTensor(actions).to(self.device).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).to(self.device)
         next_states = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_states])
         dones = torch.FloatTensor(dones).to(self.device)
+        next_state_masks = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_state_masks])
 
-        return states, actions, rewards, next_states, dones
+        return states, actions, rewards, next_states, dones, next_state_masks
 
     def _compute_current_q_values(self, states, actions):
         """Compute current Q-values."""
         return self.online_network(states).gather(1, actions).squeeze()
 
-    def _compute_target_q_values(self, rewards, next_states, dones):
-        """Compute target Q-values."""
+    def _compute_target_q_values(self, rewards, next_states, dones, next_state_masks):
+        """Compute target Q-values considering action masks."""
         with torch.no_grad():
-            next_q_values = self.target_network(next_states).max(1)[0]
+            next_q_values = self.target_network(next_states)  # Shape: [batch_size, num_actions]
+
+            # Apply mask: set invalid actions to large negative value
+            masked_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
+
+            # Get max Q-value only among valid actions
+            max_next_q_values = masked_q_values.max(1)[0]  # Shape: [batch_size]
+
             negate = -1 if self.params.use_negative_qvalue_function else 1
-            return rewards + negate * (1 - dones) * self.gamma * next_q_values
+            return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
