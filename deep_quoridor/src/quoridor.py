@@ -1,11 +1,8 @@
 import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from typing import TypeAlias
 
 import numpy as np
-
-Position: TypeAlias = np.ndarray[tuple[int, int], np.dtype[np.uint8]]  # (row, col)
 
 
 @unique
@@ -26,17 +23,13 @@ class Action:
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class MoveAction(Action):
-    destination: Position
+    destination: tuple[int, int]  # Destination cell (row, col)
 
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class WallAction(Action):
-    position: Position  # Start of wall
+    position: tuple[int, int]  # Start position of the wall (row, col)
     orientation: WallOrientation
-
-
-def is_valid_position_type(position: Position) -> bool:
-    return isinstance(position, np.ndarray) and position.shape == (2,)
 
 
 class ActionEncoder:
@@ -63,12 +56,12 @@ class ActionEncoder:
         """
         action = None
         if idx < self._board_size**2:  # Pawn movement
-            action = MoveAction(np.array(divmod(idx, self._board_size)))
+            action = MoveAction(divmod(idx, self._board_size))
         elif idx >= self._board_size**2 and idx < self._board_size**2 + self._wall_size**2:
-            action = WallAction(np.array(divmod(idx - self._board_size**2, self._wall_size)), WallOrientation.VERTICAL)
+            action = WallAction(divmod(idx - self._board_size**2, self._wall_size), WallOrientation.VERTICAL)
         elif idx >= self._board_size**2 + self._wall_size**2 and idx < self._board_size**2 + (self._wall_size**2) * 2:
             action = WallAction(
-                np.array(divmod(idx - self._board_size**2 - self._wall_size**2, self._wall_size)),
+                divmod(idx - self._board_size**2 - self._wall_size**2, self._wall_size),
                 WallOrientation.HORIZONTAL,
             )
         else:
@@ -126,11 +119,11 @@ class Board:
 
         self._players = [Player.ONE, Player.TWO]
         self._player_positions = [
-            np.array([0, self.board_size // 2]),
-            np.array([self.board_size - 1, self.board_size // 2]),
+            (0, self.board_size // 2),
+            (self.board_size - 1, self.board_size // 2),
         ]
         for player, position in zip(self._players, self._player_positions):
-            self._grid[*(position * 2 + 2)] = player
+            self._grid[position[0] * 2 + 2, position[1] * 2 + 2] = player
 
         if from_observation is None:
             self._walls_remaining = [max_walls, max_walls]
@@ -140,22 +133,22 @@ class Board:
     def init_from_observation(self, observation: dict):
         for row, col in np.argwhere(observation["board"] > 0):
             player = observation["board"][row, col] - 1  # Players are 1 and 2 on the board, but we use 0 and 1.
-            self._player_positions[player] = np.array((row, col))
+            self._player_positions[player] = (row, col)
             self._grid[row * 2 + 2, col * 2 + 2] = player
 
         self._old_style_walls = observation["walls"].copy()
         for row, col, orientation in np.argwhere(observation["walls"] == 1):
-            self._grid[self._get_wall_slice(np.array((row, col)), WallOrientation(orientation))] = Board.WALL
+            self._grid[self._get_wall_slice((row, col), WallOrientation(orientation))] = Board.WALL
 
         self._walls_remaining = [observation["my_walls_remaining"], observation["opponent_walls_remaining"]]
 
-    def get_player_position(self, player: Player) -> Position:
+    def get_player_position(self, player: Player) -> tuple[int, int]:
         """
         Get the position of the player's pawn.
         """
         return self._player_positions[player]
 
-    def move_player(self, player: Player, new_position: Position):
+    def move_player(self, player: Player, new_position: tuple[int, int]):
         """
         Move the player's pawn. Doesn't check if the move is valid according to game rules.
         """
@@ -163,18 +156,20 @@ class Board:
             raise ValueError(f"Position {new_position} is out of bounds")
 
         old_position = self._player_positions[player]
-        self._grid[*old_position * 2 + 2] = Board.FREE
-        self._grid[*new_position * 2 + 2] = player
+        self.set_player_cell(old_position, Board.FREE)
+        self.set_player_cell(new_position, player)
         self._player_positions[player] = new_position
 
-    def get_player_cell(self, position: Position) -> int:
+    def get_player_cell(self, position: tuple[int, int]) -> int:
         """
         Get the value of a "player cell" in the grid.
         """
-        if not self.is_position_on_board(position):
-            raise ValueError(f"Position {position} is out of bounds")
+        assert self.is_position_on_board(position)
 
-        return self._grid[*position * 2 + 2]
+        return self._grid[position[0] * 2 + 2, position[1] * 2 + 2]
+
+    def set_player_cell(self, position: tuple[int, int], value: int):
+        self._grid[position[0] * 2 + 2, position[1] * 2 + 2] = value
 
     def get_walls_remaining(self, player: Player) -> int:
         """
@@ -182,7 +177,7 @@ class Board:
         """
         return self._walls_remaining[player]
 
-    def add_wall(self, player: Player, position: Position, orientation: WallOrientation, check_if_valid=True):
+    def add_wall(self, player: Player, position: tuple[int, int], orientation: WallOrientation, check_if_valid=True):
         """
         Mark the grid cells corresponding to the wall as occupied.
         """
@@ -194,14 +189,14 @@ class Board:
         # Update the old-style wall representation.
         self._old_style_walls[*position, orientation] = 1
 
-    def remove_wall(self, player: Player, position: Position, orientation: WallOrientation):
+    def remove_wall(self, player: Player, position: tuple[int, int], orientation: WallOrientation):
         self._grid[self._get_wall_slice(position, orientation)] = Board.FREE
         self._walls_remaining[player] += 1
 
         # Update the old-style wall representation.
         self._old_style_walls[*position, orientation] = 0
 
-    def can_place_wall(self, player: Player, position: Position, orientation: WallOrientation) -> bool:
+    def can_place_wall(self, player: Player, position: tuple[int, int], orientation: WallOrientation) -> bool:
         """
         Returns True if the wall can be placed at the given position and orientation.
 
@@ -212,18 +207,18 @@ class Board:
 
         return (self._grid[self._get_wall_slice(position, orientation)] == Board.FREE).all()
 
-    def is_wall_between(self, position1: Position, position2: Position) -> bool:
+    def is_wall_between(self, position1: tuple[int, int], position2: tuple[int, int]) -> bool:
         """
         Check if there is a wall between two positions.
         """
-        assert np.sum(np.abs(position1 - position2)) == 1, "Positions must be adjacent"
+        assert np.sum(np.abs(np.subtract(position1, position2))) == 1, "Positions must be adjacent"
 
         position1_on_board = self.is_position_on_board(position1)
         position2_on_board = self.is_position_on_board(position2)
         assert position1_on_board or position2_on_board, "At least one position must be on the board"
 
         if position1_on_board and position2_on_board:
-            wall_position = position1 + position2 + 2
+            wall_position = (position1[0] + position2[0] + 2, position1[1] + position2[1] + 2)
             return self._grid[*wall_position] == Board.WALL
         else:
             # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
@@ -234,7 +229,7 @@ class Board:
     def get_old_style_walls(self):
         return copy.copy(self._old_style_walls)
 
-    def is_position_on_board(self, position: Position) -> bool:
+    def is_position_on_board(self, position: tuple[int, int]) -> bool:
         return (
             (position[0] >= 0)
             and (position[0] < self.board_size)
@@ -242,7 +237,7 @@ class Board:
             and (position[1] < self.board_size)
         )
 
-    def _wall_position_to_grid_index(self, position: Position, orientation: WallOrientation) -> tuple[int, int]:
+    def _wall_position_to_grid_index(self, position: tuple[int, int], orientation: WallOrientation) -> tuple[int, int]:
         """
         Returns the grid index of the topmost/leftmost cell of the wall.
         """
@@ -253,7 +248,7 @@ class Board:
 
         raise ValueError("Invalid wall orientation")
 
-    def _get_wall_slice(self, position: Position, orientation: WallOrientation) -> tuple[slice, slice]:
+    def _get_wall_slice(self, position: tuple[int, int], orientation: WallOrientation) -> tuple[slice, slice]:
         """
         Get a tuple of slices that correspond to the wall's cells in the grid.
         """
@@ -275,7 +270,7 @@ class Board:
 
         return touches > 1
 
-    def _dfs(self, start_position: Position, target_row: int, visited: np.ndarray, any_path=True):
+    def _dfs(self, start_position: tuple[int, int], target_row: int, visited: np.ndarray, any_path=True):
         """
         Performs a depth-first search to find whether the pawn can reach the target row.
 
@@ -298,7 +293,10 @@ class Board:
         # Find out the forward direction to try it first and maybe get to the target faster
         fwd = 1 if target_row > start_position[0] else -1
 
-        moves = [np.array(start_position + offset) for offset in [(fwd, 0), (0, -1), (0, 1), (-fwd, 0)]]
+        moves = [
+            (start_position[0] + offset[0], start_position[1] + offset[1])
+            for offset in [(fwd, 0), (0, -1), (0, 1), (-fwd, 0)]
+        ]
         best = -1
         for new_position in moves:
             if (
@@ -323,8 +321,8 @@ class Board:
         display_grid = np.full(grid_without_border.shape, " ", dtype=str)
         display_grid[::2, ::2] = "."
         display_grid[grid_without_border == Board.WALL] = "#"
-        for player, _ in enumerate(self._player_positions):
-            display_grid[*self._player_positions[player] * 2] = str(player + 1)
+        for player, (row, col) in enumerate(self._player_positions):
+            display_grid[row * 2, col * 2] = str(player + 1)
         for idx, value in np.ndenumerate(grid_without_border):
             if value >= 5 and value <= 9:
                 display_grid[idx] = str(value)  # Useful for debugging.
@@ -374,11 +372,10 @@ class Quoridor:
 
         is_valid = True
         if isinstance(action, MoveAction):
-            assert is_valid_position_type(action.destination)
             current_position = self.board.get_player_position(player)
             opponent_position = self.board.get_player_position(opponent)
-            opponent_offset = opponent_position - current_position
-            position_delta = tuple(action.destination - current_position)  # Tuple so we can use it as a key.
+            opponent_offset = (opponent_position[0] - current_position[0], opponent_position[1] - current_position[1])
+            position_delta = (action.destination[0] - current_position[0], action.destination[1] - current_position[1])
 
             # Destination cell must be free
             if self.board.get_player_cell(action.destination) != Board.FREE:
@@ -389,16 +386,20 @@ class Quoridor:
                 if self.board.is_wall_between(current_position, action.destination):
                     is_valid = False
 
-            elif (tuple(opponent_offset), tuple(position_delta)) in self._jump_checks:
-                jump_checks = self._jump_checks[(tuple(opponent_offset), tuple(position_delta))]
+            elif (opponent_offset, position_delta) in self._jump_checks:
+                jump_checks = self._jump_checks[(opponent_offset, position_delta)]
 
                 for check_delta_1, check_delta_2 in jump_checks["wall"]:
                     if not self.board.is_wall_between(
-                        current_position + check_delta_1, current_position + check_delta_2
+                        (current_position[0] + check_delta_1[0], current_position[1] + check_delta_1[1]),
+                        (current_position[0] + check_delta_2[0], current_position[1] + check_delta_2[1]),
                     ):
                         is_valid = False
                 for check_delta_1, check_delta_2 in jump_checks["nowall"]:
-                    if self.board.is_wall_between(current_position + check_delta_1, current_position + check_delta_2):
+                    if self.board.is_wall_between(
+                        (current_position[0] + check_delta_1[0], current_position[1] + check_delta_1[1]),
+                        (current_position[0] + check_delta_2[0], current_position[1] + check_delta_2[1]),
+                    ):
                         is_valid = False
             else:
                 # This isn't a move by 1, and it isn't a jump, so it's invalid.
@@ -422,37 +423,37 @@ class Quoridor:
 
         return is_valid
 
-    def get_valid_move_actions(self, player: Player = None) -> list[MoveAction]:
+    def get_valid_move_actions(self, player: Player = None) -> set[MoveAction]:
         if player is None:
             player = self.get_current_player()
 
         position = self.board.get_player_position(player)
 
-        valid_moves = []
+        valid_moves = set()
         for delta_row in range(-2, 3):
             for delta_col in range(-2, 3):
-                destination = position + np.array((delta_row, delta_col))
+                destination = (position[0] + delta_row, position[1] + delta_col)
                 if self.board.is_position_on_board(destination):
                     move_action = MoveAction(destination)
                     if self.is_action_valid(move_action, player):
-                        valid_moves.append(move_action)
+                        valid_moves.add(move_action)
         return valid_moves
 
-    def get_valid_wall_actions(self, player: Player = None) -> list[WallAction]:
+    def get_valid_wall_actions(self, player: Player = None) -> set[WallAction]:
         if player is None:
             player = self.get_current_player()
 
-        valid_wall_actions = []
+        valid_wall_actions = set()
         for row in range(self.board.board_size - 1):
             for col in range(self.board.board_size - 1):
                 for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
-                    wall_action = WallAction(np.array((row, col)), WallOrientation.VERTICAL)
+                    wall_action = WallAction((row, col), WallOrientation.VERTICAL)
                     if self.is_action_valid(wall_action, player):
-                        valid_wall_actions.append(wall_action)
+                        valid_wall_actions.add(wall_action)
         return valid_wall_actions
 
-    def get_valid_actions(self, player: Player = None) -> list[Action]:
-        return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
+    def get_valid_actions(self, player: Player = None) -> set[Action]:
+        return self.get_valid_move_actions(player) | self.get_valid_wall_actions(player)
 
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)
@@ -467,7 +468,7 @@ class Quoridor:
         row, _ = self.board.get_player_position(player)
         return row == self.get_goal_row(player)
 
-    def can_reach(self, start_position: Position, target_row: int):
+    def can_reach(self, start_position: tuple[int, int], target_row: int):
         return self.distance_to_target(start_position, target_row, True) != -1
 
     def distance_to_target(self, start_position, target_row, any_path=False):
@@ -514,25 +515,28 @@ def create_jump_checks():
             "nowall": [((0, 0), (1, 0)), ((1, 0), (1, -1))],
         },
     }
-    # Rotate the checks for all 4 possible directions and convert to numpy arrays.
+    # Rotate the checks for all 4 possible directions
     checks = {}
     for opponent_offset in np.array([(1, 0), (0, 1), (-1, 0), (0, -1)]):
         rotation_matrix = np.array((opponent_offset, -opponent_offset[::-1])).T
         for move in checks_for_one_direction:
-            rotated_move = np.dot(rotation_matrix, move)  # Tuple so that we can use it in the key.
+            rotated_move = np.dot(rotation_matrix, move)
             lookup_key = (tuple(opponent_offset), tuple(rotated_move))
             checks[lookup_key] = {}
             for check_type in checks_for_one_direction[move]:
                 checks[lookup_key][check_type] = []
                 for wall_start, wall_end in checks_for_one_direction[move][check_type]:
-                    rotated_wall = (np.dot(rotation_matrix, wall_start), np.dot(rotation_matrix, wall_end))
+                    rotated_wall = (
+                        tuple(np.dot(rotation_matrix, wall_start)),
+                        tuple(np.dot(rotation_matrix, wall_end)),
+                    )
                     checks[lookup_key][check_type].append(rotated_wall)
     return checks
 
 
 if __name__ == "__main__":
     game = Quoridor(Board(board_size=9, max_walls=10))
-    game.step(MoveAction(np.array((1, 4))))
-    game.step(WallAction(np.array((0, 4)), WallOrientation.HORIZONTAL))
-    game.step(WallAction(np.array((4, 2)), WallOrientation.VERTICAL))
+    game.step(MoveAction((1, 4)))
+    game.step(WallAction((0, 4), WallOrientation.HORIZONTAL))
+    game.step(WallAction((4, 2), WallOrientation.VERTICAL))
     print(str(game))
