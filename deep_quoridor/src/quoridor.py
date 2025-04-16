@@ -252,10 +252,11 @@ class Board:
         """
         Get a tuple of slices that correspond to the wall's cells in the grid.
         """
+        r, c = self._wall_position_to_grid_index(position, orientation)
         if orientation == WallOrientation.VERTICAL:
-            wall_slice = (slice(position[0] * 2 + 2, position[0] * 2 + 5), position[1] * 2 + 3)
+            wall_slice = (slice(r, r + 3), c)
         elif orientation == WallOrientation.HORIZONTAL:
-            wall_slice = (position[0] * 2 + 3, slice(position[1] * 2 + 2, position[1] * 2 + 5))
+            wall_slice = (r, slice(c, c + 3))
 
         return wall_slice
 

@@ -4,10 +4,10 @@ from queue import Queue
 from typing import Optional, TypeAlias
 
 import numpy as np
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 from utils import SubargsBase
 
 from agents.core import Agent
-from deep_quoridor.src.quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 
 Position: TypeAlias = tuple[int, int]
 

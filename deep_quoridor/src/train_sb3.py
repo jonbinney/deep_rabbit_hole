@@ -18,14 +18,13 @@ import os
 import time
 
 import quoridor_env
-from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
+from agents.sb3_ppo import DictFlattenExtractor, SB3PPOAgent, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from utils import set_deterministic
 
 import wandb
-from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
 from wandb.integration.sb3 import WandbCallback
 
 
