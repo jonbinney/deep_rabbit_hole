@@ -23,7 +23,7 @@ walls = [
 def run():
     st = time.time()
     for position, orientation in walls:
-        e.game.board.add_wall(Player.ONE, np.array(position), orientation)
+        e.game.board.add_wall(Player.ONE, position, orientation)
         e.observe("player_0")
         e.observe("player_1")
 
