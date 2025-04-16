@@ -174,6 +174,7 @@ class AbstractTrainableAgent(Agent):
         state_before_action = self.observation_to_tensor(observation_before_action, player_id)
         state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
         opponent_state = game.observe(self.get_opponent_player_id(player_id))
+        # next action mask is stored with the same rotation of the next state.
         next_state_mask = self.convert_action_mask_to_tensor_for_player(
             opponent_state["action_mask"], self.get_opponent_player_id(player_id)
         )
@@ -261,7 +262,7 @@ class AbstractTrainableAgent(Agent):
         return np.random.choice(valid_actions)
 
     def convert_action_mask_to_tensor(self, mask):
-        return self.convert_action_mask_to_tensor_for_player(mask.self.player_id)
+        return self.convert_action_mask_to_tensor_for_player(mask, self.player_id)
 
     def convert_action_mask_to_tensor_for_player(self, mask, player_id):
         return torch.tensor(mask, dtype=torch.float32, device=self.device)
