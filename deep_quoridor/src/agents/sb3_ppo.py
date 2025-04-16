@@ -105,7 +105,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.training_mode = False
         self.episodes_rewards = []
 
-        self.reset_episode_related_info()
+        self._reset_episode_related_info()
 
     def end_game(self, game):
         pass
@@ -141,7 +141,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.player_id = player_id
 
         if self.model is None:
-            self.fetch_model_from_wand_and_update_params()
+            self._fetch_model_from_wand_and_update_params()
 
             # Wrap the game to get access to action_mask method
             self.wrapper = wrap_env(game)
