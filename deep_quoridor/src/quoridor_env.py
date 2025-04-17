@@ -568,5 +568,5 @@ class StepRewardCalculator:
         agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
 
         # Calculate the reward based on the distance to the goal
-        reward = (self.orig_agent_distance - agent_distance) - (self.orig_opponent_distance - opponent_distance)
+        reward = (self.orig_agent_distance - agent_distance) - (self.orig_opponent_distance - opponent_distance) / 4 * 3
         return reward
