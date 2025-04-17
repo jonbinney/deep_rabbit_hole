@@ -38,7 +38,7 @@ def train_dqn(
 
     print_plugin = TrainingStatusRenderer(
         update_every=1,
-        total_episodes=episodes,
+        total_episodes=episodes * (len(players) - 1),
     )
     arena = Arena(
         board_size=board_size,
