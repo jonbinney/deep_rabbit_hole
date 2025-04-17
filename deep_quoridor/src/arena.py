@@ -77,11 +77,8 @@ class Arena:
                 break
 
         end_time = time.time()
-<<<<<<< Updated upstream
-=======
 
         winner = self.game.winner()
->>>>>>> Stashed changes
         result = GameResult(
             player1=agent1.name(),
             player2=agent2.name(),
