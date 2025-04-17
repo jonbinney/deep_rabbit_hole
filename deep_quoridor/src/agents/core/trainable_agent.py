@@ -49,6 +49,9 @@ class TrainableAgentParams(SubargsBase):
     final_reward_multiplier: float = 1.0
     # If True, the target q-value function will substract maxq_a'(s', a') instead of adding it
     use_negative_qvalue_function: bool = False
+    # If True, the target q-value calculation will be masked with the action mask for the next state
+    # This is used to prevent qvalues from invalid actions to be used as part of the qvalue function
+    mask_targetq: bool = False
 
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
@@ -69,6 +72,7 @@ class TrainableAgentParams(SubargsBase):
             "model_dir",
             "wandb_alias",
             "model_filename",
+            "mask_targetq",
         }
 
 
@@ -345,17 +349,24 @@ class AbstractTrainableAgent(Agent):
 
     def _compute_target_q_values(self, rewards, next_states, dones, next_state_masks):
         """Compute target Q-values considering action masks."""
+
+        if self.params.mask_targetq:
+            with torch.no_grad():
+                next_q_values = self.target_network(next_states)  # Shape: [batch_size, num_actions]
+
+                # Apply mask: set invalid actions to large negative value
+                masked_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
+
+                # Get max Q-value only among valid actions
+                max_next_q_values = masked_q_values.max(1)[0]  # Shape: [batch_size]
+
+                negate = -1 if self.params.use_negative_qvalue_function else 1
+                return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
+
         with torch.no_grad():
-            next_q_values = self.target_network(next_states)  # Shape: [batch_size, num_actions]
-
-            # Apply mask: set invalid actions to large negative value
-            masked_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
-
-            # Get max Q-value only among valid actions
-            max_next_q_values = masked_q_values.max(1)[0]  # Shape: [batch_size]
-
+            next_q_values = self.target_network(next_states).max(1)[0]
             negate = -1 if self.params.use_negative_qvalue_function else 1
-            return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
+            return rewards + negate * (1 - dones) * self.gamma * next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
