@@ -1,8 +1,5 @@
 benchmark_B5W3:
   args: -t 100 -N 5 -W 3 --players greedy greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 sb3ppo:wandb_alias=latest dexp:wandb_alias=best simple
 
-benchmark_DEXP:
-  args: -r progressbar arenaresults2 -t 100 -N 5 -W 3 --players greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 sb3ppo:wandb_alias=latest dexp:wandb_alias=best,nick=dexp_best simple dexp:wandb_alias=latest,nick=dexp_last
-
 benchmark_B9W10:
   args: -t 100 --players greedy greedy:p_random=0.1,nick=greedy-ish dexp:wandb_alias=latest
