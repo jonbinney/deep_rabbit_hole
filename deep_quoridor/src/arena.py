@@ -27,10 +27,12 @@ class Arena:
         saver: Optional[ArenaPlugin] = None,
         plugins: list[ArenaPlugin] = [],
         swap_players: bool = True,
+        max_steps: int = 10000,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
         self.step_rewards = step_rewards
+        self.max_steps = max_steps
         self.swap_players = swap_players
         self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
 
@@ -71,12 +73,19 @@ class Arena:
 
             self.plugins.after_action(self.game, step, player_id, action)
             step += 1
+            if step >= self.max_steps:
+                break
 
         end_time = time.time()
+<<<<<<< Updated upstream
+=======
+
+        winner = self.game.winner()
+>>>>>>> Stashed changes
         result = GameResult(
             player1=agent1.name(),
             player2=agent2.name(),
-            winner=[agent1, agent2][self.game.winner()].name(),
+            winner=[agent1, agent2][winner].name() if winner is not None else "None",
             steps=step,
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,
