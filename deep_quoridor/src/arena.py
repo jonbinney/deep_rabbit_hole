@@ -73,6 +73,7 @@ class Arena:
 
             self.plugins.after_action(self.game, step, player_id, action)
             step += 1
+            # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
                 break
 
