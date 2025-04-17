@@ -32,13 +32,13 @@ class DExpNetwork(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(flat_input_size, 2048),
             nn.ReLU(),
-            nn.Linear(2048, 2048),
+            nn.Linear(2048, 4096),
             nn.ReLU(),
-            nn.Linear(2048, 1024),
+            nn.Linear(4096, 4096),
             nn.ReLU(),
-            nn.Linear(1024, 512),
+            nn.Linear(4096, 2048),
             nn.ReLU(),
-            nn.Linear(512, action_size),
+            nn.Linear(2048, action_size),
         )
         self.model.to(my_device())
 
@@ -67,7 +67,16 @@ class DExpAgentParams(TrainableAgentParams):
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
-        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
+        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}{'1' if self.target_as_source_for_opponent else ''}"
+
+    def training_only_params(cls) -> set[str]:
+        """
+        Returns a set of parameters that are used only during training.
+        These parameters should not be used during playing.
+        """
+        return super().training_only_params() | {
+            "use_opponents_actions",
+        }
 
 
 class DExpAgent(AbstractTrainableAgent):
@@ -105,7 +114,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def version(self):
         """Bump this version when compatibility with saved models is broken"""
-        return 1
+        return 2
 
     def resolve_filename(self, suffix):
         return f"{self.model_id()}_C{self.params}_{suffix}.pt"
