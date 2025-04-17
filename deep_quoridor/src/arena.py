@@ -73,7 +73,6 @@ class Arena:
             step += 1
 
         end_time = time.time()
-
         result = GameResult(
             player1=agent1.name(),
             player2=agent2.name(),
