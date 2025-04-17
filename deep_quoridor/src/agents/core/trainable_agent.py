@@ -31,7 +31,7 @@ class TrainableAgentParams(SubargsBase):
     # Epsilon value for exploration
     epsilon: float = 0.0
     # Minimum epsilon value that epsilon can decay to
-    epsilon_min: float = 0.01
+    epsilon_min: float = 0.0
     # Decay rate for epsilon
     epsilon_decay: float = 0.995
     # Discount factor for future rewards
@@ -54,6 +54,7 @@ class TrainableAgentParams(SubargsBase):
         """Returns a set of parameter names that are only used during training."""
         # TODO: we should ideally have two set of params: one for training and one for inference
         return {
+            "nick",
             "epsilon",
             "epsilon_min",
             "epsilon_decay",
@@ -66,6 +67,8 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_dir",
             "model_dir",
+            "wandb_alias",
+            "model_filename",
         }
 
 
