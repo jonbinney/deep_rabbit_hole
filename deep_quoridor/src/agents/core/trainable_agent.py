@@ -31,7 +31,7 @@ class TrainableAgentParams(SubargsBase):
     # Epsilon value for exploration
     epsilon: float = 0.0
     # Minimum epsilon value that epsilon can decay to
-    epsilon_min: float = 0.01
+    epsilon_min: float = 0.0
     # Decay rate for epsilon
     epsilon_decay: float = 0.995
     # Discount factor for future rewards

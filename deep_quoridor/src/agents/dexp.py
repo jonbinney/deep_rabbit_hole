@@ -67,7 +67,7 @@ class DExpAgentParams(TrainableAgentParams):
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
-        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
+        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}{'1' if self.target_as_source_for_opponent else ''}"
 
     def training_only_params(cls) -> set[str]:
         """
@@ -76,7 +76,6 @@ class DExpAgentParams(TrainableAgentParams):
         """
         return super().training_only_params() | {
             "use_opponents_actions",
-            "target_as_source_for_opponent",
         }
 
 
