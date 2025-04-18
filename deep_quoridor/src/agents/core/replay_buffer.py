@@ -10,11 +10,6 @@ class ReplayBuffer:
 
     def add(self, state, action, reward, next_state, done, next_state_mask):
         self.buffer.append([state, action, reward, next_state, done, next_state_mask])
-        if reward >= 10:
-            self.buffer.append([state, action, reward, next_state, done, next_state_mask])
-            self.buffer.append([state, action, reward, next_state, done, next_state_mask])
-            self.buffer.append([state, action, reward, next_state, done, next_state_mask])
-            self.buffer.append([state, action, reward, next_state, done, next_state_mask])
 
     def sample(self, batch_size):
         return random.sample(self.buffer, batch_size)

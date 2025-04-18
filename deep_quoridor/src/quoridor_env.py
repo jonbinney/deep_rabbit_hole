@@ -556,17 +556,20 @@ class StepRewardCalculator:
         agent = self.env.agent_selection
         (row, col) = self.env.positions[agent]
         self.orig_agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
-        (row, col) = self.env.positions[self.env.get_opponent(agent)]
-        self.orig_opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+        opponent = self.env.get_opponent(agent)
+        (row, col) = self.env.positions[opponent]
+        self.orig_opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(opponent), False)
 
     def after_step(self):
-        # After step agents are reversed
         agent = self.env.agent_selection
         (row, col) = self.env.positions[agent]
-        opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
-        (row, col) = self.env.positions[self.env.get_opponent(agent)]
         agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+        opponent = self.env.get_opponent(agent)
+        (row, col) = self.env.positions[opponent]
+        opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(opponent), False)
 
         # Calculate the reward based on the distance to the goal
-        reward = (self.orig_agent_distance - agent_distance) - (self.orig_opponent_distance - opponent_distance) / 4 * 3
+        reward = (
+            (self.orig_agent_distance - agent_distance) - (self.orig_opponent_distance - opponent_distance) / 4 * 3
+        ) / self.env.board_size**2
         return reward
