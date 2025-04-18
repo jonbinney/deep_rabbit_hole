@@ -147,6 +147,7 @@ class AbstractTrainableAgent(Agent):
     def get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
+
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
@@ -239,6 +240,7 @@ class AbstractTrainableAgent(Agent):
 
     def _create_criterion(self):
         """Create the loss criterion."""
+        # TODO Try HuberLoss
         return nn.MSELoss().to(self.device)
 
     def observation_to_tensor(self, observation, obs_player_id):
