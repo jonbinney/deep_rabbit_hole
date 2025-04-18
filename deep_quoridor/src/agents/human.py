@@ -40,6 +40,8 @@ class HumanAgent(Agent):
                 r, c, type = game.action_index_to_params(action)
                 valid_moves.add((r, c, type))
 
+        PygameQuoridor.instance().update_log(self.action_log)
         result = PygameQuoridor.instance().get_human_input(valid_moves)
+        self.action_log.clear()
 
         return None if result is None else game.action_params_to_index(*result)

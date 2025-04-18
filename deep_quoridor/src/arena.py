@@ -59,6 +59,10 @@ class Arena:
                     agent.handle_step_outcome(observation, None, self.game)
                 break
 
+            # opponent_agent = agents["player_0" if player_id == "player_1" else "player_1"]
+            # if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
+            #    opponent_agent.inspect_opponent_possible_actions(self.game, observation, agent.action_log)
+
             action = int(agent.get_action(self.game))
 
             self.plugins.before_action(self.game, agent)
