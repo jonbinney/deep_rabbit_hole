@@ -192,6 +192,10 @@ class AbstractTrainableAgent(TrainableAgent):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
 
+    def get_opponent_player_id(self, player_id):
+        """Get the opponent player ID."""
+        return "player_1" if player_id == "player_0" else "player_0"
+
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
@@ -222,13 +226,16 @@ class AbstractTrainableAgent(TrainableAgent):
                     return reward
             return 0
 
-        state_before_action = self._observation_to_tensor(observation_before_action, player_id)
-        state_after_action = self._observation_to_tensor(game.observe(player_id), player_id)
+        state_before_action = self.observation_to_tensor(observation_before_action, player_id)
+        state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
         opponent_state = game.observe(self.get_opponent_player_id(player_id))
-        # next action mask is stored with the same rotation of the next state.
-        next_state_mask = self._convert_action_mask_to_tensor_for_player(
-            opponent_state["action_mask"], self.get_opponent_player_id(player_id)
-        )
+        next_state_mask = None
+        if self.params.mask_targetq:
+            # next action mask is stored with the same rotation of the next state
+            # if we want to mask actions on next state
+            next_state_mask = self.convert_action_mask_to_tensor_for_player(
+                opponent_state["action_mask"], self.get_opponent_player_id(player_id)
+            )
         done = game.is_done()
 
         self.replay_buffer.add(
@@ -389,25 +396,19 @@ class AbstractTrainableAgent(TrainableAgent):
         return self.online_network(states).gather(1, actions).squeeze()
 
     def _compute_target_q_values(self, rewards, next_states, dones, next_state_masks):
-        """Compute target Q-values considering action masks."""
+        """Compute target Q-values foe next states."""
+        with torch.no_grad():
+            next_q_values = self.target_network(next_states)  # Shape: [batch_size, num_actions]
 
         if self.params.mask_targetq:
-            with torch.no_grad():
-                next_q_values = self.target_network(next_states)  # Shape: [batch_size, num_actions]
-
-                # Apply mask: set invalid actions to large negative value
-                masked_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
-
-                # Get max Q-value only among valid actions
-                max_next_q_values = masked_q_values.max(1)[0]  # Shape: [batch_size]
-
-                negate = -1 if self.params.use_negative_qvalue_function else 1
-                return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
+            # Apply mask: set invalid actions to large negative value, so those qvalues are ignored
+            next_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
 
         with torch.no_grad():
-            next_q_values = self.target_network(next_states).max(1)[0]
+            # Get the maximum Q-value for each next state
+            max_next_q_values = next_q_values.max(1)[0]
             negate = -1 if self.params.use_negative_qvalue_function else 1
-            return rewards + negate * (1 - dones) * self.gamma * next_q_values
+            return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
