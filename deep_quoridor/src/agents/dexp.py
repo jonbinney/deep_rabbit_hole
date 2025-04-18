@@ -131,9 +131,9 @@ class DExpAgent(AbstractTrainableAgent):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
-        opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
-
-        self.handle_step_outcome_all(opponent_observation_before_action, action, game, opponent_player)
+        self.handle_step_outcome_all(
+            opponent_observation_before_action, action, game, self.get_opponent_player_id(self.player_id)
+        )
 
     def observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
@@ -178,12 +178,12 @@ class DExpAgent(AbstractTrainableAgent):
         # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
-    def convert_action_mask_to_tensor(self, mask):
+    def convert_action_mask_to_tensor_for_player(self, mask, player_id):
         """
         Convert action mask to tensor, rotating it for player_1.
         This method should be call only when it is agent's turn.
         """
-        if self.player_id == "player_0" or not self.params.rotate:
+        if player_id == "player_0" or not self.params.rotate:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
