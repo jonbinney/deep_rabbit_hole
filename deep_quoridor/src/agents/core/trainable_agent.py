@@ -117,7 +117,7 @@ class AbstractTrainableAgent(Agent):
         # Setup training components
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
-        self.replay_buffer = ReplayBuffer(capacity=10000)
+        self.replay_buffer = ReplayBuffer(capacity=(400000 if self.training_mode else 1))
         self.episodes_rewards = []
         self.train_call_losses = []
         self.reset_episode_related_info()
@@ -147,7 +147,6 @@ class AbstractTrainableAgent(Agent):
     def get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
-
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
@@ -308,7 +307,16 @@ class AbstractTrainableAgent(Agent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(game, q_values)
 
-        selected_action = torch.argmax(q_values).item()
+        if self.training_mode:
+            # Apply softmax to the Q-values to get action probabilities
+            q_values = q_values.detach().cpu().numpy()
+            exp_q_values = np.exp(q_values)
+            probabilities = exp_q_values / np.sum(exp_q_values)
+            # Select an action based on the probabilities
+            selected_action = np.random.choice(len(probabilities), p=probabilities)
+        else:
+            selected_action = torch.argmax(q_values).item()
+
         idx = self.convert_to_action_from_tensor_index(selected_action)
         assert mask[idx] == 1
         return idx
