@@ -63,6 +63,14 @@ if __name__ == "__main__":
         help="Initializes the random seed for the training. Default is 42",
     )
 
+    parser.add_argument(
+        "-mx",
+        "--max_steps",
+        type=int,
+        default=10000,
+        help="Maximum number of steps per game. Default is 10000",
+    )
+
     args_dict = yargs(parser, "yargs/play")
 
     for id, args in args_dict.items():
@@ -84,6 +92,7 @@ if __name__ == "__main__":
             "step_rewards": args.step_rewards,
             "renderers": renderers,
             "saver": saver,
+            "max_steps": args.max_steps,
         }
 
         arena_args = {k: v for k, v in arena_args.items() if v is not None}

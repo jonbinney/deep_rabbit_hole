@@ -30,13 +30,15 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 1024),
+            nn.Linear(flat_input_size, 2048),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
+            nn.Linear(2048, 4096),
             nn.ReLU(),
-            nn.Linear(1024, 512),
+            nn.Linear(4096, 4096),
             nn.ReLU(),
-            nn.Linear(512, action_size),
+            nn.Linear(4096, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, action_size),
         )
         self.model.to(my_device())
 
@@ -65,7 +67,7 @@ class DExpAgentParams(TrainableAgentParams):
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
-        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}"
+        return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}{'1' if self.target_as_source_for_opponent else ''}"
 
     def training_only_params(cls) -> set[str]:
         """
@@ -74,7 +76,6 @@ class DExpAgentParams(TrainableAgentParams):
         """
         return super().training_only_params() | {
             "use_opponents_actions",
-            "target_as_source_for_opponent",
         }
 
 
@@ -113,7 +114,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def version(self):
         """Bump this version when compatibility with saved models is broken"""
-        return 1
+        return 2
 
     def resolve_filename(self, suffix):
         return f"{self.model_id()}_C{self.params}_{suffix}.pt"
@@ -130,9 +131,9 @@ class DExpAgent(AbstractTrainableAgent):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
-        opponent_player = "player_1" if self.player_id == "player_0" else "player_0"
-
-        self.handle_step_outcome_all(opponent_observation_before_action, action, game, opponent_player)
+        self.handle_step_outcome_all(
+            opponent_observation_before_action, action, game, self.get_opponent_player_id(self.player_id)
+        )
 
     def observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
@@ -176,12 +177,12 @@ class DExpAgent(AbstractTrainableAgent):
         # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
-    def convert_action_mask_to_tensor(self, mask):
+    def convert_action_mask_to_tensor_for_player(self, mask, player_id):
         """
         Convert action mask to tensor, rotating it for player_1.
         This method should be call only when it is agent's turn.
         """
-        if self.player_id == "player_0" or not self.params.rotate:
+        if player_id == "player_0" or not self.params.rotate:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
