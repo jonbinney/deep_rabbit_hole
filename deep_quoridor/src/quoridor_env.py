@@ -469,6 +469,48 @@ class QuoridorEnv(AECEnv):
     def get_goal_row(self, agent):
         return 0 if agent == "player_1" else self.board_size - 1
 
+    def _bfs(self, row, col, target_row, visited):
+        """
+        Performs a breadth-first search to find whether the pawn can reach the target row.
+
+        Args:
+            row (int): The current row of the pawn
+            col (int): The current column of the pawn
+            target_row (int): The target row to reach
+            visited (numpy.array): A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if target_row == row:
+            return 0
+
+        queue = [(row, col, 0)]
+        visited[row, col] = True
+
+        while queue:
+            curr_row, curr_col, steps = queue.pop(0)
+
+            for new_row, new_col in [
+                (curr_row + 1, curr_col),
+                (curr_row - 1, curr_col),
+                (curr_row, curr_col - 1),
+                (curr_row, curr_col + 1),
+            ]:
+                if (
+                    self.is_in_board(new_row, new_col)
+                    and not self.is_wall_between(curr_row, curr_col, new_row, new_col)
+                    and not visited[new_row, new_col]
+                ):
+                    visited[new_row, new_col] = True
+                    if target_row == new_row:
+                        return steps + 1
+                    else:
+                        queue.append((new_row, new_col, steps + 1))
+
+        return -1
+
     def _dfs(self, row, col, target_row, visited, any_path=True):
         """
         Performs a depth-first search to find whether the pawn can reach the target row.
@@ -487,6 +529,9 @@ class QuoridorEnv(AECEnv):
         """
         if row == target_row:
             return 0
+
+        if not any_path:
+            return self._bfs(row, col, target_row, visited)
 
         visited[row, col] = True
 
