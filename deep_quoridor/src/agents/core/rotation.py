@@ -129,6 +129,7 @@ def convert_original_action_index_to_rotated(board_size, original_action_index):
         # Horizontal wall action
         return _map_original_index_to_rotated(original_action_index, board_size - 1, total_actions + wall_actions)
 
+
 def rotate_board(board):
     return np.rot90(board, k=2)
 
