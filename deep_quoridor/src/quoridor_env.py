@@ -511,7 +511,7 @@ class QuoridorEnv(AECEnv):
 
         return -1
 
-    def _dfs(self, row, col, target_row, visited, any_path=True):
+    def _dfs(self, row, col, target_row, visited):
         """
         Performs a depth-first search to find whether the pawn can reach the target row.
 
@@ -530,9 +530,6 @@ class QuoridorEnv(AECEnv):
         if row == target_row:
             return 0
 
-        if not any_path:
-            return self._bfs(row, col, target_row, visited)
-
         visited[row, col] = True
 
         # Find out the forward direction to try it first and maybe get to the target faster
@@ -548,10 +545,7 @@ class QuoridorEnv(AECEnv):
             ):
                 dfs = self._dfs(new_row, new_col, target_row, visited)
                 if dfs != -1:
-                    if any_path:
-                        return dfs + 1
-                    if best == -1 or dfs + 1 < best:
-                        best = dfs + 1
+                    return dfs + 1
 
         return best
 
@@ -565,7 +559,10 @@ class QuoridorEnv(AECEnv):
         Otherwise, the shortest path will be returned (potentially slower)
         """
         visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        return self._dfs(row, col, target_row, visited, any_path)
+        if not any_path:
+            return self._dfs(row, col, target_row, visited, any_path)
+        else:
+            return self._bfs(row, col, target_row, visited)
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
