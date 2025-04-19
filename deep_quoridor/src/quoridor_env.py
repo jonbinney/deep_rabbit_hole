@@ -559,8 +559,8 @@ class QuoridorEnv(AECEnv):
         Otherwise, the shortest path will be returned (potentially slower)
         """
         visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        if not any_path:
-            return self._dfs(row, col, target_row, visited, any_path)
+        if any_path:
+            return self._dfs(row, col, target_row, visited)
         else:
             return self._bfs(row, col, target_row, visited)
 
