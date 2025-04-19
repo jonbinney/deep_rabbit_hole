@@ -536,6 +536,10 @@ class QuoridorEnv(AECEnv):
 
         return result
 
+    def get_distance_to_target(self, agent):
+        agent_row, agent_col = self.env.positions[agent]
+        return self.env.distance_to_target(agent_row, agent_col, self.env.get_goal_row(agent), False)
+
 
 # Wrapping the environment for PettingZoo compatibility
 def env(**kwargs):
@@ -552,21 +556,24 @@ class StepRewardCalculator:
     def __init__(self, env: QuoridorEnv = None):
         self.env = env
 
-    def before_step(self):
+    def _get_distances(self):
+        """
+        Gets the current distances to target for both agent and opponent.
+        Returns tuple of (agent_distance, opponent_distance)
+        """
         agent = self.env.agent_selection
-        (row, col) = self.env.positions[agent]
-        self.orig_agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
+        agent_distance = self.env.get_distance_to_target(agent)
+
         opponent = self.env.get_opponent(agent)
-        (row, col) = self.env.positions[opponent]
-        self.orig_opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(opponent), False)
+        opponent_distance = self.env.get_distance_to_target(opponent)
+
+        return agent_distance, opponent_distance
+
+    def before_step(self):
+        self.orig_agent_distance, self.orig_opponent_distance = self._get_distances()
 
     def after_step(self):
-        agent = self.env.agent_selection
-        (row, col) = self.env.positions[agent]
-        agent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(agent), False)
-        opponent = self.env.get_opponent(agent)
-        (row, col) = self.env.positions[opponent]
-        opponent_distance = self.env.distance_to_target(row, col, self.env.get_goal_row(opponent), False)
+        agent_distance, opponent_distance = self._get_distances()
 
         # Calculate the reward based on the distance to the goal
         reward = 0
