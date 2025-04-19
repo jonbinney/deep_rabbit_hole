@@ -161,8 +161,6 @@ class AbstractTrainableAgent(Agent):
         if not self.training_mode:
             return
         reward = self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
-        if reward > 5:
-            print(f"Reward: {reward}, current episode reward: {self.current_episode_reward}")
         self.current_episode_reward += reward
 
     def handle_step_outcome_all(self, observation_before_action, action, game, player_id):
@@ -396,11 +394,10 @@ class AbstractTrainableAgent(Agent):
             # Apply mask: set invalid actions to large negative value, so those qvalues are ignored
             next_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
 
-        with torch.no_grad():
-            # Get the maximum Q-value for each next state
-            max_next_q_values = next_q_values.max(1)[0]
-            negate = -1 if self.params.use_negative_qvalue_function else 1
-            return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
+        # Get the maximum Q-value for each next state
+        max_next_q_values = next_q_values.max(1)[0]
+        negate = -1 if self.params.use_negative_qvalue_function else 1
+        return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""
