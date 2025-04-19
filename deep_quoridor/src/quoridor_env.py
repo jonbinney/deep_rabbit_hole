@@ -537,8 +537,8 @@ class QuoridorEnv(AECEnv):
         return result
 
     def get_distance_to_target(self, agent):
-        agent_row, agent_col = self.env.positions[agent]
-        return self.env.distance_to_target(agent_row, agent_col, self.env.get_goal_row(agent), False)
+        agent_row, agent_col = self.positions[agent]
+        return self.distance_to_target(agent_row, agent_col, self.get_goal_row(agent), False)
 
 
 # Wrapping the environment for PettingZoo compatibility
