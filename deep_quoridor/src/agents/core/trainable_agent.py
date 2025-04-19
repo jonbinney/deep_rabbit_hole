@@ -52,6 +52,11 @@ class TrainableAgentParams(SubargsBase):
     # If True, the target q-value calculation will be masked with the action mask for the next state
     # This is used to prevent qvalues from invalid actions to be used as part of the qvalue function
     mask_targetq: bool = False
+    # If True, the agent will use softmax exploration even when explotation is happening
+    softmax_exploration: bool = False
+    # Inspect the opponent's possible actions
+    # This is used to log the opponent's possible actions based on agent's qvalues
+    inspect_opponent_possible_actions: bool = False
 
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
@@ -73,6 +78,8 @@ class TrainableAgentParams(SubargsBase):
             "wandb_alias",
             "model_filename",
             "mask_targetq",
+            "softmax_exploration",
+            "inspect_opponent_possible_actions",
         }
 
 
@@ -311,7 +318,7 @@ class AbstractTrainableAgent(Agent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(game, q_values)
 
-        if self.training_mode:
+        if self.training_mode and self.params.softmax_exploration:
             # Apply softmax to the Q-values to get action probabilities
             q_values = q_values.detach().cpu().numpy()
             exp_q_values = np.exp(q_values)
@@ -326,7 +333,8 @@ class AbstractTrainableAgent(Agent):
         return idx
 
     def inspect_opponent_possible_actions(self, game, observation, action_log):
-        return
+        if not self.params.inspect_opponent_possible_actions:
+            return
         """Get the best action based on Q-values."""
         opponent_player_id = self.get_opponent_player_id(self.player_id)
         state = self.observation_to_tensor(observation, opponent_player_id)
