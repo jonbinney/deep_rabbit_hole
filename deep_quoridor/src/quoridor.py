@@ -57,9 +57,9 @@ class ActionEncoder:
         action = None
         if idx < self._board_size**2:  # Pawn movement
             action = MoveAction(divmod(idx, self._board_size))
-        elif idx >= self._board_size**2 and idx < self._board_size**2 + self._wall_size**2:
+        elif idx < self._board_size**2 + self._wall_size**2:
             action = WallAction(divmod(idx - self._board_size**2, self._wall_size), WallOrientation.VERTICAL)
-        elif idx >= self._board_size**2 + self._wall_size**2 and idx < self._board_size**2 + (self._wall_size**2) * 2:
+        elif idx < self._board_size**2 + (self._wall_size**2) * 2:
             action = WallAction(
                 divmod(idx - self._board_size**2 - self._wall_size**2, self._wall_size),
                 WallOrientation.HORIZONTAL,
@@ -430,15 +430,15 @@ class Quoridor:
 
         position = self.board.get_player_position(player)
 
-        valid_moves = list()
+        valid_move_actions = list()
         for delta_row in range(-2, 3):
             for delta_col in range(-2, 3):
                 destination = (position[0] + delta_row, position[1] + delta_col)
                 if self.board.is_position_on_board(destination):
                     move_action = MoveAction(destination)
                     if self.is_action_valid(move_action, player):
-                        valid_moves.append(move_action)
-        return valid_moves
+                        valid_move_actions.append(move_action)
+        return valid_move_actions
 
     def get_valid_wall_actions(self, player: Player = None) -> list[WallAction]:
         if player is None:
@@ -448,7 +448,7 @@ class Quoridor:
         for row in range(self.board.board_size - 1):
             for col in range(self.board.board_size - 1):
                 for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
-                    wall_action = WallAction((row, col), WallOrientation.VERTICAL)
+                    wall_action = WallAction((row, col), orientation)
                     if self.is_action_valid(wall_action, player):
                         valid_wall_actions.append(wall_action)
         return valid_wall_actions

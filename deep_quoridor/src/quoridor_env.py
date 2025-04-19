@@ -115,13 +115,14 @@ class QuoridorEnv(AECEnv):
         player = self.agent_to_player[agent]
         opponent_player = self.agent_to_player[self.get_opponent(agent)]
         if self.terminations[agent]:
+            self._next_player()
             self.game.go_to_next_player()
             return
 
         if self.last_action_mask[agent][action_index] != 1:
             raise RuntimeError(f"Action not allowed by mask {action_index}")
 
-        # If the environment and game get out of step, wierd things happen.
+        # If the environment and game get out of step, weird things happen.
         assert player == self.game.get_current_player()
 
         action = self._action_encoder.index_to_action(action_index)
@@ -197,28 +198,15 @@ class QuoridorEnv(AECEnv):
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
         player = self.agent_to_player[agent_id]
-        mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
+        action_mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
 
-        # Calculate valid moves
-        current_position = self.game.board.get_player_position(player)
-        for delta_row in range(-2, 3):
-            for delta_col in range(-2, 3):
-                destination = current_position + np.array((delta_row, delta_col))
-                if self.game.board.is_position_on_board(destination):
-                    move_action = MoveAction(destination)
-                    if self.game.is_action_valid(move_action, player):
-                        mask[self._action_encoder.action_to_index(move_action)] = 1
+        # Mark valid moves
+        for action in self.game.get_valid_actions(player):
+            action_i = self._action_encoder.action_to_index(action)
+            action_mask[action_i] = 1
 
-        # Calculate valid wall placements
-        for row, col in np.ndindex((self.game.board.board_size - 1, self.game.board.board_size - 1)):
-            for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
-                wall_position = np.array((row, col))
-                wall_action = WallAction(wall_position, orientation)
-                if self.game.is_action_valid(wall_action, player):
-                    mask[self._action_encoder.action_to_index(wall_action)] = 1
-
-        self.last_action_mask[agent_id] = mask
-        return mask
+        self.last_action_mask[agent_id] = action_mask
+        return action_mask
 
     def _get_info(self):
         # This is for now unused, returning empty dict

@@ -57,9 +57,7 @@ class GreedyAgent(Agent):
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             row = pos[0] + dr
             col = pos[1] + dc
-            if game.board.is_position_on_board(np.array([row, col])) and not game.board.is_wall_between(
-                np.array([pos[0], pos[1]]), np.array([row, col])
-            ):
+            if game.board.is_position_on_board((row, col)) and not game.board.is_wall_between(pos, (row, col)):
                 moves.append((row, col))
         return moves
 
