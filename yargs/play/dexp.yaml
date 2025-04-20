@@ -1,6 +1,6 @@
 benchmark_DEXP:
-  args: -r progressbar arenaresults2 -t 100 -N 5 -W 3 --players greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 sb3ppo:wandb_alias=latest dexp:wandb_alias=best,nick=dexp_best simple dexp:wandb_alias=exp2,nick=dexp_exp2 dexp:wandb_alias=exp1,nick=dexp_exp1 dexp:wandb_alias=v13,nick=dexp_v13
+  args: -r progressbar arenaresults2 -t 100 -N 5 -W 3 --players greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 sb3ppo:wandb_alias=latest dexp:wandb_alias=best,nick=dexp_best simple dexp:wandb_alias=exp2,nick=dexp_exp2 dexp:wandb_alias=exp1,nick=dexp_exp1 dexp:wandb_alias=v14,nick=dexp_v14
 
 dexp_1v1:
-  args: -r pygame -t 100 -N 5 -W 3 --players dexp:wandb_alias=v13,nick=dexp_v13 human
+  args: -r pygame -t 100 -N 5 -W 3 --players dexp:wandb_alias=v13,nick=dexp_v13 greedy:p_random=0.1
   
