@@ -79,6 +79,7 @@ class Arena:
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
+                print(f"Game {game_id} reached max steps. Player {agent.name()} vs Player {opponent_agent.name()}.")
                 break
 
         end_time = time.time()

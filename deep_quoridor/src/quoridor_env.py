@@ -99,6 +99,9 @@ class QuoridorEnv(AECEnv):
         if self.last_action_mask[agent][action] != 1:
             raise RuntimeError(f"Action not allowed by mask {action}")
 
+        step_reward_calculator = StepRewardCalculator(self)
+        if self.step_rewards:
+            step_reward_calculator.before_step()
         (row, col, action_type) = self.action_index_to_params(action)
         if action_type == 0:
             self._move(agent, (row, col))
@@ -112,12 +115,8 @@ class QuoridorEnv(AECEnv):
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
-            (row, col) = self.positions[agent]
-            agent_distance = self.distance_to_target(row, col, self.get_goal_row(agent), False)
-            (row, col) = self.positions[self.get_opponent(agent)]
-            oponent_distance = self.distance_to_target(row, col, self.get_goal_row(self.get_opponent(agent)), False)
-            self.rewards[agent] = (oponent_distance - agent_distance) / (self.board_size**2)
-            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (self.board_size**2)
+            self.rewards[agent] = step_reward_calculator.after_step()
+            self.rewards[self.get_opponent(agent)] = 0
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -470,7 +469,50 @@ class QuoridorEnv(AECEnv):
     def get_goal_row(self, agent):
         return 0 if agent == "player_1" else self.board_size - 1
 
-    def _dfs(self, row, col, target_row, visited, any_path=True):
+    def _bfs(self, row, col, target_row, visited):
+        """
+        Performs a breadth-first search to find the shortest path to the target row.
+
+
+        Args:
+            row (int): The current row of the pawn
+            col (int): The current column of the pawn
+            target_row (int): The target row to reach
+            visited (numpy.array): A 2D boolean array with the same shape as the board,
+                indicating which positions have been visited
+
+        Returns:
+            int: Number of steps to reach the target or -1 if it's unreachable
+        """
+        if target_row == row:
+            return 0
+
+        queue = [(row, col, 0)]
+        visited[row, col] = True
+
+        while queue:
+            curr_row, curr_col, steps = queue.pop(0)
+
+            for new_row, new_col in [
+                (curr_row + 1, curr_col),
+                (curr_row - 1, curr_col),
+                (curr_row, curr_col - 1),
+                (curr_row, curr_col + 1),
+            ]:
+                if (
+                    self.is_in_board(new_row, new_col)
+                    and not self.is_wall_between(curr_row, curr_col, new_row, new_col)
+                    and not visited[new_row, new_col]
+                ):
+                    visited[new_row, new_col] = True
+                    if target_row == new_row:
+                        return steps + 1
+                    else:
+                        queue.append((new_row, new_col, steps + 1))
+
+        return -1
+
+    def _dfs(self, row, col, target_row, visited):
         """
         Performs a depth-first search to find whether the pawn can reach the target row.
 
@@ -495,7 +537,6 @@ class QuoridorEnv(AECEnv):
         fwd = 1 if target_row > row else -1
 
         moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-        best = -1
         for new_row, new_col in moves:
             if (
                 self.is_in_board(new_row, new_col)
@@ -504,24 +545,22 @@ class QuoridorEnv(AECEnv):
             ):
                 dfs = self._dfs(new_row, new_col, target_row, visited)
                 if dfs != -1:
-                    if any_path:
-                        return dfs + 1
-                    if best == -1 or dfs + 1 < best:
-                        best = dfs + 1
+                    return dfs + 1
 
-        return best
+        return -1
 
     def can_reach(self, row, col, target_row):
-        return self.distance_to_target(row, col, target_row, True) != -1
+        visited = np.zeros((self.board_size, self.board_size), dtype="bool")
+        return self._dfs(row, col, target_row, visited) != -1
 
-    def distance_to_target(self, row, col, target_row, any_path=False):
+    def distance_to_target(self, row, col, target_row):
         """
         Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
         If any_path is set to true, the first path to the target row will be returned (faster).
         Otherwise, the shortest path will be returned (potentially slower)
         """
         visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        return self._dfs(row, col, target_row, visited, any_path)
+        return self._bfs(row, col, target_row, visited)
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
@@ -537,6 +576,10 @@ class QuoridorEnv(AECEnv):
 
         return result
 
+    def get_distance_to_target(self, agent):
+        agent_row, agent_col = self.positions[agent]
+        return self.distance_to_target(agent_row, agent_col, self.get_goal_row(agent))
+
 
 # Wrapping the environment for PettingZoo compatibility
 def env(**kwargs):
@@ -547,3 +590,33 @@ def env(**kwargs):
         return wrappers.CaptureStdoutWrapper(QuoridorEnv(**kwargs))
     else:
         return QuoridorEnv(**kwargs)
+
+
+class StepRewardCalculator:
+    def __init__(self, env: QuoridorEnv = None):
+        self.env = env
+
+    def _get_distances(self):
+        """
+        Gets the current distances to target for both agent and opponent.
+        Returns tuple of (agent_distance, opponent_distance)
+        """
+        agent = self.env.agent_selection
+        agent_distance = self.env.get_distance_to_target(agent)
+
+        opponent = self.env.get_opponent(agent)
+        opponent_distance = self.env.get_distance_to_target(opponent)
+
+        return agent_distance, opponent_distance
+
+    def before_step(self):
+        self.orig_agent_distance, self.orig_opponent_distance = self._get_distances()
+
+    def after_step(self):
+        agent_distance, opponent_distance = self._get_distances()
+
+        # Calculate the reward based on the distance to the goal
+        distance_change = (self.orig_agent_distance - agent_distance) - (
+            self.orig_opponent_distance - opponent_distance
+        )
+        return distance_change / (3 * self.env.board_size)
