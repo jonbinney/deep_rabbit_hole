@@ -122,6 +122,7 @@ class AbstractTrainableAgent(Agent):
         self.train_call_losses = []
         self.reset_episode_related_info()
         self.resolve_and_load_model()
+        self.last_end_game = 0
 
     def reset_episode_related_info(self):
         self.current_episode_reward = 0
@@ -390,7 +391,7 @@ class AbstractTrainableAgent(Agent):
         return f"{self.model_id()}_{artifact.digest[:5]}.{self.get_model_extension()}"
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_{suffix}.{self.get_model_extension()}"
+        return f"{self.model_id()}_{self.name()}_{suffix}.{self.get_model_extension()}"
 
     def save_model(self, path):
         """Save the model to disk."""

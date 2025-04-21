@@ -1,7 +1,7 @@
 import argparse
 import datetime
 
-from agents.core.agent import AgentRegistry
+from agents.core.agent import Agent, AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
 from play import player_with_params
@@ -49,7 +49,16 @@ def train_dqn(
         swap_players=True,
     )
 
-    arena.play_games(players=players, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
+    agents = []
+    for p in players:
+        if isinstance(p, Agent):
+            agents.append(p)
+        else:
+            agents.append(AgentRegistry.create_from_encoded_name(p, board_size=board_size, max_walls=max_walls))
+
+    agents.append(agents[0].new_mimic_model())
+
+    arena.play_games(players=agents, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
     return
 
 

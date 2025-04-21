@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 
 import numpy as np
@@ -117,7 +118,7 @@ class DExpAgent(AbstractTrainableAgent):
         return 2
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_C{self.params}_{suffix}.pt"
+        return f"{self.model_id()}_C{self.params}_{self.name()}_{suffix}.pt"
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -199,3 +200,20 @@ class DExpAgent(AbstractTrainableAgent):
         if action_player_id == "player_0" or not self.params.rotate:
             return super().convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
+
+    def new_mimic_model(self):
+        """Create a new mimic model for the agent."""
+        agent = DExpAgent(
+            params=copy.deepcopy(self.params),
+            board_size=self.board_size,
+            max_walls=self.max_walls,
+            training_mode=True,
+            device=self.device,
+        )
+        agent.online_network = self.online_network
+        agent.target_network = self.target_network
+        agent.replay_buffer = self.replay_buffer
+        agent.optimizer = self.optimizer
+        agent.criterion = self.criterion
+        agent.params.nick = self.params.nick + "_mimic"
+        return agent
