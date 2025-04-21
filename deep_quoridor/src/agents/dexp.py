@@ -192,7 +192,7 @@ class DExpAgent(AbstractTrainableAgent):
         if player_id == "player_0" or not self.params.rotate:
             return super()._convert_to_action_from_tensor_index_for_player(action_index_in_tensor, player_id)
 
-        return rotation._convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
+        return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
     def _convert_to_tensor_index_from_action(self, action, action_player_id):
         if action_player_id == "player_0" or not self.params.rotate:

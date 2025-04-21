@@ -199,14 +199,10 @@ class AbstractTrainableAgent(TrainableAgent):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
 
-    def get_opponent_player_id(self, player_id):
-        """Get the opponent player ID."""
-        return "player_1" if player_id == "player_0" else "player_0"
-
     def handle_opponent_step_outcome(self, observation_before_action, action, game):
         pass
 
-    def adjust_reward(self, r, game):
+    def _adjust_reward(self, r, game):
         if game.is_done():
             r *= self.final_reward_multiplier
         return r
@@ -233,14 +229,14 @@ class AbstractTrainableAgent(TrainableAgent):
                     return reward
             return 0
 
-        state_before_action = self.observation_to_tensor(observation_before_action, player_id)
-        state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
+        state_before_action = self._observation_to_tensor(observation_before_action, player_id)
+        state_after_action = self._observation_to_tensor(game.observe(player_id), player_id)
         opponent_state = game.observe(self.get_opponent_player_id(player_id))
         next_state_mask = None
         if self.params.mask_targetq:
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
-            next_state_mask = self.convert_action_mask_to_tensor_for_player(
+            next_state_mask = self._convert_action_mask_to_tensor_for_player(
                 opponent_state["action_mask"], self.get_opponent_player_id(player_id)
             )
         done = game.is_done()
@@ -324,7 +320,7 @@ class AbstractTrainableAgent(TrainableAgent):
         return np.random.choice(valid_actions)
 
     def _convert_action_mask_to_tensor(self, mask):
-        return self.convert_action_mask_to_tensor_for_player(mask, self.player_id)
+        return self._convert_action_mask_to_tensor_for_player(mask, self.player_id)
 
     def _convert_action_mask_to_tensor_for_player(self, mask, player_id):
         return torch.tensor(mask, dtype=torch.float32, device=self.device)
@@ -373,7 +369,7 @@ class AbstractTrainableAgent(TrainableAgent):
         else:
             selected_action = torch.argmax(q_values).item()
 
-        idx = self.convert_to_action_from_tensor_index(selected_action)
+        idx = self._convert_to_action_from_tensor_index(selected_action)
         assert mask[idx] == 1
         return idx
 
@@ -401,7 +397,7 @@ class AbstractTrainableAgent(TrainableAgent):
         }
         action_log.action_score_ranking(scores)
 
-    def train(self, batch_size):
+    def _train(self, batch_size):
         """Train the network on a batch of samples."""
         if len(self.replay_buffer) < batch_size:
             return
