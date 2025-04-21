@@ -338,30 +338,6 @@ class AbstractTrainableAgent(TrainableAgent):
     def _convert_to_tensor_index_from_action(self, action, player_id):
         return action
 
-    def inspect_opponent_possible_actions(self, game, observation, action_log):
-        if not self.params.inspect_opponent_possible_actions:
-            return
-        """Get the best action based on Q-values."""
-        opponent_player_id = self.get_opponent_player_id(self.player_id)
-        state = self.observation_to_tensor(observation, opponent_player_id)
-        with torch.no_grad():
-            q_values = self.online_network(state)
-
-        mask = observation["action_mask"]
-        mask_tensor = self.convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
-        q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
-
-        # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
-        top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
-        scores = {
-            game.action_index_to_params(
-                int(self.convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
-            ): v.item()
-            for v, i in zip(top_values, top_indices)
-            if v.item() >= -100
-        }
-        action_log.action_score_ranking(scores)
-
     def _log_action(self, game, q_values):
         if not self.action_log.is_enabled():
             return
@@ -387,12 +363,6 @@ class AbstractTrainableAgent(TrainableAgent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(game, q_values)
 
-        selected_action = torch.argmax(q_values).item()
-        idx = self._convert_to_action_from_tensor_index(selected_action)
-        assert mask[idx] == 1
-        return idx
-
-    def _train(self, batch_size):
         if self.training_mode and self.params.softmax_exploration:
             # Apply softmax to the Q-values to get action probabilities
             q_values = q_values.detach().cpu().numpy()
@@ -406,6 +376,30 @@ class AbstractTrainableAgent(TrainableAgent):
         idx = self.convert_to_action_from_tensor_index(selected_action)
         assert mask[idx] == 1
         return idx
+
+    def inspect_opponent_possible_actions(self, game, observation, action_log):
+        if not self.params.inspect_opponent_possible_actions:
+            return
+        """Get the best action based on Q-values."""
+        opponent_player_id = self.get_opponent_player_id(self.player_id)
+        state = self.observation_to_tensor(observation, opponent_player_id)
+        with torch.no_grad():
+            q_values = self.online_network(state)
+
+        mask = observation["action_mask"]
+        mask_tensor = self.convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
+        q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
+
+        # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
+        top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
+        scores = {
+            game.action_index_to_params(
+                int(self.convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
+            ): v.item()
+            for v, i in zip(top_values, top_indices)
+            if v.item() >= -100
+        }
+        action_log.action_score_ranking(scores)
 
     def train(self, batch_size):
         """Train the network on a batch of samples."""
