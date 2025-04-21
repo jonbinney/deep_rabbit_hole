@@ -537,7 +537,6 @@ class QuoridorEnv(AECEnv):
         fwd = 1 if target_row > row else -1
 
         moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-        best = -1
         for new_row, new_col in moves:
             if (
                 self.is_in_board(new_row, new_col)
@@ -548,11 +547,11 @@ class QuoridorEnv(AECEnv):
                 if dfs != -1:
                     return dfs + 1
 
-        return best
+        return -1
 
     def can_reach(self, row, col, target_row):
         visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        return self._dfs(row, col, target_row, visited)
+        return self._dfs(row, col, target_row, visited) != -1
 
     def distance_to_target(self, row, col, target_row):
         """
