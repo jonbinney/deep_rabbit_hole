@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from quoridor import ActionEncoder
+from quoridor import ActionEncoder, MoveAction, WallAction, WallOrientation
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -36,7 +36,12 @@ class HumanAgent(Agent):
         for action, value in enumerate(action_mask):
             if value == 1:
                 valid_action = self.action_encoder.index_to_action(action)
-                valid_moves.add(valid_action)
+                if isinstance(valid_action, MoveAction):
+                    valid_moves.add((valid_action.destination[0], valid_action.destination[1], 0))
+                elif isinstance(valid_action, WallAction):
+                    valid_moves.add(
+                        (valid_action.position[0], valid_action.position[1], valid_action.orientation.value - 1)
+                    )
 
         result = PygameQuoridor.instance().get_human_input(valid_moves)
 

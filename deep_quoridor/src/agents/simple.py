@@ -1,5 +1,5 @@
 import numpy as np
-from quoridor import ActionEncoder, Board, Quoridor
+from quoridor import ActionEncoder, Quoridor, construct_game_from_observation
 
 from agents.core import Agent
 
@@ -40,11 +40,9 @@ class SimpleAgent(Agent):
         self.action_encoder = ActionEncoder(self.board_size)
 
     def get_action(self, observation, action_mask):
-        # Reconstruct the game from the observation.
-        game = Quoridor(Board(from_observation=observation))
-
         possible_action_sequences = []
         for _ in range(self.num_sequences):
+            game = construct_game_from_observation(observation)
             action_sequence, total_reward = sample_random_action_sequence(game, self.sequence_length)
             possible_action_sequences.append((action_sequence, total_reward))
 

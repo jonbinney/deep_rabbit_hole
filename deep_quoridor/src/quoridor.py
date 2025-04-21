@@ -69,7 +69,6 @@ class ActionEncoder:
 
         return action
 
-
 class Board:
     # Possible values for each cell in the grid.
     FREE = -1
@@ -103,6 +102,7 @@ class Board:
             self.board_size = board_size
         else:
             self.board_size = from_observation["board"].shape[0]
+
         self.max_walls = max_walls
 
         # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
@@ -118,23 +118,27 @@ class Board:
         self._old_style_walls = np.zeros((self.board_size - 1, self.board_size - 1, 2), dtype=np.int8)
 
         self._players = [Player.ONE, Player.TWO]
-        self._player_positions = [
-            (0, self.board_size // 2),
-            (self.board_size - 1, self.board_size // 2),
-        ]
-        for player, position in zip(self._players, self._player_positions):
-            self._grid[position[0] * 2 + 2, position[1] * 2 + 2] = player
+        self._player_positions = [None, None]
+        self._walls_remaining = [None, None]
 
         if from_observation is None:
-            self._walls_remaining = [max_walls, max_walls]
+            self.init_in_start_state()
         else:
             self.init_from_observation(from_observation)
+    
+    def init_in_start_state(self):
+        self._player_positions[Player.ONE] = (0, self.board_size // 2)
+        self._player_positions[Player.TWO] = (self.board_size - 1, self.board_size // 2)
+        self._walls_remaining[Player.ONE] = self.max_walls
+        self._walls_remaining[Player.TWO] = self.max_walls
+        for player, position in zip(self._players, self._player_positions):
+            self.set_player_cell(position, player)
 
     def init_from_observation(self, observation: dict):
         for row, col in np.argwhere(observation["board"] > 0):
             player = observation["board"][row, col] - 1  # Players are 1 and 2 on the board, but we use 0 and 1.
             self._player_positions[player] = (row, col)
-            self._grid[row * 2 + 2, col * 2 + 2] = player
+            self.set_player_cell((row, col), player)
 
         self._old_style_walls = observation["walls"].copy()
         for row, col, orientation in np.argwhere(observation["walls"] == 1):
@@ -331,12 +335,12 @@ class Board:
 
 
 class Quoridor:
-    def __init__(self, board: Board):
+    def __init__(self, board: Board, current_player: Player = Player.ONE):
         """
         If you want to start from the initial game state, pass in board=Board(board_size, max_walls).
         """
         self.board = board
-        self.current_player = Player.ONE
+        self.current_player = current_player
 
         self._goal_rows = {Player.ONE: self.board.board_size - 1, Player.TWO: 0}
         self._jump_checks = create_jump_checks()
@@ -533,6 +537,13 @@ def create_jump_checks():
                     )
                     checks[lookup_key][check_type].append(rotated_wall)
     return checks
+
+def construct_game_from_observation(observation: dict) -> Quoridor:
+    if observation["my_turn"]:
+        current_player = Player.ONE
+    else:
+        current_player = Player.TWO
+    return Quoridor(Board(from_observation=observation), current_player=current_player)
 
 
 if __name__ == "__main__":

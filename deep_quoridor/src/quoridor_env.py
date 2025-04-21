@@ -34,6 +34,7 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from agents.core import rotation
 
 
 class QuoridorEnv(AECEnv):
