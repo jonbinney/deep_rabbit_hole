@@ -189,10 +189,9 @@ class DExpAgent(AbstractTrainableAgent):
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
-    def convert_to_action_from_tensor_index(self, action_index_in_tensor):
-        """Convert action index from rotated tensor back to original action space."""
-        if self.player_id == "player_0" or not self.params.rotate:
-            return super().convert_to_action_from_tensor_index(action_index_in_tensor)
+    def convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):
+        if player_id == "player_0" or not self.params.rotate:
+            return super().convert_to_action_from_tensor_index_for_player(action_index_in_tensor, player_id)
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 

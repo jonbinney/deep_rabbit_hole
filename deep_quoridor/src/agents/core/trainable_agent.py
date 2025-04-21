@@ -52,6 +52,11 @@ class TrainableAgentParams(SubargsBase):
     # If True, the target q-value calculation will be masked with the action mask for the next state
     # This is used to prevent qvalues from invalid actions to be used as part of the qvalue function
     mask_targetq: bool = False
+    # If True, the agent will use softmax exploration even when explotation is happening
+    softmax_exploration: bool = False
+    # Inspect the opponent's possible actions
+    # This is used to log the opponent's possible actions based on agent's qvalues
+    inspect_opponent_possible_actions: bool = False
 
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
@@ -73,6 +78,8 @@ class TrainableAgentParams(SubargsBase):
             "wandb_alias",
             "model_filename",
             "mask_targetq",
+            "softmax_exploration",
+            "inspect_opponent_possible_actions",
         }
 
 
@@ -117,7 +124,7 @@ class AbstractTrainableAgent(Agent):
         # Setup training components
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
-        self.replay_buffer = ReplayBuffer(capacity=10000)
+        self.replay_buffer = ReplayBuffer(capacity=(400000 if self.training_mode else 1))
         self.episodes_rewards = []
         self.train_call_losses = []
         self.reset_episode_related_info()
@@ -239,6 +246,7 @@ class AbstractTrainableAgent(Agent):
 
     def _create_criterion(self):
         """Create the loss criterion."""
+        # TODO Try HuberLoss
         return nn.MSELoss().to(self.device)
 
     def observation_to_tensor(self, observation, obs_player_id):
@@ -258,7 +266,6 @@ class AbstractTrainableAgent(Agent):
         mask = observation["action_mask"]
 
         if random.random() < self.epsilon:
-            # print(f"rnd-mask: {mask}")
             valid_actions = self._get_valid_actions(mask)
             return self._select_random_action(valid_actions)
 
@@ -279,6 +286,9 @@ class AbstractTrainableAgent(Agent):
         return torch.tensor(mask, dtype=torch.float32, device=self.device)
 
     def convert_to_action_from_tensor_index(self, action_index_in_tensor):
+        return self.convert_to_action_from_tensor_index_for_player(action_index_in_tensor, self.player_id)
+
+    def convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):
         return action_index_in_tensor
 
     def convert_to_tensor_index_from_action(self, action, player_id):
@@ -309,10 +319,43 @@ class AbstractTrainableAgent(Agent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(game, q_values)
 
-        selected_action = torch.argmax(q_values).item()
+        if self.training_mode and self.params.softmax_exploration:
+            # Apply softmax to the Q-values to get action probabilities
+            q_values = q_values.detach().cpu().numpy()
+            exp_q_values = np.exp(q_values)
+            probabilities = exp_q_values / np.sum(exp_q_values)
+            # Select an action based on the probabilities
+            selected_action = np.random.choice(len(probabilities), p=probabilities)
+        else:
+            selected_action = torch.argmax(q_values).item()
+
         idx = self.convert_to_action_from_tensor_index(selected_action)
         assert mask[idx] == 1
         return idx
+
+    def inspect_opponent_possible_actions(self, game, observation, action_log):
+        if not self.params.inspect_opponent_possible_actions:
+            return
+        """Get the best action based on Q-values."""
+        opponent_player_id = self.get_opponent_player_id(self.player_id)
+        state = self.observation_to_tensor(observation, opponent_player_id)
+        with torch.no_grad():
+            q_values = self.online_network(state)
+
+        mask = observation["action_mask"]
+        mask_tensor = self.convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
+        q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
+
+        # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
+        top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
+        scores = {
+            game.action_index_to_params(
+                int(self.convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
+            ): v.item()
+            for v, i in zip(top_values, top_indices)
+            if v.item() >= -100
+        }
+        action_log.action_score_ranking(scores)
 
     def train(self, batch_size):
         """Train the network on a batch of samples."""
@@ -360,11 +403,10 @@ class AbstractTrainableAgent(Agent):
             # Apply mask: set invalid actions to large negative value, so those qvalues are ignored
             next_q_values = next_q_values * next_state_masks - 1e9 * (1 - next_state_masks)
 
-        with torch.no_grad():
-            # Get the maximum Q-value for each next state
-            max_next_q_values = next_q_values.max(1)[0]
-            negate = -1 if self.params.use_negative_qvalue_function else 1
-            return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
+        # Get the maximum Q-value for each next state
+        max_next_q_values = next_q_values.max(1)[0]
+        negate = -1 if self.params.use_negative_qvalue_function else 1
+        return rewards + negate * (1 - dones) * self.gamma * max_next_q_values
 
     def _update_network(self, current_q_values, target_q_values):
         """Update the network using computed Q-values."""

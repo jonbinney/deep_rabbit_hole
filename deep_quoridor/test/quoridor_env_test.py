@@ -105,7 +105,6 @@ class TestQuoridorEnv:
     def _test_wall_placements(self, s, just_highlighted=False):
         env, _, forbidden_walls = parse_board(s)
         N = env.board_size
-        env.render()
         action_mask = env.observe("player_0")["action_mask"]
 
         env_walls = []
@@ -125,9 +124,9 @@ class TestQuoridorEnv:
         env, _, _ = parse_board(s)
         N = env.board_size
         (row, col) = env.positions["player_0"]
-        assert moves_p1 == env.distance_to_target(row, col, N - 1, False)
+        assert moves_p1 == env.distance_to_target(row, col, N - 1)
         (row, col) = env.positions["player_1"]
-        assert moves_p2 == env.distance_to_target(row, col, 0, False)
+        assert moves_p2 == env.distance_to_target(row, col, 0)
 
     def test_distance_to_goal(self):
         self._test_distance_to_target(

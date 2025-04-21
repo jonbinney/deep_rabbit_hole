@@ -47,6 +47,7 @@ def train_dqn(
         renderers=[print_plugin] + renderers,
         plugins=plugins,
         swap_players=True,
+        max_steps=1000,
     )
 
     agents = []
