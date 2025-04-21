@@ -187,7 +187,7 @@ class GreedyAgent(Agent):
 
     def get_action(self, observation, action_mask):
         # Reconstruct the game from the observation.
-        game = construct_game_from_observation(observation)
+        game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
         if random.random() < self.params.p_random:
             if self.action_log.is_enabled():
@@ -196,11 +196,11 @@ class GreedyAgent(Agent):
                 # use it to say that the move will be random.
             return self.action_space.sample(action_mask)
 
-        goal_row = self.board_size - 1 if self.player_id == "player_0" else 0
-        opponent_goal_row = self.board_size - 1 - goal_row
+        goal_row = game.get_goal_row(player)
+        opponent_goal_row = game.get_goal_row(opponent)
 
         my_shortest_path = self._shortest_path_from_me(game, action_mask, goal_row)
-        opponent_pos = game.board.get_player_position(Player.TWO)
+        opponent_pos = game.board.get_player_position(opponent)
         opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_goal_row)
 
         self._log_action(observation, action_mask, my_shortest_path, opponent_shortest_path)

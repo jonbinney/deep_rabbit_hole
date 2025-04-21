@@ -177,13 +177,11 @@ class QuoridorEnv(AECEnv):
         # TODO: Do we need to make copies of the state or can we return references directly?
 
         # Calculate board from self.positions
-        # NOTE: The board uses 1 to indicate where the agent is and 2 to indicate where the opponent is
-        # Obviously, this will be different for each player
         board = np.zeros((self.game.board.board_size, self.game.board.board_size), dtype=np.int8)
-        player_row, player_col = self.game.board.get_player_position(player)
-        opponent_row, opponent_col = self.game.board.get_player_position(opponent)
-        board[player_row, player_col] = 1
-        board[opponent_row, opponent_col] = 2
+        player_one_position = self.game.board.get_player_position(Player.ONE)
+        player_two_position = self.game.board.get_player_position(Player.TWO)
+        board[player_one_position] = 1
+        board[player_two_position] = 2
 
         # Make a copy of walls
         walls = self.game.board.get_old_style_walls()

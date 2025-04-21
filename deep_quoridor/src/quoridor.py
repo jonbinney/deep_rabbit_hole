@@ -538,12 +538,22 @@ def create_jump_checks():
                     checks[lookup_key][check_type].append(rotated_wall)
     return checks
 
-def construct_game_from_observation(observation: dict) -> Quoridor:
-    if observation["my_turn"]:
-        current_player = Player.ONE
+def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:
+    if player_id == "player_0":
+        player = Player.ONE
+        opponent = Player.TWO
+    elif player_id == "player_1":
+        player = Player.TWO
+        opponent = Player.ONE
     else:
-        current_player = Player.TWO
-    return Quoridor(Board(from_observation=observation), current_player=current_player)
+        raise ValueError(f"Invalid player ID: {player_id}")
+
+    if observation["my_turn"]:
+        current_player = player
+    else:
+        current_player = opponent
+
+    return Quoridor(Board(from_observation=observation), current_player=current_player), player, opponent
 
 
 if __name__ == "__main__":
