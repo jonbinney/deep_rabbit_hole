@@ -471,7 +471,8 @@ class QuoridorEnv(AECEnv):
 
     def _bfs(self, row, col, target_row, visited):
         """
-        Performs a breadth-first search to find whether the pawn can reach the target row.
+        Performs a breadth-first search to find the shortest path to the target row.
+
 
         Args:
             row (int): The current row of the pawn
@@ -550,19 +551,17 @@ class QuoridorEnv(AECEnv):
         return best
 
     def can_reach(self, row, col, target_row):
-        return self.distance_to_target(row, col, target_row, True) != -1
+        visited = np.zeros((self.board_size, self.board_size), dtype="bool")
+        return self._dfs(row, col, target_row, visited)
 
-    def distance_to_target(self, row, col, target_row, any_path=False):
+    def distance_to_target(self, row, col, target_row):
         """
         Returns the approximate number of moves it takes to reach the target row, or -1 if it's not reachable.
         If any_path is set to true, the first path to the target row will be returned (faster).
         Otherwise, the shortest path will be returned (potentially slower)
         """
         visited = np.zeros((self.board_size, self.board_size), dtype="bool")
-        if any_path:
-            return self._dfs(row, col, target_row, visited)
-        else:
-            return self._bfs(row, col, target_row, visited)
+        return self._bfs(row, col, target_row, visited)
 
     def _can_place_wall_without_blocking(self, row, col, orientation):
         """
@@ -580,7 +579,7 @@ class QuoridorEnv(AECEnv):
 
     def get_distance_to_target(self, agent):
         agent_row, agent_col = self.positions[agent]
-        return self.distance_to_target(agent_row, agent_col, self.get_goal_row(agent), False)
+        return self.distance_to_target(agent_row, agent_col, self.get_goal_row(agent))
 
 
 # Wrapping the environment for PettingZoo compatibility
