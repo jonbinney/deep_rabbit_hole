@@ -59,6 +59,8 @@ class Arena:
                     agent.handle_step_outcome(observation, None, self.game)
                 break
 
+            assert (observation["action_mask"] == self.game.last_action_mask[player_id]).all()
+
             action = int(agent.get_action(observation["observation"], observation["action_mask"]))
 
             self.plugins.before_action(self.game, agent)

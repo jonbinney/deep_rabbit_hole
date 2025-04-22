@@ -97,12 +97,9 @@ class Board:
         ],
     }
 
-    def __init__(self, board_size: int = 9, max_walls: int = 10, from_observation: dict = None):
-        if from_observation is None:
-            self.board_size = board_size
-        else:
-            self.board_size = from_observation["board"].shape[0]
-
+    def __init__(self, board_size: int = 9, max_walls: int = 10):
+        self.board_size = board_size
+            
         self.max_walls = max_walls
 
         # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
@@ -118,33 +115,10 @@ class Board:
         self._old_style_walls = np.zeros((self.board_size - 1, self.board_size - 1, 2), dtype=np.int8)
 
         self._players = [Player.ONE, Player.TWO]
-        self._player_positions = [None, None]
-        self._walls_remaining = [None, None]
-
-        if from_observation is None:
-            self.init_in_start_state()
-        else:
-            self.init_from_observation(from_observation)
-    
-    def init_in_start_state(self):
-        self._player_positions[Player.ONE] = (0, self.board_size // 2)
-        self._player_positions[Player.TWO] = (self.board_size - 1, self.board_size // 2)
-        self._walls_remaining[Player.ONE] = self.max_walls
-        self._walls_remaining[Player.TWO] = self.max_walls
+        self._player_positions = [(0, self.board_size // 2), (self.board_size - 1, self.board_size // 2)]
+        self._walls_remaining = [self.max_walls, self.max_walls]
         for player, position in zip(self._players, self._player_positions):
             self.set_player_cell(position, player)
-
-    def init_from_observation(self, observation: dict):
-        for row, col in np.argwhere(observation["board"] > 0):
-            player = observation["board"][row, col] - 1  # Players are 1 and 2 on the board, but we use 0 and 1.
-            self._player_positions[player] = (row, col)
-            self.set_player_cell((row, col), player)
-
-        self._old_style_walls = observation["walls"].copy()
-        for row, col, orientation in np.argwhere(observation["walls"] == 1):
-            self._grid[self._get_wall_slice((row, col), WallOrientation(orientation))] = Board.WALL
-
-        self._walls_remaining = [observation["my_walls_remaining"], observation["opponent_walls_remaining"]]
 
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
@@ -180,6 +154,12 @@ class Board:
         Get the number of walls remaining for the player.
         """
         return self._walls_remaining[player]
+    
+    def set_walls_remaining(self, player: Player, walls_remaining: int):
+        """
+        Set the number of walls remaining for the player.
+        """
+        self._walls_remaining[player] = walls_remaining
 
     def add_wall(self, player: Player, position: tuple[int, int], orientation: WallOrientation, check_if_valid=True):
         """
@@ -553,7 +533,30 @@ def construct_game_from_observation(observation: dict, player_id: str) -> tuple[
     else:
         current_player = opponent
 
-    return Quoridor(Board(from_observation=observation), current_player=current_player), player, opponent
+    # Hack: we set max walls very high because the observation doesn't actually tell us the maximum
+    # number of walls. After we add the walls from the observation to the board, we set the walls_remaining
+    # values to match those in the observation.
+    board = Board(board_size=observation["board"].shape[0], max_walls=99999)
+
+    player_positions = np.argwhere(observation["board"] > 0)
+    assert len(player_positions) == 2, "There should be exactly two players on the board."
+
+    for row, col in player_positions:
+        player = Player(observation["board"][row, col] - 1)  # Players are 1 and 2 on the board, but we use 0 and 1.
+        board.move_player(player, (row, col))
+
+    for row, col, orientation in np.argwhere(observation["walls"] == 1):
+        board.add_wall(
+            player,
+            (row, col),
+            WallOrientation(orientation),
+            check_if_valid=False,
+        )
+
+    board.set_walls_remaining(player, observation["my_walls_remaining"])
+    board.set_walls_remaining(opponent, observation["opponent_walls_remaining"])
+
+    return Quoridor(board, current_player), player, opponent
 
 
 if __name__ == "__main__":
