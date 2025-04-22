@@ -281,7 +281,7 @@ class StepRewardCalculator:
         opponent_distance = self.game.player_distance_to_target(self.opponent)
 
         # Calculate the reward based on the distance to the goal
-        distance_change = (self.orig_agent_distance - player_distance) - (
+        distance_change = (self.orig_player_distance - player_distance) - (
             self.orig_opponent_distance - opponent_distance
         )
         return distance_change / (3 * self.game.board.board_size)

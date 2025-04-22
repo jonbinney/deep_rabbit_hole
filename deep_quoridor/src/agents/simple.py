@@ -1,5 +1,6 @@
 import numpy as np
 from quoridor import ActionEncoder, Player, Quoridor, construct_game_from_observation
+from quoridor_env import StepRewardCalculator
 
 from agents.core import Agent
 
@@ -9,6 +10,7 @@ def sample_random_action_sequence(game: Quoridor, player: Player, opponent: Play
     Sample a random sequence of actions for a given game. Stops early if the game terminates."""
     action_sequence = []
     total_reward = 0.0
+    reward_calculator = StepRewardCalculator(game, player, opponent)
     while len(action_sequence) < max_path_length:
         # For now, assume the other agent takes random actions.
         valid_actions = game.get_valid_actions()
@@ -18,10 +20,12 @@ def sample_random_action_sequence(game: Quoridor, player: Player, opponent: Play
         if game.get_current_player() == player:
             action_sequence.append(action)
 
+        reward_calculator.before_step()
+
         game.step(action)
 
-        # TODO: Implement a reward function
-        total_reward += 0
+        reward = reward_calculator.after_step()
+        total_reward += reward
 
         if game.is_game_over():
             break
@@ -36,7 +40,7 @@ class SimpleAgent(Agent):
         self.num_sequences = num_sequences
         self.board_size = kwargs["board_size"]
         self.action_encoder = ActionEncoder(self.board_size)
-    
+
     def start_game(self, game, player_id):
         self.player_id = player_id
 
@@ -54,4 +58,3 @@ class SimpleAgent(Agent):
         action_id = self.action_encoder.action_to_index(best_sequence[0])
         assert action_mask[action_id] == 1, "The action is not valid according to the action mask."
         return action_id
-    
