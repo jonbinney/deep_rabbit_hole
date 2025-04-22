@@ -7,10 +7,15 @@ class BaseTrainableAgentAdapter(TrainableAgent):
     def __init__(self, agent: TrainableAgent):
         self.agent = agent
 
+    def _agent(self) -> TrainableAgent:
+        return self.agent
+
     def is_trainable(self) -> bool:
         return self.agent.is_trainable()
 
     def start_game(self, game: Any, player_id: int) -> None:
+        self.board_size = game.board_size
+        self.player_id = player_id
         self.agent.start_game(game, player_id)
 
     def end_game(self, game: Any) -> None:
@@ -51,3 +56,7 @@ class BaseTrainableAgentAdapter(TrainableAgent):
 
     def load_model(self, path: str) -> None:
         self.agent.load_model(path)
+
+    def get_opponent_player_id(self, player_id):
+        """Get the opponent player ID."""
+        return "player_1" if self.player_id == "player_0" else "player_0"
