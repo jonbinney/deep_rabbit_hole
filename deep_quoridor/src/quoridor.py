@@ -69,6 +69,7 @@ class ActionEncoder:
 
         return action
 
+
 class Board:
     # Possible values for each cell in the grid.
     FREE = -1
@@ -99,7 +100,6 @@ class Board:
 
     def __init__(self, board_size: int = 9, max_walls: int = 10):
         self.board_size = board_size
-            
         self.max_walls = max_walls
 
         # We represent the board as a grid of cells alternating between wall cells and odd rows are player cells.
@@ -154,7 +154,7 @@ class Board:
         Get the number of walls remaining for the player.
         """
         return self._walls_remaining[player]
-    
+
     def set_walls_remaining(self, player: Player, walls_remaining: int):
         """
         Set the number of walls remaining for the player.
@@ -518,6 +518,7 @@ def create_jump_checks():
                     checks[lookup_key][check_type].append(rotated_wall)
     return checks
 
+
 def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:
     if player_id == "player_0":
         player = Player.ONE
@@ -542,8 +543,10 @@ def construct_game_from_observation(observation: dict, player_id: str) -> tuple[
     assert len(player_positions) == 2, "There should be exactly two players on the board."
 
     for row, col in player_positions:
-        player = Player(observation["board"][row, col] - 1)  # Players are 1 and 2 on the board, but we use 0 and 1.
-        board.move_player(player, (row, col))
+        player_on_board = Player(
+            observation["board"][row, col] - 1
+        )  # Players are 1 and 2 on the board, but we use 0 and 1.
+        board.move_player(player_on_board, (row, col))
 
     for row, col, orientation in np.argwhere(observation["walls"] == 1):
         board.add_wall(
