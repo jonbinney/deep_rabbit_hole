@@ -155,6 +155,68 @@ class TestQuoridor:
         else:
             assert set(env_walls) == set(forbidden_walls)
 
+    def _test_distance_to_target(self, s, moves_p1, moves_p2):
+        game, _, _ = parse_board(s)
+        N = game.board.board_size
+        player_one_position = game.board.get_player_position(Player.ONE)
+        assert moves_p1 == game.distance_to_target(player_one_position, N - 1)
+        player_two_position = game.board.get_player_position(Player.TWO)
+        assert moves_p2 == game.distance_to_target(player_two_position, 0)
+
+    def test_distance_to_goal(self):
+        self._test_distance_to_target(
+            """
+            1 . .
+            . . .
+            . . 2
+        """,
+            2,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            . * .
+            . . .
+            2 . 1
+        """,
+            0,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 . .
+            - -
+            . . .
+            . . 2
+        """,
+            4,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 .|.
+            - -+
+            . .|.
+            . . 2
+        """,
+            -1,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 . .
+            - -
+            . .|.
+            . .|2
+        """,
+            4,
+            2,
+        )
+
     def test_corner_movements(self):
         self._test_pawn_movements("""
             1 * .

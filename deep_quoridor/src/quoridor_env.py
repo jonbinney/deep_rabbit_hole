@@ -34,7 +34,6 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
-from agents.core import rotation
 
 
 class QuoridorEnv(AECEnv):
@@ -114,7 +113,8 @@ class QuoridorEnv(AECEnv):
         """
         agent = self.agent_selection
         player = self.agent_to_player[agent]
-        opponent_player = self.agent_to_player[self.get_opponent(agent)]
+        opponent = self.agent_to_player[self.get_opponent(agent)]
+
         if self.terminations[agent]:
             self._next_player()
             self.game.go_to_next_player()
@@ -125,6 +125,10 @@ class QuoridorEnv(AECEnv):
 
         # If the environment and game get out of step, weird things happen.
         assert player == self.game.get_current_player()
+
+        step_reward_calculator = StepRewardCalculator(self.game, player, opponent)
+        if self.step_rewards:
+            step_reward_calculator.before_step()
 
         action = self._action_encoder.index_to_action(action_index)
         self.game.step(action)
@@ -138,14 +142,8 @@ class QuoridorEnv(AECEnv):
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
-            position = self.game.board.get_player_position(player)
-            agent_distance = self.game.distance_to_target(position, self.game.get_goal_row(player), False)
-            opponent_position = self.game.board.get_player_position(opponent_player)
-            oponent_distance = self.game.distance_to_target(
-                opponent_position, self.game.get_goal_row(opponent_player), False
-            )
-            self.rewards[agent] = (oponent_distance - agent_distance) / (self.board_size**2)
-            self.rewards[self.get_opponent(agent)] = (agent_distance - oponent_distance) / (self.board_size**2)
+            self.rewards[agent] = step_reward_calculator.after_step()
+            self.rewards[self.get_opponent(agent)] = 0
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -266,3 +264,24 @@ def env(**kwargs):
         return wrappers.CaptureStdoutWrapper(QuoridorEnv(**kwargs))
     else:
         return QuoridorEnv(**kwargs)
+
+
+class StepRewardCalculator:
+    def __init__(self, game: Quoridor, player: Player, opponent: Player):
+        self.game = game
+        self.player = player
+        self.opponent = opponent
+
+    def before_step(self):
+        self.orig_player_distance = self.game.player_distance_to_target(self.player)
+        self.orig_opponent_distance = self.game.player_distance_to_target(self.opponent)
+
+    def after_step(self):
+        player_distance = self.game.player_distance_to_target(self.player)
+        opponent_distance = self.game.player_distance_to_target(self.opponent)
+
+        # Calculate the reward based on the distance to the goal
+        distance_change = (self.orig_agent_distance - player_distance) - (
+            self.orig_opponent_distance - opponent_distance
+        )
+        return distance_change / (3 * self.game.board.board_size)
