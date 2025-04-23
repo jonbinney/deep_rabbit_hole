@@ -1,4 +1,5 @@
-import numpy as np
+import random
+
 from quoridor import ActionEncoder, Player, Quoridor, construct_game_from_observation
 from quoridor_env import StepRewardCalculator
 
@@ -16,16 +17,16 @@ def sample_random_action_sequence(game: Quoridor, player: Player, opponent: Play
         valid_actions = game.get_valid_actions()
         assert len(valid_actions) > 0, "No valid actions available... this shouldn't be possible."
 
-        action = np.random.choice(valid_actions)
+        action = random.choice(valid_actions)
+
         if game.get_current_player() == player:
             action_sequence.append(action)
-
-        reward_calculator.before_step()
+            reward_calculator.before_step()
 
         game.step(action)
 
-        reward = reward_calculator.after_step()
-        total_reward += reward
+        if game.get_current_player() == player:
+            total_reward += reward_calculator.after_step()
 
         if game.is_game_over():
             break
