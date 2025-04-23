@@ -2,7 +2,9 @@ import os
 from dataclasses import asdict
 
 from agents.core.trainable_agent import AbstractTrainableAgent
+from arena import Arena
 from arena_utils import ArenaPlugin
+from metrics import Metrics
 from utils import resolve_path
 
 import wandb
@@ -24,6 +26,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
+        self.metrics = Metrics(game.board_size, game.max_walls)
 
         self.run = wandb.init(
             project="deep_quoridor",
@@ -51,10 +54,22 @@ class WandbTrainPlugin(ArenaPlugin):
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
 
+            _, elo_table, relative_elo, win_perc = self.metrics.compute(self.agent)
+            wandb_elo_table = wandb.Table(
+                columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
+            )
             self.run.log(
-                {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
+                {
+                    "loss": avg_loss,
+                    "reward": avg_reward,
+                    "epsilon": self.agent.epsilon,
+                    "elo": wandb_elo_table,
+                    "relative_elo": relative_elo,
+                    "win_perc": win_perc,
+                },
                 step=self.episode_count,
             )
+
         self.episode_count += 1
 
     def end_arena(self, game, results):
