@@ -91,14 +91,15 @@ class Arena:
                 )
 
             if opponent_agent.is_trainable() and isinstance(opponent_agent_id, AbstractTrainableAgent):
-                opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
-        observation_before_action,
-        opponent_observation,
-        observation_after_action,
-        reward,
-        action,
-        agent_id,
-        done=False,
+                opponent_agent.handle_opponent_step_outcome(
+                    observation_before_action=observations[-1][1],
+                    opponent_observation=self.game.observe(opponent_agent_id),
+                    observation_after_action=self.game.observe(agent_id),
+                    reward=observations[-1][3],
+                    action=action,
+                    agent_id=opponent_agent_id,
+                    done=self.game.is_done(),
+                )
 
             self.plugins.after_action(self.game, step, agent_id, action)
             step += 1
