@@ -127,12 +127,27 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
-    def handle_opponent_step_outcome(self, opponent_observation_before_action, action, game):
+    def handle_opponent_step_outcome(
+        self,
+        observation_before_action,
+        opponent_observation,
+        observation_after_action,
+        reward,
+        action,
+        agent_id,
+        done=False,
+    ):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
         self.handle_step_outcome_all(
-            opponent_observation_before_action, action, game, self.get_opponent_player_id(self.player_id)
+            observation_before_action,
+            opponent_observation,
+            observation_after_action,
+            reward,
+            action,
+            self.get_opponent_player_id(agent_id),
+            done,
         )
 
     def observation_to_tensor(self, observation, obs_player_id):

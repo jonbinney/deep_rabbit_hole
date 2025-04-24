@@ -50,34 +50,60 @@ class Arena:
         self.plugins.start_game(self.game, agent1, agent2)
         start_time = time.time()
         step = 0
-        for player_id in self.game.agent_iter():
+        observations = []  # list of tuples of (agent_id, observation, action)
+        for agent_id in self.game.agent_iter():
             observation, _, termination, truncation, _ = self.game.last()
-            agent = agents[player_id]
+            agent = agents[agent_id]
+            opponent_agent_id = self.game.get_opponent(agent_id)
+            opponent_agent = agents[agent_id]
+
             if termination or truncation:
                 if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                     # Handle end of game (in case winner was not this agent)
-                    agent.handle_step_outcome(observation, None, self.game)
+                    agent.handle_step_outcome(
+                        observation_before_action=observations[-2][1],
+                        opponent_observation=observations[-1][1],
+                        observation_after_action=observation,
+                        reward=self.game.rewards[agent_id],
+                        action=None,
+                        agent_id=agent_id,
+                        done=True,
+                    )
                 break
 
-            assert (observation["action_mask"] == self.game.last_action_mask[player_id]).all()
+            assert (observation["action_mask"] == self.game.last_action_mask[agent_id]).all()
 
             action = int(agent.get_action(observation["observation"], observation["action_mask"]))
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
+            observations.append((agent_id, self.game.observe(agent_id), action, self.game.rewards[agent_id]))
 
             if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
-                agent.handle_step_outcome(observation, action, self.game)
+                agent.handle_step_outcome(
+                    observation_before_action=observations[-1][1],
+                    opponent_observation=self.game.observe(opponent_agent_id),
+                    observation_after_action=self.game.observe(agent_id),
+                    reward=observations[-1][3],
+                    action=action,
+                    agent_id=agent_id,
+                    done=self.game.is_done(),
+                )
 
-            opponent_agent = agents[self.game.agent_selection]
-            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
+            if opponent_agent.is_trainable() and isinstance(opponent_agent_id, AbstractTrainableAgent):
                 opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
+        observation_before_action,
+        opponent_observation,
+        observation_after_action,
+        reward,
+        action,
+        agent_id,
+        done=False,
 
-            self.plugins.after_action(self.game, step, player_id, action)
+            self.plugins.after_action(self.game, step, agent_id, action)
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
-                print(f"Game {game_id} reached max steps. Player {agent.name()} vs Player {opponent_agent.name()}.")
                 break
 
         end_time = time.time()

@@ -157,23 +157,58 @@ class AbstractTrainableAgent(Agent):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
 
-    def handle_opponent_step_outcome(self, observation_before_action, action, game):
+    def handle_opponent_step_outcome(
+        observation_before_action,
+        opponent_observation,
+        observation_after_action,
+        reward,
+        action,
+        agent_id,
+        done=False,
+    ):
         pass
 
-    def adjust_reward(self, r, game):
-        if game.is_done():
+    def adjust_reward(self, r, done):
+        if done:
             r *= self.final_reward_multiplier
         return r
 
-    def handle_step_outcome(self, observation_before_action, action, game):
+    def handle_step_outcome(
+        self,
+        observation_before_action,
+        opponent_observation,
+        observation_after_action,
+        reward,
+        action,
+        agent_id,
+        done=False,
+    ):
         self.steps += 1
         if not self.training_mode:
             return
-        reward = self.handle_step_outcome_all(observation_before_action, action, game, self.player_id)
+        reward = self.handle_step_outcome_all(
+            observation_before_action,
+            opponent_observation,
+            observation_after_action,
+            reward,
+            action,
+            agent_id,
+            done,
+        )
         self.current_episode_reward += reward
 
-    def handle_step_outcome_all(self, observation_before_action, action, game, player_id):
-        reward = self.adjust_reward(game.rewards[player_id], game)
+    def handle_step_outcome_all(
+        self,
+        observation_before_action,
+        opponent_observation,
+        observation_after_action,
+        reward,
+        action,
+        agent_id,
+        done,
+    ):
+        # reward = self.adjust_reward(game.rewards[player_id], game)
+        reward = self.adjust_reward(reward, done)
 
         # Handle end of episode
         if action is None:
@@ -187,27 +222,31 @@ class AbstractTrainableAgent(Agent):
                     return reward
             return 0
 
-        state_before_action = self.observation_to_tensor(observation_before_action, player_id)
-        state_after_action = self.observation_to_tensor(game.observe(player_id), player_id)
-        opponent_state = game.observe(self.get_opponent_player_id(player_id))
+        state_before_action = self.observation_to_tensor(observation_before_action["observation"], agent_id)
+        state_after_action = self.observation_to_tensor(observation_after_action["observation"], agent_id)
+        # opponent_state = game.observe(self.get_opponent_player_id(player_id))
+        opponent_state = opponent_observation
         next_state_mask = None
         if self.params.mask_targetq:
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
-            next_state_mask = self.convert_action_mask_to_tensor_for_player(
-                opponent_state["action_mask"], self.get_opponent_player_id(player_id)
+            next_state_mask = (
+                self.convert_action_mask_to_tensor_for_player(
+                    opponent_state["action_mask"], self.get_opponent_player_id(agent_id)
+                )
+                .cpu()
+                .numpy()
             )
-        done = game.is_done()
 
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            self.convert_to_tensor_index_from_action(action, player_id),
+            self.convert_to_tensor_index_from_action(action, agent_id),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
             else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
-            next_state_mask.cpu().numpy(),
+            next_state_mask,
         )
 
         if len(self.replay_buffer) > self.batch_size:
