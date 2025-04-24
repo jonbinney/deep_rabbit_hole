@@ -14,6 +14,8 @@ from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentPa
 class SB3ActionMaskWrapper(BaseWrapper):
     """
     Wrapper to allow PettingZoo environments to be used with SB3 illegal action masking.
+    Taken from https://github.com/dm-ackerman/PettingZoo/blob/master/tutorials/SB3/connect_four/sb3_connect_four_action_mask.py
+
     In particular it adapts PettingZoo, since the Action Masking part of it is already implemented
     in SB3_contrib as the MaskablePPO.
     The required changes are minor:
@@ -54,7 +56,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         super().step(action)
 
         return (
-            self.observe(current_agent),
+            self.observe(self.agent_selection),
             self.rewards[current_agent] * self.rewards_multiplier,
             self.terminations[current_agent],
             self.truncations[current_agent],
@@ -64,15 +66,6 @@ class SB3ActionMaskWrapper(BaseWrapper):
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
         obs = super().observe(agent)["observation"]
-        # # Take obs, which is a dict with some arrays, and convert it to a flat numpy array
-        # return np.concatenate(
-        #     [
-        #         obs["board"].flatten(),
-        #         obs["walls"][0].flatten(),
-        #         obs["walls"][1].flatten(),
-        #         [obs["my_walls_remaining"], obs["opponent_walls_remaining"]],
-        #     ]
-        # )
         return obs
 
     def action_mask(self):
