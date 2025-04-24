@@ -380,12 +380,12 @@ class AbstractTrainableAgent(Agent):
         """Prepare batch data for training."""
         states, actions, rewards, next_states, dones, next_state_masks = zip(*batch)
 
-        states = torch.stack([torch.FloatTensor(s).to(self.device) for s in states])
+        states = torch.stack([torch.FloatTensor(s) for s in states]).to(self.device)
         actions = torch.LongTensor(actions).to(self.device).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_states])
+        next_states = torch.stack([torch.FloatTensor(s) for s in next_states]).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
-        next_state_masks = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_state_masks])
+        next_state_masks = torch.stack([torch.FloatTensor(s) for s in next_state_masks]).to(self.device)
 
         return states, actions, rewards, next_states, dones, next_state_masks
 
