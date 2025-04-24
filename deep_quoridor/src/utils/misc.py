@@ -116,3 +116,29 @@ def yargs(parser: argparse.ArgumentParser, default_path: str):
                     args_dict[k] = parser.parse_args(v["args"].split(" "))
 
     return args_dict
+
+
+def compute_elo(results: list["GameResult"], k=32, initial_rating=1500) -> dict[str, float]:
+    ratings = {}
+    random.shuffle(results)
+
+    for result in results:
+        if result.player1 not in ratings:
+            ratings[result.player1] = initial_rating
+
+        if result.player2 not in ratings:
+            ratings[result.player2] = initial_rating
+
+        delta = (ratings[result.player1] - ratings[result.player2]) / 400.0
+        e1 = 1 / (1 + 10**-delta)
+        e2 = 1 / (1 + 10**delta)
+
+        # If the game was truncated because it was too long, they both will count as losing
+        # so their rating decreases
+        p1_won = 1 if result.winner == result.player1 else 0
+        p2_won = 1 if result.winner == result.player2 else 0
+
+        ratings[result.player1] += k * (p1_won - e1)
+        ratings[result.player2] += k * (p2_won - e2)
+
+    return ratings

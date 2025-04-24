@@ -230,14 +230,13 @@ class AbstractTrainableAgent(Agent):
         if self.params.mask_targetq:
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
-            next_state_mask = (
-                self.convert_action_mask_to_tensor_for_player(
-                    opponent_state["action_mask"], self.get_opponent_player_id(agent_id)
-                )
-                .cpu()
-                .numpy()
+            next_state_mask = self.convert_action_mask_to_tensor_for_player(
+                opponent_state["action_mask"], self.get_opponent_player_id(agent_id)
             )
 
+        # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
+        # Ideally for off policy training we could collect all moves and all the information
+        # store it and use it for training without running "matches" every time.
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
             self.convert_to_tensor_index_from_action(action, agent_id),
@@ -246,7 +245,7 @@ class AbstractTrainableAgent(Agent):
             if state_after_action is not None
             else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
-            next_state_mask,
+            np.zeros_like(1) if next_state_mask is None else next_state_mask.cpu().numpy(),
         )
 
         if len(self.replay_buffer) > self.batch_size:
@@ -415,12 +414,12 @@ class AbstractTrainableAgent(Agent):
         """Prepare batch data for training."""
         states, actions, rewards, next_states, dones, next_state_masks = zip(*batch)
 
-        states = torch.stack([torch.FloatTensor(s).to(self.device) for s in states])
+        states = torch.stack([torch.FloatTensor(s) for s in states]).to(self.device)
         actions = torch.LongTensor(actions).to(self.device).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_states])
+        next_states = torch.stack([torch.FloatTensor(s) for s in next_states]).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
-        next_state_masks = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_state_masks])
+        next_state_masks = torch.stack([torch.FloatTensor(s) for s in next_state_masks]).to(self.device)
 
         return states, actions, rewards, next_states, dones, next_state_masks
 
