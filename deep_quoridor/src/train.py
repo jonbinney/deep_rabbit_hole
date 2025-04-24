@@ -24,7 +24,7 @@ def train_dqn(
     plugins = []
 
     if use_wandb:
-        plugins.append(WandbTrainPlugin(update_every=10, total_episodes=episodes, run_id=run_id))
+        plugins.append(WandbTrainPlugin(update_every=100, total_episodes=episodes, run_id=run_id))
 
     plugins.append(
         SaveModelEveryNEpisodesPlugin(

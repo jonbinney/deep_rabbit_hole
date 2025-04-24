@@ -144,6 +144,8 @@ class AbstractTrainableAgent(Agent):
         self.player_id = player_id
 
     def end_game(self, game):
+        if not self.training_mode:
+            return
         """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1
