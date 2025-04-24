@@ -2,7 +2,6 @@ import os
 from dataclasses import asdict
 
 from agents.core.trainable_agent import AbstractTrainableAgent
-from arena import Arena
 from arena_utils import ArenaPlugin
 from metrics import Metrics
 from utils import resolve_path
@@ -11,14 +10,17 @@ import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, run_id: str = ""):
+    def __init__(self, update_every: int, tournament_frequency: int, total_episodes: int, run_id: str = ""):
         self.update_every = update_every
+        self.tournament_frequency = tournament_frequency
         self.total_episodes = total_episodes
         self.episode_count = 0
         self.agent = None
         self.run_id = run_id
 
     def _initialize(self, game):
+        assert self.agent
+
         config = {
             "board_size": game.board_size,
             "max_walls": game.max_walls,
@@ -51,18 +53,26 @@ class WandbTrainPlugin(ArenaPlugin):
         self._initialize(game)
 
     def end_game(self, game, result):
+        assert self.agent
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
 
+            self.run.log(
+                {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
+                step=self.episode_count,
+            )
+
+        if (
+            self.tournament_frequency > 0
+            and self.episode_count % self.tournament_frequency == 0
+            or self.episode_count == (self.total_episodes - 1)
+        ):
             _, elo_table, relative_elo, win_perc = self.metrics.compute(self.agent)
             wandb_elo_table = wandb.Table(
                 columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
             )
             self.run.log(
                 {
-                    "loss": avg_loss,
-                    "reward": avg_reward,
-                    "epsilon": self.agent.epsilon,
                     "elo": wandb_elo_table,
                     "relative_elo": relative_elo,
                     "win_perc": win_perc,
@@ -73,6 +83,8 @@ class WandbTrainPlugin(ArenaPlugin):
         self.episode_count += 1
 
     def end_arena(self, game, results):
+        assert self.agent
+
         # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
         # once we upload it to wandb and have the digest.
         save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("temp"))
