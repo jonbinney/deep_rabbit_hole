@@ -223,11 +223,11 @@ class AbstractTrainableAgent(Agent):
             if self.episodes_rewards
             else 0.0
         )
-        avg_loss = (
-            sum(self.train_call_losses[-length:]) / min(length, len(self.train_call_losses))
-            if self.train_call_losses
-            else 0.0
-        )
+        if self.train_call_losses:
+            losses = torch.stack(self.train_call_losses[-length:])
+            avg_loss = losses.mean().item()
+        else:
+            avg_loss = 0.0
 
         return avg_loss, avg_reward
 
@@ -416,7 +416,7 @@ class AbstractTrainableAgent(Agent):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return loss.item()
+        return loss
 
     def _update_epsilon(self):
         """Update epsilon value for exploration."""
