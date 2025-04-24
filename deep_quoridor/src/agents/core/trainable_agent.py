@@ -197,6 +197,9 @@ class AbstractTrainableAgent(Agent):
             )
         done = game.is_done()
 
+        # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
+        # Ideally for off policy training we could collect all moves and all the information
+        # store it and use it for training without running "matches" every time.
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
             self.convert_to_tensor_index_from_action(action, player_id),
@@ -205,7 +208,7 @@ class AbstractTrainableAgent(Agent):
             if state_after_action is not None
             else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
-            next_state_mask.cpu().numpy(),
+            np.zeros_like(1) if next_state_mask is None else next_state_mask.cpu().numpy(),
         )
 
         if len(self.replay_buffer) > self.batch_size:
