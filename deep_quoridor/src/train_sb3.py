@@ -18,13 +18,14 @@ import os
 import time
 
 import quoridor_env
-from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
+from agents.sb3_ppopp import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from utils import set_deterministic
 
 import wandb
+from deep_quoridor.src.agents.greedy import GreedyAgent
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
 from wandb.integration.sb3 import WandbCallback
 
@@ -51,7 +52,10 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
     # a new action_mask_fn kwarg, as it did in an earlier draft.
-    policy_kwargs = {"features_extractor_class": DictFlattenExtractor}
+    policy_kwargs = {
+        "features_extractor_class": DictFlattenExtractor,
+        "net_arch": [1024, 4096, 1024],
+    }
     model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs)
     model.set_random_seed(seed)
     model.learn(
@@ -167,7 +171,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    env_fn = make_env_fn(quoridor_env.env)
+    greedy = GreedyAgent(board_size=args.board_size)
+    env_fn = make_env_fn(quoridor_env.env, opponent=greedy)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 
     # Set random seed for reproducibility
