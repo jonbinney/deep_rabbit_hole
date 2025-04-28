@@ -129,24 +129,23 @@ class DExpAgent(AbstractTrainableAgent):
 
     def handle_opponent_step_outcome(
         self,
-        observation_before_action,
-        opponent_observation,
-        observation_after_action,
-        reward,
-        action,
-        agent_id,
+        opponent_observation_before_action,
+        my_observation_after_opponent_action,
+        opponent_observation_after_action,
+        opponent_reward,
+        opponent_action,
         done=False,
     ):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
         self.handle_step_outcome_all(
-            observation_before_action,
-            opponent_observation,
-            observation_after_action,
-            reward,
-            action,
-            self.get_opponent_player_id(agent_id),
+            opponent_observation_before_action,
+            my_observation_after_opponent_action,
+            opponent_observation_after_action,
+            opponent_reward,
+            opponent_action,
+            self.get_opponent_player_id(self.agent_id),
             done,
         )
 

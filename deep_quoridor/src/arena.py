@@ -50,9 +50,8 @@ class Arena:
         self.plugins.start_game(self.game, agent1, agent2)
         start_time = time.time()
         step = 0
-        observations = []  # list of tuples of (agent_id, observation, action)
         for agent_id in self.game.agent_iter():
-            observation, _, termination, truncation, _ = self.game.last()
+            observation_before_action, _, termination, truncation, _ = self.game.last()
             agent = agents[agent_id]
             opponent_agent_id = self.game.get_opponent(agent_id)
             opponent_agent = agents[agent_id]
@@ -61,43 +60,41 @@ class Arena:
                 if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                     # Handle end of game (in case winner was not this agent)
                     agent.handle_step_outcome(
-                        observation_before_action=observations[-2][1],
-                        opponent_observation=observations[-1][1],
-                        observation_after_action=observation,
+                        observation_before_action=observation_before_action,
+                        opponent_observation_after_action=self.game.observe(opponent_agent_id),
+                        observation_after_action=None,
                         reward=self.game.rewards[agent_id],
                         action=None,
-                        agent_id=agent_id,
                         done=True,
                     )
                 break
 
-            assert (observation["action_mask"] == self.game.last_action_mask[agent_id]).all()
+            assert (observation_before_action["action_mask"] == self.game.last_action_mask[agent_id]).all()
 
-            action = int(agent.get_action(observation["observation"], observation["action_mask"]))
+            action = int(
+                agent.get_action(observation_before_action["observation"], observation_before_action["action_mask"])
+            )
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
-            observations.append((agent_id, self.game.observe(agent_id), action, self.game.rewards[agent_id]))
 
             if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                 agent.handle_step_outcome(
-                    observation_before_action=observations[-1][1],
-                    opponent_observation=self.game.observe(opponent_agent_id),
+                    observation_before_action=observation_before_action,
+                    opponent_observation_after_action=self.game.observe(opponent_agent_id),
                     observation_after_action=self.game.observe(agent_id),
-                    reward=observations[-1][3],
+                    reward=self.game.rewards[agent_id],
                     action=action,
-                    agent_id=agent_id,
                     done=self.game.is_done(),
                 )
 
             if opponent_agent.is_trainable() and isinstance(opponent_agent_id, AbstractTrainableAgent):
                 opponent_agent.handle_opponent_step_outcome(
-                    observation_before_action=observations[-1][1],
-                    opponent_observation=self.game.observe(opponent_agent_id),
-                    observation_after_action=self.game.observe(agent_id),
-                    reward=observations[-1][3],
-                    action=action,
-                    agent_id=opponent_agent_id,
+                    opponent_observation_before_action=observation_before_action,
+                    my_observation_after_opponent_action=self.game.observe(opponent_agent_id),
+                    opponent_observation_after_action=self.game.observe(agent_id),
+                    opponent_reward=self.game.rewards[opponent_agent_id],
+                    opponent_action=action,
                     done=self.game.is_done(),
                 )
 
@@ -139,7 +136,7 @@ class Arena:
                         max_walls=self.max_walls,
                         action_space=self.game.action_space(
                             None
-                        ),  # Action space doesn't depend on the player so we just pass None
+                        ),  # We might need to do something fancier with the action space if we add agent wrappers.
                     )
                 )
 

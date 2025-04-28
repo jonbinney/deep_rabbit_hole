@@ -158,12 +158,11 @@ class AbstractTrainableAgent(Agent):
         return "player_1" if player_id == "player_0" else "player_0"
 
     def handle_opponent_step_outcome(
-        observation_before_action,
-        opponent_observation,
-        observation_after_action,
-        reward,
-        action,
-        agent_id,
+        opponent_observation_before_action,
+        my_observation_after_opponent_action,
+        opponent_observation_after_action,
+        opponent_reward,
+        opponent_action,
         done=False,
     ):
         pass
@@ -176,11 +175,10 @@ class AbstractTrainableAgent(Agent):
     def handle_step_outcome(
         self,
         observation_before_action,
-        opponent_observation,
+        opponent_observation_after_action,
         observation_after_action,
         reward,
         action,
-        agent_id,
         done=False,
     ):
         self.steps += 1
@@ -188,11 +186,11 @@ class AbstractTrainableAgent(Agent):
             return
         reward = self.handle_step_outcome_all(
             observation_before_action,
-            opponent_observation,
+            opponent_observation_after_action,
             observation_after_action,
             reward,
             action,
-            agent_id,
+            self.player_id,
             done,
         )
         self.current_episode_reward += reward
@@ -200,7 +198,7 @@ class AbstractTrainableAgent(Agent):
     def handle_step_outcome_all(
         self,
         observation_before_action,
-        opponent_observation,
+        opponent_observation_after_action,
         observation_after_action,
         reward,
         action,
@@ -224,14 +222,12 @@ class AbstractTrainableAgent(Agent):
 
         state_before_action = self.observation_to_tensor(observation_before_action["observation"], agent_id)
         state_after_action = self.observation_to_tensor(observation_after_action["observation"], agent_id)
-        # opponent_state = game.observe(self.get_opponent_player_id(player_id))
-        opponent_state = opponent_observation
         next_state_mask = None
         if self.params.mask_targetq:
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
             next_state_mask = self.convert_action_mask_to_tensor_for_player(
-                opponent_state["action_mask"], self.get_opponent_player_id(agent_id)
+                opponent_observation_after_action["action_mask"], self.get_opponent_player_id(agent_id)
             )
 
         # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
