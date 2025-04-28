@@ -110,7 +110,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 2
+        return 3
 
     @staticmethod
     def params_class():
