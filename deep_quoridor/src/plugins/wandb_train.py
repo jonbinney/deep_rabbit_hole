@@ -10,13 +10,13 @@ import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, tournament_frequency: int, total_episodes: int, run_id: str = ""):
+    def __init__(self, update_every: int, total_episodes: int, agent_encoded_name: str, run_id: str = ""):
         self.update_every = update_every
-        self.tournament_frequency = tournament_frequency
         self.total_episodes = total_episodes
         self.episode_count = 0
         self.agent = None
         self.run_id = run_id
+        self.agent_encoded_name = agent_encoded_name
 
     def _initialize(self, game):
         assert self.agent
@@ -62,24 +62,6 @@ class WandbTrainPlugin(ArenaPlugin):
                 step=self.episode_count,
             )
 
-        if (
-            self.tournament_frequency > 0
-            and self.episode_count % self.tournament_frequency == 0
-            or self.episode_count == (self.total_episodes - 1)
-        ):
-            _, elo_table, relative_elo, win_perc = self.metrics.compute(self.agent)
-            wandb_elo_table = wandb.Table(
-                columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
-            )
-            self.run.log(
-                {
-                    "elo": wandb_elo_table,
-                    "relative_elo": relative_elo,
-                    "win_perc": win_perc,
-                },
-                step=self.episode_count,
-            )
-
         self.episode_count += 1
 
     def end_arena(self, game, results):
@@ -103,5 +85,22 @@ class WandbTrainPlugin(ArenaPlugin):
         # the same path, just a different file name
         os.rename(save_file, wand_file)
         print(f"Model saved to {wand_file}")
-
+        self.compute_tournament_metrics(str(wand_file))
         wandb.finish()
+
+    def compute_tournament_metrics(self, model_filename: str):
+        _, elo_table, relative_elo, win_perc = self.metrics.compute(
+            self.agent_encoded_name + f",model_filename={model_filename}"
+        )
+        print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
+        wandb_elo_table = wandb.Table(
+            columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
+        )
+        self.run.log(
+            {
+                "elo": wandb_elo_table,
+                "relative_elo": relative_elo,
+                "win_perc": win_perc,
+            },
+            step=self.episode_count,
+        )

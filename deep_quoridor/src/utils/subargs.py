@@ -23,7 +23,7 @@ class ParseSubargsError(ValueError):
     pass
 
 
-def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="="):
+def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="=", ignore_fields=set()):
     """Parses the string s and uses it to instantiate a class cls and return it."""
     if s == "":
         return cls()
@@ -35,6 +35,9 @@ def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="="):
             raise ParseSubargsError(f"The subargument '{part}' needs to have an assignment using '{assign}'")
 
         k, v = part.split(assign)
+        if k in ignore_fields:
+            continue
+
         if k not in class_fields:
             raise ParseSubargsError(
                 f"Field '{k}' not in class {cls.__name__}.  Available fields are: {', '.join(class_fields.keys())}"

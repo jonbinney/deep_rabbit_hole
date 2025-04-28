@@ -36,12 +36,12 @@ class Metrics:
 
         return int(agent_rating - best_opponent)
 
-    def compute(self, agent: str | Agent) -> tuple[int, dict[str, float], int, float]:
+    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
         Args:
-            agent (str | Agent): The agent to evaluate, specified either as a string identifier or an Agent instance.
+            agent_encoded_name (str): The encoded name of the agent to evaluate.  If there are training params, they will be ignored
 
         Returns:
             tuple[int, dict[str, float], int, float]: A tuple containing:
@@ -66,13 +66,9 @@ class Metrics:
             "greedy:p_random=0.5,nick=greedy-05",
         ]
 
-        if isinstance(agent, str):
-            agent = AgentRegistry.create_from_encoded_name(agent, board_size=self.board_size, max_walls=self.max_walls)
-
-        # Make sure the agent is not in training mode to do the evaluation
-        if isinstance(agent, AbstractTrainableAgent):
-            prev_training_mode = agent.training_mode
-            agent.training_mode = False
+        agent = AgentRegistry.create_from_encoded_name(
+            agent_encoded_name, board_size=self.board_size, max_walls=self.max_walls, remove_training_args=True
+        )
 
         arena = Arena(self.board_size, self.max_walls)
 
@@ -83,9 +79,6 @@ class Metrics:
             self.stored_elos = compute_elo(results)
 
         results = arena._play_games([agent] + players, times, PlayMode.FIRST_VS_RANDOM)
-
-        if isinstance(agent, AbstractTrainableAgent):
-            agent.training_mode = prev_training_mode
 
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())
