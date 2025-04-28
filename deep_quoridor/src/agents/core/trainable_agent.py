@@ -58,6 +58,7 @@ class TrainableAgentParams(SubargsBase):
     # This is used to log the opponent's possible actions based on agent's qvalues
     inspect_opponent_possible_actions: bool = False
 
+    @classmethod
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
         # TODO: we should ideally have two set of params: one for training and one for inference
@@ -75,8 +76,6 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_dir",
             "model_dir",
-            "wandb_alias",
-            "model_filename",
             "mask_targetq",
             "softmax_exploration",
             "inspect_opponent_possible_actions",
@@ -144,6 +143,8 @@ class AbstractTrainableAgent(Agent):
         self.player_id = player_id
 
     def end_game(self, game):
+        if not self.training_mode:
+            return
         """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1

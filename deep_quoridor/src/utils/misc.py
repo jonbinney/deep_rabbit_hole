@@ -118,8 +118,8 @@ def yargs(parser: argparse.ArgumentParser, default_path: str):
     return args_dict
 
 
-def compute_elo(results: list["GameResult"], k=32, initial_rating=1500) -> dict[str, float]:
-    ratings = {}
+def compute_elo(results: list["GameResult"], k=32, initial_rating=1500, initial_elos={}) -> dict[str, float]:
+    ratings = initial_elos
     random.shuffle(results)
 
     for result in results:
