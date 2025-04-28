@@ -15,7 +15,6 @@ def train_dqn(
     board_size: int,
     max_walls: int,
     save_frequency: int,
-    tournament_frequency: int,
     step_rewards: bool = True,
     use_wandb: bool = True,
     players: list = [],
@@ -68,13 +67,6 @@ if __name__ == "__main__":
     parser.add_argument("-sp", "--save_path", type=str, default="models", help="Directory to save models")
     parser.add_argument(
         "-f", "--save_frequency", type=int, default=500, help="How often to save the model (in episodes)"
-    )
-    parser.add_argument(
-        "-tf",
-        "--tournament_frequency",
-        type=int,
-        default=500,
-        help="How often to run a tournament to compute elo and win percentage (in episodes)",
     )
     parser.add_argument(
         "-i",
@@ -141,7 +133,6 @@ if __name__ == "__main__":
         board_size=args.board_size,
         max_walls=args.max_walls,
         save_frequency=args.save_frequency,
-        tournament_frequency=args.tournament_frequency,
         step_rewards=args.step_rewards,
         use_wandb=args.no_wandb,
         players=args.players,
