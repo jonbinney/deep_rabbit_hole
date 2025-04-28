@@ -183,7 +183,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
 def wrap_env(env):
     env = RotateWrapper(env)
     env = DictSplitBoardWrapper(env, include_turn=False)
-    env = SB3ActionMaskWrapper(env)
+    env = SB3ActionMaskWrapper(env, rewards_multiplier=1)
     return env
 
 
