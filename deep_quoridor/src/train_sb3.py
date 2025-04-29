@@ -18,6 +18,7 @@ import os
 import time
 
 import quoridor_env
+import torch
 from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
@@ -52,12 +53,23 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
     # a new action_mask_fn kwarg, as it did in an earlier draft.
-    policy_kwargs = {"features_extractor_class": DictFlattenExtractor}
+    # Configure MLP policy network architecture for a 5x5 board with 3 max walls
+    # Total flattened input features: 84(25 for my_board, 25 for opponent_board, 32 for walls, 1+1 for wall counts)
+    policy_kwargs = {
+        "features_extractor_class": DictFlattenExtractor,
+        # NOTE(adamantivm) These params haven't proven to be any particular good so far
+        "net_arch": {
+            "pi": [256, 256, 256],
+            "vf": [256, 256, 256],
+        },
+        "activation_fn": torch.nn.ReLU,
+    }
 
     # Configure model with tensorboard logging to ensure metrics are captured
     tensorboard_log = "runs/sb3_tensorboard"
-    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs,
-                      tensorboard_log=tensorboard_log)
+    model = MaskablePPO(
+        MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log=tensorboard_log
+    )
     model.set_random_seed(seed)
 
     # Simplified WandbCallback with verbosity set to capture loss metrics
