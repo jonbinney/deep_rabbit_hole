@@ -30,15 +30,13 @@ class DExpNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 2048),
+            nn.Linear(flat_input_size, 1024),
             nn.ReLU(),
-            nn.Linear(2048, 4096),
+            nn.Linear(1024, 2048),
             nn.ReLU(),
-            nn.Linear(4096, 4096),
+            nn.Linear(2048, 1024),
             nn.ReLU(),
-            nn.Linear(4096, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, action_size),
+            nn.Linear(1024, action_size),
         )
         self.model.to(my_device())
 
@@ -115,7 +113,7 @@ class DExpAgent(AbstractTrainableAgent):
 
     def version(self):
         """Bump this version when compatibility with saved models is broken"""
-        return 2
+        return 3
 
     def resolve_filename(self, suffix):
         return f"{self.model_id()}_C{self.params}_{suffix}.pt"

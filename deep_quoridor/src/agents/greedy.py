@@ -104,6 +104,8 @@ class GreedyAgent(Agent):
 
     def _shortest_path_from_me(self, game, observation: dict, target_row: int) -> list[Position]:
         """Return the shortest path from wherever the agent currently is."""
+        coords = np.argwhere(observation["observation"]["board"] == 1)
+        my_position = (int(coords[0][0]), int(coords[0][1]))
         # The first move is based on the action mask, that already calculated what positions are valid
         first_moves = self._valid_pawn_movements(game, observation["action_mask"])
         shortest_path = None
@@ -111,8 +113,8 @@ class GreedyAgent(Agent):
         # Find the shortest path for each of the first moves and keep the shortest one.
         for move in first_moves:
             path = self._shortest_path_from(game, move, target_row)
-            if shortest_path is None or len(path) < len(shortest_path):
-                shortest_path = [move] + path
+            if shortest_path is None or (len(path) + 1) < len(shortest_path):
+                shortest_path = [my_position] + [move] + path
 
         assert shortest_path is not None, "No path found"
         return shortest_path
@@ -138,6 +140,8 @@ class GreedyAgent(Agent):
             else:
                 assert "Expected horizontal or vertical movement"
 
+            print(f"Opponent movement: {p0} -> {p1}")
+            print(f"Rows: {rows}, cols: {cols}, orientation: {orientation}")
             # Check if any of the wall placements are valid.
             # TO DO: instead of just returning the first, we can check which one is better
             # by looking into which makes the difference of the distances more favorable
@@ -145,8 +149,9 @@ class GreedyAgent(Agent):
                 for c in cols:
                     if r < 0 or c < 0 or r >= game.wall_size or c >= game.wall_size:
                         continue
-
+                    print(f"Wall placement: ({r}, {c})")
                     action = game.action_params_to_index(r, c, orientation)
+                    print(f"Action: {action}")
                     if action_mask[action] == 1:
                         return action
         # No actions found
@@ -192,18 +197,21 @@ class GreedyAgent(Agent):
 
         my_shortest_path = self._shortest_path_from_me(game, observation, goal_row)
         opponent_pos = self._get_opponent_position(game, observation["observation"]["board"])
-        opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_row)
+        opponent_shortest_path = [opponent_pos] + self._shortest_path_from(game, opponent_pos, opponent_row)
 
         self._log_action(game, observation, my_shortest_path, opponent_shortest_path)
 
         # TODO: use a more elaborate logic to decide whether to block, could be probabilistic
         block = False
+        print(f"Opponent shortest path: {len(opponent_shortest_path)} path: {opponent_shortest_path}")
+        print(f"My shortest path: {len(my_shortest_path)} path: {my_shortest_path}")
         if len(opponent_shortest_path) < len(my_shortest_path):
             if len(opponent_shortest_path) < 5:
                 block = True
         if block:
             action = self._get_block_action(game, opponent_shortest_path, observation["action_mask"])
+            print(f"Blocking action: {action}")
             if action is not None:
                 return action
 
-        return game.action_params_to_index(my_shortest_path[0][0], my_shortest_path[0][1], 0)
+        return game.action_params_to_index(my_shortest_path[1][0], my_shortest_path[1][1], 0)
