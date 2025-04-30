@@ -4,7 +4,15 @@ from queue import Queue
 from typing import Optional, TypeAlias
 
 import numpy as np
-from quoridor import ActionEncoder, Quoridor, MoveAction, Player, WallAction, WallOrientation, construct_game_from_observation
+from quoridor import (
+    ActionEncoder,
+    MoveAction,
+    Player,
+    Quoridor,
+    WallAction,
+    WallOrientation,
+    construct_game_from_observation,
+)
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -66,7 +74,7 @@ class GreedyAgent(Agent):
         Given a position in the board, it returns the shortest path to get to the target_row.
         """
         if pos[0] == target_row:
-            return []
+            return [pos]
 
         # How many steps are needed to get to that position, starting from pos (None means unreachable)
         distances = [[None] * game.board.board_size for _ in range(game.board.board_size)]
@@ -97,18 +105,20 @@ class GreedyAgent(Agent):
 
         # Trace back the path
         path = [dest]
-        while True:
+        prev_pos = None
+        while prev_pos != pos:
             last_pos = path[-1]
             prev_pos = coming_from[last_pos]
-            if prev_pos == pos:
-                break
-
             path.append(prev_pos)
 
         return path[::-1]
 
-    def _shortest_path_from_me(self, game: Quoridor, action_mask: np.ndarray, target_row: int) -> list[Position]:
+    def _shortest_path_from_me(
+        self, game: Quoridor, player: Player, action_mask: np.ndarray, target_row: int
+    ) -> list[Position]:
         """Return the shortest path from wherever the agent currently is."""
+        my_position = game.board.get_player_position(player)
+
         # The first move is based on the action mask, that already calculated what positions are valid
         first_moves = self._valid_pawn_movements(action_mask)
         shortest_path = None
@@ -117,7 +127,7 @@ class GreedyAgent(Agent):
         for move in first_moves:
             path = self._shortest_path_from(game, move, target_row)
             if shortest_path is None or len(path) < len(shortest_path):
-                shortest_path = [move] + path
+                shortest_path = [my_position] + path
 
         assert shortest_path is not None, "No path found"
         return shortest_path
@@ -172,18 +182,16 @@ class GreedyAgent(Agent):
         # Log the possible next movements
         movement_mask = action_mask[: self.board_size**2]
         for action in np.argwhere(movement_mask == 1).reshape(-1):
-            # self.action_log.action_text(self.action_encoder.index_to_action(int(action)), "")
-            pass
+            self.action_log.action_text(self.action_encoder.index_to_action(int(action)), "")
 
-        my_coords = np.argwhere(observation["board"] == 1)
-        path = my_shortest_path[:]
-        path.insert(0, (int(my_coords[0][0]), int(my_coords[0][1])))
-        # self.action_log.path(path)
+        self.action_log.path(my_shortest_path)
+        self.action_log.path(opponent_shortest_path)
 
-        opp_coords = np.argwhere(observation["board"] == 2)
-        path = opponent_shortest_path[:]
-        path.insert(0, (int(opp_coords[0][0]), int(opp_coords[0][1])))
-        # self.action_log.path(path)
+        my_pos = MoveAction(my_shortest_path[0])
+        opp_pos = MoveAction(opponent_shortest_path[0])
+
+        self.action_log.action_text(my_pos, f"dist:{len(my_shortest_path) - 1}")
+        self.action_log.action_text(opp_pos, f"dist: {len(opponent_shortest_path) - 1}")
 
     def get_action(self, observation, action_mask):
         # Reconstruct the game from the observation.
@@ -192,14 +200,15 @@ class GreedyAgent(Agent):
         if random.random() < self.params.p_random:
             if self.action_log.is_enabled():
                 self.action_log.clear()
-                # TO DO: when we have the functionality in the log to output a message,
-                # use it to say that the move will be random.
+
+            my_pos = MoveAction(game.board.get_player_position(player))
+            self.action_log.action_text(my_pos, "RAND")
             return self.action_space.sample(action_mask)
 
         goal_row = game.get_goal_row(player)
         opponent_goal_row = game.get_goal_row(opponent)
 
-        my_shortest_path = self._shortest_path_from_me(game, action_mask, goal_row)
+        my_shortest_path = self._shortest_path_from_me(game, player, action_mask, goal_row)
         opponent_pos = game.board.get_player_position(opponent)
         opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_goal_row)
 
@@ -215,4 +224,4 @@ class GreedyAgent(Agent):
             if action is not None:
                 return action
 
-        return self.action_encoder.action_to_index(MoveAction((my_shortest_path[0][0], my_shortest_path[0][1])))
+        return self.action_encoder.action_to_index(MoveAction((my_shortest_path[1][0], my_shortest_path[1][1])))
