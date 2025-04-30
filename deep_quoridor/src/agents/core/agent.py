@@ -121,7 +121,7 @@ class AgentRegistry:
         return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod
-    def create_from_encoded_name(encoded_name: str, **kwargs) -> Agent:
+    def create_from_encoded_name(encoded_name: str, remove_training_args=False, **kwargs) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
         if len(parts) == 1:
@@ -132,7 +132,10 @@ class AgentRegistry:
         if subargs_class is None:
             raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
-        subargs = parse_subargs(parts[1], subargs_class)
+        if remove_training_args:
+            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=subargs_class.training_only_params())
+        else:
+            subargs = parse_subargs(parts[1], subargs_class)
 
         return AgentRegistry.agents[agent_type](params=subargs, **kwargs)
 

@@ -14,17 +14,23 @@ def train_dqn(
     episodes: int,
     board_size: int,
     max_walls: int,
-    save_frequency: int = 100,
+    save_frequency: int,
     step_rewards: bool = True,
     use_wandb: bool = True,
-    players: list | None = None,
+    players: list = [],
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
 ):
     plugins = []
+    total_episodes = episodes * (len(players) - 1)
 
+    after_save_method = None
     if use_wandb:
-        plugins.append(WandbTrainPlugin(update_every=10, total_episodes=episodes, run_id=run_id))
+        wandb_plugin = WandbTrainPlugin(
+            update_every=10, total_episodes=total_episodes, run_id=run_id, agent_encoded_name=players[0]
+        )
+        plugins.append(wandb_plugin)
+        after_save_method = wandb_plugin.compute_tournament_metrics
 
     plugins.append(
         SaveModelEveryNEpisodesPlugin(
@@ -33,13 +39,11 @@ def train_dqn(
             max_walls=max_walls,
             save_final=not use_wandb,
             run_id=run_id,
+            after_save=after_save_method,
         )
     )
 
-    print_plugin = TrainingStatusRenderer(
-        update_every=1,
-        total_episodes=episodes * (len(players) - 1),
-    )
+    print_plugin = TrainingStatusRenderer(update_every=1, total_episodes=total_episodes)
     arena = Arena(
         board_size=board_size,
         max_walls=max_walls,

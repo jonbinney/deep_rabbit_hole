@@ -58,6 +58,7 @@ class TrainableAgentParams(SubargsBase):
     # This is used to log the opponent's possible actions based on agent's qvalues
     inspect_opponent_possible_actions: bool = False
 
+    @classmethod
     def training_only_params(cls) -> set[str]:
         """Returns a set of parameter names that are only used during training."""
         # TODO: we should ideally have two set of params: one for training and one for inference
@@ -75,8 +76,6 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_dir",
             "model_dir",
-            "wandb_alias",
-            "model_filename",
             "mask_targetq",
             "softmax_exploration",
             "inspect_opponent_possible_actions",
@@ -188,6 +187,8 @@ class AbstractTrainableAgent(TrainableAgent):
         self.player_id = player_id
 
     def end_game(self, game):
+        if not self.training_mode:
+            return
         """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
         self.games_count += 1
@@ -241,6 +242,9 @@ class AbstractTrainableAgent(TrainableAgent):
             )
         done = game.is_done()
 
+        # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
+        # Ideally for off policy training we could collect all moves and all the information
+        # store it and use it for training without running "matches" every time.
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
             self._convert_to_tensor_index_from_action(action, player_id),
@@ -249,7 +253,7 @@ class AbstractTrainableAgent(TrainableAgent):
             if state_after_action is not None
             else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
-            next_state_mask.cpu().numpy(),
+            np.zeros_like(1) if next_state_mask is None else next_state_mask.cpu().numpy(),
         )
 
         if len(self.replay_buffer) > self.batch_size:
@@ -264,11 +268,11 @@ class AbstractTrainableAgent(TrainableAgent):
             if self.episodes_rewards
             else 0.0
         )
-        avg_loss = (
-            sum(self.train_call_losses[-length:]) / min(length, len(self.train_call_losses))
-            if self.train_call_losses
-            else 0.0
-        )
+        if self.train_call_losses:
+            losses = torch.stack(self.train_call_losses[-length:])
+            avg_loss = losses.mean().item()
+        else:
+            avg_loss = 0.0
 
         return avg_loss, avg_reward
 
@@ -421,12 +425,12 @@ class AbstractTrainableAgent(TrainableAgent):
         """Prepare batch data for training."""
         states, actions, rewards, next_states, dones, next_state_masks = zip(*batch)
 
-        states = torch.stack([torch.FloatTensor(s).to(self.device) for s in states])
+        states = torch.stack([torch.FloatTensor(s) for s in states]).to(self.device)
         actions = torch.LongTensor(actions).to(self.device).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_states])
+        next_states = torch.stack([torch.FloatTensor(s) for s in next_states]).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
-        next_state_masks = torch.stack([torch.FloatTensor(s).to(self.device) for s in next_state_masks])
+        next_state_masks = torch.stack([torch.FloatTensor(s) for s in next_state_masks]).to(self.device)
 
         return states, actions, rewards, next_states, dones, next_state_masks
 
@@ -454,7 +458,7 @@ class AbstractTrainableAgent(TrainableAgent):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return loss.item()
+        return loss
 
     def _update_epsilon(self):
         """Update epsilon value for exploration."""

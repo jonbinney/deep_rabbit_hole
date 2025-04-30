@@ -101,7 +101,7 @@ class Arena:
         return result
 
     # Replace the existing _play_games method
-    def _play_games(self, players: list[str | Agent], times: int, mode: PlayMode):
+    def _play_games(self, players: list[str | Agent], times: int, mode: PlayMode) -> list[GameResult]:
         agents = []
         for p in players:
             if isinstance(p, Agent):
@@ -148,6 +148,7 @@ class Arena:
                     match_id += 1
 
         self.plugins.end_arena(self.game, results)
+        return results
 
     def _replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
         """Replays a series of games from previously recorded arena data.

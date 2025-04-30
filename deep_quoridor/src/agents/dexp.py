@@ -69,6 +69,7 @@ class DExpAgentParams(TrainableAgentParams):
     def __str__(self):
         return f"{int(self.rotate)}{int(self.turn)}{int(self.split)}{'1' if self.target_as_source_for_opponent else ''}"
 
+    @classmethod
     def training_only_params(cls) -> set[str]:
         """
         Returns a set of parameters that are used only during training.
