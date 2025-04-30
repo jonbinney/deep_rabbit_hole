@@ -378,7 +378,6 @@ class AbstractTrainableAgent(Agent):
         target_q_values = self._compute_target_q_values(rewards, next_states, dones, next_state_masks)
 
         loss = self._update_network(current_q_values, target_q_values)
-        next_current_q_values = self._compute_current_q_values(states, actions)
         return loss
 
     def _prepare_batch(self, batch):
