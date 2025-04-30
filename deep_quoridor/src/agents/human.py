@@ -36,13 +36,8 @@ class HumanAgent(Agent):
         for action, value in enumerate(action_mask):
             if value == 1:
                 valid_action = self.action_encoder.index_to_action(action)
-                if isinstance(valid_action, MoveAction):
-                    valid_moves.add((valid_action.destination[0], valid_action.destination[1], 0))
-                elif isinstance(valid_action, WallAction):
-                    valid_moves.add(
-                        (valid_action.position[0], valid_action.position[1], valid_action.orientation.value - 1)
-                    )
+                valid_moves.add(valid_action)
 
         result = PygameQuoridor.instance().get_human_input(valid_moves)
 
-        return None if result is None else self.action_encoder.action_to_index(*result)
+        return None if result is None else self.action_encoder.action_to_index(result)
