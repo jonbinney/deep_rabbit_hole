@@ -9,7 +9,7 @@ import pygame
 from agents import ActionLog, Agent
 from agents.human import HumanAgent
 from arena import GameResult
-from quoridor import Player
+from quoridor import Action, MoveAction, Player, WallAction, WallOrientation
 
 from renderers import Renderer
 
@@ -72,8 +72,8 @@ class BoardState:
 class HumanInput:
     enabled: bool = False
     valid_moves: set = field(default_factory=set)
-    hover_action: tuple[int, int, int] | None = None
-    click_action: tuple[int, int, int] | None = None
+    hover_action: Action | None = None
+    click_action: Action | None = None
 
 
 class PygameQuoridor:
@@ -275,11 +275,13 @@ class PygameQuoridor:
         if self.human_input.hover_action is None or not self.human_input.enabled:
             return
 
-        row, col, type = self.human_input.hover_action
-        if type == 0:
+        if isinstance(self.human_input.hover_action, MoveAction):
+            row, col = self.human_input.hover_action.destination
             self._draw_player(COLOR_PREVIEW, row, col, False)
-        else:
-            self._draw_wall(row, col, type == 2, is_preview=True)
+        elif isinstance(self.human_input.hover_action, WallAction):
+            row, col = self.human_input.hover_action.position
+            is_horizontal = self.human_input.hover_action.orientation == WallOrientation.HORIZONTAL
+            self._draw_wall(row, col, is_horizontal, is_preview=True)
 
     def draw_screen(self):
         if self.state is None:
@@ -408,16 +410,16 @@ class PygameQuoridor:
 
         type_action = 0
         if v_wall:
-            type_action = 1
+            action = WallAction((row, col), WallOrientation.VERTICAL)
         elif h_wall:
-            type_action = 2
-
-        action = (row, col, type_action)
+            action = WallAction((row, col), WallOrientation.HORIZONTAL)
+        else:
+            action = MoveAction((row, col))
 
         if action in self.human_input.valid_moves:
             self.human_input.hover_action = action
 
-    def get_human_input(self, valid_moves: set) -> Tuple[int, int, int] | None:
+    def get_human_input(self, valid_moves: set) -> Action | None:
         self.human_input.valid_moves = valid_moves
         self.human_input.click_action = None
         self.human_input.enabled = True
