@@ -140,8 +140,6 @@ class GreedyAgent(Agent):
             else:
                 assert "Expected horizontal or vertical movement"
 
-            print(f"Opponent movement: {p0} -> {p1}")
-            print(f"Rows: {rows}, cols: {cols}, orientation: {orientation}")
             # Check if any of the wall placements are valid.
             # TO DO: instead of just returning the first, we can check which one is better
             # by looking into which makes the difference of the distances more favorable
@@ -149,9 +147,7 @@ class GreedyAgent(Agent):
                 for c in cols:
                     if r < 0 or c < 0 or r >= game.wall_size or c >= game.wall_size:
                         continue
-                    print(f"Wall placement: ({r}, {c})")
                     action = game.action_params_to_index(r, c, orientation)
-                    print(f"Action: {action}")
                     if action_mask[action] == 1:
                         return action
         # No actions found
@@ -203,14 +199,11 @@ class GreedyAgent(Agent):
 
         # TODO: use a more elaborate logic to decide whether to block, could be probabilistic
         block = False
-        print(f"Opponent shortest path: {len(opponent_shortest_path)} path: {opponent_shortest_path}")
-        print(f"My shortest path: {len(my_shortest_path)} path: {my_shortest_path}")
         if len(opponent_shortest_path) < len(my_shortest_path):
             if len(opponent_shortest_path) < 5:
                 block = True
         if block:
             action = self._get_block_action(game, opponent_shortest_path, observation["action_mask"])
-            print(f"Blocking action: {action}")
             if action is not None:
                 return action
 
