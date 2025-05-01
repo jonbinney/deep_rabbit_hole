@@ -107,7 +107,7 @@ class Agent:
         """
         pass
 
-    def get_action(self, game) -> int:
+    def get_action(self, observation, action_mask) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
 
@@ -119,7 +119,9 @@ class AgentRegistry:
         return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod
-    def create_from_encoded_name(encoded_name: str, remove_training_args=False, **kwargs) -> Agent:
+    def create_from_encoded_name(
+        encoded_name: str, remove_training_args=False, keep_args: set[str] = {}, **kwargs
+    ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
         if len(parts) == 1:
@@ -131,7 +133,8 @@ class AgentRegistry:
             raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
         if remove_training_args:
-            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=subargs_class.training_only_params())
+            args_to_remove = subargs_class.training_only_params().difference(keep_args)
+            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
         else:
             subargs = parse_subargs(parts[1], subargs_class)
 

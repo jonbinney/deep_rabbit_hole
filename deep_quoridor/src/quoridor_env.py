@@ -33,7 +33,7 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
-from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor import ActionEncoder, Board, Player, Quoridor
 
 
 class QuoridorEnv(AECEnv):
@@ -120,11 +120,11 @@ class QuoridorEnv(AECEnv):
             self.game.go_to_next_player()
             return
 
-        if self.last_action_mask[agent][action_index] != 1:
-            raise RuntimeError(f"Action not allowed by mask {action_index}")
-
         # If the environment and game get out of step, weird things happen.
         assert player == self.game.get_current_player()
+
+        if self.last_action_mask[agent][action_index] != 1:
+            raise RuntimeError(f"Action not allowed by mask {action_index}")
 
         step_reward_calculator = StepRewardCalculator(self.game, player, opponent)
         if self.step_rewards:
@@ -136,9 +136,7 @@ class QuoridorEnv(AECEnv):
         if self.game.check_win(player):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
-            for a in self.agents:
-                if a != agent:
-                    self.rewards[a] = -1
+            self.rewards[self.get_opponent(agent)] = -1
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.

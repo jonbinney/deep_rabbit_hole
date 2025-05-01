@@ -64,22 +64,24 @@ class TrainableAgentParams(SubargsBase):
         """Returns a set of parameter names that are only used during training."""
         # TODO: we should ideally have two set of params: one for training and one for inference
         return {
-            "nick",
-            "epsilon",
-            "epsilon_min",
-            "epsilon_decay",
-            "gamma",
-            "batch_size",
-            "update_target_every",
             "assign_negative_reward",
-            "training_mode",
+            "batch_size",
+            "epsilon",
+            "epsilon_decay",
+            "epsilon_min",
             "final_reward_multiplier",
-            "use_negative_qvalue_function",
-            "wandb_dir",
-            "model_dir",
-            "mask_targetq",
-            "softmax_exploration",
+            "gamma",
             "inspect_opponent_possible_actions",
+            "mask_targetq",
+            "model_dir",
+            "model_filename",
+            "nick",
+            "softmax_exploration",
+            "training_mode",
+            "update_target_every",
+            "use_negative_qvalue_function",
+            "wandb_alias",
+            "wandb_dir",
         }
 
 
@@ -126,6 +128,7 @@ class AbstractTrainableAgent(Agent):
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
         self.replay_buffer = ReplayBuffer(capacity=(400000 if self.training_mode else 1))
+        self.games_count = 0
         self.episodes_rewards = []
         self.train_call_losses = []
         self.reset_episode_related_info()
@@ -134,7 +137,6 @@ class AbstractTrainableAgent(Agent):
     def reset_episode_related_info(self):
         self.current_episode_reward = 0
         self.player_id = None
-        self.games_count = 0
         self.steps = 0
 
     def is_trainable(self):

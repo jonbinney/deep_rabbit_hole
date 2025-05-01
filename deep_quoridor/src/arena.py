@@ -54,7 +54,7 @@ class Arena:
             observation_before_action, _, termination, truncation, _ = self.game.last()
             agent = agents[agent_id]
             opponent_agent_id = self.game.get_opponent(agent_id)
-            opponent_agent = agents[agent_id]
+            opponent_agent = agents[opponent_agent_id]
 
             if termination or truncation:
                 if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
@@ -88,7 +88,7 @@ class Arena:
                     done=self.game.is_done(),
                 )
 
-            if opponent_agent.is_trainable() and isinstance(opponent_agent_id, AbstractTrainableAgent):
+            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
                 opponent_agent.handle_opponent_step_outcome(
                     opponent_observation_before_action=observation_before_action,
                     my_observation_after_opponent_action=self.game.observe(opponent_agent_id),
