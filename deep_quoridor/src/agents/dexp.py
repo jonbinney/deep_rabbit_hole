@@ -146,7 +146,7 @@ class DExpAgent(AbstractTrainableAgent):
             opponent_observation_after_action,
             opponent_reward,
             opponent_action,
-            self.get_opponent_player_id(self.agent_id),
+            self.get_opponent_player_id(self.player_id),
             done,
         )
 
