@@ -50,36 +50,61 @@ class Arena:
         self.plugins.start_game(self.game, agent1, agent2)
         start_time = time.time()
         step = 0
-        for player_id in self.game.agent_iter():
-            observation, _, termination, truncation, _ = self.game.last()
-            agent = agents[player_id]
+        for agent_id in self.game.agent_iter():
+            observation_before_action, _, termination, truncation, _ = self.game.last()
+            agent = agents[agent_id]
+            opponent_agent_id = self.game.get_opponent(agent_id)
+            opponent_agent = agents[agent_id]
+
             if termination or truncation:
                 if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
                     # Handle end of game (in case winner was not this agent)
-                    agent.handle_step_outcome(observation, None, self.game)
+                    agent.handle_step_outcome(
+                        observation_before_action=observation_before_action,
+                        opponent_observation_after_action=self.game.observe(opponent_agent_id),
+                        observation_after_action=None,
+                        reward=self.game.rewards[agent_id],
+                        action=None,
+                        done=True,
+                    )
                 break
 
             # opponent_agent = agents["player_0" if player_id == "player_1" else "player_1"]
             # if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
             #    opponent_agent.inspect_opponent_possible_actions(self.game, observation, agent.action_log)
+            assert (observation_before_action["action_mask"] == self.game.last_action_mask[agent_id]).all()
 
-            action = int(agent.get_action(self.game))
+            action = int(
+                agent.get_action(observation_before_action["observation"], observation_before_action["action_mask"])
+            )
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
             if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
-                agent.handle_step_outcome(observation, action, self.game)
+                agent.handle_step_outcome(
+                    observation_before_action=observation_before_action,
+                    opponent_observation_after_action=self.game.observe(opponent_agent_id),
+                    observation_after_action=self.game.observe(agent_id),
+                    reward=self.game.rewards[agent_id],
+                    action=action,
+                    done=self.game.is_done(),
+                )
 
-            opponent_agent = agents[self.game.agent_selection]
-            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
-                opponent_agent.handle_opponent_step_outcome(observation, action, self.game)
+            if opponent_agent.is_trainable() and isinstance(opponent_agent_id, AbstractTrainableAgent):
+                opponent_agent.handle_opponent_step_outcome(
+                    opponent_observation_before_action=observation_before_action,
+                    my_observation_after_opponent_action=self.game.observe(opponent_agent_id),
+                    opponent_observation_after_action=self.game.observe(agent_id),
+                    opponent_reward=self.game.rewards[opponent_agent_id],
+                    opponent_action=action,
+                    done=self.game.is_done(),
+                )
 
-            self.plugins.after_action(self.game, step, player_id, action)
+            self.plugins.after_action(self.game, step, agent_id, action)
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
-                print(f"Game {game_id} reached max steps. Player {agent.name()} vs Player {opponent_agent.name()}.")
                 break
 
         end_time = time.time()
@@ -108,7 +133,14 @@ class Arena:
                 agents.append(p)
             else:
                 agents.append(
-                    AgentRegistry.create_from_encoded_name(p, board_size=self.board_size, max_walls=self.max_walls)
+                    AgentRegistry.create_from_encoded_name(
+                        p,
+                        board_size=self.board_size,
+                        max_walls=self.max_walls,
+                        action_space=self.game.action_space(
+                            None
+                        ),  # We might need to do something fancier with the action space if we add agent wrappers.
+                    )
                 )
 
         if mode == PlayMode.ALL_VS_ALL:
