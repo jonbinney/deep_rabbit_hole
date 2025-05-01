@@ -140,7 +140,7 @@ class DExpAgent(AbstractTrainableAgent):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
-        self.handle_step_outcome_all(
+        self._handle_step_outcome_all(
             opponent_observation_before_action,
             my_observation_after_opponent_action,
             opponent_observation_after_action,

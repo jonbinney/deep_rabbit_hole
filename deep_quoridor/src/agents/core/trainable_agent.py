@@ -13,7 +13,7 @@ from quoridor import ActionEncoder
 from utils import SubargsBase, my_device, resolve_path
 
 import wandb
-from agents.core.agent import Agent
+from agents.core.agent import ActionLog, Agent
 from agents.core.replay_buffer import ReplayBuffer
 
 
@@ -214,7 +214,7 @@ class AbstractTrainableAgent(TrainableAgent):
     ):
         pass
 
-    def adjust_reward(self, r, done):
+    def _adjust_reward(self, r, done):
         if done:
             r *= self.final_reward_multiplier
         return r
@@ -231,7 +231,7 @@ class AbstractTrainableAgent(TrainableAgent):
         self.steps += 1
         if not self.training_mode:
             return
-        reward = self.handle_step_outcome_all(
+        reward = self._handle_step_outcome_all(
             observation_before_action,
             opponent_observation_after_action,
             observation_after_action,
@@ -242,7 +242,7 @@ class AbstractTrainableAgent(TrainableAgent):
         )
         self.current_episode_reward += reward
 
-    def handle_step_outcome_all(
+    def _handle_step_outcome_all(
         self,
         observation_before_action,
         opponent_observation_after_action,
@@ -252,8 +252,7 @@ class AbstractTrainableAgent(TrainableAgent):
         agent_id,
         done,
     ):
-        # reward = self.adjust_reward(game.rewards[player_id], game)
-        reward = self.adjust_reward(reward, done)
+        reward = self._adjust_reward(reward, done)
 
         # Handle end of episode
         if action is None:
@@ -267,13 +266,13 @@ class AbstractTrainableAgent(TrainableAgent):
                     return reward
             return 0
 
-        state_before_action = self.observation_to_tensor(observation_before_action["observation"], agent_id)
-        state_after_action = self.observation_to_tensor(observation_after_action["observation"], agent_id)
+        state_before_action = self._observation_to_tensor(observation_before_action["observation"], agent_id)
+        state_after_action = self._observation_to_tensor(observation_after_action["observation"], agent_id)
         next_state_mask = None
         if self.params.mask_targetq:
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
-            next_state_mask = self.convert_action_mask_to_tensor_for_player(
+            next_state_mask = self._convert_action_mask_to_tensor_for_player(
                 opponent_observation_after_action["action_mask"], self.get_opponent_player_id(agent_id)
             )
 
@@ -282,7 +281,7 @@ class AbstractTrainableAgent(TrainableAgent):
         # store it and use it for training without running "matches" every time.
         self.replay_buffer.add(
             state_before_action.cpu().numpy(),
-            self.convert_to_tensor_index_from_action(action, agent_id),
+            self._convert_to_tensor_index_from_action(action, agent_id),
             reward,
             state_after_action.cpu().numpy()
             if state_after_action is not None
@@ -406,24 +405,24 @@ class AbstractTrainableAgent(TrainableAgent):
         assert mask[idx] == 1
         return idx
 
-    def inspect_opponent_possible_actions(self, game, observation, action_log):
+    def inspect_opponent_possible_actions(self, game, observation, action_log: ActionLog):
         if not self.params.inspect_opponent_possible_actions:
             return
         """Get the best action based on Q-values."""
         opponent_player_id = self.get_opponent_player_id(self.player_id)
-        state = self.observation_to_tensor(observation, opponent_player_id)
+        state = self._observation_to_tensor(observation, opponent_player_id)
         with torch.no_grad():
             q_values = self.online_network(state)
 
         mask = observation["action_mask"]
-        mask_tensor = self.convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
+        mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
 
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {
-            game.action_index_to_params(
-                int(self.convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
+            self.action_encoder.index_to_action(
+                int(self._convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
             ): v.item()
             for v, i in zip(top_values, top_indices)
             if v.item() >= -100
