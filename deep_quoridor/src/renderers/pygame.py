@@ -296,24 +296,29 @@ class PygameQuoridor:
         self._draw_log()
         self._draw_human_hover()
 
-    def _draw_log_action(self, action: tuple[int, int, int], text: str, color):
-        r, c, type = action
-        x0, y0, x1, y1 = self._cell_pos(r, c)
+    def _draw_log_action(self, action: Action, text: str, color):
         wall_len = 2 * self.cell_size + self.wall_size
-        if type == 0:  # Player movement
+
+        if isinstance(action, MoveAction):
+            x0, y0, x1, y1 = self._cell_pos(*action.destination)
             x = x0 + self.cell_size // 2
             y = y0 + self.cell_size // 2
             pygame.draw.circle(self.screen, color, (x, y), self.cell_size * 0.3)
 
-        elif type == 1:  # vertical wall
-            x = x1 + self.wall_size // 2
-            y = y0 + self.cell_size // 2
-            pygame.draw.rect(self.screen, color, (x1 + 1, y0 + 1, self.wall_size - 1, wall_len - 1), border_radius=4)
-
-        elif type == 2:  # horizontal wall
-            x = x0 + self.cell_size // 2
-            y = y1 + self.wall_size // 2
-            pygame.draw.rect(self.screen, color, (x0 + 1, y1 + 1, wall_len - 1, self.wall_size - 1), border_radius=4)
+        elif isinstance(action, WallAction):
+            x0, y0, x1, y1 = self._cell_pos(*action.position)
+            if action.orientation == WallOrientation.VERTICAL:
+                x = x1 + self.wall_size // 2
+                y = y0 + self.cell_size // 2
+                pygame.draw.rect(
+                    self.screen, color, (x1 + 1, y0 + 1, self.wall_size - 1, wall_len - 1), border_radius=4
+                )
+            else:
+                x = x0 + self.cell_size // 2
+                y = y1 + self.wall_size // 2
+                pygame.draw.rect(
+                    self.screen, color, (x0 + 1, y1 + 1, wall_len - 1, self.wall_size - 1), border_radius=4
+                )
 
         text_surface = self.font12.render(text, True, COLOR_BLACK)
         self.screen.blit(text_surface, dest=text_surface.get_rect(center=(x, y)))
