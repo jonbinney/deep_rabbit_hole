@@ -1,4 +1,4 @@
-from agents import AbstractTrainableAgent, Agent
+from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
@@ -67,7 +67,11 @@ class Metrics:
         ]
 
         agent = AgentRegistry.create_from_encoded_name(
-            agent_encoded_name, board_size=self.board_size, max_walls=self.max_walls, remove_training_args=True
+            agent_encoded_name,
+            board_size=self.board_size,
+            max_walls=self.max_walls,
+            remove_training_args=True,
+            keep_args={"model_filename"},
         )
 
         arena = Arena(self.board_size, self.max_walls)

@@ -126,18 +126,31 @@ class DExpAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
 
-    def handle_opponent_step_outcome(self, opponent_observation_before_action, action, game):
+    def handle_opponent_step_outcome(
+        self,
+        opponent_observation_before_action,
+        my_observation_after_opponent_action,
+        opponent_observation_after_action,
+        opponent_reward,
+        opponent_action,
+        done=False,
+    ):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
         self.handle_step_outcome_all(
-            opponent_observation_before_action, action, game, self.get_opponent_player_id(self.player_id)
+            opponent_observation_before_action,
+            my_observation_after_opponent_action,
+            opponent_observation_after_action,
+            opponent_reward,
+            opponent_action,
+            self.get_opponent_player_id(self.player_id),
+            done,
         )
 
     def observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
-        obs = observation["observation"]
-        obs_player_turn = 1 if obs["my_turn"] else 0
+        obs_player_turn = 1 if observation["my_turn"] else 0
 
         should_rotate = False
         if self.params.rotate and not self.params.target_as_source_for_opponent:
@@ -147,16 +160,16 @@ class DExpAgent(AbstractTrainableAgent):
             # This ensures board always faces to the player that will act on it
             should_rotate = (obs_player_id == "player_1") ^ (not obs_player_turn)
 
-        board = rotation.rotate_board(obs["board"]) if should_rotate else obs["board"]
-        walls = rotation.rotate_walls(obs["walls"]) if should_rotate else obs["walls"]
+        board = rotation.rotate_board(observation["board"]) if should_rotate else observation["board"]
+        walls = rotation.rotate_walls(observation["walls"]) if should_rotate else observation["walls"]
 
         # Create position matrices for player and opponent
         player_board = (board == 1).astype(np.float32)
         opponent_board = (board == 2).astype(np.float32)
 
         # Get wall counts
-        player_walls = np.array([obs["my_walls_remaining"]])
-        opponent_walls = np.array([obs["opponent_walls_remaining"]])
+        player_walls = np.array([observation["my_walls_remaining"]])
+        opponent_walls = np.array([observation["opponent_walls_remaining"]])
 
         # Swap boards and walls if not player's turn. It means this is a target state
         # Target states are played by the opponents, so board and walls should be in the opponents POV

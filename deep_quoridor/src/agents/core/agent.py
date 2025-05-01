@@ -1,9 +1,7 @@
 from dataclasses import dataclass
-from typing import TypeAlias
 
+from quoridor import Action
 from utils import parse_subargs
-
-ActionParams: TypeAlias = tuple[int, int, int]  # (row, col, action_type)
 
 
 class ActionLog:
@@ -13,7 +11,7 @@ class ActionLog:
         Log an action with an associated text.
         """
 
-        action: ActionParams
+        action: Action
         text: str
 
     @dataclass
@@ -22,7 +20,7 @@ class ActionLog:
         Log a ranking of actions with their scores.
         """
 
-        ranking: list[tuple[int, ActionParams, float]]  # rank, action (row, col, action_type), score
+        ranking: list[tuple[int, Action, float]]  # rank, action, score
 
     @dataclass
     class Path:
@@ -45,12 +43,12 @@ class ActionLog:
     def is_enabled(self) -> bool:
         return self._enabled
 
-    def action_text(self, action: ActionParams, text: str):
+    def action_text(self, action: Action, text: str):
         if not self.is_enabled():
             return
         self.records.append(self.ActionText(action, text))
 
-    def action_score_ranking(self, action_scores: dict[ActionParams, float]):
+    def action_score_ranking(self, action_scores: dict[Action, float]):
         """
         Log a ranking of actions with their scores.
         action_scores is a dictionary where the key is the action and the value is the score.
@@ -109,7 +107,7 @@ class Agent:
         """
         pass
 
-    def get_action(self, game) -> int:
+    def get_action(self, observation, action_mask) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
 
@@ -121,7 +119,9 @@ class AgentRegistry:
         return AgentRegistry.agents[friendly_name](**kwargs)
 
     @staticmethod
-    def create_from_encoded_name(encoded_name: str, remove_training_args=False, **kwargs) -> Agent:
+    def create_from_encoded_name(
+        encoded_name: str, remove_training_args=False, keep_args: set[str] = {}, **kwargs
+    ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
         if len(parts) == 1:
@@ -133,7 +133,8 @@ class AgentRegistry:
             raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
         if remove_training_args:
-            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=subargs_class.training_only_params())
+            args_to_remove = subargs_class.training_only_params().difference(keep_args)
+            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
         else:
             subargs = parse_subargs(parts[1], subargs_class)
 
