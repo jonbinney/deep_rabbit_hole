@@ -133,7 +133,6 @@ class AbstractTrainableAgent(Agent):
         self.train_call_losses = []
         self.reset_episode_related_info()
         self.resolve_and_load_model()
-        self.games_count = 0
 
     def reset_episode_related_info(self):
         self.current_episode_reward = 0
