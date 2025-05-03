@@ -1,3 +1,5 @@
+from typing import Callable, Optional
+
 from agents.core import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
 from utils import resolve_path
@@ -11,6 +13,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         max_walls: int,
         save_final: bool = True,
         run_id: str = "",
+        after_save: Optional[Callable[[str], None]] = None,
     ):
         self.update_every = update_every
         self.episode_count = 0
@@ -18,6 +21,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.max_walls = max_walls
         self.save_final = save_final
         self.run_id = run_id
+        self.after_save = after_save
 
     def start_game(self, game, agent1, agent2):
         self.agents = [agent1, agent2]
@@ -39,3 +43,6 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
             save_file = resolve_path(agent.params.model_dir, agent.resolve_filename(suffix))
             agent.save_model(save_file)
             print(f"{agent_name} Model saved to {save_file}")
+
+            if self.after_save:
+                self.after_save(str(save_file))
