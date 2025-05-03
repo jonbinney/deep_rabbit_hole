@@ -55,13 +55,14 @@ class SB3ActionMaskWrapper(BaseWrapper):
 
         super().step(action)
 
-        return (
+        res = (
             self.observe(self.agent_selection),
             self.rewards[current_agent] * self.rewards_multiplier,
             self.terminations[current_agent],
             self.truncations[current_agent],
             self.infos[current_agent],
         )
+        return res
 
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
@@ -109,7 +110,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 2
+        return 3
 
     @staticmethod
     def params_class():
@@ -181,8 +182,8 @@ class SB3PPOAgent(AbstractTrainableAgent):
 
 def wrap_env(env):
     env = RotateWrapper(env)
-    env = DictSplitBoardWrapper(env)
-    env = SB3ActionMaskWrapper(env)
+    env = DictSplitBoardWrapper(env, include_turn=False)
+    env = SB3ActionMaskWrapper(env, rewards_multiplier=1)
     return env
 
 
