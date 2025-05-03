@@ -19,6 +19,7 @@ import time
 
 import quoridor_env
 import torch
+from agents import AgentRegistry
 from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
@@ -26,7 +27,6 @@ from sb3_contrib.common.wrappers import ActionMasker
 from utils import set_deterministic
 
 import wandb
-from deep_quoridor.src.agents.greedy import GreedyAgent
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
 from wandb.integration.sb3 import WandbCallback
 
@@ -38,7 +38,7 @@ def mask_fn(env):
     return env.action_mask()
 
 
-def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, **env_kwargs):
+def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train_kwargs={}, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
     env = env_fn(**env_kwargs)
 
@@ -47,7 +47,12 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, **env
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
     # Initialize wandb with sync_tensorboard to log all SB3 TensorBoard metrics
-    wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs, sync_tensorboard=True)
+    wandb.init(
+        project="deep_quoridor",
+        job_type="train",
+        config={**env_kwargs, **train_kwargs},
+        sync_tensorboard=True,
+    )
 
     env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
@@ -187,12 +192,26 @@ if __name__ == "__main__":
         default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
         help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts",
     )
+    parser.add_argument(
+        "-o",
+        "--opponent",
+        type=str,
+        default=None,
+        # choices=AgentRegistry.names() + [None],
+        help=f"Opponent agent type. Available options: {AgentRegistry.names()} or None for self-play",
+    )
 
     args = parser.parse_args()
 
-    opponent = GreedyAgent(board_size=args.board_size)
+    opponent = None
+    if args.opponent is not None:
+        opponent = AgentRegistry.create_from_encoded_name(
+            args.opponent, board_size=args.board_size, max_walls=args.max_walls
+        )
+
     env_fn = make_env_fn(quoridor_env.env, opponent=opponent)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
+    train_kwargs = {"steps": args.steps, "seed": args.seed, "opponent": args.opponent}
 
     # Set random seed for reproducibility
     set_deterministic(args.seed)
@@ -202,13 +221,22 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Run ID: {args.run_prefix}-{args.run_suffix}")
 
-    # Train a model against itself
+    # Train a model against opponent or itself
     if not args.no_train:
         print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
-        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=args.upload, **env_kwargs)
+        print(f"Opponent: {args.opponent if args.opponent else 'Self-play'}")
+        train_action_mask(
+            env_fn,
+            steps=args.steps,
+            seed=args.seed,
+            upload_to_wandb=args.upload,
+            train_kwargs=train_kwargs,
+            **env_kwargs,
+        )
 
-    # Evaluate games against a random agent
+    # Evaluate games against the opponent
     if not args.no_eval:
-        print(f"\nEvaluating {args.num_games} games against a random agent...")
+        opponent_name = args.opponent if args.opponent else "itself"
+        print(f"\nEvaluating {args.num_games} games against {opponent_name}...")
         eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=0, **env_kwargs)
         eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=1, **env_kwargs)
