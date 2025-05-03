@@ -174,10 +174,10 @@ class QuoridorEnv(AECEnv):
 
         # Calculate board from self.positions
         board = np.zeros((self.game.board.board_size, self.game.board.board_size), dtype=np.int8)
-        player_one_position = self.game.board.get_player_position(Player.ONE)
-        player_two_position = self.game.board.get_player_position(Player.TWO)
-        board[player_one_position] = 1
-        board[player_two_position] = 2
+        player_position = self.game.board.get_player_position(player)
+        opponent_position = self.game.board.get_player_position(opponent)
+        board[player_position] = 1
+        board[opponent_position] = 2
 
         # Make a copy of walls
         walls = self.game.board.get_old_style_walls()

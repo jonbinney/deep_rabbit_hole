@@ -93,7 +93,7 @@ class Arena:
                     opponent_observation_before_action=observation_before_action,
                     my_observation_after_opponent_action=self.game.observe(opponent_agent_id),
                     opponent_observation_after_action=self.game.observe(agent_id),
-                    opponent_reward=self.game.rewards[opponent_agent_id],
+                    opponent_reward=self.game.rewards[agent_id],
                     opponent_action=action,
                     done=self.game.is_done(),
                 )

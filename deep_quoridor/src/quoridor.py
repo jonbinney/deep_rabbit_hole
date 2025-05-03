@@ -587,6 +587,10 @@ def construct_game_from_observation(observation: dict, player_id: str) -> tuple[
         player_on_board = Player(
             observation["board"][row, col] - 1
         )  # Players are 1 and 2 on the board, but we use 0 and 1.
+        if player_on_board == Player.ONE:
+            player_on_board = player
+        elif player_on_board == Player.TWO:
+            player_on_board = opponent
         board.move_player(player_on_board, (row, col))
 
     for row, col, orientation in np.argwhere(observation["walls"] == 1):

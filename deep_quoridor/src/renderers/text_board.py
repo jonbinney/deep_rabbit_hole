@@ -7,6 +7,7 @@ from renderers import Renderer
 class TextBoardRenderer(Renderer):
     def start_game(self, game, agent1: Agent, agent2: Agent):
         self.match = f"{agent1.name()} vs {agent2.name()}"
+        print(f"Match {self.match}")
         print("Initial Board State:")
         print(game.render())
 
