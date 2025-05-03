@@ -273,6 +273,8 @@ if __name__ == "__main__":
 
     # Evaluate games against the opponent
     if not args.no_eval:
+        # Create a new env fn without the opponent, for evaluation
+        env_fn = make_env_fn(quoridor_env.env)
         opponent_name = args.opponent if args.opponent else "itself"
         print(f"\nEvaluating {args.num_games} games against {opponent_name}...")
         eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=0, **env_kwargs)
