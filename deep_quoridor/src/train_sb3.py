@@ -21,6 +21,8 @@ import quoridor_env
 import torch
 from agents import AgentRegistry
 from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
+from arena import Arena
+from renderers import ArenaResultsRenderer
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
@@ -275,7 +277,14 @@ if __name__ == "__main__":
     if not args.no_eval:
         # Create a new env fn without the opponent, for evaluation
         env_fn = make_env_fn(quoridor_env.env)
-        opponent_name = args.opponent if args.opponent else "itself"
-        print(f"\nEvaluating {args.num_games} games against {opponent_name}...")
+        print(f"\nEvaluating {args.num_games} games against a random agent...")
         eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=0, **env_kwargs)
         eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=1, **env_kwargs)
+
+        arena = Arena(
+            board_size=args.board_size,
+            max_walls=args.max_walls,
+            renderers=[ArenaResultsRenderer()],
+        )
+
+        arena.play_games(players=["random", "sb3ppo"], times=args.num_games)
