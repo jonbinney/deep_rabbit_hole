@@ -137,6 +137,7 @@ class Arena:
                         p,
                         board_size=self.board_size,
                         max_walls=self.max_walls,
+                        observation_space=self.game.observation_space(None),
                         action_space=self.game.action_space(
                             None
                         ),  # We might need to do something fancier with the action space if we add agent wrappers.

@@ -74,6 +74,7 @@ class TrainableAgentParams(SubargsBase):
             "final_reward_multiplier",
             "gamma",
             "inspect_opponent_possible_actions",
+            "learning_rate",
             "mask_targetq",
             "model_dir",
             "model_filename",
@@ -84,7 +85,6 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_alias",
             "wandb_dir",
-            "learning_rate",
         }
 
 
