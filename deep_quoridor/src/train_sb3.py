@@ -190,8 +190,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # opponent = GreedyAgent(board_size=args.board_size)
-    opponent = None
+    opponent = GreedyAgent(board_size=args.board_size)
     env_fn = make_env_fn(quoridor_env.env, opponent=opponent)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 

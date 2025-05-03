@@ -26,9 +26,13 @@ class SB3ActionMaskWrapper(BaseWrapper):
     - provide a method to get to the action mask
     """
 
-    def __init__(self, env, rewards_multiplier: float = 1000, **kwargs):
+    def __init__(self, env, rewards_multiplier: float = 1000, opponent: Agent = None, **kwargs):
         super().__init__(env)
         self.rewards_multiplier = rewards_multiplier
+        self.opponent = opponent
+
+        if self.opponent is not None:
+            self.opponent.start_game(self.env, "player_0")
 
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
@@ -45,24 +49,59 @@ class SB3ActionMaskWrapper(BaseWrapper):
         # Return initial observation, info (PettingZoo AEC envs do not by default)
         return self.observe(self.agent_selection), {}
 
-    def step(self, action):
+    def step(self, opponent_action):
         """Gymnasium-like step function, returning observation, reward, termination, truncation, info.
 
-        The observation is for the next agent (used to determine the next action), while the remaining
+        The next_state observation is for the next agent (used to determine the next action), while the remaining
         items are for the agent that just acted (used to understand what just happened).
+
+        If an opponent has been selected, at each step we also play the opponent's action as part of this step.
+        If the opponent wins, we update the reward and termination flag.
         """
         current_agent = self.agent_selection
 
-        super().step(action)
+        super().step(opponent_action)
 
-        res = (
-            self.observe(self.agent_selection),
-            self.rewards[current_agent] * self.rewards_multiplier,
-            self.terminations[current_agent],
-            self.truncations[current_agent],
-            self.infos[current_agent],
+        opponent_agent = self.agent_selection
+
+        next_state = self.observe(self.agent_selection)
+        reward = self.rewards[current_agent] * self.rewards_multiplier
+        termination = self.terminations[current_agent]
+        truncation = self.truncations[current_agent]
+        info = self.infos[current_agent]
+
+        if not truncation and not termination and self.opponent is not None:
+            # Get unwrapped environment for use with the opponent
+            unwrapped_env = self.unwrapped
+
+            # Get opponent action - the opponent handles the raw environment
+            raw_opponent_action = self.opponent.get_action(unwrapped_env)
+
+            # Apply rotation if needed (since we're going to use super().step which doesn't handle rotation)
+            # Check if the opponent is player_1 who needs rotation
+            if opponent_agent == "player_1" and raw_opponent_action is not None:
+                # We need to manually rotate the action since we're bypassing the RotateWrapper's step method
+                from agents.core.rotation import convert_rotated_action_index_to_original
+
+                opponent_action = convert_rotated_action_index_to_original(
+                    unwrapped_env.board_size, raw_opponent_action
+                )
+            else:
+                opponent_action = raw_opponent_action
+
+            super().step(opponent_action)
+            opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
+            truncation = self.truncations[opponent_agent]
+            termination = self.terminations[opponent_agent]
+            reward = reward - opponent_reward
+
+        return (
+            next_state,
+            reward,
+            termination,
+            truncation,
+            info,
         )
-        return res
 
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
@@ -187,10 +226,10 @@ def wrap_env(env, **kwargs):
     return env
 
 
-def make_env_fn(env_constructor, **akwargs):
+def make_env_fn(env_constructor, **mykwargs):
     def env_fn(**kwargs):
         env = env_constructor(**kwargs)
-        env = wrap_env(env, **akwargs)
+        env = wrap_env(env, **mykwargs)
         return env
 
     return env_fn
