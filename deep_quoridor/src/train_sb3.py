@@ -38,7 +38,7 @@ def mask_fn(env):
     return env.action_mask()
 
 
-def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_kwargs):
+def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
     env = env_fn(**env_kwargs)
 
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
     parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
-    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip uploading artifacts to wandb")
+    parser.add_argument("--upload", action="store_true", default=False, help="Upload artifacts to wandb")
     parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
     parser.add_argument(
         "-rp",
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     # Train a model against itself
     if not args.no_train:
         print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
-        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=not args.no_upload, **env_kwargs)
+        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=args.upload, **env_kwargs)
 
     # Evaluate games against a random agent
     if not args.no_eval:
