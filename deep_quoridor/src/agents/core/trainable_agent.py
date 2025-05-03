@@ -161,6 +161,7 @@ class AbstractTrainableAgent(Agent):
         return "player_1" if player_id == "player_0" else "player_0"
 
     def handle_opponent_step_outcome(
+        self,
         opponent_observation_before_action,
         my_observation_after_opponent_action,
         opponent_observation_after_action,
