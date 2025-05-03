@@ -85,6 +85,7 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_alias",
             "wandb_dir",
+            "learning_rate",
         }
 
 
