@@ -19,7 +19,7 @@ import time
 
 import quoridor_env
 import torch
-from agents.sb3_ppopp import DictFlattenExtractor, make_env_fn
+from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
@@ -190,8 +190,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    greedy = GreedyAgent(board_size=args.board_size)
-    env_fn = make_env_fn(quoridor_env.env, opponent=greedy)
+    # opponent = GreedyAgent(board_size=args.board_size)
+    opponent = None
+    env_fn = make_env_fn(quoridor_env.env, opponent=opponent)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
 
     # Set random seed for reproducibility

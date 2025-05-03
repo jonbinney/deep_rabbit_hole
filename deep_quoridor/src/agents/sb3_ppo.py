@@ -26,7 +26,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
     - provide a method to get to the action mask
     """
 
-    def __init__(self, env, rewards_multiplier: float = 1000):
+    def __init__(self, env, rewards_multiplier: float = 1000, **kwargs):
         super().__init__(env)
         self.rewards_multiplier = rewards_multiplier
 
@@ -180,17 +180,17 @@ class SB3PPOAgent(AbstractTrainableAgent):
         return action
 
 
-def wrap_env(env):
+def wrap_env(env, **kwargs):
     env = RotateWrapper(env)
     env = DictSplitBoardWrapper(env, include_turn=False)
-    env = SB3ActionMaskWrapper(env, rewards_multiplier=1)
+    env = SB3ActionMaskWrapper(env, rewards_multiplier=1, **kwargs)
     return env
 
 
-def make_env_fn(env_constructor):
+def make_env_fn(env_constructor, **akwargs):
     def env_fn(**kwargs):
         env = env_constructor(**kwargs)
-        env = wrap_env(env)
+        env = wrap_env(env, **akwargs)
         return env
 
     return env_fn
