@@ -58,6 +58,8 @@ class TrainableAgentParams(SubargsBase):
     # Inspect the opponent's possible actions
     # This is used to log the opponent's possible actions based on agent's qvalues
     inspect_opponent_possible_actions: bool = False
+    # Learning rate to use for the optimizer
+    learning_rate: float = 0.001
 
     @classmethod
     def training_only_params(cls) -> set[str]:
@@ -82,6 +84,7 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_alias",
             "wandb_dir",
+            "learning_rate",
         }
 
 
@@ -147,11 +150,11 @@ class AbstractTrainableAgent(Agent):
         self.player_id = player_id
 
     def end_game(self, game):
+        """Store episode results and reset tracking"""
+        self.games_count += 1
         if not self.training_mode:
             return
-        """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
-        self.games_count += 1
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self.update_target_network()
@@ -209,7 +212,6 @@ class AbstractTrainableAgent(Agent):
         agent_id,
         done,
     ):
-        # reward = self.adjust_reward(game.rewards[player_id], game)
         reward = self.adjust_reward(reward, done)
 
         # Handle end of episode
@@ -281,7 +283,7 @@ class AbstractTrainableAgent(Agent):
 
     def _create_optimizer(self):
         """Create the optimizer for training."""
-        return optim.Adam(self.online_network.parameters(), lr=0.001)
+        return optim.Adam(self.online_network.parameters(), lr=self.params.learning_rate)
 
     def _create_criterion(self):
         """Create the loss criterion."""
@@ -382,7 +384,7 @@ class AbstractTrainableAgent(Agent):
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {
-            game.action_index_to_params(
+            self.action_encoder.index_to_action(
                 int(self.convert_to_action_from_tensor_index_for_player(i.item(), opponent_player_id))
             ): v.item()
             for v, i in zip(top_values, top_indices)
