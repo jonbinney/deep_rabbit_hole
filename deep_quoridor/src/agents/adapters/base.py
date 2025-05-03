@@ -11,51 +11,82 @@ class BaseTrainableAgentAdapter(TrainableAgent):
         return self.agent
 
     def is_trainable(self) -> bool:
-        return self.agent.is_trainable()
+        return self._agent().is_trainable()
 
     def start_game(self, game: Any, player_id: int) -> None:
         self.board_size = game.board_size
         self.player_id = player_id
-        self.agent.start_game(game, player_id)
+        self._agent().start_game(game, player_id)
 
     def end_game(self, game: Any) -> None:
-        self.agent.end_game(game)
+        self._agent().end_game(game)
 
-    def handle_opponent_step_outcome(self, observation_before_action: Any, action: Any, game: Any) -> None:
-        self.agent.handle_opponent_step_outcome(observation_before_action, action, game)
+    def handle_step_outcome(
+        self,
+        observation_before_action,
+        opponent_observation_after_action,
+        observation_after_action,
+        reward,
+        action,
+        done=False,
+    ):
+        return self._agent().handle_step_outcome(
+            observation_before_action,
+            opponent_observation_after_action,
+            observation_after_action,
+            reward,
+            action,
+            done,
+        )
 
-    def handle_step_outcome(self, observation_before_action: Any, action: Any, game: Any) -> None:
-        self.agent.handle_step_outcome(observation_before_action, action, game)
+    def handle_opponent_step_outcome(
+        self,
+        opponent_observation_before_action,
+        my_observation_after_opponent_action,
+        opponent_observation_after_action,
+        opponent_reward,
+        opponent_action,
+        done,
+    ):
+        """Handle the opponent's step outcome."""
+        return self._agent().handle_opponent_step_outcome(
+            opponent_observation_before_action,
+            my_observation_after_opponent_action,
+            opponent_observation_after_action,
+            opponent_reward,
+            opponent_action,
+            done,
+        )
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
-        return self.agent.compute_loss_and_reward(length)
+        return self._agent().compute_loss_and_reward(length)
 
     def model_hyperparameters(self) -> dict:
-        return self.agent.model_hyperparameters()
+        return self._agent().model_hyperparameters()
 
-    def get_action(self, game: Any) -> Any:
-        return self.agent.get_action(game)
+    def get_action(self, observation, action_mask) -> int:
+        return self._agent().get_action(observation, action_mask)
 
     def version(self) -> str:
-        return self.agent.version()
+        return self._agent().version()
 
     def model_id(self) -> str:
-        return self.agent.model_id()
+        return self._agent().model_id()
 
     def model_name(self) -> str:
-        return self.agent.model_name()
+        return self._agent().model_name()
 
     def wandb_local_filename(self, artifact: Any) -> str:
-        return self.agent.wandb_local_filename(artifact)
+        return self._agent().wandb_local_filename(artifact)
 
     def resolve_filename(self, suffix: str) -> str:
-        return self.agent.resolve_filename(suffix)
+        return self._agent().resolve_filename(suffix)
 
     def save_model(self, path: str) -> None:
-        self.agent.save_model(path)
+        self._agent().save_model(path)
 
     def load_model(self, path: str) -> None:
-        self.agent.load_model(path)
+        self._agent().load_model(path)
 
     def get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""

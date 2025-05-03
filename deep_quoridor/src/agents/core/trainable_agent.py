@@ -58,6 +58,8 @@ class TrainableAgentParams(SubargsBase):
     # Inspect the opponent's possible actions
     # This is used to log the opponent's possible actions based on agent's qvalues
     inspect_opponent_possible_actions: bool = False
+    # Learning rate to use for the optimizer
+    learning_rate: float = 0.001
 
     @classmethod
     def training_only_params(cls) -> set[str]:
@@ -82,6 +84,7 @@ class TrainableAgentParams(SubargsBase):
             "use_negative_qvalue_function",
             "wandb_alias",
             "wandb_dir",
+            "learning_rate",
         }
 
 
@@ -89,16 +92,26 @@ class TrainableAgent(Agent):
     def is_trainable(self):
         return True
 
-    def start_game(self, game, player_id):
+    def handle_step_outcome(
+        self,
+        observation_before_action,
+        opponent_observation_after_action,
+        observation_after_action,
+        reward,
+        action,
+        done=False,
+    ):
         pass
 
-    def end_game(self, game):
-        pass
-
-    def handle_opponent_step_outcome(self, observation_before_action, action, game):
-        pass
-
-    def handle_step_outcome(self, observation_before_action, action, game):
+    def handle_opponent_step_outcome(
+        self,
+        opponent_observation_before_action,
+        my_observation_after_opponent_action,
+        opponent_observation_after_action,
+        opponent_reward,
+        opponent_action,
+        done,
+    ):
         pass
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -106,9 +119,6 @@ class TrainableAgent(Agent):
 
     def model_hyperparameters(self):
         return {}
-
-    def get_action(self, game):
-        raise NotImplementedError()
 
     def version(self):
         raise NotImplementedError()
@@ -139,12 +149,16 @@ class AbstractTrainableAgent(TrainableAgent):
         self,
         board_size,
         max_walls,
+        observation_space,
+        action_space,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
         super().__init__()
         self.board_size = board_size
         self.max_walls = max_walls
+        self.observation_space = observation_space
+        self.action_space = action_space
         self.initial_epsilon = params.epsilon
         self.epsilon = params.epsilon
         self.epsilon_min = params.epsilon_min
@@ -191,20 +205,21 @@ class AbstractTrainableAgent(TrainableAgent):
         self.player_id = player_id
 
     def end_game(self, game):
+        """Store episode results and reset tracking"""
+        self.games_count += 1
         if not self.training_mode:
             return
-        """Store episode results and reset tracking"""
         self.episodes_rewards.append(self.current_episode_reward)
-        self.games_count += 1
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self._update_target_network()
 
-    def get_opponent_player_id(self, player_id):
+    def _get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
 
     def handle_opponent_step_outcome(
+        self,
         opponent_observation_before_action,
         my_observation_after_opponent_action,
         opponent_observation_after_action,
@@ -273,7 +288,7 @@ class AbstractTrainableAgent(TrainableAgent):
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
             next_state_mask = self._convert_action_mask_to_tensor_for_player(
-                opponent_observation_after_action["action_mask"], self.get_opponent_player_id(agent_id)
+                opponent_observation_after_action["action_mask"], self._get_opponent_player_id(agent_id)
             )
 
         # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
@@ -320,7 +335,7 @@ class AbstractTrainableAgent(TrainableAgent):
 
     def _create_optimizer(self):
         """Create the optimizer for training."""
-        return optim.Adam(self.online_network.parameters(), lr=0.001)
+        return optim.Adam(self.online_network.parameters(), lr=self.params.learning_rate)
 
     def _create_criterion(self):
         """Create the loss criterion."""
@@ -409,7 +424,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if not self.params.inspect_opponent_possible_actions:
             return
         """Get the best action based on Q-values."""
-        opponent_player_id = self.get_opponent_player_id(self.player_id)
+        opponent_player_id = self._get_opponent_player_id(self.player_id)
         state = self._observation_to_tensor(observation, opponent_player_id)
         with torch.no_grad():
             q_values = self.online_network(state)
