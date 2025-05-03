@@ -176,3 +176,4 @@ game_recording.yaml
 .vscode/launch.json
 wandb
 wandbmodels
+runs
