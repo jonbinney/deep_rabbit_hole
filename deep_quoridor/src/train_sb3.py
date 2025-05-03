@@ -212,6 +212,7 @@ if __name__ == "__main__":
     parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
     parser.add_argument("-e", "--steps", type=int, default=20_480, help="Number of steps to train for")
     parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
+    parser.add_argument("-m", "--rewards_multiplier", type=int, default=1, help="Multiplier for rewards")
     parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
     parser.add_argument("--upload", action="store_true", default=False, help="Upload artifacts to wandb")
@@ -248,9 +249,14 @@ if __name__ == "__main__":
             args.opponent, board_size=args.board_size, max_walls=args.max_walls
         )
 
-    env_fn = make_env_fn(quoridor_env.env, opponent=opponent)
+    env_fn = make_env_fn(quoridor_env.env, opponent=opponent, rewards_multiplier=args.rewards_multiplier)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
-    train_kwargs = {"steps": args.steps, "seed": args.seed, "opponent": args.opponent}
+    train_kwargs = {
+        "steps": args.steps,
+        "seed": args.seed,
+        "opponent": args.opponent,
+        "rewards_multiplier": args.rewards_multiplier,
+    }
 
     # Set random seed for reproducibility
     set_deterministic(args.seed)
