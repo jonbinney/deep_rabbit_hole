@@ -159,6 +159,11 @@ class SB3PPOAgent(AbstractTrainableAgent):
     def get_model_extension():
         return "zip"
 
+    def load_model(self, path):
+        """Override the parent class method to load models using MaskablePPO.load() instead"""
+        print(f"Loading pre-trained model from {path}")
+        self.model = MaskablePPO.load(path)
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
@@ -174,17 +179,31 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.player_id = player_id
 
         if self.model is None:
-            self.fetch_model_from_wand_and_update_params()
+            # Check if wandb_alias is provided - prioritize it if present
+            if self.params.wandb_alias:
+                print(f"Using wandb_alias: {self.params.wandb_alias}")
+                # Try to fetch the model from wandb
+                self.fetch_model_from_wand_and_update_params()
+
+                # If we got a filename from wandb, try to load it
+                if self.params.model_filename:
+                    try:
+                        self.load_model(self.params.model_filename)
+                    except (ValueError, FileNotFoundError, TypeError):
+                        print(f"Failed to load model using wandb_alias '{self.params.wandb_alias}'.")
+
+            # If no wandb_alias or loading from wandb failed, try to load from local files
+            if self.model is None:
+                try:
+                    print("Looking for model in local files...")
+                    self.resolve_and_load_model()
+                except FileNotFoundError:
+                    print("No local model file found.")
 
             # Wrap the game to get access to action_mask method
             self.wrapper = wrap_env(game)
 
-            try:
-                # Find the most recent model file
-                print(f"Loading model from {self.params.model_filename}")
-                self.model = MaskablePPO.load(self.params.model_filename)
-                print(f"Loaded model from {self.params.model_filename}")
-            except (ValueError, FileNotFoundError):
+            if self.model is None:
                 print("No policy found. The agent will not work correctly.")
                 return
 

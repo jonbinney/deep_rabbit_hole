@@ -24,7 +24,7 @@ from agents.sb3_ppo import DictFlattenExtractor, make_env_fn
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
-from utils import set_deterministic
+from utils import resolve_path, set_deterministic
 
 import wandb
 from deep_quoridor.src.agents.sb3_ppo import SB3PPOAgent
@@ -87,17 +87,37 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
         ),
     )
 
-    model_id = SB3PPOAgent(**env_kwargs).model_id()
-    local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
-    model.save(local_filename)
+    # Create an SB3PPO agent to handle model file naming
+    sb3_agent = SB3PPOAgent(**env_kwargs)
+    timestamp = time.strftime('%Y%m%d-%H%M%S')
+
+    # Use the utils.resolve_path to get the standard models directory path
+    # and make sure it exists
+    models_dir = resolve_path(sb3_agent.params.model_dir)
+    os.makedirs(models_dir, exist_ok=True)
+
+    # Use the agent's resolve_filename method to generate standard filenames
+    # Save both as timestamped version and as 'final' version
+    timestamped_filename = sb3_agent.resolve_filename(timestamp)
+    final_filename = sb3_agent.resolve_filename("final")
+
+    # Construct full paths using resolve_path
+    model_path_timestamped = resolve_path(sb3_agent.params.model_dir, timestamped_filename)
+    model_path_final = resolve_path(sb3_agent.params.model_dir, final_filename)
+
+    # Save the model files
+    model.save(str(model_path_timestamped))
+    model.save(str(model_path_final))
+
+    print(f"Model saved to:\n- {model_path_timestamped} (timestamped version)\n- {model_path_final} (final version)")
 
     if upload_to_wandb:
+        model_id = sb3_agent.model_id()
         artifact = wandb.Artifact(f"{model_id}", type="model")
-        artifact.add_file(local_path=local_filename)
+        artifact.add_file(local_path=str(model_path_timestamped))
         artifact.save()
         wandb.finish()
-
-    print(f"Model {model_id} has been saved.")
+        print(f"Model uploaded to wandb as artifact: {model_id}")
 
     print(f"Finished training on {str(env.unwrapped.metadata['name'])}.\n")
 
@@ -110,14 +130,25 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kw
 
     print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[player]}.")
 
-    try:
-        model_id = SB3PPOAgent(**env_kwargs).model_id()
-        latest_policy = max(glob.glob(f"{model_id}*.zip"), key=os.path.getctime)
-    except ValueError:
-        print("Policy not found.")
-        exit(0)
+    # Create agent to help with model handling
+    sb3_agent = SB3PPOAgent(**env_kwargs)
 
-    model = MaskablePPO.load(latest_policy)
+    try:
+        # First try to use the _final model we just saved
+        final_path = resolve_path(sb3_agent.params.model_dir, sb3_agent.resolve_filename("final"))
+        if os.path.exists(final_path):
+            model = MaskablePPO.load(str(final_path))
+            print(f"Using final model: {final_path}")
+        else:
+            # Fallback to any timestamped model in the models directory
+            models_dir = resolve_path(sb3_agent.params.model_dir)
+            pattern = os.path.join(str(models_dir), f"{sb3_agent.model_id()}*.zip")
+            latest_policy = max(glob.glob(pattern), key=os.path.getctime)
+            model = MaskablePPO.load(latest_policy)
+            print(f"Using latest model: {latest_policy}")
+    except (ValueError, FileNotFoundError):
+        print("Policy not found in the models directory.")
+        exit(0)
 
     scores = {agent: 0 for agent in env.possible_agents}
     total_rewards = {agent: 0 for agent in env.possible_agents}
