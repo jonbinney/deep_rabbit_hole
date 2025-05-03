@@ -89,7 +89,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
 
     # Create an SB3PPO agent to handle model file naming
     sb3_agent = SB3PPOAgent(**env_kwargs)
-    timestamp = time.strftime('%Y%m%d-%H%M%S')
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
 
     # Use the utils.resolve_path to get the standard models directory path
     # and make sure it exists
@@ -124,7 +124,9 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     env.close()
 
 
-def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kwargs):
+def eval_action_mask(env_fn, num_games=100, render=False, player=0, **env_kwargs):
+    # Set render_mode to "human" if render=True, otherwise None
+    render_mode = "human" if render else None
     # Evaluate a trained agent vs a random agent
     env = env_fn(render_mode=render_mode, **env_kwargs)
 
@@ -183,6 +185,9 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kw
                     # Note: PettingZoo expects integer actions # TODO: change chess to cast actions to type int?
                     act = int(model.predict(observation, action_masks=action_mask, deterministic=True)[0])
             env.step(act)
+
+            if render_mode == "human":
+                print(env.render())
     env.close()
 
     # Avoid dividing by zero
@@ -190,7 +195,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kw
         winrate = 0
     else:
         winrate = scores[env.possible_agents[player]] / sum(scores.values())
-    print("Rewards by round: ", round_rewards)
+    # print("Rewards by round: ", round_rewards)
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Winrate: ", winrate)
     print("Final scores: ", scores)
@@ -209,6 +214,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
     parser.add_argument("--upload", action="store_true", default=False, help="Upload artifacts to wandb")
     parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
+    parser.add_argument("--render", action="store_true", default=False, help="Render environment during evaluation")
     parser.add_argument(
         "-rp",
         "--run_prefix",
@@ -269,5 +275,5 @@ if __name__ == "__main__":
     if not args.no_eval:
         opponent_name = args.opponent if args.opponent else "itself"
         print(f"\nEvaluating {args.num_games} games against {opponent_name}...")
-        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=0, **env_kwargs)
-        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=1, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=0, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=1, **env_kwargs)
