@@ -1,14 +1,24 @@
 import copy
 import random
 
-from quoridor import ActionEncoder, Player, Quoridor, construct_game_from_observation
+import numpy as np
+from quoridor import Action, ActionEncoder, Player, Quoridor, WallAction, construct_game_from_observation
 
 from agents.core import Agent
 
 
-def sample_valid_actions(game: Quoridor, n: int):
+def compute_wall_weight(wall: WallAction, position_1: np.ndarray, position_2: np.ndarray, sigma) -> float:
+    wall_position = np.array(wall.position)
+    d1 = np.linalg.norm(position_1 - wall_position)
+    d2 = np.linalg.norm(position_2 - wall_position)
+    min_distance = min(d1, d2)
+    weight = np.exp(-0.5 * (min_distance / sigma) ** 2)
+    return weight
+
+
+def sample_actions(game: Quoridor, n: int, wall_sigma: float | None = None) -> list[Action]:
     """
-    Choose a random sample of valid actions for the current player.
+    Choose a sample of valid actions for the current player.
 
     Starts by including all valid move actions, then adds a random sample of valid wall actions. May return less than
     n actions if there are not enough valid actions.
@@ -21,14 +31,32 @@ def sample_valid_actions(game: Quoridor, n: int):
         num_wall_actions = n - len(actions)
         wall_actions = game.get_valid_wall_actions()
         if len(wall_actions) > num_wall_actions:
-            wall_actions = random.sample(wall_actions, num_wall_actions)
+            if wall_sigma is None:
+                wall_actions = random.sample(wall_actions, num_wall_actions)
+            else:
+                position_1 = np.array(game.board.get_player_position(Player.ONE))
+                position_2 = np.array(game.board.get_player_position(Player.TWO))
+                wall_weights = [compute_wall_weight(wall, position_1, position_2, wall_sigma) for wall in wall_actions]
+                wall_actions = np.random.choice(
+                    wall_actions,
+                    size=num_wall_actions,
+                    replace=False,
+                    p=wall_weights / np.sum(wall_weights),
+                )
 
-        actions += wall_actions
+        actions.extend(wall_actions)
 
     return actions
 
 
-def choose_action(game: Quoridor, player: Player, opponent: Player, max_depth: int, branching_factor: int) -> float:
+def choose_action(
+    game: Quoridor,
+    player: Player,
+    opponent: Player,
+    max_depth: int,
+    branching_factor: int,
+    wall_sigma: float | None = None,
+) -> float:
     """
     Minimax algorithm to choose the best action for the current player.
 
@@ -41,16 +69,22 @@ def choose_action(game: Quoridor, player: Player, opponent: Player, max_depth: i
     elif max_depth == 0:
         return None, game.player_distance_to_target(opponent) - game.player_distance_to_target(player)
 
-    actions = sample_valid_actions(game, branching_factor)
+    actions = sample_actions(game, branching_factor, wall_sigma)
     assert len(actions) > 0, "There are no valid actions for the current player."
 
     chosen_action = None
     chosen_value = -float("inf") if game.get_current_player() == player else float("inf")
     for action in actions:
-        game_after_action = copy.deepcopy(game)
-        game_after_action.step(action)
-        _, value = choose_action(game_after_action, player, opponent, max_depth - 1, branching_factor)
-        if game.get_current_player() == player:
+        current_player_before_action = game.get_current_player()
+        position_before_action = game.board.get_player_position(current_player_before_action)
+
+        # Apply the action to the game.
+        game.step(action)
+
+        # Recursively call this function to choose the next player's action.
+        _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma)
+
+        if current_player_before_action == player:
             if value >= chosen_value:
                 chosen_value = value
                 chosen_action = action
@@ -59,14 +93,22 @@ def choose_action(game: Quoridor, player: Player, opponent: Player, max_depth: i
                 chosen_value = value
                 chosen_action = action
 
+        # Undo the action to put the game back to its original state.
+        if isinstance(action, WallAction):
+            game.board.remove_wall(current_player_before_action, action.position, action.orientation)
+        else:
+            game.board.move_player(current_player_before_action, position_before_action)
+        game.set_current_player(current_player_before_action)
+
     return chosen_action, chosen_value
 
 
 class SimpleAgent(Agent):
-    def __init__(self, max_depth=3, branching_factor=8, **kwargs):
+    def __init__(self, max_depth=3, branching_factor=8, wall_sigma=0.5, **kwargs):
         super().__init__()
         self.max_depth = max_depth
         self.branching_factor = branching_factor
+        self.wall_sigma = wall_sigma
         self.board_size = kwargs["board_size"]
         self.action_encoder = ActionEncoder(self.board_size)
 
@@ -76,7 +118,9 @@ class SimpleAgent(Agent):
     def get_action(self, observation, action_mask):
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
-        chosen_action, chosen_value = choose_action(game, player, opponent, self.max_depth, self.branching_factor)
+        chosen_action, chosen_value = choose_action(
+            game, player, opponent, self.max_depth, self.branching_factor, self.wall_sigma
+        )
 
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
         action_id = self.action_encoder.action_to_index(chosen_action)

@@ -483,6 +483,9 @@ class Quoridor:
     def get_current_player(self) -> int:
         return self.current_player
 
+    def set_current_player(self, player: Player):
+        self.current_player = player
+
     def get_goal_row(self, player: Player) -> int:
         return self._goal_rows[player]
 
