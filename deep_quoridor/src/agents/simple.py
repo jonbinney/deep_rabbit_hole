@@ -46,6 +46,8 @@ class SimpleAgent(Agent):
         self.player_id = player_id
 
     def get_action(self, observation, action_mask):
+        action_mask = observation["action_mask"]
+        observation = observation["observation"]
         possible_action_sequences = []
         for _ in range(self.num_sequences):
             game, player, opponent = construct_game_from_observation(observation, self.player_id)

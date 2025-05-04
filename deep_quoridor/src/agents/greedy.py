@@ -193,7 +193,9 @@ class GreedyAgent(Agent):
         self.action_log.action_text(my_pos, f"dist:{len(my_shortest_path) - 1}")
         self.action_log.action_text(opp_pos, f"dist: {len(opponent_shortest_path) - 1}")
 
-    def get_action(self, observation, action_mask):
+    def get_action(self, observation):
+        action_mask = observation["action_mask"]
+        observation = observation["observation"]
         # Reconstruct the game from the observation.
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 

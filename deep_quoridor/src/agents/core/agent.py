@@ -107,7 +107,7 @@ class Agent:
         """
         pass
 
-    def get_action(self, observation, action_mask) -> int:
+    def get_action(self, observation) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
 

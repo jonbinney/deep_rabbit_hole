@@ -1,12 +1,11 @@
 from copy import deepcopy
 from typing import Any
 
-import numpy as np
 from agents.adapters.base import BaseTrainableAgentAdapter
 from gymnasium import spaces
 
 
-class DictSplitBoardAdapter(BaseTrainableAgentAdapter):
+class RemoveTurnAdapter(BaseTrainableAgentAdapter):
     """
     An adapter that splits the board into one-hot representations with one channel per player
     when getting observations from the game.
@@ -50,20 +49,8 @@ class DictSplitBoardAdapter(BaseTrainableAgentAdapter):
         )
 
     def _transform_observation(self, observation: Any) -> Any:
-        """Transform the game observation by splitting the board into separate channels"""
-        if observation is None:
-            return None
         observation = deepcopy(observation)
-        board = observation["observation"].pop("board")
-
-        # Create one-hot representations for player and opponent
-        player_board = (board == 1).astype(np.float32)
-        opponent_board = (board == 2).astype(np.float32)
-
-        # Update the observation dictionary
-        observation["observation"]["my_board"] = player_board
-        observation["observation"]["opponent_board"] = opponent_board
-
+        observation["observation"].pop("my_turn")
         return observation
 
     def get_action(self, observation):
@@ -72,22 +59,15 @@ class DictSplitBoardAdapter(BaseTrainableAgentAdapter):
 
     @classmethod
     def get_observation_space(cls, original_space):
-        board_shape = original_space["observation"]["board"].shape
         space = {}
         for key, value in original_space.items():
             if key != "observation":
                 space[key] = value
             else:
                 obs_spc = {}
-                for key, value in original_space["observation"].items():
-                    if key == "board":
-                        obs_spc["my_board"] = original_space["observation"]["board"].__class__(
-                            0, 1, shape=board_shape, dtype=np.float32
-                        )
-                        obs_spc["opponent_board"] = original_space["observation"]["board"].__class__(
-                            0, 1, shape=board_shape, dtype=np.float32
-                        )
-                    else:
+                for key, value in value.items():
+                    if key != "my_turn":
                         obs_spc[key] = value
                 space["observation"] = spaces.Dict(obs_spc)
+
         return spaces.Dict(space)

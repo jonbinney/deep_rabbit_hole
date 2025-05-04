@@ -3,11 +3,14 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.nn as nn
+from gymnasium import Space, spaces
 from utils import my_device
 
 from agents.adapters.base import BaseTrainableAgentAdapter
 from agents.adapters.dict_split_board_adapter import DictSplitBoardAdapter
+from agents.adapters.remove_turn_adapter import RemoveTurnAdapter
 from agents.adapters.rotate_adapter import RotateAdapter
+from agents.adapters.use_opponent_after_action_obs import UseOpponentsAfterActionObsAdapter
 from agents.core import AbstractTrainableAgent
 from agents.core.trainable_agent import TrainableAgentParams
 
@@ -41,20 +44,13 @@ class PAgentNetwork(nn.Module):
 
 @dataclass
 class PAgentParams(TrainableAgentParams):
-    # Whether oppoments actions are used for training
-    # This is used for training only, not for playing
-    # This should not be combined with assign_negative_reward
-    use_opponents_actions: bool = False
-
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
         Returns a set of parameters that are used only during training.
         These parameters should not be used during playing.
         """
-        return super().training_only_params() | {
-            "use_opponents_actions",
-        }
+        return super().training_only_params()
 
 
 class PAgentAgent(AbstractTrainableAgent):
@@ -83,13 +79,34 @@ class PAgentAgent(AbstractTrainableAgent):
         """Bump this version when compatibility with saved models is broken"""
         return 1
 
+    def get_space_size(self, space: Space) -> int:
+        if isinstance(space, spaces.Box):
+            return int(np.prod(space.shape))
+        elif isinstance(space, spaces.Discrete):
+            return 1
+        elif isinstance(space, spaces.Dict) or isinstance(space, dict):
+            size = 0
+            for subspace in space.values():
+                size += self.get_space_size(subspace)  # Recursively get size of subspaces
+            return size
+        else:
+            # For other space types, return the product of the dimensions
+            size = 1
+            for dim in space.shape:
+                size *= dim
+            return size
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
-        return self.action_space.flatten().shape[0]
+        return (
+            self.action_space.n
+            if isinstance(self.action_space, spaces.Discrete)
+            else self.get_space_size(self.action_space)
+        )
 
     def _calculate_observation_size(self):
         """Calculate the size of the action space."""
-        return self.observation_space.flatten().shape[0]
+        return self.get_space_size(self.observation_space["observation"])
 
     def _create_network(self):
         """Create the neural network model."""
@@ -104,7 +121,7 @@ class PAgentAgent(AbstractTrainableAgent):
         opponent_action,
         done=False,
     ):
-        if not self.training_mode or not self.params.use_opponents_actions:
+        if not self.training_mode:
             return
 
         self._handle_step_outcome_all(
@@ -132,20 +149,34 @@ class PAgentAgent(AbstractTrainableAgent):
 
 
 class NewDexpAgent(BaseTrainableAgentAdapter):
+    @classmethod
+    def params_class(cls):
+        return PAgentParams
+
     def __init__(
         self,
         board_size,
         max_walls,
         observation_space,
         action_space,
-        params: TrainableAgentParams = TrainableAgentParams(),
+        params: PAgentParams = PAgentParams(),
         **kwargs,
     ):
-        new_action_space = RotateAdapter.get_action_space(DictSplitBoardAdapter.get_action_space(action_space))
-        new_observation_space = RotateAdapter.get_observation_space(
-            DictSplitBoardAdapter.get_observation_space(action_space)
+        new_action_space = action_space
+        new_observation_space = DictSplitBoardAdapter.get_observation_space(
+            RemoveTurnAdapter.get_observation_space(observation_space)
         )
-        agent = PAgentAgent(board_size, max_walls, new_observation_space, new_action_space, params=params, **kwargs)
-        rotate_agent = RotateAdapter(agent)
-        dict_agent = DictSplitBoardAdapter(rotate_agent)
-        super().__init__(dict_agent)
+
+        agent = PAgentAgent(
+            board_size=board_size,
+            max_walls=max_walls,
+            observation_space=new_observation_space,
+            action_space=new_action_space,
+            params=params,
+            **kwargs,
+        )
+        agent = RemoveTurnAdapter(agent)
+        agent = UseOpponentsAfterActionObsAdapter(agent)
+        agent = DictSplitBoardAdapter(agent)
+        agent = RotateAdapter(agent)
+        super().__init__(agent, **kwargs)

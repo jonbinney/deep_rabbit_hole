@@ -21,7 +21,7 @@ class ReplayAgent(Agent):
         self.action_index = 0
         self.original_name = name
 
-    def get_action(self, observation, action_mask) -> int:
+    def get_action(self, observation) -> int:
         action = self.actions[self.action_index]
         self.action_index += 1
         return action

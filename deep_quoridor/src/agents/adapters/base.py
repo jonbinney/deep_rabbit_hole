@@ -4,11 +4,19 @@ from agents.core.trainable_agent import TrainableAgent
 
 
 class BaseTrainableAgentAdapter(TrainableAgent):
-    def __init__(self, agent: TrainableAgent):
+    def __init__(
+        self,
+        agent: TrainableAgent,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
         self.agent = agent
 
     def _agent(self) -> TrainableAgent:
         return self.agent
+
+    def is_training(self):
+        return self._agent().is_training()
 
     def is_trainable(self) -> bool:
         return self._agent().is_trainable()
@@ -64,8 +72,8 @@ class BaseTrainableAgentAdapter(TrainableAgent):
     def model_hyperparameters(self) -> dict:
         return self._agent().model_hyperparameters()
 
-    def get_action(self, observation, action_mask) -> int:
-        return self._agent().get_action(observation, action_mask)
+    def get_action(self, observation) -> int:
+        return self._agent().get_action(observation)
 
     def version(self) -> str:
         return self._agent().version()
@@ -91,3 +99,6 @@ class BaseTrainableAgentAdapter(TrainableAgent):
     def get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""
         return "player_1" if self.player_id == "player_0" else "player_0"
+
+    def __getattr__(self, name):
+        return getattr(self._agent(), name)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from quoridor import ActionEncoder, MoveAction, WallAction, WallOrientation
+from quoridor import ActionEncoder
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -27,10 +27,11 @@ class HumanAgent(Agent):
             return self.params.nick
         return "Human"
 
-    def get_action(self, observation, action_mask):
+    def get_action(self, observation):
         # Import this here to avoid circular dependencies
         from renderers.pygame import PygameQuoridor
 
+        action_mask = observation["action_mask"]
         # Transform the action mask into a set of valid moves
         valid_moves = set()
         for action, value in enumerate(action_mask):

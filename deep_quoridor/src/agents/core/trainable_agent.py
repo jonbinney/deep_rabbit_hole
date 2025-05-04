@@ -90,6 +90,9 @@ class TrainableAgentParams(SubargsBase):
 
 
 class TrainableAgent(Agent):
+    def is_training(self):
+        return False
+
     def is_trainable(self):
         return True
 
@@ -196,6 +199,9 @@ class AbstractTrainableAgent(TrainableAgent):
         self._reset_episode_related_info()
         self._resolve_and_load_model()
 
+    def is_training(self):
+        return self.training_mode
+
     def _reset_episode_related_info(self):
         self.current_episode_reward = 0
         self.player_id = None
@@ -218,17 +224,6 @@ class AbstractTrainableAgent(TrainableAgent):
     def _get_opponent_player_id(self, player_id):
         """Get the opponent player ID."""
         return "player_1" if player_id == "player_0" else "player_0"
-
-    def handle_opponent_step_outcome(
-        self,
-        opponent_observation_before_action,
-        my_observation_after_opponent_action,
-        opponent_observation_after_action,
-        opponent_reward,
-        opponent_action,
-        done=False,
-    ):
-        pass
 
     def _adjust_reward(self, r, done):
         if done:
@@ -351,13 +346,13 @@ class AbstractTrainableAgent(TrainableAgent):
         """Copy parameters from online network to target network."""
         self.target_network.load_state_dict(self.online_network.state_dict())
 
-    def get_action(self, observation, action_mask):
+    def get_action(self, observation):
         """Select an action using epsilon-greedy policy."""
         if random.random() < self.epsilon:
-            valid_actions = self._get_valid_actions(action_mask)
+            valid_actions = self._get_valid_actions(observation["action_mask"])
             return self._select_random_action(valid_actions)
 
-        return self._get_best_action(observation, action_mask)
+        return self._get_best_action(observation["observation"], observation["action_mask"])
 
     def _get_valid_actions(self, mask):
         """Get valid actions from the action mask."""
@@ -391,7 +386,7 @@ class AbstractTrainableAgent(TrainableAgent):
         # Log the 5 best actions, as long as the value is > -100 (arbitrary value)
         top_values, top_indices = torch.topk(q_values, min(5, len(q_values)))
         scores = {
-            self.action_encoder.index_to_action(int(self.convert_to_action_from_tensor_index(i.item()))): v.item()
+            self.action_encoder.index_to_action(int(self._convert_to_action_from_tensor_index(i.item()))): v.item()
             for v, i in zip(top_values, top_indices)
             if v.item() >= -100
         }

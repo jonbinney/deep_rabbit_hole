@@ -6,6 +6,7 @@ __all__ = [
     "DExpAgent",
     "FlatDQNAgent",
     "HumanAgent",
+    "NewDexpAgent",
     "RandomAgent",
     "ReplayAgent",
     "ReplayBuffer",
@@ -26,6 +27,7 @@ from agents.dexp import DExpAgent  # noqa: E402
 from agents.flat_dqn import FlatDQNAgent  # noqa: E402
 from agents.greedy import GreedyAgent  # noqa: E402, F401
 from agents.human import HumanAgent  # noqa: E402, F401
+from agents.pagent import NewDexpAgent
 from agents.random import RandomAgent  # noqa: E402, F401
 from agents.replay import ReplayAgent  # noqa: E402, F401
 from agents.sb3_ppo import SB3PPOAgent  # noqa: E402, F401
@@ -38,3 +40,4 @@ AgentRegistry.register("human", HumanAgent)
 AgentRegistry.register("random", RandomAgent)
 AgentRegistry.register("simple", SimpleAgent)
 AgentRegistry.register("sb3ppo", SB3PPOAgent)
+AgentRegistry.register("newdexp", NewDexpAgent)

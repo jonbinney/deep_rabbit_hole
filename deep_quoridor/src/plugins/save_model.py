@@ -1,6 +1,6 @@
 from typing import Callable, Optional
 
-from agents.core import AbstractTrainableAgent
+from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from utils import resolve_path
 
@@ -37,7 +37,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def _save_models(self, suffix: str):
         for agent in self.agents:
-            if not isinstance(agent, AbstractTrainableAgent) or not agent.training_mode:
+            if not isinstance(agent, TrainableAgent) or not agent.is_training():
                 continue
             agent_name = agent.name()
             save_file = resolve_path(agent.params.model_dir, agent.resolve_filename(suffix))
