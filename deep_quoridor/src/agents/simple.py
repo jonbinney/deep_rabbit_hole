@@ -1,10 +1,20 @@
-import copy
 import random
+from dataclasses import dataclass, fields
+from typing import Optional
 
 import numpy as np
 from quoridor import Action, ActionEncoder, Player, Quoridor, WallAction, construct_game_from_observation
+from utils import SubargsBase
 
 from agents.core import Agent
+
+
+@dataclass
+class SimpleParams(SubargsBase):
+    nick: Optional[str] = None
+    max_depth: int = 3
+    branching_factor: int = 8
+    wall_sigma: float = 0.5
 
 
 def compute_wall_weight(wall: WallAction, position_1: np.ndarray, position_2: np.ndarray, sigma) -> float:
@@ -104,13 +114,25 @@ def choose_action(
 
 
 class SimpleAgent(Agent):
-    def __init__(self, max_depth=3, branching_factor=8, wall_sigma=0.5, **kwargs):
+    def __init__(self, params=SimpleParams(), **kwargs):
         super().__init__()
-        self.max_depth = max_depth
-        self.branching_factor = branching_factor
-        self.wall_sigma = wall_sigma
+        self.params = params
         self.board_size = kwargs["board_size"]
         self.action_encoder = ActionEncoder(self.board_size)
+
+    @classmethod
+    def params_class(cls):
+        return SimpleParams
+
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        param_strings = []
+        for f in fields(self.params):
+            value = getattr(self.params, f.name)
+            if f.name != "nick" and value != f.default:
+                param_strings.append(f"{f.name}={getattr(self.params, f.name)}")
+        return "simple " + ",".join(param_strings)
 
     def start_game(self, game, player_id):
         self.player_id = player_id
@@ -118,8 +140,8 @@ class SimpleAgent(Agent):
     def get_action(self, observation, action_mask):
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
-        chosen_action, chosen_value = choose_action(
-            game, player, opponent, self.max_depth, self.branching_factor, self.wall_sigma
+        chosen_action, _ = choose_action(
+            game, player, opponent, self.params.max_depth, self.params.branching_factor, self.params.wall_sigma
         )
 
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
