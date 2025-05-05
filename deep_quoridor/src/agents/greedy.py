@@ -47,15 +47,6 @@ class GreedyAgent(Agent):
     def start_game(self, game, player_id):
         self.player_id = player_id
 
-    def _valid_pawn_movements(self, action_mask: np.ndarray) -> list[Position]:
-        """Returns the coordinates of the possible movements based on the action mask.
-        This is useful for the first move, since there could be complicated jumps.  After the
-        first move, you can't easily use this because you'd need to generate a new action_mask
-        """
-        movement_mask = action_mask[: self.board_size**2]
-        valid_moves = np.argwhere(movement_mask == 1).reshape(-1)
-        return [self.action_encoder.index_to_action(i).destination for i in valid_moves]
-
     def _next_moves(self, game: Quoridor, pos: Position) -> list[Position]:
         """Given a position in the board, it returns the possible next moves.  Notice that it ignores
         the other pawn, because this function is meant to be used for moves other than the first one,
@@ -113,31 +104,22 @@ class GreedyAgent(Agent):
 
         return path[::-1]
 
-    def _shortest_path_from_me(
-        self, game: Quoridor, player: Player, action_mask: np.ndarray, target_row: int
-    ) -> list[Position]:
+    def _shortest_path_from_me(self, game: Quoridor, player: Player, target_row: int) -> list[Position]:
         """Return the shortest path from wherever the agent currently is."""
         my_position = game.board.get_player_position(player)
 
-        # The first move is based on the action mask, that already calculated what positions are valid
-        first_moves = self._valid_pawn_movements(action_mask)
         shortest_path = None
 
         # Find the shortest path for each of the first moves and keep the shortest one.
-        for move in first_moves:
-            path = self._shortest_path_from(game, move, target_row)
+        for move in game.get_valid_move_actions(player):
+            path = self._shortest_path_from(game, move.destination, target_row)
             if shortest_path is None or len(path) < len(shortest_path):
                 shortest_path = [my_position] + path
 
         assert shortest_path is not None, "No path found"
         return shortest_path
 
-    def _get_opponent_position(self, game: Quoridor, board: np.ndarray) -> Position:
-        coords = np.argwhere(board == 2)
-        assert len(coords) == 1, "Expected exactly one opponent position"
-        return (int(coords[0][0]), int(coords[0][1]))
-
-    def _get_block_action(self, game: Quoridor, opponent_shortest_path: list[Position], action_mask: np.ndarray):
+    def _get_block_action(self, game: Quoridor, opponent_shortest_path: list[Position]):
         for p0, p1 in zip(opponent_shortest_path, opponent_shortest_path[1:]):
             # For this movement of the opponent, get the possible wall placements
             if p0[0] == p1[0]:
@@ -158,19 +140,16 @@ class GreedyAgent(Agent):
             # by looking into which makes the difference of the distances more favorable
             for r in rows:
                 for c in cols:
-                    if r < 0 or c < 0 or r >= self.wall_size or c >= self.wall_size:
-                        continue
-
-                    action = self.action_encoder.action_to_index(WallAction((r, c), orientation))
-                    if action_mask[action] == 1:
+                    action = WallAction((r, c), orientation)
+                    if game.is_action_valid(action):
                         return action
+
         # No actions found
         return None
 
     def _log_action(
         self,
-        observation: dict,
-        action_mask: np.ndarray,
+        game: Quoridor,
         my_shortest_path: list[Position],
         opponent_shortest_path: list[Position],
     ):
@@ -180,9 +159,8 @@ class GreedyAgent(Agent):
         self.action_log.clear()
 
         # Log the possible next movements
-        movement_mask = action_mask[: self.board_size**2]
-        for action in np.argwhere(movement_mask == 1).reshape(-1):
-            self.action_log.action_text(self.action_encoder.index_to_action(int(action)), "")
+        for action in game.get_valid_move_actions():
+            self.action_log.action_text(action, "")
 
         self.action_log.path(my_shortest_path)
         self.action_log.path(opponent_shortest_path)
@@ -193,7 +171,7 @@ class GreedyAgent(Agent):
         self.action_log.action_text(my_pos, f"dist:{len(my_shortest_path) - 1}")
         self.action_log.action_text(opp_pos, f"dist: {len(opponent_shortest_path) - 1}")
 
-    def get_action(self, observation, action_mask):
+    def get_action(self, observation, action_mask) -> int:
         # Reconstruct the game from the observation.
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
@@ -208,11 +186,11 @@ class GreedyAgent(Agent):
         goal_row = game.get_goal_row(player)
         opponent_goal_row = game.get_goal_row(opponent)
 
-        my_shortest_path = self._shortest_path_from_me(game, player, action_mask, goal_row)
+        my_shortest_path = self._shortest_path_from_me(game, player, goal_row)
         opponent_pos = game.board.get_player_position(opponent)
         opponent_shortest_path = self._shortest_path_from(game, opponent_pos, opponent_goal_row)
 
-        self._log_action(observation, action_mask, my_shortest_path, opponent_shortest_path)
+        self._log_action(game, my_shortest_path, opponent_shortest_path)
 
         # TODO: use a more elaborate logic to decide whether to block, could be probabilistic
         block = False
@@ -220,8 +198,8 @@ class GreedyAgent(Agent):
             if len(opponent_shortest_path) < 5:
                 block = True
         if block:
-            action = self._get_block_action(game, opponent_shortest_path, action_mask)
+            action = self._get_block_action(game, opponent_shortest_path)
             if action is not None:
-                return action
+                return self.action_encoder.action_to_index(action)
 
         return self.action_encoder.action_to_index(MoveAction((my_shortest_path[1][0], my_shortest_path[1][1])))
