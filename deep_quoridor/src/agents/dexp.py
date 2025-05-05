@@ -15,7 +15,7 @@ class DExpNetwork(nn.Module):
     Takes observation from the Quoridor game and outputs Q-values for each action.
     """
 
-    def __init__(self, board_size, action_size, split_board, include_turn):
+    def __init__(self, board_size, action_size, split_board, include_turn, nn_version):
         super(DExpNetwork, self).__init__()
 
         # Calculate input dimensions based on observation space
@@ -28,32 +28,32 @@ class DExpNetwork(nn.Module):
         # turn, board player, board opponent, wall positions, my remaining walls, opponent's remaining walls
         flat_input_size = board_input_size + walls_input_size + (3 if include_turn else 2)
 
-        # Define network architecture
-        self.model = nn.Sequential(
-            nn.Linear(flat_input_size, 512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, action_size),
-        )
+        if nn_version == "3":
+            self.model = nn.Sequential(
+                nn.Linear(flat_input_size, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, 2048),
+                nn.ReLU(),
+                nn.Linear(2048, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, action_size),
+            )
+        elif nn_version == "4":
+            # Define network architecture
+            self.model = nn.Sequential(
+                nn.Linear(flat_input_size, 512),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, 256),
+                nn.ReLU(),
+                nn.Linear(256, action_size),
+            )
+        else:
+            raise RuntimeError(f"Model version does not exist: {nn_version}")
 
-        # nn.Sequential(
-        #    nn.Linear(flat_input_size, 2048),
-        #    nn.ReLU(),
-        #    nn.Linear(2048, 2048),
-        #   nn.ReLU(),
-        #    nn.Linear(2048, 2048),
-        #    nn.ReLU(),
-        #    nn.Linear(2048, 2048),
-        #    nn.ReLU(),
-        #    nn.Linear(2048, 2048),
-        #    nn.ReLU(),
-        #    nn.Linear(2048, action_size),
-        # )
         self.model.to(my_device())
 
     def forward(self, x):
@@ -140,7 +140,13 @@ class DExpAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        return DExpNetwork(self.board_size, self.action_size, self.params.split, self.params.turn)
+        return DExpNetwork(
+            self.board_size,
+            self.action_size,
+            self.params.split,
+            self.params.turn,
+            self.params.nn_version if self.params.nn_version is not None else "4",
+        )
 
     def handle_opponent_step_outcome(
         self,

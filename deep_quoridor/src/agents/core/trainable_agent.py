@@ -60,6 +60,8 @@ class TrainableAgentParams(SubargsBase):
     inspect_opponent_possible_actions: bool = False
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
+    # Specifies the NN version to use
+    nn_version: str = None
 
     @classmethod
     def training_only_params(cls) -> set[str]:
