@@ -83,7 +83,7 @@ def choose_action(
     branching_factor: int,
     wall_sigma: float | None,
     discount_factor: float,
-) -> float:
+) -> tuple[Optional[Action], float]:
     """
     Minimax algorithm to choose the best action for the current player.
 
