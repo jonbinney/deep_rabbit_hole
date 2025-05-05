@@ -33,5 +33,5 @@ class ReplayBuffer:
             ]
             for state, action, reward, next_state, done, next_state_mask in self.buffer
         ]
-        with open("filename", "w") as f:
+        with open(filename, "w") as f:
             json.dump(serializable_buffer, f)

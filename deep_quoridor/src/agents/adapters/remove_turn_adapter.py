@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Any
 
 from agents.adapters.base import BaseTrainableAgentAdapter
@@ -49,7 +48,8 @@ class RemoveTurnAdapter(BaseTrainableAgentAdapter):
         )
 
     def _transform_observation(self, observation: Any) -> Any:
-        observation = deepcopy(observation)
+        observation = observation.copy()
+        observation["observation"] = observation["observation"].copy()
         observation["observation"].pop("my_turn")
         return observation
 

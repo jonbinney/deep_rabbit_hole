@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Any
 
 import numpy as np
@@ -53,17 +52,22 @@ class DictSplitBoardAdapter(BaseTrainableAgentAdapter):
         """Transform the game observation by splitting the board into separate channels"""
         if observation is None:
             return None
-        observation = deepcopy(observation)
-        board = observation["observation"].pop("board")
+        observation = observation.copy()
+        obs = {}
+        for key, value in observation["observation"].items():
+            if key != "board":
+                obs[key] = value
+                continue
+            board = value
+            # Create one-hot representations for player and opponent
+            player_board = (board == 1).astype(np.float32)
+            opponent_board = (board == 2).astype(np.float32)
 
-        # Create one-hot representations for player and opponent
-        player_board = (board == 1).astype(np.float32)
-        opponent_board = (board == 2).astype(np.float32)
+            # Update the observation dictionary
+            obs["my_board"] = player_board
+            obs["opponent_board"] = opponent_board
 
-        # Update the observation dictionary
-        observation["observation"]["my_board"] = player_board
-        observation["observation"]["opponent_board"] = opponent_board
-
+        observation["observation"] = obs
         return observation
 
     def get_action(self, observation):
