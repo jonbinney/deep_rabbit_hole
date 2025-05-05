@@ -96,9 +96,5 @@ class BaseTrainableAgentAdapter(TrainableAgent):
     def load_model(self, path: str) -> None:
         self._agent().load_model(path)
 
-    def get_opponent_player_id(self, player_id):
-        """Get the opponent player ID."""
-        return "player_1" if self.player_id == "player_0" else "player_0"
-
     def __getattr__(self, name):
         return getattr(self._agent(), name)

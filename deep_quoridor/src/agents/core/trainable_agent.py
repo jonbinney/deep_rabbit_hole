@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from quoridor import ActionEncoder
 from utils import SubargsBase, my_device, resolve_path
+from utils.misc import get_opponent_player_id
 
 import wandb
 from agents.core.agent import ActionLog, Agent
@@ -119,7 +120,7 @@ class TrainableAgent(Agent):
         pass
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
-        return 0.0, 0.0
+        raise NotImplementedError()
 
     def model_hyperparameters(self):
         return {}
@@ -224,10 +225,6 @@ class AbstractTrainableAgent(TrainableAgent):
         #    self.replay_buffer.to_disk("/tmp/buffera")
         #    raise RuntimeError
 
-    def _get_opponent_player_id(self, player_id):
-        """Get the opponent player ID."""
-        return "player_1" if player_id == "player_0" else "player_0"
-
     def _adjust_reward(self, r, done):
         if done:
             r *= self.final_reward_multiplier
@@ -287,7 +284,7 @@ class AbstractTrainableAgent(TrainableAgent):
             # next action mask is stored with the same rotation of the next state
             # if we want to mask actions on next state
             next_state_mask = self._convert_action_mask_to_tensor_for_player(
-                opponent_observation_after_action["action_mask"], self._get_opponent_player_id(agent_id)
+                opponent_observation_after_action["action_mask"], get_opponent_player_id(agent_id)
             )
 
         # If next_state_mask is None, we just add a zero tensor. It is not really used anyway
@@ -423,7 +420,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if not self.params.inspect_opponent_possible_actions:
             return
         """Get the best action based on Q-values."""
-        opponent_player_id = self._get_opponent_player_id(self.player_id)
+        opponent_player_id = get_opponent_player_id(self.player_id)
         state = self._observation_to_tensor(observation, opponent_player_id)
         with torch.no_grad():
             q_values = self.online_network(state)

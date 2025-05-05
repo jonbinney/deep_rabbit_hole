@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from utils import my_device
+from utils.misc import get_opponent_player_id
 
 from agents.core import AbstractTrainableAgent, rotation
 from agents.core.trainable_agent import TrainableAgentParams
@@ -144,7 +145,7 @@ class DExpAgent(AbstractTrainableAgent):
             opponent_observation_after_action,
             opponent_reward,
             opponent_action,
-            self._get_opponent_player_id(self.player_id),
+            get_opponent_player_id(self.player_id),
             done,
         )
 

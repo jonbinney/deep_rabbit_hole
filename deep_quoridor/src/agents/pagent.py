@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from gymnasium import Space, spaces
 from utils import my_device
+from utils.misc import get_opponent_player_id
 
 from agents.adapters.base import BaseTrainableAgentAdapter
 from agents.adapters.dict_split_board_adapter import DictSplitBoardAdapter
@@ -78,9 +79,7 @@ class PAgentAgent(AbstractTrainableAgent):
         return 1
 
     def get_space_size(self, space: Space) -> int:
-        if isinstance(space, spaces.Box):
-            return int(np.prod(space.shape))
-        elif isinstance(space, spaces.Discrete):
+        if isinstance(space, spaces.Discrete):
             return 1
         elif isinstance(space, spaces.Dict) or isinstance(space, dict):
             size = 0
@@ -88,11 +87,7 @@ class PAgentAgent(AbstractTrainableAgent):
                 size += self.get_space_size(subspace)  # Recursively get size of subspaces
             return size
         else:
-            # For other space types, return the product of the dimensions
-            size = 1
-            for dim in space.shape:
-                size *= dim
-            return size
+            return int(np.prod(space.shape))
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -128,7 +123,7 @@ class PAgentAgent(AbstractTrainableAgent):
             opponent_observation_after_action,
             opponent_reward,
             opponent_action,
-            self._get_opponent_player_id(self.player_id),
+            get_opponent_player_id(self.player_id),
             done,
         )
 
