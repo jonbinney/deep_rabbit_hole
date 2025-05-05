@@ -33,10 +33,17 @@ class SimpleParams(SubargsBase):
     discount_factor: float = 0.99
 
 
-def compute_wall_weight(wall: WallAction, position_1: np.ndarray, position_2: np.ndarray, sigma) -> float:
-    wall_position = np.array(wall.position)
-    d1 = np.linalg.norm(position_1 - wall_position)
-    d2 = np.linalg.norm(position_2 - wall_position)
+def adjust_wall_position(position: tuple[int, int]) -> tuple[int, int]:
+    """
+    Compute a wall position that reflects where its center is relative to player positions.
+    """
+    return position[0] + 0.5, position[1] + 0.5
+
+
+def compute_wall_weight(wall: WallAction, position_1: tuple[int, int], position_2: tuple[int, int], sigma) -> float:
+    wall_position = np.array(adjust_wall_position(wall.position))
+    d1 = np.linalg.norm(np.array(position_1) - wall_position)
+    d2 = np.linalg.norm(np.array(position_2) - wall_position)
     min_distance = min(d1, d2)
     weight = np.exp(-0.5 * (min_distance / sigma) ** 2)
     return weight
@@ -60,8 +67,8 @@ def sample_actions(game: Quoridor, n: int, wall_sigma: float | None = None) -> l
             if wall_sigma is None:
                 wall_actions = random.sample(wall_actions, num_wall_actions)
             else:
-                position_1 = np.array(game.board.get_player_position(Player.ONE))
-                position_2 = np.array(game.board.get_player_position(Player.TWO))
+                position_1 = game.board.get_player_position(Player.ONE)
+                position_2 = game.board.get_player_position(Player.TWO)
                 wall_weights = [compute_wall_weight(wall, position_1, position_2, wall_sigma) for wall in wall_actions]
                 wall_actions = np.random.choice(
                     wall_actions,
