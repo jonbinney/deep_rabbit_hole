@@ -26,15 +26,13 @@ class PAgentNetwork(nn.Module):
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(observation_size, 2048),
+            nn.Linear(observation_size, 1024),
             nn.ReLU(),
-            nn.Linear(2048, 4096),
+            nn.Linear(1024, 2048),
             nn.ReLU(),
-            nn.Linear(4096, 4096),
+            nn.Linear(2048, 1024),
             nn.ReLU(),
-            nn.Linear(4096, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, action_size),
+            nn.Linear(1024, action_size),
         )
         self.model.to(my_device())
 
