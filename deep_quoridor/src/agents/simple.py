@@ -8,13 +8,29 @@ from utils import SubargsBase
 
 from agents.core import Agent
 
+# We use a large reward to encourage the agent to win the game, but we can't use infinity
+# because then multiplying by a discount factor won't decrease the reward.
+WINNING_REWARD = 1e6
+
 
 @dataclass
 class SimpleParams(SubargsBase):
     nick: Optional[str] = None
-    max_depth: int = 3
-    branching_factor: int = 8
+
+    # How many moves to look ahead in the minimax algorithm.
+    max_depth: int = 2
+
+    # How many actions to consider at each minimax stage.
+    branching_factor: int = 20
+
+    # We use a Guassian distribution centered around each player's position to sample wall actions.
+    # Sigma is the standard deviation of this distribution; a smaller sigma means the agent is more
+    # likely to place walls near themselves or their opponent, rather than somewhere else on the board.
     wall_sigma: float = 0.5
+
+    # Future rewards are worth less. This makes the agent try to win quickly. Without this,
+    # once the agent knows it can win, it may oscillate between two moves instead of just winning.
+    discount_factor: float = 0.99
 
 
 def compute_wall_weight(wall: WallAction, position_1: np.ndarray, position_2: np.ndarray, sigma) -> float:
@@ -65,7 +81,8 @@ def choose_action(
     opponent: Player,
     max_depth: int,
     branching_factor: int,
-    wall_sigma: float | None = None,
+    wall_sigma: float | None,
+    discount_factor: float,
 ) -> float:
     """
     Minimax algorithm to choose the best action for the current player.
@@ -73,9 +90,9 @@ def choose_action(
     The other agent tries to minimize the reward of the current player.
     """
     if game.check_win(player):
-        return None, float("inf")
+        return None, WINNING_REWARD
     elif game.check_win(opponent):
-        return None, -float("inf")
+        return None, -WINNING_REWARD
     elif max_depth == 0:
         return None, game.player_distance_to_target(opponent) - game.player_distance_to_target(player)
 
@@ -92,7 +109,8 @@ def choose_action(
         game.step(action)
 
         # Recursively call this function to choose the next player's action.
-        _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma)
+        _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma, discount_factor)
+        value = discount_factor * value
 
         if current_player_before_action == player:
             if value >= chosen_value:
@@ -140,8 +158,14 @@ class SimpleAgent(Agent):
     def get_action(self, observation, action_mask):
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
-        chosen_action, _ = choose_action(
-            game, player, opponent, self.params.max_depth, self.params.branching_factor, self.params.wall_sigma
+        chosen_action, chosen_value = choose_action(
+            game,
+            player,
+            opponent,
+            self.params.max_depth,
+            self.params.branching_factor,
+            self.params.wall_sigma,
+            self.params.discount_factor,
         )
 
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
