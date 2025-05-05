@@ -176,3 +176,5 @@ game_recording.yaml
 .vscode/launch.json
 wandb
 wandbmodels
+deep_quoridor/td.sh
+deep_quoridor/tn.sh
