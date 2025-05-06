@@ -4,6 +4,13 @@ from agents import Agent
 
 
 @dataclass
+class MoveInfo:
+    player: str
+    action: int
+    computation_time: float  # in seconds
+
+
+@dataclass
 class GameResult:
     player1: str
     player2: str
@@ -11,6 +18,7 @@ class GameResult:
     steps: int
     time_ms: int
     game_id: str
+    moves: list[MoveInfo]
 
 
 class ArenaPlugin:

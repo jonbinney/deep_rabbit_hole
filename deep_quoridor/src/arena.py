@@ -6,7 +6,7 @@ from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
 from agents.core import AbstractTrainableAgent
-from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult
+from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult, MoveInfo
 from quoridor_env import env
 from renderers import PygameRenderer
 
@@ -50,6 +50,7 @@ class Arena:
         self.plugins.start_game(self.game, agent1, agent2)
         start_time = time.time()
         step = 0
+        moves = []
         for agent_id in self.game.agent_iter():
             observation_before_action, _, termination, truncation, _ = self.game.last()
             agent = agents[agent_id]
@@ -71,9 +72,12 @@ class Arena:
 
             assert (observation_before_action["action_mask"] == self.game.last_action_mask[agent_id]).all()
 
+            get_action_start_time = time.time()
             action = int(
                 agent.get_action(observation_before_action["observation"], observation_before_action["action_mask"])
             )
+            get_action_finish_time = time.time()
+            moves.append(MoveInfo(agent.name(), action, get_action_finish_time - get_action_start_time))
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
@@ -114,6 +118,7 @@ class Arena:
             steps=step,
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,
+            moves=moves,
         )
         for p, a in agents.items():
             a.end_game(self.game)
