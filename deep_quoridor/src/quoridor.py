@@ -1,6 +1,7 @@
 import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -382,7 +383,7 @@ class Quoridor:
 
         self.go_to_next_player()
 
-    def is_action_valid(self, action: Action, for_player: Player = None) -> bool:
+    def is_action_valid(self, action: Action, for_player: Optional[Player] = None) -> bool:
         """
         Check whether the given action is valid given the current game state.
         """
@@ -445,7 +446,7 @@ class Quoridor:
 
         return is_valid
 
-    def get_valid_move_actions(self, player: Player = None) -> list[MoveAction]:
+    def get_valid_move_actions(self, player: Optional[Player] = None) -> list[MoveAction]:
         if player is None:
             player = self.get_current_player()
 
@@ -461,7 +462,7 @@ class Quoridor:
                         valid_move_actions.append(move_action)
         return valid_move_actions
 
-    def get_valid_wall_actions(self, player: Player = None) -> list[WallAction]:
+    def get_valid_wall_actions(self, player: Optional[Player] = None) -> list[WallAction]:
         if player is None:
             player = self.get_current_player()
 
@@ -474,13 +475,13 @@ class Quoridor:
                         valid_wall_actions.append(wall_action)
         return valid_wall_actions
 
-    def get_valid_actions(self, player: Player = None) -> list[Action]:
+    def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
 
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)
 
-    def get_current_player(self) -> int:
+    def get_current_player(self) -> Player:
         return self.current_player
 
     def set_current_player(self, player: Player):

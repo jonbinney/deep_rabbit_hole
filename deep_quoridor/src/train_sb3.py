@@ -19,11 +19,14 @@ import time
 
 import quoridor_env
 import torch
+from agents import AgentRegistry
 from agents.sb3_ppo import DictFlattenExtractor, SB3PPOAgent, make_env_fn
+from arena import Arena
+from renderers import ArenaResultsRenderer
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
-from utils import set_deterministic
+from utils import resolve_path, set_deterministic
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -36,7 +39,7 @@ def mask_fn(env):
     return env.action_mask()
 
 
-def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_kwargs):
+def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train_kwargs={}, **env_kwargs):
     """Train a single model to play as each agent in a zero-sum game environment using invalid action masking."""
     env = env_fn(**env_kwargs)
 
@@ -45,7 +48,12 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_
     env.reset(seed=seed)  # Must call reset() in order to re-define the spaces
 
     # Initialize wandb with sync_tensorboard to log all SB3 TensorBoard metrics
-    wandb.init(project="deep_quoridor", job_type="train", config=env_kwargs, sync_tensorboard=True)
+    wandb.init(
+        project="deep_quoridor",
+        job_type="train",
+        config={**env_kwargs, **train_kwargs},
+        sync_tensorboard=True,
+    )
 
     env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
@@ -80,37 +88,70 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=True, **env_
         ),
     )
 
-    model_id = SB3PPOAgent(**env_kwargs).model_id()
-    local_filename = f"{model_id}_{time.strftime('%Y%m%d-%H%M%S')}.zip"
-    model.save(local_filename)
+    # Create an SB3PPO agent to handle model file naming
+    sb3_agent = SB3PPOAgent(**env_kwargs)
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+
+    # Use the utils.resolve_path to get the standard models directory path
+    # and make sure it exists
+    models_dir = resolve_path(sb3_agent.params.model_dir)
+    os.makedirs(models_dir, exist_ok=True)
+
+    # Use the agent's resolve_filename method to generate standard filenames
+    # Save both as timestamped version and as 'final' version
+    timestamped_filename = sb3_agent.resolve_filename(timestamp)
+    final_filename = sb3_agent.resolve_filename("final")
+
+    # Construct full paths using resolve_path
+    model_path_timestamped = resolve_path(sb3_agent.params.model_dir, timestamped_filename)
+    model_path_final = resolve_path(sb3_agent.params.model_dir, final_filename)
+
+    # Save the model files
+    model.save(str(model_path_timestamped))
+    model.save(str(model_path_final))
+
+    print(f"Model saved to:\n- {model_path_timestamped} (timestamped version)\n- {model_path_final} (final version)")
 
     if upload_to_wandb:
+        model_id = sb3_agent.model_id()
         artifact = wandb.Artifact(f"{model_id}", type="model")
-        artifact.add_file(local_path=local_filename)
+        artifact.add_file(local_path=str(model_path_timestamped))
         artifact.save()
         wandb.finish()
-
-    print(f"Model {model_id} has been saved.")
+        print(f"Model uploaded to wandb as artifact: {model_id}")
 
     print(f"Finished training on {str(env.unwrapped.metadata['name'])}.\n")
 
     env.close()
 
 
-def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kwargs):
+def eval_action_mask(env_fn, num_games=100, render=False, player=0, **env_kwargs):
+    # Set render_mode to "human" if render=True, otherwise None
+    render_mode = "human" if render else None
     # Evaluate a trained agent vs a random agent
     env = env_fn(render_mode=render_mode, **env_kwargs)
 
     print(f"Starting evaluation vs a random agent. Trained agent will play as {env.possible_agents[player]}.")
 
-    try:
-        model_id = SB3PPOAgent(**env_kwargs).model_id()
-        latest_policy = max(glob.glob(f"{model_id}*.zip"), key=os.path.getctime)
-    except ValueError:
-        print("Policy not found.")
-        exit(0)
+    # Create agent to help with model handling
+    sb3_agent = SB3PPOAgent(**env_kwargs)
 
-    model = MaskablePPO.load(latest_policy)
+    try:
+        # First try to use the _final model we just saved
+        final_path = resolve_path(sb3_agent.params.model_dir, sb3_agent.resolve_filename("final"))
+        if os.path.exists(final_path):
+            model = MaskablePPO.load(str(final_path))
+            print(f"Using final model: {final_path}")
+        else:
+            # Fallback to any timestamped model in the models directory
+            models_dir = resolve_path(sb3_agent.params.model_dir)
+            pattern = os.path.join(str(models_dir), f"{sb3_agent.model_id()}*.zip")
+            latest_policy = max(glob.glob(pattern), key=os.path.getctime)
+            model = MaskablePPO.load(latest_policy)
+            print(f"Using latest model: {latest_policy}")
+    except (ValueError, FileNotFoundError):
+        print("Policy not found in the models directory.")
+        exit(0)
 
     scores = {agent: 0 for agent in env.possible_agents}
     total_rewards = {agent: 0 for agent in env.possible_agents}
@@ -145,6 +186,9 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kw
                     # Note: PettingZoo expects integer actions # TODO: change chess to cast actions to type int?
                     act = int(model.predict(observation, action_masks=action_mask, deterministic=True)[0])
             env.step(act)
+
+            if render_mode == "human":
+                print(env.render())
     env.close()
 
     # Avoid dividing by zero
@@ -152,7 +196,7 @@ def eval_action_mask(env_fn, num_games=100, render_mode=None, player=0, **env_kw
         winrate = 0
     else:
         winrate = scores[env.possible_agents[player]] / sum(scores.values())
-    print("Rewards by round: ", round_rewards)
+    # print("Rewards by round: ", round_rewards)
     print("Total rewards (incl. negative rewards): ", total_rewards)
     print("Winrate: ", winrate)
     print("Final scores: ", scores)
@@ -167,10 +211,12 @@ if __name__ == "__main__":
     parser.add_argument("-W", "--max_walls", type=int, default=0, help="Max walls per player")
     parser.add_argument("-e", "--steps", type=int, default=20_480, help="Number of steps to train for")
     parser.add_argument("-g", "--num_games", type=int, default=100, help="Number of games for evaluation")
+    parser.add_argument("-m", "--rewards_multiplier", type=int, default=1, help="Multiplier for rewards")
     parser.add_argument("-i", "--seed", type=int, default=0, help="Random seed for training and evaluation")
     parser.add_argument("--no-train", action="store_true", default=False, help="Skip training and only run evaluation")
-    parser.add_argument("--no-upload", action="store_true", default=False, help="Skip uploading artifacts to wandb")
+    parser.add_argument("--upload", action="store_true", default=False, help="Upload artifacts to wandb")
     parser.add_argument("--no-eval", action="store_true", default=False, help="Skip evaluation and only run training")
+    parser.add_argument("--render", action="store_true", default=False, help="Render environment during evaluation")
     parser.add_argument(
         "-rp",
         "--run_prefix",
@@ -185,11 +231,31 @@ if __name__ == "__main__":
         default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
         help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts",
     )
+    parser.add_argument(
+        "-o",
+        "--opponent",
+        type=str,
+        default=None,
+        # choices=AgentRegistry.names() + [None],
+        help=f"Opponent agent type. Available options: {AgentRegistry.names()} or None for self-play",
+    )
 
     args = parser.parse_args()
 
-    env_fn = make_env_fn(quoridor_env.env)
+    opponent = None
+    if args.opponent is not None:
+        opponent = AgentRegistry.create_from_encoded_name(
+            args.opponent, board_size=args.board_size, max_walls=args.max_walls
+        )
+
+    env_fn = make_env_fn(quoridor_env.env, opponent=opponent, rewards_multiplier=args.rewards_multiplier)
     env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
+    train_kwargs = {
+        "steps": args.steps,
+        "seed": args.seed,
+        "opponent": args.opponent,
+        "rewards_multiplier": args.rewards_multiplier,
+    }
 
     # Set random seed for reproducibility
     set_deterministic(args.seed)
@@ -199,13 +265,31 @@ if __name__ == "__main__":
     print(f"Max walls: {args.max_walls}")
     print(f"Run ID: {args.run_prefix}-{args.run_suffix}")
 
-    # Train a model against itself
+    # Train a model against opponent or itself
     if not args.no_train:
         print(f"\nTraining for {args.steps} steps with seed {args.seed}...")
-        train_action_mask(env_fn, steps=args.steps, seed=args.seed, upload_to_wandb=not args.no_upload, **env_kwargs)
+        print(f"Opponent: {args.opponent if args.opponent else 'Self-play'}")
+        train_action_mask(
+            env_fn,
+            steps=args.steps,
+            seed=args.seed,
+            upload_to_wandb=args.upload,
+            train_kwargs=train_kwargs,
+            **env_kwargs,
+        )
 
-    # Evaluate games against a random agent
+    # Evaluate games against the opponent
     if not args.no_eval:
+        # Create a new env fn without the opponent, for evaluation
+        env_fn = make_env_fn(quoridor_env.env)
         print(f"\nEvaluating {args.num_games} games against a random agent...")
-        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=0, **env_kwargs)
-        eval_action_mask(env_fn, num_games=args.num_games // 2, render_mode=None, player=1, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=0, **env_kwargs)
+        eval_action_mask(env_fn, num_games=args.num_games // 2, render=args.render, player=1, **env_kwargs)
+
+        arena = Arena(
+            board_size=args.board_size,
+            max_walls=args.max_walls,
+            renderers=[ArenaResultsRenderer()],
+        )
+
+        arena.play_games(players=["random", "sb3ppo"], times=args.num_games)
