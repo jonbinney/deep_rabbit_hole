@@ -26,9 +26,13 @@ class SB3ActionMaskWrapper(BaseWrapper):
     - provide a method to get to the action mask
     """
 
-    def __init__(self, env, rewards_multiplier: float = 1000):
+    def __init__(self, env, rewards_multiplier: float = 1000, opponent: Agent = None, **kwargs):
         super().__init__(env)
         self.rewards_multiplier = rewards_multiplier
+        self.opponent = opponent
+
+        if self.opponent is not None:
+            self.opponent.start_game(self.env, "player_0")
 
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
@@ -48,21 +52,42 @@ class SB3ActionMaskWrapper(BaseWrapper):
     def step(self, action):
         """Gymnasium-like step function, returning observation, reward, termination, truncation, info.
 
-        The observation is for the next agent (used to determine the next action), while the remaining
+        The next_state observation is for the next agent (used to determine the next action), while the remaining
         items are for the agent that just acted (used to understand what just happened).
+
+        If an opponent has been selected, at each step we also play the opponent's action as part of this step.
+        If the opponent wins, we update the reward and termination flag.
         """
         current_agent = self.agent_selection
 
         super().step(action)
 
-        res = (
-            self.observe(self.agent_selection),
-            self.rewards[current_agent] * self.rewards_multiplier,
-            self.terminations[current_agent],
-            self.truncations[current_agent],
-            self.infos[current_agent],
+        opponent_agent = self.agent_selection
+
+        next_state = self.observe(self.agent_selection)
+        reward = self.rewards[current_agent] * self.rewards_multiplier
+        termination = self.terminations[current_agent]
+        truncation = self.truncations[current_agent]
+        info = self.infos[current_agent]
+
+        if not truncation and not termination and self.opponent is not None:
+            opponent_action = self.opponent.get_action(self, self.action_mask())
+
+            super().step(opponent_action)
+
+            next_state = self.observe(self.agent_selection)
+            opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
+            truncation = self.truncations[opponent_agent]
+            termination = self.terminations[opponent_agent]
+            reward = reward - opponent_reward
+
+        return (
+            next_state,
+            reward,
+            termination,
+            truncation,
+            info,
         )
-        return res
 
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
@@ -120,6 +145,11 @@ class SB3PPOAgent(AbstractTrainableAgent):
     def get_model_extension():
         return "zip"
 
+    def load_model(self, path):
+        """Override the parent class method to load models using MaskablePPO.load() instead"""
+        print(f"Loading pre-trained model from {path}")
+        self.model = MaskablePPO.load(path)
+
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
         return self.board_size**2 + (self.board_size - 1) ** 2 * 2
@@ -135,17 +165,31 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.player_id = player_id
 
         if self.model is None:
-            self.fetch_model_from_wand_and_update_params()
+            # Check if wandb_alias is provided - prioritize it if present
+            if self.params.wandb_alias:
+                print(f"Using wandb_alias: {self.params.wandb_alias}")
+                # Try to fetch the model from wandb
+                self.fetch_model_from_wand_and_update_params()
+
+                # If we got a filename from wandb, try to load it
+                if self.params.model_filename:
+                    try:
+                        self.load_model(self.params.model_filename)
+                    except (ValueError, FileNotFoundError, TypeError):
+                        print(f"Failed to load model using wandb_alias '{self.params.wandb_alias}'.")
+
+            # If no wandb_alias or loading from wandb failed, try to load from local files
+            if self.model is None:
+                try:
+                    print("Looking for model in local files...")
+                    self.resolve_and_load_model()
+                except FileNotFoundError:
+                    print("No local model file found.")
 
             # Wrap the game to get access to action_mask method
             self.wrapper = wrap_env(game)
 
-            try:
-                # Find the most recent model file
-                print(f"Loading model from {self.params.model_filename}")
-                self.model = MaskablePPO.load(self.params.model_filename)
-                print(f"Loaded model from {self.params.model_filename}")
-            except (ValueError, FileNotFoundError):
+            if self.model is None:
                 print("No policy found. The agent will not work correctly.")
                 return
 
@@ -180,17 +224,17 @@ class SB3PPOAgent(AbstractTrainableAgent):
         return action
 
 
-def wrap_env(env):
+def wrap_env(env, **kwargs):
     env = RotateWrapper(env)
     env = DictSplitBoardWrapper(env, include_turn=False)
-    env = SB3ActionMaskWrapper(env, rewards_multiplier=1)
+    env = SB3ActionMaskWrapper(env, **kwargs)
     return env
 
 
-def make_env_fn(env_constructor):
+def make_env_fn(env_constructor, **mykwargs):
     def env_fn(**kwargs):
         env = env_constructor(**kwargs)
-        env = wrap_env(env)
+        env = wrap_env(env, **mykwargs)
         return env
 
     return env_fn
