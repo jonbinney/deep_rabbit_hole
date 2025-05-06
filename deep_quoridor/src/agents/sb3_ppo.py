@@ -14,6 +14,8 @@ from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentPa
 class SB3ActionMaskWrapper(BaseWrapper):
     """
     Wrapper to allow PettingZoo environments to be used with SB3 illegal action masking.
+    Taken from https://github.com/dm-ackerman/PettingZoo/blob/master/tutorials/SB3/connect_four/sb3_connect_four_action_mask.py
+
     In particular it adapts PettingZoo, since the Action Masking part of it is already implemented
     in SB3_contrib as the MaskablePPO.
     The required changes are minor:
@@ -53,26 +55,18 @@ class SB3ActionMaskWrapper(BaseWrapper):
 
         super().step(action)
 
-        return (
-            self.observe(current_agent),
+        res = (
+            self.observe(self.agent_selection),
             self.rewards[current_agent] * self.rewards_multiplier,
             self.terminations[current_agent],
             self.truncations[current_agent],
             self.infos[current_agent],
         )
+        return res
 
     def observe(self, agent):
         """Return only raw observation, removing action mask."""
         obs = super().observe(agent)["observation"]
-        # # Take obs, which is a dict with some arrays, and convert it to a flat numpy array
-        # return np.concatenate(
-        #     [
-        #         obs["board"].flatten(),
-        #         obs["walls"][0].flatten(),
-        #         obs["walls"][1].flatten(),
-        #         [obs["my_walls_remaining"], obs["opponent_walls_remaining"]],
-        #     ]
-        # )
         return obs
 
     def action_mask(self):
@@ -116,7 +110,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
     @staticmethod
     def version():
         """Bump this version when compatibility with saved models is broken"""
-        return 2
+        return 3
 
     @staticmethod
     def params_class():
@@ -155,7 +149,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
                 print("No policy found. The agent will not work correctly.")
                 return
 
-    def get_action(self, game):
+    def get_action(self, _observation, _action_mask):
         """
         Get the action to take based on the current game state using the PPO model.
 
@@ -188,8 +182,8 @@ class SB3PPOAgent(AbstractTrainableAgent):
 
 def wrap_env(env):
     env = RotateWrapper(env)
-    env = DictSplitBoardWrapper(env)
-    env = SB3ActionMaskWrapper(env)
+    env = DictSplitBoardWrapper(env, include_turn=False)
+    env = SB3ActionMaskWrapper(env, rewards_multiplier=1)
     return env
 
 

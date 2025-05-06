@@ -3,20 +3,24 @@ from dataclasses import asdict
 
 from agents.core.trainable_agent import AbstractTrainableAgent
 from arena_utils import ArenaPlugin
+from metrics import Metrics
 from utils import resolve_path
 
 import wandb
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, run_id: str = ""):
+    def __init__(self, update_every: int, total_episodes: int, agent_encoded_name: str, run_id: str = ""):
         self.update_every = update_every
         self.total_episodes = total_episodes
         self.episode_count = 0
         self.agent = None
         self.run_id = run_id
+        self.agent_encoded_name = agent_encoded_name
 
     def _initialize(self, game):
+        assert self.agent
+
         config = {
             "board_size": game.board_size,
             "max_walls": game.max_walls,
@@ -24,6 +28,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
+        self.metrics = Metrics(game.board_size, game.max_walls)
 
         self.run = wandb.init(
             project="deep_quoridor",
@@ -48,6 +53,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self._initialize(game)
 
     def end_game(self, game, result):
+        assert self.agent
         if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
 
@@ -55,9 +61,12 @@ class WandbTrainPlugin(ArenaPlugin):
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
                 step=self.episode_count,
             )
+
         self.episode_count += 1
 
     def end_arena(self, game, results):
+        assert self.agent
+
         # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
         # once we upload it to wandb and have the digest.
         save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("temp"))
@@ -67,7 +76,7 @@ class WandbTrainPlugin(ArenaPlugin):
         artifact.add_file(local_path=str(save_file))
         artifact.save()
         print("Model being uploaded to wandb")
-        wandb.log_artifact(artifact).wait()
+        wandb.log_artifact(artifact).wait(60)
         print(f"Model uploaded with version {artifact.version}")
 
         wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
@@ -76,5 +85,22 @@ class WandbTrainPlugin(ArenaPlugin):
         # the same path, just a different file name
         os.rename(save_file, wand_file)
         print(f"Model saved to {wand_file}")
-
+        self.compute_tournament_metrics(str(wand_file))
         wandb.finish()
+
+    def compute_tournament_metrics(self, model_filename: str):
+        _, elo_table, relative_elo, win_perc = self.metrics.compute(
+            self.agent_encoded_name + f",model_filename={model_filename}"
+        )
+        print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
+        wandb_elo_table = wandb.Table(
+            columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
+        )
+        self.run.log(
+            {
+                "elo": wandb_elo_table,
+                "relative_elo": relative_elo,
+                "win_perc": win_perc,
+            },
+            step=self.episode_count,
+        )

@@ -3,5 +3,5 @@ benchmark_DEXP:
 
 
 dexp_1v1:
-  args: -r pygame -t 100 -N 5 -W 3 --players dexp:wandb_alias=v13,nick=dexp_v13 greedy:p_random=0.1
+  args: -r pygame -t 100 -N 5 -W 3 --players dexp:wandb_alias=v1,nick=dexp greedy:p_random=0.1
   

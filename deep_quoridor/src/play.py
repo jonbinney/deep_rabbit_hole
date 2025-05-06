@@ -70,6 +70,12 @@ if __name__ == "__main__":
         default=10000,
         help="Maximum number of steps per game. Default is 10000",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help="Use cProfile to profile the game.",
+    )
 
     args_dict = yargs(parser, "yargs/play")
 
@@ -98,4 +104,9 @@ if __name__ == "__main__":
         arena_args = {k: v for k, v in arena_args.items() if v is not None}
         arena = Arena(**arena_args)
 
-        arena.play_games(players, args.times)
+        if args.profile:
+            import cProfile
+
+            cProfile.run("arena.play_games(players, args.times)", sort="tottime")
+        else:
+            arena.play_games(players, args.times)
