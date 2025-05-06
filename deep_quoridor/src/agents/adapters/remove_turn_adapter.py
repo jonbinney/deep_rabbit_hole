@@ -6,8 +6,7 @@ from gymnasium import spaces
 
 class RemoveTurnAdapter(BaseTrainableAgentAdapter):
     """
-    An adapter that splits the board into one-hot representations with one channel per player
-    when getting observations from the game.
+    An adapter that removes the 'my_turn' field from observations.
     """
 
     def handle_step_outcome(

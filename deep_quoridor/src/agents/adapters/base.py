@@ -7,10 +7,12 @@ class BaseTrainableAgentAdapter(TrainableAgent):
     def __init__(
         self,
         agent: TrainableAgent,
+        params: Any = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.agent = agent
+        self.params = params
 
     def _agent(self) -> TrainableAgent:
         return self.agent
@@ -98,3 +100,11 @@ class BaseTrainableAgentAdapter(TrainableAgent):
 
     def __getattr__(self, name):
         return getattr(self._agent(), name)
+
+    @classmethod
+    def get_observation_space(cls, original_space):
+        return original_space
+
+    @classmethod
+    def get_action_space(cls, original_space):
+        return original_space
