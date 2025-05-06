@@ -75,7 +75,8 @@ class SB3ActionMaskWrapper(BaseWrapper):
             unwrapped_env = self.unwrapped
 
             # Get opponent action - the opponent handles the raw environment
-            raw_opponent_action = self.opponent.get_action(unwrapped_env)
+            raw_action_mask = self.unwrapped.observe(self.agent_selection)["action_mask"]
+            raw_opponent_action = self.opponent.get_action(unwrapped_env, raw_action_mask)
 
             # Apply rotation if needed (since we're going to use super().step which doesn't handle rotation)
             # Check if the opponent is player_1 who needs rotation
