@@ -242,20 +242,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    opponent = None
-    if args.opponent is not None:
-        opponent = AgentRegistry.create_from_encoded_name(
-            args.opponent, board_size=args.board_size, max_walls=args.max_walls
-        )
-
-    env_fn = make_env_fn(quoridor_env.env, opponent=opponent, rewards_multiplier=args.rewards_multiplier)
-    env_kwargs = {"board_size": args.board_size, "max_walls": args.max_walls}
+    env_kwargs = {
+        "board_size": args.board_size,
+        "max_walls": args.max_walls,
+        "action_space": quoridor_env.env(board_size=args.board_size, max_walls=args.max_walls).action_space(None),
+    }
     train_kwargs = {
         "steps": args.steps,
         "seed": args.seed,
         "opponent": args.opponent,
         "rewards_multiplier": args.rewards_multiplier,
     }
+
+    opponent = None
+    if args.opponent is not None:
+        opponent = AgentRegistry.create_from_encoded_name(args.opponent, **env_kwargs)
+
+    env_fn = make_env_fn(quoridor_env.env, opponent=opponent, rewards_multiplier=args.rewards_multiplier)
 
     # Set random seed for reproducibility
     set_deterministic(args.seed)
