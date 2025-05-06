@@ -71,25 +71,11 @@ class SB3ActionMaskWrapper(BaseWrapper):
         info = self.infos[current_agent]
 
         if not truncation and not termination and self.opponent is not None:
-            # Get unwrapped environment for use with the opponent
-            unwrapped_env = self.unwrapped
-
-            # Get opponent action - the opponent handles the raw environment
-            raw_opponent_action = self.opponent.get_action(unwrapped_env)
-
-            # Apply rotation if needed (since we're going to use super().step which doesn't handle rotation)
-            # Check if the opponent is player_1 who needs rotation
-            if opponent_agent == "player_1" and raw_opponent_action is not None:
-                # We need to manually rotate the action since we're bypassing the RotateWrapper's step method
-                from agents.core.rotation import convert_rotated_action_index_to_original
-
-                opponent_action = convert_rotated_action_index_to_original(
-                    unwrapped_env.board_size, raw_opponent_action
-                )
-            else:
-                opponent_action = raw_opponent_action
+            opponent_action = self.opponent.get_action(self, self.action_mask())
 
             super().step(opponent_action)
+
+            next_state = self.observe(self.agent_selection)
             opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
             truncation = self.truncations[opponent_agent]
             termination = self.terminations[opponent_agent]
