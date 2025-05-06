@@ -15,7 +15,7 @@ class DExpNetwork(nn.Module):
     Takes observation from the Quoridor game and outputs Q-values for each action.
     """
 
-    def __init__(self, board_size, action_size, split_board, include_turn, nn_version):
+    def __init__(self, board_size, action_size, split_board, include_turn, nn_version: str = "4"):
         super(DExpNetwork, self).__init__()
 
         # Calculate input dimensions based on observation space
@@ -145,7 +145,7 @@ class DExpAgent(AbstractTrainableAgent):
             self.action_size,
             self.params.split,
             self.params.turn,
-            self.params.nn_version if self.params.nn_version is not None else "4",
+            self.params.nn_version,
         )
 
     def handle_opponent_step_outcome(
