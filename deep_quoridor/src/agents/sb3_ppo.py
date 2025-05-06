@@ -91,6 +91,8 @@ class SB3ActionMaskWrapper(BaseWrapper):
                 opponent_action = raw_opponent_action
 
             super().step(opponent_action)
+
+            next_state = self.observe(self.agent_selection)
             opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
             truncation = self.truncations[opponent_agent]
             termination = self.terminations[opponent_agent]
