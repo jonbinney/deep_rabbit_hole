@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from quoridor import Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor_env import env as quoridor_env
 
 
 def parse_board(board):
@@ -57,8 +58,8 @@ def parse_board(board):
                     # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                     # the second time is off by one position. Checking whether we can place it stops us
                     # placing the second wall.
-                    if board.can_place_wall(np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL):
-                        board.add_wall(Player.ONE, np.array((row_n - 1, col_n)), WallOrientation.HORIZONTAL)
+                    if board.can_place_wall(Player.ONE, (row_n - 1, col_n), WallOrientation.HORIZONTAL):
+                        board.add_wall(Player.ONE, (row_n - 1, col_n), WallOrientation.HORIZONTAL)
 
                 if ch == ">" or ch == "-":
                     forbidden_walls.append((row_n - 1, col_n, WallOrientation.HORIZONTAL))
@@ -77,16 +78,16 @@ def parse_board(board):
                         # HACK: Since each wall has two "|" characters, this tries to place each wall twice, and
                         # the second time is off by one position. Checking whether we can place it stops us
                         # placing the second wall.
-                        if board.can_place_wall(np.array((row_n, col_n - 1)), WallOrientation.VERTICAL):
-                            board.add_wall(Player.ONE, np.array((row_n, col_n - 1)), WallOrientation.VERTICAL)
+                        if board.can_place_wall(Player.ONE, (row_n, col_n - 1), WallOrientation.VERTICAL):
+                            board.add_wall(Player.ONE, (row_n, col_n - 1), WallOrientation.VERTICAL)
                     continue
 
                 if ch == "*":
-                    potential_moves.append(np.array((row_n, col_n)))
+                    potential_moves.append((row_n, col_n))
                 elif ch == "1":
-                    board.move_player(Player.ONE, np.array((row_n, col_n)))
+                    board.move_player(Player.ONE, (row_n, col_n))
                 elif ch == "2":
-                    board.move_player(Player.TWO, np.array((row_n, col_n)))
+                    board.move_player(Player.TWO, (row_n, col_n))
 
                 col_positions[i] = col_n
                 col_n += 1
@@ -106,24 +107,115 @@ class TestQuoridor:
         game_moves = []
         for row in range(0, game.board.board_size):
             for col in range(0, game.board.board_size):
-                position = np.array((row, col))
+                position = (row, col)
                 if game.is_action_valid(MoveAction(position)):
                     game_moves.append(position)
 
-        np.testing.assert_equal(np.array(game_moves), np.array(potential_moves))
+        assert game_moves == potential_moves
 
-    def _test_wall_placements(self, s):
+        env = quoridor_env(board_size=game.board.board_size, max_walls=game.board.max_walls, game_start_state=game)
+        N = game.board.board_size
+        action_mask = env.observe("player_0")["action_mask"]
+
+        env_moves = []
+        for i, value in enumerate(action_mask[: N**2]):
+            if value == 1:
+                env_moves.append(divmod(i, N))
+
+        assert env_moves == potential_moves
+
+    def _test_wall_placements(self, s, just_highlighted=False):
         game, _, forbidden_walls = parse_board(s)
+        N = game.board.board_size
+        action_encoder = ActionEncoder(N)
         print(str(game))
 
         game_walls = []
         for orientation in [WallOrientation.HORIZONTAL, WallOrientation.VERTICAL]:
             for row in range(0, game.board.board_size - 1):
                 for col in range(0, game.board.board_size - 1):
-                    if not game.is_action_valid(WallAction(np.array((row, col)), orientation)):
+                    if not game.is_action_valid(WallAction((row, col), orientation)):
                         game_walls.append((row, col, orientation))
 
         assert set(game_walls) == set(forbidden_walls)
+
+        env = quoridor_env(board_size=game.board.board_size, max_walls=game.board.max_walls, game_start_state=game)
+        action_mask = env.observe("player_0")["action_mask"]
+
+        env_walls = []
+        for i in range(N**2, len(action_mask)):
+            if action_mask[i] == 0:
+                wall_action = action_encoder.index_to_action(i)
+
+                env_walls.append((wall_action.position[0], wall_action.position[1], wall_action.orientation))
+
+        if just_highlighted:
+            diff = set(forbidden_walls).difference(set(env_walls))
+            assert not diff
+        else:
+            assert set(env_walls) == set(forbidden_walls)
+
+    def _test_distance_to_target(self, s, moves_p1, moves_p2):
+        game, _, _ = parse_board(s)
+        N = game.board.board_size
+        player_one_position = game.board.get_player_position(Player.ONE)
+        assert moves_p1 == game.distance_to_target(player_one_position, N - 1)
+        player_two_position = game.board.get_player_position(Player.TWO)
+        assert moves_p2 == game.distance_to_target(player_two_position, 0)
+
+    def test_distance_to_goal(self):
+        self._test_distance_to_target(
+            """
+            1 . .
+            . . .
+            . . 2
+        """,
+            2,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            . * .
+            . . .
+            2 . 1
+        """,
+            0,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 . .
+            - -
+            . . .
+            . . 2
+        """,
+            4,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 .|.
+            - -+
+            . .|.
+            . . 2
+        """,
+            -1,
+            2,
+        )
+
+        self._test_distance_to_target(
+            """
+            1 . .
+            - -
+            . .|.
+            . .|2
+        """,
+            4,
+            2,
+        )
 
     def test_corner_movements(self):
         self._test_pawn_movements("""
@@ -265,7 +357,6 @@ class TestQuoridor:
             . . 2 . .
         """)
 
-    @pytest.mark.skip(reason="Disabled until Aaron implements blocking testing in Quoridor class")
     def test_forbidden_walls_due_to_blocking(self):
         self._test_wall_placements("""
             . .|1|. .

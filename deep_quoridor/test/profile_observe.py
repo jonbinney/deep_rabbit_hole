@@ -1,26 +1,29 @@
 import cProfile
 import time
 
+import numpy as np
+from quoridor import Player, WallOrientation
 from quoridor_env import env
 
-e = env(9)
+e = env(board_size=9)
+
 walls = [
-    ((3, 0), 1),
-    ((3, 2), 1),
-    ((3, 4), 1),
-    ((3, 6), 1),
-    ((2, 7), 0),
-    ((5, 7), 1),
-    ((4, 0), 0),
-    ((4, 2), 0),
-    ((4, 4), 0),
+    ((3, 0), WallOrientation.HORIZONTAL),
+    ((3, 2), WallOrientation.HORIZONTAL),
+    ((3, 4), WallOrientation.HORIZONTAL),
+    ((3, 6), WallOrientation.HORIZONTAL),
+    ((2, 7), WallOrientation.VERTICAL),
+    ((5, 7), WallOrientation.HORIZONTAL),
+    ((4, 0), WallOrientation.VERTICAL),
+    ((4, 2), WallOrientation.VERTICAL),
+    ((4, 4), WallOrientation.VERTICAL),
 ]
 
 
 def run():
     st = time.time()
-    for w in walls:
-        e.place_wall("player_0", w[0], w[1])
+    for position, orientation in walls:
+        e.game.board.add_wall(Player.ONE, position, orientation)
         e.observe("player_0")
         e.observe("player_1")
 
@@ -37,5 +40,5 @@ def run():
 # Using _is_wall_potential_block optimization: 25,000 usec
 
 # Switch the comments to do a profiling
-run()
-# cProfile.run("run()", sort="tottime")
+# run()
+cProfile.run("run()", sort="tottime")

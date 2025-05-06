@@ -207,7 +207,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
                 print("No policy found. The agent will not work correctly.")
                 return
 
-    def get_action(self, game):
+    def get_action(self, _observation, _action_mask):
         """
         Get the action to take based on the current game state using the PPO model.
 

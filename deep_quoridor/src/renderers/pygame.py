@@ -9,6 +9,7 @@ import pygame
 from agents import ActionLog, Agent
 from agents.human import HumanAgent
 from arena import GameResult
+from quoridor import Action, MoveAction, Player, WallAction, WallOrientation
 
 from renderers import Renderer
 
@@ -71,8 +72,8 @@ class BoardState:
 class HumanInput:
     enabled: bool = False
     valid_moves: set = field(default_factory=set)
-    hover_action: tuple[int, int, int] | None = None
-    click_action: tuple[int, int, int] | None = None
+    hover_action: Action | None = None
+    click_action: Action | None = None
 
 
 class PygameQuoridor:
@@ -274,11 +275,13 @@ class PygameQuoridor:
         if self.human_input.hover_action is None or not self.human_input.enabled:
             return
 
-        row, col, type = self.human_input.hover_action
-        if type == 0:
+        if isinstance(self.human_input.hover_action, MoveAction):
+            row, col = self.human_input.hover_action.destination
             self._draw_player(COLOR_PREVIEW, row, col, False)
-        else:
-            self._draw_wall(row, col, type == 2, is_preview=True)
+        elif isinstance(self.human_input.hover_action, WallAction):
+            row, col = self.human_input.hover_action.position
+            is_horizontal = self.human_input.hover_action.orientation == WallOrientation.HORIZONTAL
+            self._draw_wall(row, col, is_horizontal, is_preview=True)
 
     def draw_screen(self):
         if self.state is None:
@@ -293,24 +296,29 @@ class PygameQuoridor:
         self._draw_log()
         self._draw_human_hover()
 
-    def _draw_log_action(self, action: tuple[int, int, int], text: str, color):
-        r, c, type = action
-        x0, y0, x1, y1 = self._cell_pos(r, c)
+    def _draw_log_action(self, action: Action, text: str, color):
         wall_len = 2 * self.cell_size + self.wall_size
-        if type == 0:  # Player movement
+
+        if isinstance(action, MoveAction):
+            x0, y0, x1, y1 = self._cell_pos(*action.destination)
             x = x0 + self.cell_size // 2
             y = y0 + self.cell_size // 2
             pygame.draw.circle(self.screen, color, (x, y), self.cell_size * 0.3)
 
-        elif type == 1:  # vertical wall
-            x = x1 + self.wall_size // 2
-            y = y0 + self.cell_size // 2
-            pygame.draw.rect(self.screen, color, (x1 + 1, y0 + 1, self.wall_size - 1, wall_len - 1), border_radius=4)
-
-        elif type == 2:  # horizontal wall
-            x = x0 + self.cell_size // 2
-            y = y1 + self.wall_size // 2
-            pygame.draw.rect(self.screen, color, (x0 + 1, y1 + 1, wall_len - 1, self.wall_size - 1), border_radius=4)
+        elif isinstance(action, WallAction):
+            x0, y0, x1, y1 = self._cell_pos(*action.position)
+            if action.orientation == WallOrientation.VERTICAL:
+                x = x1 + self.wall_size // 2
+                y = y0 + self.cell_size // 2
+                pygame.draw.rect(
+                    self.screen, color, (x1 + 1, y0 + 1, self.wall_size - 1, wall_len - 1), border_radius=4
+                )
+            else:
+                x = x0 + self.cell_size // 2
+                y = y1 + self.wall_size // 2
+                pygame.draw.rect(
+                    self.screen, color, (x0 + 1, y1 + 1, wall_len - 1, self.wall_size - 1), border_radius=4
+                )
 
         text_surface = self.font12.render(text, True, COLOR_BLACK)
         self.screen.blit(text_surface, dest=text_surface.get_rect(center=(x, y)))
@@ -407,16 +415,16 @@ class PygameQuoridor:
 
         type_action = 0
         if v_wall:
-            type_action = 1
+            action = WallAction((row, col), WallOrientation.VERTICAL)
         elif h_wall:
-            type_action = 2
-
-        action = (row, col, type_action)
+            action = WallAction((row, col), WallOrientation.HORIZONTAL)
+        else:
+            action = MoveAction((row, col))
 
         if action in self.human_input.valid_moves:
             self.human_input.hover_action = action
 
-    def get_human_input(self, valid_moves: set) -> Tuple[int, int, int] | None:
+    def get_human_input(self, valid_moves: set) -> Action | None:
         self.human_input.valid_moves = valid_moves
         self.human_input.click_action = None
         self.human_input.enabled = True
@@ -489,7 +497,7 @@ class PygameRenderer(Renderer):
 
             time.sleep(0.01)
 
-    def start_game(self, game, agent1: Agent, agent2: Agent):
+    def start_game(self, env, agent1: Agent, agent2: Agent):
         gui = PygameQuoridor.instance()
 
         # We always enable the log from the agents and decide later if we want to show it, since it's
@@ -499,12 +507,12 @@ class PygameRenderer(Renderer):
         self.has_human_player = isinstance(agent1, HumanAgent) or isinstance(agent2, HumanAgent)
 
         initial_state = BoardState(
-            p1_position=game.positions["player_0"],
-            p1_walls_remaining=game.walls_remaining["player_0"],
-            p2_position=game.positions["player_1"],
-            p2_walls_remaining=game.walls_remaining["player_1"],
+            p1_position=env.game.board.get_player_position(Player.ONE),
+            p1_walls_remaining=env.game.board.get_walls_remaining(Player.ONE),
+            p2_position=env.game.board.get_player_position(Player.TWO),
+            p2_walls_remaining=env.game.board.get_walls_remaining(Player.TWO),
             is_p1_turn=True,
-            walls=game.walls,
+            walls=env.game.board.get_old_style_walls(),
         )
         gui.start_game(agent1.name(), agent2.name(), initial_state)
 
@@ -543,17 +551,17 @@ class PygameRenderer(Renderer):
                     time.sleep(0.01)
                 self.last_action_time = time.time()
 
-    def after_action(self, game, step, agent_id, action):
+    def after_action(self, env, step, agent_id, action):
         gui = PygameQuoridor.instance()
         gui.update_log(None)
-        gui.update_turn(game.agent_selection == "player_0")
+        gui.update_turn(env.agent_selection == "player_0")
 
         gui.update_players_state(
-            p1_position=game.positions["player_0"],
-            p1_walls_remaining=game.walls_remaining["player_0"],
-            p2_position=game.positions["player_1"],
-            p2_walls_remaining=game.walls_remaining["player_1"],
-            walls=game.walls,
+            p1_position=env.game.board.get_player_position(Player.ONE),
+            p1_walls_remaining=env.game.board.get_walls_remaining(Player.ONE),
+            p2_position=env.game.board.get_player_position(Player.TWO),
+            p2_walls_remaining=env.game.board.get_walls_remaining(Player.TWO),
+            walls=env.game.board.get_old_style_walls(),
         )
 
     def main_thread(self):
