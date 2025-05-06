@@ -49,7 +49,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         # Return initial observation, info (PettingZoo AEC envs do not by default)
         return self.observe(self.agent_selection), {}
 
-    def step(self, opponent_action):
+    def step(self, action):
         """Gymnasium-like step function, returning observation, reward, termination, truncation, info.
 
         The next_state observation is for the next agent (used to determine the next action), while the remaining
@@ -60,7 +60,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         """
         current_agent = self.agent_selection
 
-        super().step(opponent_action)
+        super().step(action)
 
         opponent_agent = self.agent_selection
 
