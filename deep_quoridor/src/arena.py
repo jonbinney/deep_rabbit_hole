@@ -5,7 +5,7 @@ from threading import Thread
 from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
-from agents.core import AbstractTrainableAgent
+from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult, MoveInfo
 from quoridor_env import env
 from renderers import PygameRenderer
@@ -58,7 +58,7 @@ class Arena:
             opponent_agent = agents[opponent_agent_id]
 
             if termination or truncation:
-                if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
+                if agent.is_trainable() and isinstance(agent, TrainableAgent):
                     # Handle end of game (in case winner was not this agent)
                     agent.handle_step_outcome(
                         observation_before_action=observation_before_action,
@@ -70,19 +70,20 @@ class Arena:
                     )
                 break
 
+            # opponent_agent = agents["player_0" if player_id == "player_1" else "player_1"]
+            # if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
+            #    opponent_agent.inspect_opponent_possible_actions(self.game, observation, agent.action_log)
             assert (observation_before_action["action_mask"] == self.game.last_action_mask[agent_id]).all()
 
             get_action_start_time = time.time()
-            action = int(
-                agent.get_action(observation_before_action["observation"], observation_before_action["action_mask"])
-            )
+            action = int(agent.get_action(observation_before_action))
             get_action_finish_time = time.time()
             moves.append(MoveInfo(agent.name(), action, get_action_finish_time - get_action_start_time))
 
             self.plugins.before_action(self.game, agent)
             self.game.step(action)
 
-            if agent.is_trainable() and isinstance(agent, AbstractTrainableAgent):
+            if agent.is_trainable() and isinstance(agent, TrainableAgent):
                 agent.handle_step_outcome(
                     observation_before_action=observation_before_action,
                     opponent_observation_after_action=self.game.observe(opponent_agent_id),
@@ -92,7 +93,7 @@ class Arena:
                     done=self.game.is_done(),
                 )
 
-            if opponent_agent.is_trainable() and isinstance(opponent_agent, AbstractTrainableAgent):
+            if opponent_agent.is_trainable() and isinstance(opponent_agent, TrainableAgent):
                 opponent_agent.handle_opponent_step_outcome(
                     opponent_observation_before_action=observation_before_action,
                     my_observation_after_opponent_action=self.game.observe(opponent_agent_id),
@@ -139,6 +140,7 @@ class Arena:
                         p,
                         board_size=self.board_size,
                         max_walls=self.max_walls,
+                        observation_space=self.game.observation_space(None),
                         action_space=self.game.action_space(
                             None
                         ),  # We might need to do something fancier with the action space if we add agent wrappers.

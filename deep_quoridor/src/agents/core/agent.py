@@ -81,7 +81,7 @@ class Agent:
     Given a game state, the agent should return an action.
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.action_log = ActionLog()
 
     @staticmethod
@@ -107,7 +107,7 @@ class Agent:
         """
         pass
 
-    def get_action(self, observation, action_mask) -> int:
+    def get_action(self, observation) -> int:
         raise NotImplementedError("You must implement the get_action method")
 
 

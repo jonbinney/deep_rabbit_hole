@@ -124,7 +124,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.training_mode = False
         self.episodes_rewards = []
 
-        self.reset_episode_related_info()
+        self._reset_episode_related_info()
 
     def end_game(self, game):
         pass
@@ -169,7 +169,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
             if self.params.wandb_alias:
                 print(f"Using wandb_alias: {self.params.wandb_alias}")
                 # Try to fetch the model from wandb
-                self.fetch_model_from_wand_and_update_params()
+                self._fetch_model_from_wand_and_update_params()
 
                 # If we got a filename from wandb, try to load it
                 if self.params.model_filename:
@@ -193,7 +193,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
                 print("No policy found. The agent will not work correctly.")
                 return
 
-    def get_action(self, _observation, _action_mask):
+    def get_action(self, _observation):
         """
         Get the action to take based on the current game state using the PPO model.
 

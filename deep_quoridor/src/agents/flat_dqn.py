@@ -72,7 +72,7 @@ class FlatDQNAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         return DQNNetwork(self.board_size, self.action_size)
 
-    def observation_to_tensor(self, observation):
+    def _observation_to_tensor(self, observation):
         """Convert the observation dict to a flat tensor."""
         obs = observation["observation"]
         board = obs["board"].flatten()

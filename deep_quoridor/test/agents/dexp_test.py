@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import torch
 from agents.dexp import DExpAgent, DExpAgentParams
+from gymnasium import spaces
 
 
 @pytest.fixture
@@ -18,23 +19,47 @@ def mock_observation():
 @pytest.fixture
 def base_agent():
     params = DExpAgentParams(rotate=False, turn=False, split=False, training_mode=True)
-    agent = DExpAgent(params=params, board_size=3, max_walls=5)
+    agent = DExpAgent(
+        params=params, board_size=3, max_walls=5, observation_space=spaces.Discrete(2), action_space=spaces.Discrete(2)
+    )
     agent.device = torch.device("cpu")
     return agent
 
 
 @pytest.fixture
 def rotate_agent():
-    params = DExpAgentParams(rotate=True, turn=False, split=False, training_mode=True)
-    agent = DExpAgent(params=params, board_size=3, max_walls=5)
+    params = DExpAgentParams(
+        rotate=True,
+        turn=False,
+        split=False,
+        training_mode=True,
+    )
+    agent = DExpAgent(
+        params=params,
+        board_size=3,
+        max_walls=5,
+        observation_space=spaces.Discrete(2),
+        action_space=spaces.Discrete(2),
+    )
     agent.device = torch.device("cpu")
     return agent
 
 
 @pytest.fixture
 def split_agent():
-    params = DExpAgentParams(rotate=False, turn=False, split=True, training_mode=True)
-    agent = DExpAgent(params=params, board_size=3, max_walls=5)
+    params = DExpAgentParams(
+        rotate=False,
+        turn=False,
+        split=True,
+        training_mode=True,
+    )
+    agent = DExpAgent(
+        params=params,
+        board_size=3,
+        max_walls=5,
+        observation_space=spaces.Discrete(2),
+        action_space=spaces.Discrete(2),
+    )
     agent.device = torch.device("cpu")
     return agent
 
@@ -42,15 +67,25 @@ def split_agent():
 @pytest.fixture
 def target_as_source_agent():
     params = DExpAgentParams(
-        rotate=True, turn=False, split=False, target_as_source_for_opponent=True, training_mode=True
+        rotate=True,
+        turn=False,
+        split=False,
+        target_as_source_for_opponent=True,
+        training_mode=True,
     )
-    agent = DExpAgent(params=params, board_size=3, max_walls=5)
+    agent = DExpAgent(
+        params=params,
+        board_size=3,
+        max_walls=5,
+        observation_space=spaces.Discrete(2),
+        action_space=spaces.Discrete(2),
+    )
     agent.device = torch.device("cpu")
     return agent
 
 
 def test_base_observation_conversion(base_agent, mock_observation):
-    result = base_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
+    result = base_agent._observation_to_tensor(mock_observation, obs_player_id="player_0")
 
     # Expected tensor size: board (9) + walls (8) + wall counts (2) = 19
     assert result.shape == torch.Size([19])
@@ -63,7 +98,7 @@ def test_base_observation_conversion(base_agent, mock_observation):
 
 
 def test_rotation_for_player1(rotate_agent, mock_observation):
-    result = rotate_agent.observation_to_tensor(mock_observation, obs_player_id="player_1")
+    result = rotate_agent._observation_to_tensor(mock_observation, obs_player_id="player_1")
 
     # For player_1 with rotation, the board should be rotated 180 degrees
     board_part = result[:9].numpy()
@@ -72,7 +107,7 @@ def test_rotation_for_player1(rotate_agent, mock_observation):
 
 
 def test_split_board_representation(split_agent, mock_observation):
-    result = split_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
+    result = split_agent._observation_to_tensor(mock_observation, obs_player_id="player_0")
 
     # Expected tensor size: split board (18) + walls (8) + wall counts (2) = 28
     assert result.shape == torch.Size([28])
@@ -96,7 +131,7 @@ def test_state_conversion_with_target_as_source(target_as_source_agent, mock_obs
     # the board should be from opponent's perspective
 
     # As player_0
-    result = target_as_source_agent.observation_to_tensor(mock_observation, obs_player_id="player_0")
+    result = target_as_source_agent._observation_to_tensor(mock_observation, obs_player_id="player_0")
     wall_counts = result[-2:].numpy()
     # Wall counts should be swapped because this is a target state
     assert wall_counts[0] == mock_observation["opponent_walls_remaining"]

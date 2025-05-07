@@ -10,10 +10,12 @@ class Metrics:
     Computes metrics for an agent by making it play against other agents.
     """
 
-    def __init__(self, board_size: int, max_walls: int):
+    def __init__(self, board_size: int, max_walls: int, observation_space, action_space):
         self.board_size = board_size
         self.max_walls = max_walls
         self.stored_elos = {}
+        self.observation_space = observation_space
+        self.action_space = action_space
 
     def _win_perc(self, results: list[GameResult], agent_name: str):
         played = 0
@@ -70,6 +72,8 @@ class Metrics:
             agent_encoded_name,
             board_size=self.board_size,
             max_walls=self.max_walls,
+            observation_space=self.observation_space,
+            action_space=self.action_space,
             remove_training_args=True,
             keep_args={"model_filename"},
         )

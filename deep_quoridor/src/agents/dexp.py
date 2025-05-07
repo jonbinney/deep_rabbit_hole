@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from utils import my_device
+from utils.misc import get_opponent_player_id
 
 from agents.core import AbstractTrainableAgent, rotation
 from agents.core.trainable_agent import TrainableAgentParams
@@ -160,17 +161,17 @@ class DExpAgent(AbstractTrainableAgent):
         if not self.training_mode or not self.params.use_opponents_actions:
             return
 
-        self.handle_step_outcome_all(
+        self._handle_step_outcome_all(
             opponent_observation_before_action,
             my_observation_after_opponent_action,
             opponent_observation_after_action,
             opponent_reward,
             opponent_action,
-            self.get_opponent_player_id(self.player_id),
+            get_opponent_player_id(self.player_id),
             done,
         )
 
-    def observation_to_tensor(self, observation, obs_player_id):
+    def _observation_to_tensor(self, observation, obs_player_id):
         """Convert the observation dict to a flat tensor."""
         obs_player_turn = 1 if observation["my_turn"] else 0
 
@@ -212,7 +213,7 @@ class DExpAgent(AbstractTrainableAgent):
         # print(f"Obs {flat_obs}")
         return torch.FloatTensor(flat_obs).to(self.device)
 
-    def convert_action_mask_to_tensor_for_player(self, mask, player_id):
+    def _convert_action_mask_to_tensor_for_player(self, mask, player_id):
         """
         Convert action mask to tensor, rotating it for player_1.
         This method should be call only when it is agent's turn.
@@ -222,13 +223,13 @@ class DExpAgent(AbstractTrainableAgent):
         rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
-    def convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):
+    def _convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):
         if player_id == "player_0" or not self.params.rotate:
-            return super().convert_to_action_from_tensor_index_for_player(action_index_in_tensor, player_id)
+            return super()._convert_to_action_from_tensor_index_for_player(action_index_in_tensor, player_id)
 
         return rotation.convert_rotated_action_index_to_original(self.board_size, action_index_in_tensor)
 
-    def convert_to_tensor_index_from_action(self, action, action_player_id):
+    def _convert_to_tensor_index_from_action(self, action, action_player_id):
         if action_player_id == "player_0" or not self.params.rotate:
-            return super().convert_to_tensor_index_from_action(action, action_player_id)
+            return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
