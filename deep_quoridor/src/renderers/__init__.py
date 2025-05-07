@@ -24,6 +24,7 @@ class Renderer(ArenaPlugin):
 __all__ = [
     "ArenaResults2Renderer",
     "ArenaResultsRenderer",
+    "ComputationTimesRenderer",
     "CursesBoardRenderer",
     "EloResultsRenderer",
     "MatchResultsRenderer",
@@ -38,6 +39,7 @@ __all__ = [
 
 from renderers.arena_results import ArenaResultsRenderer  # noqa: E402, F401
 from renderers.arena_results2 import ArenaResults2Renderer  # noqa: E402, F401
+from renderers.computation_times import ComputationTimesRenderer  # noqa: E402, F401
 from renderers.curses_board import CursesBoardRenderer  # noqa: E402, F401
 from renderers.elo_results import EloResultsRenderer  # noqa: E402, F401
 from renderers.match_results import MatchResultsRenderer  # noqa: E402, F401

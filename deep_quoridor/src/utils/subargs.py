@@ -1,3 +1,4 @@
+import shlex
 from dataclasses import dataclass, fields
 from typing import Type, Union, get_args, get_origin
 
@@ -23,14 +24,21 @@ class ParseSubargsError(ValueError):
     pass
 
 
+def split_with_shlex(s: str, separator: str):
+    lexer = shlex.shlex(s, posix=True)
+    lexer.whitespace = separator
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
 def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="=", ignore_fields=set()):
     """Parses the string s and uses it to instantiate a class cls and return it."""
     if s == "":
         return cls()
-
     class_fields = cls.fields()
     args = {}
-    for part in s.split(separator):
+
+    for part in split_with_shlex(s, separator):
         if assign not in part:
             raise ParseSubargsError(f"The subargument '{part}' needs to have an assignment using '{assign}'")
 

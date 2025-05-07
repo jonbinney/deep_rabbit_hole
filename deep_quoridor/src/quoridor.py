@@ -192,35 +192,31 @@ class Board:
 
         return (self._grid[self._get_wall_slice(position, orientation)] == Board.FREE).all()
 
+    def _are_adjacent(self, position1: tuple[int, int], position2: tuple[int, int]) -> bool:
+        dr = position1[0] - position2[0]
+        dc = position1[1] - position2[1]
+        return ((dr == 1 or dr == -1) and dc == 0) or ((dc == 1 or dc == -1) and dr == 0)
+
     def is_wall_between(self, position1: tuple[int, int], position2: tuple[int, int]) -> bool:
         """
         Check if there is a wall between two positions.
         """
-        assert np.sum(np.abs(np.subtract(position1, position2))) == 1, "Positions must be adjacent"
+        assert self._are_adjacent(position1, position2), "Positions must be adjacent"
 
-        position1_on_board = self.is_position_on_board(position1)
-        position2_on_board = self.is_position_on_board(position2)
-        assert position1_on_board or position2_on_board, "At least one position must be on the board"
-
-        if position1_on_board and position2_on_board:
-            wall_position = (position1[0] + position2[0] + 2, position1[1] + position2[1] + 2)
+        wall_position = (position1[0] + position2[0] + 2, position1[1] + position2[1] + 2)
+        if 0 <= wall_position[0] < self._grid.shape[0] and 0 <= wall_position[1] < self._grid.shape[1]:
             return self._grid[*wall_position] == Board.WALL
-        else:
-            # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
-            # players are allowed to jump diagonally if they are adjacent to another player and the border of the
-            # board is on the other side of that player.
-            return True
+
+        # By convention we treat the border as a "wall". This is makes checking jumps more convenient, since
+        # players are allowed to jump diagonally if they are adjacent to another player and the border of the
+        # board is on the other side of that player.
+        return True
 
     def get_old_style_walls(self):
         return copy.copy(self._old_style_walls)
 
     def is_position_on_board(self, position: tuple[int, int]) -> bool:
-        return (
-            (position[0] >= 0)
-            and (position[0] < self.board_size)
-            and (position[1] >= 0)
-            and (position[1] < self.board_size)
-        )
+        return 0 <= position[0] < self.board_size and 0 <= position[1] < self.board_size
 
     def _wall_position_to_grid_index(self, position: tuple[int, int], orientation: WallOrientation) -> tuple[int, int]:
         """
@@ -277,26 +273,43 @@ class Board:
 
         queue = [(row, col, 0)]
         visited[row, col] = True
+        N = self.board_size
 
         while queue:
             curr_row, curr_col, steps = queue.pop(0)
+            # Iterate in the 4 directions, and if we can move to that position and we haven't already visited it, add it to the queue.
+            # This was done in a for loop before, but making everything explicit makes it significantly faster, and this method is called
+            # very often.
 
-            for new_row, new_col in [
-                (curr_row + 1, curr_col),
-                (curr_row - 1, curr_col),
-                (curr_row, curr_col - 1),
-                (curr_row, curr_col + 1),
-            ]:
-                if (
-                    self.is_position_on_board((new_row, new_col))
-                    and not self.is_wall_between((curr_row, curr_col), (new_row, new_col))
-                    and not visited[new_row, new_col]
-                ):
-                    visited[new_row, new_col] = True
-                    if target_row == new_row:
-                        return steps + 1
-                    else:
-                        queue.append((new_row, new_col, steps + 1))
+            # Down
+            wall_row = curr_row * 2 + 2
+            wall_col = curr_col * 2 + 2
+            new_row = curr_row + 1
+            if new_row < N and not visited[new_row, curr_col] and self._grid[wall_row + 1, wall_col] != Board.WALL:
+                visited[new_row, curr_col] = True
+                if target_row == new_row:
+                    return steps + 1
+                queue.append((new_row, curr_col, steps + 1))
+
+            # Up
+            new_row = curr_row - 1
+            if new_row >= 0 and not visited[new_row, curr_col] and self._grid[wall_row - 1, wall_col] != Board.WALL:
+                visited[new_row, curr_col] = True
+                if target_row == new_row:
+                    return steps + 1
+                queue.append((new_row, curr_col, steps + 1))
+
+            # Right
+            new_col = curr_col + 1
+            if new_col < N and not visited[curr_row, new_col] and self._grid[wall_row, wall_col + 1] != Board.WALL:
+                visited[curr_row, new_col] = True
+                queue.append((curr_row, new_col, steps + 1))
+
+            # Left
+            new_col = curr_col - 1
+            if new_col >= 0 and not visited[curr_row, new_col] and self._grid[wall_row, wall_col - 1] != Board.WALL:
+                visited[curr_row, new_col] = True
+                queue.append((curr_row, new_col, steps + 1))
 
         return -1
 
@@ -327,8 +340,8 @@ class Board:
         for new_row, new_col in moves:
             if (
                 self.is_position_on_board((new_row, new_col))
-                and not self.is_wall_between((row, col), (new_row, new_col))
                 and not visited[new_row, new_col]
+                and not self.is_wall_between((row, col), (new_row, new_col))
             ):
                 dfs = self._dfs((new_row, new_col), target_row, visited)
                 if dfs != -1:

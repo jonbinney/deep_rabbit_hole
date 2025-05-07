@@ -23,6 +23,8 @@ class TrainableAgentParams(SubargsBase):
     nick: Optional[str] = None
     # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
     wandb_alias: Optional[str] = None
+    # When loading from wandb, the project name to be used
+    wandb_project: str = "deep_quoridor"
     # If a filename is provided, the model will be loaded from disc
     model_filename: Optional[str] = None
     # Directory where wandb models are stored
@@ -85,6 +87,7 @@ class TrainableAgentParams(SubargsBase):
             "update_target_every",
             "use_negative_qvalue_function",
             "wandb_alias",
+            "wandb_project",
             "wandb_dir",
             "learning_rate",
         }
@@ -522,8 +525,9 @@ class AbstractTrainableAgent(Agent):
             return
 
         api = wandb.Api()
-        print(f"Fetching model from wandb: the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}")
-        artifact = api.artifact(f"the-lazy-learning-lair/deep_quoridor/{self.model_id()}:{alias}", type="model")
+        path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
+        print(f"Fetching model from wandb: {path}")
+        artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
         all_params = self.params_class()(**artifact.metadata)
