@@ -254,7 +254,7 @@ class DExpAgent(AbstractTrainableAgent):
         p.training_mode = False
         # Do not register
         p.register_for_reuse = False
-        agent = DExpAgent(params=p, **kwargs)
+        agent = DExpAgent(params=p, load_model_if_needed=False, **kwargs)
         # We set the online network to be the same instance as the trained agent is using
         agent.online_network = s.online_network
         return agent

@@ -161,6 +161,7 @@ class AbstractTrainableAgent(TrainableAgent):
         max_walls,
         observation_space,
         action_space,
+        load_model_if_needed=True,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
@@ -179,6 +180,7 @@ class AbstractTrainableAgent(TrainableAgent):
         self.assign_negative_reward = params.assign_negative_reward
         self.final_reward_multiplier = params.final_reward_multiplier
         self.training_mode = params.training_mode
+        self.load_model_if_needed = load_model_if_needed
         self.params = params
         self.action_size = self._calculate_action_size()
         self.action_encoder = ActionEncoder(self.board_size)
@@ -541,7 +543,7 @@ class AbstractTrainableAgent(TrainableAgent):
             filename = self.params.model_filename
         else:
             # If no filename is passed in training mode, assume we are not loading a model
-            if self.training_mode:
+            if self.training_mode or not self.load_model_if_needed:
                 return
 
             # If it's not training mode, we definitely need to load a pretrained model, so try the
