@@ -250,6 +250,8 @@ class DExpAgent(AbstractTrainableAgent):
         p.nick = s.name() + "_m"
         # No exploration for this player
         p.epsilon = 0
+        # No training
+        p.training_mode = False
         # Do not register
         p.register_for_reuse = False
         agent = DExpAgent(params=p, **kwargs)
