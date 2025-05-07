@@ -228,9 +228,6 @@ class AbstractTrainableAgent(TrainableAgent):
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self._update_target_network()
-        # if self.games_count == 400:
-        #    self.replay_buffer.to_disk("/tmp/buffera")
-        #    raise RuntimeError
 
     def _adjust_reward(self, r, done):
         if done:
