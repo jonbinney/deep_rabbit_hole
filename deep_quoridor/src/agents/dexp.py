@@ -247,7 +247,7 @@ class DExpAgent(AbstractTrainableAgent):
             raise RuntimeError("Dexp version being trained must have param register_for_reuse set to True")
         s = DExpAgent._instance_being_trained
         p = copy.deepcopy(s.params)
-        p.nick = p.nick + "_mimic"
+        p.nick = s.name() + "_m"
         # No exploration for this player
         p.epsilon = 0
         # Do not register
