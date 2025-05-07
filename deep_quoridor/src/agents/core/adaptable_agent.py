@@ -6,6 +6,7 @@ from utils.misc import get_opponent_player_id
 from agents.core import AbstractTrainableAgent
 from agents.core.trainable_agent import TrainableAgentParams
 from agents.nn.flat_1024 import Flat1024Network
+from agents.nn.pyramid_512_dropout import P512DropoutNetwork
 
 
 class AdaptableAgent(AbstractTrainableAgent):
@@ -54,6 +55,8 @@ class AdaptableAgent(AbstractTrainableAgent):
         """Create the neural network model."""
         if self.params.nn_version == Flat1024Network.id():
             return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
+        elif self.params.nn_version == P512DropoutNetwork.id():
+            return P512DropoutNetwork(self._calculate_observation_size(), self._calculate_action_size())
         # Default network
         return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
 
