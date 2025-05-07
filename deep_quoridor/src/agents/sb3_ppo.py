@@ -26,13 +26,19 @@ class SB3ActionMaskWrapper(BaseWrapper):
     - provide a method to get to the action mask
     """
 
-    def __init__(self, env, rewards_multiplier: float = 1000, opponent: Agent = None, **kwargs):
+    def __init__(
+        self, env, rewards_multiplier: float = 1000, opponent: Agent = None, play_as: str = "player_0", **kwargs
+    ):
         super().__init__(env)
         self.rewards_multiplier = rewards_multiplier
         self.opponent = opponent
+        self.play_as = play_as
 
         if self.opponent is not None:
-            self.opponent.start_game(self.env, "player_0")
+            self.opponent.start_game(self.env, env.get_opponent(self.play_as))
+
+    def set_player(self, player):
+        self.play_as = player
 
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
@@ -41,10 +47,18 @@ class SB3ActionMaskWrapper(BaseWrapper):
         """
         super().reset(seed, options)
 
+        # If we're playing P2 against an opponent, let the opponent play the first move
+        if self.opponent is not None and self.play_as == "player_1":
+            unwrapped_env = self.env.unwrapped
+            tmp_obs = unwrapped_env.observe(self.agent_selection)
+            opponent_action = self.opponent.get_action(tmp_obs)
+            unwrapped_env.step(opponent_action)
+
         # SB3 needs observation and action spaces as props instead of methods (?)
-        full_observation = super().observation_space(self.possible_agents[0])
+        full_observation = super().observation_space(self.agent_selection)
+        # Take the observation part of the dict and leave the action mask behind
         self.observation_space = full_observation["observation"]
-        self.action_space = super().action_space(self.possible_agents[0])
+        self.action_space = super().action_space(self.agent_selection)
 
         # Return initial observation, info (PettingZoo AEC envs do not by default)
         return self.observe(self.agent_selection), {}
@@ -233,10 +247,10 @@ def wrap_env(env, **kwargs):
     return env
 
 
-def make_env_fn(env_constructor, **mykwargs):
-    def env_fn(**kwargs):
-        env = env_constructor(**kwargs)
-        env = wrap_env(env, **mykwargs)
+def make_env_fn(env_constructor, **wrap_kwargs):
+    def env_fn(**env_kwargs):
+        env = env_constructor(**env_kwargs)
+        env = wrap_env(env, **wrap_kwargs)
         return env
 
     return env_fn
