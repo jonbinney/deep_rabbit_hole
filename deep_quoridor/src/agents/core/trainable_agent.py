@@ -42,6 +42,8 @@ class TrainableAgentParams(SubargsBase):
     gamma: float = 0.99
     # Batch size for training
     batch_size: int = 64
+    # Buffer size for stroing past transitions
+    buffer_size: int = 400000
     # Number of episodes between target network updates
     # This is the number of games played, not the number of training steps
     update_target_every: int = 100
@@ -92,6 +94,7 @@ class TrainableAgentParams(SubargsBase):
             "wandb_project",
             "wandb_dir",
             "learning_rate",
+            "buffer_size",
         }
 
 
@@ -200,7 +203,7 @@ class AbstractTrainableAgent(TrainableAgent):
         # Setup training components
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
-        self.replay_buffer = ReplayBuffer(capacity=(400000 if self.training_mode else 1))
+        self.replay_buffer = ReplayBuffer(capacity=(self.params.buffer_size if self.training_mode else 1))
         self.games_count = 0
         self.episodes_rewards = []
         self.train_call_losses = []
