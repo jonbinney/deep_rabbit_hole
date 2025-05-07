@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 
 import numpy as np
@@ -79,6 +80,8 @@ class DExpAgentParams(TrainableAgentParams):
     # in the next step. This should not be combined with assign_negative_reward
     target_as_source_for_opponent: bool = False
 
+    register_for_reuse: bool = False
+
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
@@ -115,6 +118,9 @@ class DExpAgent(AbstractTrainableAgent):
     ):
         super().__init__(params=params, **kwargs)
         self.check_congiguration()
+        DExpAgent._instance_being_trained = None
+        if params.register_for_reuse and self.is_training():
+            DExpAgent._instance_being_trained = self
 
     def name(self):
         if self.params.nick:
@@ -233,3 +239,22 @@ class DExpAgent(AbstractTrainableAgent):
         if action_player_id == "player_0" or not self.params.rotate:
             return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
+
+    @classmethod
+    def create_from_trained_instance(_cls, **kwargs):
+        """Create a new mimic model for the agent."""
+        if DExpAgent._instance_being_trained is None:
+            raise RuntimeError("Dexp version being trained must have param register_for_reuse set to True")
+        s = DExpAgent._instance_being_trained
+        p = copy.deepcopy(s.params)
+        p.nick = s.name() + "_m"
+        # No exploration for this player
+        p.epsilon = 0
+        # No training
+        p.training_mode = False
+        # Do not register
+        p.register_for_reuse = False
+        agent = DExpAgent(params=p, load_model_if_needed=False, **kwargs)
+        # We set the online network to be the same instance as the trained agent is using
+        agent.online_network = s.online_network
+        return agent
