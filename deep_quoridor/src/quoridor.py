@@ -4,6 +4,7 @@ from enum import IntEnum, unique
 from typing import Optional, Sequence
 
 import numpy as np
+from numba import jit
 
 
 @unique
@@ -517,6 +518,7 @@ class Quoridor:
         """
         visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
         return self.board._bfs(start_position, target_row, visited)
+        # return distance_to_row(self.board._grid, start_position[0], start_position[1], target_row)
 
     def player_distance_to_target(self, player: Player):
         start_position = self.board.get_player_position(player)
@@ -622,6 +624,83 @@ def construct_game_from_observation(observation: dict, player_id: str) -> tuple[
     board.set_walls_remaining(opponent, observation["opponent_walls_remaining"])
 
     return Quoridor(board, current_player), player, opponent
+
+
+# Possible values for each cell in the grid.
+CELL_FREE = -1
+# The player numbers start at 0 so that they can also be used as indices into the player positions array.
+CELL_PLAYER1 = 0
+CELL_PLAYER2 = 1
+CELL_WALL = 10
+
+
+def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row: int) -> int:
+    """
+    Args:
+        row (int): The current row of the pawn
+        col (int): The current column of the pawn
+        target_row (int): The target row to reach
+        visited (numpy.array): A 2D boolean array with the same shape as the board,
+            indicating which positions have been visited
+
+    Returns:
+        int: Number of steps to reach the target or -1 if it's unreachable
+    """
+    start_i = start_row * 2 + 2
+    start_j = start_col * 2 + 2
+    target_i = target_row * 2 + 2
+
+    if target_i == start_i:
+        return 0
+
+    visited = np.zeros(grid.shape, dtype="bool")
+    visited[start_i, start_j] = True
+
+    queue = [(start_i, start_j, 0)]
+
+    while queue:
+        i, j, steps = queue.pop(0)
+        # Iterate in the 4 directions, and if we can move to that position and we haven't already visited it, add it to the queue.
+        # This was done in a for loop before, but making everything explicit makes it significantly faster, and this method is called
+        # very often.
+
+        # Down
+        new_i = i + 2
+        wall_i = i + 1
+        if not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
+            visited[new_i, j] = True
+            if target_i == new_i:
+                return steps + 1
+            queue.append((new_i, j, steps + 1))
+
+        # Up
+        new_i = i - 2
+        wall_i = i - 1
+        if not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
+            visited[new_i, j] = True
+            if target_i == new_i:
+                return steps + 1
+            queue.append((new_i, j, steps + 1))
+
+        # Right
+        new_j = j + 2
+        wall_j = j + 1
+        if not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
+            visited[i, new_j] = True
+            if target_i == i:
+                return steps + 1
+            queue.append((i, new_j, steps + 1))
+
+        # Left
+        new_j = j - 2
+        wall_j = j - 1
+        if not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
+            visited[i, new_j] = True
+            if target_i == i:
+                return steps + 1
+            queue.append((i, new_j, steps + 1))
+
+    return -1
 
 
 if __name__ == "__main__":
