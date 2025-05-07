@@ -3,7 +3,7 @@ import getpass
 import os
 from dataclasses import asdict, dataclass
 
-from agents.core.trainable_agent import AbstractTrainableAgent
+from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
 from utils import resolve_path
@@ -54,7 +54,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
-        self.metrics = Metrics(game.board_size, game.max_walls)
+        self.metrics = Metrics(game.board_size, game.max_walls, game.observation_space(None), game.action_space(None))
 
         self.run = wandb.init(
             project=self.params.project,
@@ -71,9 +71,9 @@ class WandbTrainPlugin(ArenaPlugin):
             raise ValueError("WandbTrainPlugin being used for an agent, but another agent is being trained")
         if self.agent is not None:
             return
-        if isinstance(agent1, AbstractTrainableAgent) and agent1.training_mode:
+        if isinstance(agent1, TrainableAgent) and agent1.is_training():
             self.agent = agent1
-        elif isinstance(agent2, AbstractTrainableAgent) and agent2.training_mode:
+        elif isinstance(agent2, TrainableAgent) and agent2.is_training():
             self.agent = agent2
         else:
             raise ValueError("WandbTrainPlugin can only be used with a training agent, both agents are not training")

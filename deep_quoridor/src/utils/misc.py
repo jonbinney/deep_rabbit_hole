@@ -118,7 +118,7 @@ def yargs(parser: argparse.ArgumentParser, default_path: str):
     return args_dict
 
 
-def compute_elo(results: list["GameResult"], k=32, initial_rating=1500, initial_elos={}) -> dict[str, float]:
+def compute_elo(results: list["GameResult"], k=32, initial_rating=1500, initial_elos={}) -> dict[str, float]:  # type: ignore # noqa: F821
     ratings = initial_elos
     random.shuffle(results)
 
@@ -142,3 +142,15 @@ def compute_elo(results: list["GameResult"], k=32, initial_rating=1500, initial_
         ratings[result.player2] += k * (p2_won - e2)
 
     return ratings
+
+
+def get_opponent_player_id(player_id: str) -> str:
+    """
+    Returns the opponent player id given the player id.
+    """
+    if player_id == "player_1":
+        return "player_0"
+    elif player_id == "player_0":
+        return "player_1"
+    else:
+        raise ValueError(f"Invalid player id: {player_id}")

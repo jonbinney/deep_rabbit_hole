@@ -162,7 +162,10 @@ class SimpleAgent(Agent):
     def start_game(self, game, player_id):
         self.player_id = player_id
 
-    def get_action(self, observation, action_mask):
+    def get_action(self, observation):
+        action_mask = observation["action_mask"]
+        observation = observation["observation"]
+
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
 
         chosen_action, chosen_value = choose_action(
