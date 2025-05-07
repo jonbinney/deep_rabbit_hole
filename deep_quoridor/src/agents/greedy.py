@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from queue import Queue
 from typing import Optional, TypeAlias
 
-import numpy as np
 from quoridor import (
     ActionEncoder,
     MoveAction,

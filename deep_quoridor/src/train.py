@@ -1,9 +1,11 @@
 import argparse
 import datetime
+import random
 
 from agents.core.agent import Agent, AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
+from gymnasium import spaces
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from renderers import Renderer, TrainingStatusRenderer
@@ -59,7 +61,16 @@ def train_dqn(
         if isinstance(p, Agent):
             agents.append(p)
         else:
-            agents.append(AgentRegistry.create_from_encoded_name(p, board_size=board_size, max_walls=max_walls))
+            agents.append(
+                AgentRegistry.create_from_encoded_name(
+                    p,
+                    board_size=board_size,
+                    max_walls=max_walls,
+                    action_space=spaces.Discrete(
+                        board_size**2 + ((board_size - 1) ** 2) * 2, seed=random.randint(0, 2**32 - 1)
+                    ),
+                )
+            )
 
     agents.append(agents[0].new_mimic_model())
 

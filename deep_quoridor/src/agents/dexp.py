@@ -133,7 +133,7 @@ class DExpAgent(AbstractTrainableAgent):
         return 4
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_C{self.params}_{self.name()}_{suffix}.pt"
+        return f"{self.model_id()}_C{self.params}_{suffix}.pt"
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -236,11 +236,13 @@ class DExpAgent(AbstractTrainableAgent):
 
     def new_mimic_model(self):
         """Create a new mimic model for the agent."""
+        p = copy.deepcopy(self.params)
+        p.epsilon = 0
         agent = DExpAgent(
-            params=copy.deepcopy(self.params),
+            params=p,
             board_size=self.board_size,
             max_walls=self.max_walls,
-            training_mode=True,
+            training_mode=False,
             device=self.device,
         )
         agent.online_network = self.online_network
@@ -249,4 +251,6 @@ class DExpAgent(AbstractTrainableAgent):
         agent.optimizer = self.optimizer
         agent.criterion = self.criterion
         agent.params.nick = self.params.nick + "_mimic"
+        p.training_mode = False
+        agent.training_mode = False
         return agent
