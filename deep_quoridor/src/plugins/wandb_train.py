@@ -120,7 +120,7 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb.finish()
 
     def compute_tournament_metrics(self, model_filename: str):
-        _, elo_table, relative_elo, win_perc = self.metrics.compute(
+        _, elo_table, relative_elo, win_perc, absolute_elo = self.metrics.compute(
             self.agent_encoded_name + f",model_filename={model_filename}"
         )
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
@@ -128,10 +128,6 @@ class WandbTrainPlugin(ArenaPlugin):
             columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
         )
         self.run.log(
-            {
-                "elo": wandb_elo_table,
-                "relative_elo": relative_elo,
-                "win_perc": win_perc,
-            },
+            {"elo": wandb_elo_table, "relative_elo": relative_elo, "win_perc": win_perc, "absolute_elo": absolute_elo},
             step=self.episode_count,
         )
