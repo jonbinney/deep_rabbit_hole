@@ -92,5 +92,6 @@ class Metrics:
         relative_elo = self._compute_relative_elo(elo_table, agent.name())
 
         win_perc = self._win_perc(results, agent.name())
+        absolute_elo = elo_table[agent.name()]
 
-        return VERSION, elo_table, relative_elo, win_perc
+        return VERSION, elo_table, relative_elo, win_perc, absolute_elo

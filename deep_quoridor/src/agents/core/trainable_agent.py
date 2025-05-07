@@ -42,6 +42,8 @@ class TrainableAgentParams(SubargsBase):
     gamma: float = 0.99
     # Batch size for training
     batch_size: int = 64
+    # Buffer size for stroing past transitions
+    buffer_size: int = 400000
     # Number of episodes between target network updates
     # This is the number of games played, not the number of training steps
     update_target_every: int = 100
@@ -92,6 +94,7 @@ class TrainableAgentParams(SubargsBase):
             "wandb_project",
             "wandb_dir",
             "learning_rate",
+            "buffer_size",
         }
 
 
@@ -161,6 +164,7 @@ class AbstractTrainableAgent(TrainableAgent):
         max_walls,
         observation_space,
         action_space,
+        load_model_if_needed=True,
         params: TrainableAgentParams = TrainableAgentParams(),
         **kwargs,
     ):
@@ -179,6 +183,7 @@ class AbstractTrainableAgent(TrainableAgent):
         self.assign_negative_reward = params.assign_negative_reward
         self.final_reward_multiplier = params.final_reward_multiplier
         self.training_mode = params.training_mode
+        self.load_model_if_needed = load_model_if_needed
         self.params = params
         self.action_size = self._calculate_action_size()
         self.action_encoder = ActionEncoder(self.board_size)
@@ -198,7 +203,7 @@ class AbstractTrainableAgent(TrainableAgent):
         # Setup training components
         self.optimizer = self._create_optimizer()
         self.criterion = self._create_criterion()
-        self.replay_buffer = ReplayBuffer(capacity=(400000 if self.training_mode else 1))
+        self.replay_buffer = ReplayBuffer(capacity=(self.params.buffer_size if self.training_mode else 1))
         self.games_count = 0
         self.episodes_rewards = []
         self.train_call_losses = []
@@ -226,9 +231,6 @@ class AbstractTrainableAgent(TrainableAgent):
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
             self._update_target_network()
-        # if self.games_count == 400:
-        #    self.replay_buffer.to_disk("/tmp/buffera")
-        #    raise RuntimeError
 
     def _adjust_reward(self, r, done):
         if done:
@@ -541,7 +543,7 @@ class AbstractTrainableAgent(TrainableAgent):
             filename = self.params.model_filename
         else:
             # If no filename is passed in training mode, assume we are not loading a model
-            if self.training_mode:
+            if self.training_mode or not self.load_model_if_needed:
                 return
 
             # If it's not training mode, we definitely need to load a pretrained model, so try the

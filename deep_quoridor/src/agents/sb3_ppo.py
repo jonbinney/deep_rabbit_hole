@@ -71,9 +71,11 @@ class SB3ActionMaskWrapper(BaseWrapper):
         info = self.infos[current_agent]
 
         if not truncation and not termination and self.opponent is not None:
-            opponent_action = self.opponent.get_action(self, self.action_mask())
+            unwrapped_env = self.env.unwrapped
+            tmp_obs = unwrapped_env.observe(self.agent_selection)
+            opponent_action = self.opponent.get_action(tmp_obs)
 
-            super().step(opponent_action)
+            unwrapped_env.step(opponent_action)
 
             next_state = self.observe(self.agent_selection)
             opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
@@ -182,7 +184,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
             if self.model is None:
                 try:
                     print("Looking for model in local files...")
-                    self.resolve_and_load_model()
+                    self._resolve_and_load_model()
                 except FileNotFoundError:
                     print("No local model file found.")
 
