@@ -75,7 +75,13 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     # Configure model with tensorboard logging to ensure metrics are captured
     tensorboard_log = "runs/sb3_tensorboard"
     model = MaskablePPO(
-        MaskableActorCriticPolicy, env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log=tensorboard_log
+        MaskableActorCriticPolicy,
+        env,
+        verbose=1,
+        policy_kwargs=policy_kwargs,
+        tensorboard_log=tensorboard_log,
+        # n_steps=10000,
+        # learning_rate=3e-3,
     )
     model.set_random_seed(seed)
 
@@ -242,10 +248,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    temp_env = quoridor_env.env(board_size=args.board_size, max_walls=args.max_walls)
     env_kwargs = {
         "board_size": args.board_size,
         "max_walls": args.max_walls,
-        "action_space": quoridor_env.env(board_size=args.board_size, max_walls=args.max_walls).action_space(None),
+        "action_space": temp_env.action_space(None),
+        "observation_space": temp_env.observation_space(None),
     }
     train_kwargs = {
         "steps": args.steps,
