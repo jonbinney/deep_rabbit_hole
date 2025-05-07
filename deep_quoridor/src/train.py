@@ -1,13 +1,15 @@
 import argparse
-import datetime
+from typing import Optional
 
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
+from plugins.wandb_train import WandbParams
 from renderers import Renderer, TrainingStatusRenderer
 from utils import my_device, set_deterministic
+from utils.subargs import parse_subargs
 
 
 def train_dqn(
@@ -16,7 +18,7 @@ def train_dqn(
     max_walls: int,
     save_frequency: int,
     step_rewards: bool = True,
-    use_wandb: bool = True,
+    wandb_params: Optional[WandbParams] = None,
     players: list = [],
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
@@ -25,10 +27,8 @@ def train_dqn(
     total_episodes = episodes * (len(players) - 1)
 
     after_save_method = None
-    if use_wandb:
-        wandb_plugin = WandbTrainPlugin(
-            update_every=10, total_episodes=total_episodes, run_id=run_id, agent_encoded_name=players[0]
-        )
+    if wandb_params is not None:
+        wandb_plugin = WandbTrainPlugin(wandb_params, total_episodes=total_episodes, agent_encoded_name=players[0])
         plugins.append(wandb_plugin)
         after_save_method = wandb_plugin.compute_tournament_metrics
 
@@ -37,7 +37,7 @@ def train_dqn(
             update_every=save_frequency,
             board_size=board_size,
             max_walls=max_walls,
-            save_final=not use_wandb,
+            save_final=wandb_params is None,
             run_id=run_id,
             after_save=after_save_method,
         )
@@ -76,12 +76,6 @@ if __name__ == "__main__":
         help="Initializes the random seed for the training. Default is 42",
     )
     parser.add_argument(
-        "--no-wandb",
-        action="store_false",
-        default=True,
-        help="Disable Weights & Biases logging",
-    )
-    parser.add_argument(
         "-p",
         "--players",
         nargs="+",
@@ -96,28 +90,21 @@ if __name__ == "__main__":
         default=["arenaresults"],
         help="Render modes to be used. Note that TrainingStatusRenderer is always included",
     )
-    parser.add_argument(
-        "-rp",
-        "--run_prefix",
-        required=True,
-        type=str,
-        help="Run prefix to use for this run. This will be used for naming, and tagging artifacts and files",
-    )
-    parser.add_argument(
-        "-rs",
-        "--run_suffix",
-        type=str,
-        default=datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
-        help="Run suffix. Default is current date and time. This will be used for naming, and tagging artifacts and files",
-    )
+    parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
 
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
 
-    run_id = args.run_prefix + "-" + args.run_suffix
+    if args.wandb is None:
+        wandb_params = None
+    elif args.wandb == "":
+        wandb_params = WandbParams()
+    else:
+        wandb_params = parse_subargs(args.wandb, WandbParams)
+        assert isinstance(wandb_params, WandbParams)
+
     print("Starting DQN training...")
-    print(f"Run Id: {run_id}")
     print(f"Board size: {args.board_size}x{args.board_size}")
     print(f"Max walls: {args.max_walls}")
     print(f"Training for {args.episodes} episodes")
@@ -134,10 +121,9 @@ if __name__ == "__main__":
         max_walls=args.max_walls,
         save_frequency=args.save_frequency,
         step_rewards=args.step_rewards,
-        use_wandb=args.no_wandb,
         players=args.players,
         renderers=renderers,
-        run_id=run_id,
+        wandb_params=wandb_params,
     )
 
     print("Training completed!")

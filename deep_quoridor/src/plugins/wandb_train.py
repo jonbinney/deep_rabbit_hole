@@ -1,21 +1,47 @@
+import datetime
+import getpass
 import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
 from utils import resolve_path
+from utils.subargs import SubargsBase
 
 import wandb
 
 
+@dataclass
+class WandbParams(SubargsBase):
+    # Prefix for this run. This is used to create a unique run id for naming, and tagging artifacts and files
+    prefix: str = getpass.getuser()
+
+    # Suffix for this run. This is used to create a unique run id for naming, and tagging artifacts and files
+    suffix: str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # Name of the project in wandb
+    project: str = "deep_quoridor"
+
+    # Optional notes to store for the run
+    notes: str = ""
+
+    # Wether to upload the final model to wandb
+    upload_model: bool = True
+
+    # How often to log training metrics
+    log_every: int = 10
+
+    def run_id(self):
+        return f"{self.prefix}-{self.suffix}"
+
+
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, update_every: int, total_episodes: int, agent_encoded_name: str, run_id: str = ""):
-        self.update_every = update_every
+    def __init__(self, params: WandbParams, total_episodes: int, agent_encoded_name: str):
+        self.params = params
         self.total_episodes = total_episodes
         self.episode_count = 0
         self.agent = None
-        self.run_id = run_id
         self.agent_encoded_name = agent_encoded_name
 
     def _initialize(self, game):
@@ -31,12 +57,13 @@ class WandbTrainPlugin(ArenaPlugin):
         self.metrics = Metrics(game.board_size, game.max_walls, game.observation_space(None), game.action_space(None))
 
         self.run = wandb.init(
-            project="deep_quoridor",
+            project=self.params.project,
             job_type="train",
             config=config,
-            tags=[self.agent.model_id(), f"-{self.run_id}"],
-            id=self.run_id,
-            name=f"{self.run_id}",
+            tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
+            id=self.params.run_id(),
+            name=f"{self.params.run_id()}",
+            notes=self.params.notes,
         )
 
     def start_game(self, game, agent1, agent2):
@@ -54,8 +81,8 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def end_game(self, game, result):
         assert self.agent
-        if self.episode_count % self.update_every == 0 or self.episode_count == (self.total_episodes - 1):
-            avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.update_every)
+        if self.episode_count % self.params.log_every == 0 or self.episode_count == (self.total_episodes - 1):
+            avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.params.log_every)
 
             self.run.log(
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
@@ -66,6 +93,10 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def end_arena(self, game, results):
         assert self.agent
+        if not self.params.upload_model:
+            print("Model NOT uploaded to wandb since using `upload_model=False`")
+            wandb.finish()
+            return
 
         # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
         # once we upload it to wandb and have the digest.

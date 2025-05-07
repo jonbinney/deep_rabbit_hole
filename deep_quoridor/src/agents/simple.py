@@ -33,7 +33,7 @@ class SimpleParams(SubargsBase):
     discount_factor: float = 0.99
 
 
-def adjust_wall_position(position: tuple[int, int]) -> tuple[int, int]:
+def adjust_wall_position(position: tuple[int, int]) -> tuple[float, float]:
     """
     Compute a wall position that reflects where its center is relative to player positions.
     """
