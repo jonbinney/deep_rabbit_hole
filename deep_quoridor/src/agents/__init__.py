@@ -34,6 +34,7 @@ from agents.sb3_ppo import SB3PPOAgent  # noqa: E402, F401
 from agents.simple import SimpleAgent  # noqa: E402, F401
 
 AgentRegistry.register("dexp", DExpAgent)
+AgentRegistry.register("dexp_mimic", DExpAgent.create_from_trained_instance)
 AgentRegistry.register("flatdqn", FlatDQNAgent)
 AgentRegistry.register("greedy", GreedyAgent)
 AgentRegistry.register("human", HumanAgent)
