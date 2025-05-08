@@ -28,6 +28,7 @@ from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
+from stable_baselines3.common.monitor import Monitor
 from utils import resolve_path, set_deterministic
 
 import wandb
@@ -42,14 +43,33 @@ def mask_fn(env):
 
 
 class SwapPlayerCallback(BaseCallback):
-    def __init__(self, env):
+    def __init__(self, env, monitor, opponents_config, opponents_kwargs):
         super().__init__()
         self.env = env
         self.current_player = "player_0"
+        self.opponents_config = opponents_config
+        self.oppponents_kwargs = opponents_kwargs
+        self.current_opponent = None
+        self.current_opponent_games_left = 0
+        self.monitor = monitor
+        self.last_wins = 0
+        self.last_total_games = 0
 
     @override
     def _on_rollout_start(self) -> None:
-        print(f"Playing as {self.current_player}")
+        if self.current_opponent is None:
+            if len(self.opponents_config) > 0:
+                next_opponent = self.opponents_config.pop(0)
+                self.current_opponent = next_opponent
+                self.current_opponent_games_left = next_opponent["games"]
+                self.opponent = AgentRegistry.create_from_encoded_name(next_opponent["agent"], **self.oppponents_kwargs)
+                self.env.set_opponent(self.opponent)
+                self.env.set_player("player_0")
+        print(
+            f"Playing as {self.current_player}, against {self.current_opponent['agent']} ({self.current_opponent_games_left} rollouts left)"
+        )
+        if self.opponent is not None:
+            self.opponent.start_game(self.env, self.env.get_opponent(self.current_player))
 
     @override
     def _on_rollout_end(self):
@@ -58,6 +78,21 @@ class SwapPlayerCallback(BaseCallback):
         else:
             self.current_player = "player_0"
         self.env.set_player(self.current_player)
+        self.current_opponent_games_left -= 1
+        if self.current_opponent_games_left == 0:
+            self.current_opponent = None
+            self.env.set_opponent(None)
+        # Count the number of self.monitor.episode_returns that were positive
+        total_wins = len([r for r in self.monitor.episode_returns if r > 0])
+        total_games = len(self.monitor.episode_returns)
+        total_winrate = total_wins / total_games
+        wins_diff = total_wins - self.last_wins
+        games_diff = total_games - self.last_total_games
+        rollout_winrate = wins_diff / games_diff
+        print(f"Wins: {total_wins} over {total_games} games ({wins_diff}/{games_diff} since last rollout)")
+        print(f"Winrate: {total_winrate} ({rollout_winrate} since last rollout)")
+        self.last_wins = total_wins
+        self.last_total_games = total_games
 
     @override
     def _on_step(self):
@@ -80,7 +115,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
         sync_tensorboard=True,
     )
 
-    masked_env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
+    masked_env = Monitor(ActionMasker(env, mask_fn))  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
@@ -99,13 +134,14 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
 
     # Configure model with tensorboard logging to ensure metrics are captured
     tensorboard_log = "runs/sb3_tensorboard"
+    steps_per_rollout = 2048
     model = MaskablePPO(
         MaskableActorCriticPolicy,
         masked_env,
         verbose=1,
         policy_kwargs=policy_kwargs,
         tensorboard_log=tensorboard_log,
-        # n_steps=10000,
+        n_steps=steps_per_rollout,
         # learning_rate=3e-3,
     )
     model.set_random_seed(seed)
@@ -116,11 +152,19 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
         verbose=2,
     )
 
-    swap_player_callback = SwapPlayerCallback(env)
+    opponents_config = [
+        {"agent": "random", "games": 20},
+        {"agent": "greedy:p_random=0.3", "games": 20},
+        {"agent": "greedy:p_random=0.1", "games": 20},
+    ]
+
+    total_timesteps = sum(opponent["games"] for opponent in opponents_config) * steps_per_rollout
+
+    swap_player_callback = SwapPlayerCallback(env, masked_env, opponents_config, env_kwargs)
 
     # Play as player 1
     model.learn(
-        total_timesteps=steps,
+        total_timesteps=total_timesteps,
         callback=CallbackList([wandb_callback, swap_player_callback]),
     )
 

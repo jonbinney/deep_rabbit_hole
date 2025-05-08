@@ -37,6 +37,9 @@ class SB3ActionMaskWrapper(BaseWrapper):
     def set_player(self, player):
         self.play_as = player
 
+    def set_opponent(self, opponent: Agent):
+        self.opponent = opponent
+
     def reset(self, seed=None, options=None):
         """Gymnasium-like reset function which assigns obs/action spaces to be the same for each agent.
 
