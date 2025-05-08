@@ -91,6 +91,18 @@ class SwapPlayerCallback(BaseCallback):
         rollout_winrate = wins_diff / games_diff
         print(f"Wins: {total_wins} over {total_games} games ({wins_diff}/{games_diff} since last rollout)")
         print(f"Winrate: {total_winrate} ({rollout_winrate} since last rollout)")
+
+        # Log metrics to wandb
+        if wandb.run is not None:
+            opponent_name = "None"
+            if self.current_opponent is not None:
+                opponent_name = self.current_opponent["agent"]
+            wandb.log({
+                "rollout_winrate": rollout_winrate,
+                "total_winrate": total_winrate,
+                "opponent": opponent_name
+            })
+
         self.last_wins = total_wins
         self.last_total_games = total_games
 
@@ -153,9 +165,11 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     )
 
     opponents_config = [
-        {"agent": "random", "games": 20},
-        {"agent": "greedy:p_random=0.3", "games": 20},
-        {"agent": "greedy:p_random=0.1", "games": 20},
+        {"agent": "random", "games": 200},
+        {"agent": "greedy:p_random=0.7", "games": 200},
+        {"agent": "greedy:p_random=0.5", "games": 200},
+        {"agent": "greedy:p_random=0.4", "games": 200},
+        {"agent": "greedy:p_random=0.3", "games": 200},
     ]
 
     total_timesteps = sum(opponent["games"] for opponent in opponents_config) * steps_per_rollout
