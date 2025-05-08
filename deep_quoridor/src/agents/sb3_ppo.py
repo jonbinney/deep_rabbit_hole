@@ -97,6 +97,12 @@ class SB3ActionMaskWrapper(BaseWrapper):
             termination = self.terminations[opponent_agent]
             reward = reward - opponent_reward
 
+        # With this idea, we return negative rewards for every other step, to take into account
+        # they are adversarial moves.
+        # However, this failed just as with any other approach that doesn't use an actual opponent.
+        if self.opponent is None and self.play_as != current_agent:
+            reward = -1 * reward
+
         return (
             next_state,
             reward,

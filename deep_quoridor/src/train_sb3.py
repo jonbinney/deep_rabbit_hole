@@ -16,6 +16,7 @@ import datetime
 import glob
 import os
 import time
+from typing import override
 
 import quoridor_env
 import torch
@@ -46,6 +47,11 @@ class SwapPlayerCallback(BaseCallback):
         self.env = env
         self.current_player = "player_0"
 
+    @override
+    def _on_rollout_start(self) -> None:
+        print(f"Playing as {self.current_player}")
+
+    @override
     def _on_rollout_end(self):
         if self.current_player == "player_0":
             self.current_player = "player_1"
@@ -53,6 +59,7 @@ class SwapPlayerCallback(BaseCallback):
             self.current_player = "player_0"
         self.env.set_player(self.current_player)
 
+    @override
     def _on_step(self):
         return True
 
