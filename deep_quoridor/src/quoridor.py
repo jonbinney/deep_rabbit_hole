@@ -4,7 +4,7 @@ from enum import IntEnum, unique
 from typing import Optional, Sequence
 
 import numpy as np
-from numba import jit
+import qgrid
 
 
 @unique
@@ -15,8 +15,8 @@ class Player(IntEnum):
 
 @unique
 class WallOrientation(IntEnum):
-    VERTICAL = 0
-    HORIZONTAL = 1
+    VERTICAL = qgrid.WALL_ORIENTATION_VERTICAL
+    HORIZONTAL = qgrid.WALL_ORIENTATION_HORIZONTAL
 
 
 class Action:
@@ -74,11 +74,11 @@ class ActionEncoder:
 
 class Board:
     # Possible values for each cell in the grid.
-    FREE = -1
+    FREE = qgrid.CELL_FREE
     # The player numbers start at 0 so that they can also be used as indices into the player positions array.
-    PLAYER1 = 0
-    PLAYER2 = 1
-    WALL = 10
+    PLAYER1 = qgrid.CELL_PLAYER1
+    PLAYER2 = qgrid.CELL_PLAYER2
+    WALL = qgrid.CELL_WALL
 
     # When we check whether a new wall could potentially block all routes to the goal for a player,
     # we first check to see whether it spans between two walls already on the board, or between
@@ -191,7 +191,7 @@ class Board:
         if self._walls_remaining[player] < 1:
             return False
 
-        return (self._grid[self._get_wall_slice(position, orientation)] == Board.FREE).all()
+        return qgrid.are_wall_cells_free(self._grid, position[0], position[1], int(orientation))
 
     def _are_adjacent(self, position1: tuple[int, int], position2: tuple[int, int]) -> bool:
         dr = position1[0] - position2[0]
@@ -243,112 +243,7 @@ class Board:
         return wall_slice
 
     def _is_wall_potential_block(self, position, orientation):
-        wall_start_index = self._wall_position_to_grid_index(position, orientation)
-
-        touches = 0
-        for neighbor_offsets in Board._potential_wall_neighbors[orientation]:
-            neighbors = wall_start_index + neighbor_offsets
-            if (self._grid[neighbors[:, 0], neighbors[:, 1]] == Board.WALL).any():
-                touches += 1
-
-        return touches > 1
-
-    def _bfs(self, start_position, target_row, visited):
-        """
-        Performs a breadth-first search to find the shortest path to the target row.
-
-
-        Args:
-            row (int): The current row of the pawn
-            col (int): The current column of the pawn
-            target_row (int): The target row to reach
-            visited (numpy.array): A 2D boolean array with the same shape as the board,
-                indicating which positions have been visited
-
-        Returns:
-            int: Number of steps to reach the target or -1 if it's unreachable
-        """
-        row, col = start_position
-        if target_row == row:
-            return 0
-
-        queue = [(row, col, 0)]
-        visited[row, col] = True
-        N = self.board_size
-
-        while queue:
-            curr_row, curr_col, steps = queue.pop(0)
-            # Iterate in the 4 directions, and if we can move to that position and we haven't already visited it, add it to the queue.
-            # This was done in a for loop before, but making everything explicit makes it significantly faster, and this method is called
-            # very often.
-
-            # Down
-            wall_row = curr_row * 2 + 2
-            wall_col = curr_col * 2 + 2
-            new_row = curr_row + 1
-            if new_row < N and not visited[new_row, curr_col] and self._grid[wall_row + 1, wall_col] != Board.WALL:
-                visited[new_row, curr_col] = True
-                if target_row == new_row:
-                    return steps + 1
-                queue.append((new_row, curr_col, steps + 1))
-
-            # Up
-            new_row = curr_row - 1
-            if new_row >= 0 and not visited[new_row, curr_col] and self._grid[wall_row - 1, wall_col] != Board.WALL:
-                visited[new_row, curr_col] = True
-                if target_row == new_row:
-                    return steps + 1
-                queue.append((new_row, curr_col, steps + 1))
-
-            # Right
-            new_col = curr_col + 1
-            if new_col < N and not visited[curr_row, new_col] and self._grid[wall_row, wall_col + 1] != Board.WALL:
-                visited[curr_row, new_col] = True
-                queue.append((curr_row, new_col, steps + 1))
-
-            # Left
-            new_col = curr_col - 1
-            if new_col >= 0 and not visited[curr_row, new_col] and self._grid[wall_row, wall_col - 1] != Board.WALL:
-                visited[curr_row, new_col] = True
-                queue.append((curr_row, new_col, steps + 1))
-
-        return -1
-
-    def _dfs(self, start_position, target_row, visited):
-        """
-        Performs a depth-first search to find whether the pawn can reach the target row.
-
-        Args:
-            row (int): The current row of the pawn
-            col (int): The current column of the pawn
-            target_row (int): The target row to reach
-            visited (numpy.array): A 2D boolean array with the same shape as the board,
-                indicating which positions have been visited
-
-        Returns:
-            int: Number of steps to reach the target or -1 if it's unreachable
-        """
-        row, col = start_position
-        if row == target_row:
-            return 0
-
-        visited[row, col] = True
-
-        # Find out the forward direction to try it first and maybe get to the target faster
-        fwd = 1 if target_row > row else -1
-
-        moves = [(row + fwd, col), (row, col - 1), (row, col + 1), (row - fwd, col)]
-        for new_row, new_col in moves:
-            if (
-                self.is_position_on_board((new_row, new_col))
-                and not visited[new_row, new_col]
-                and not self.is_wall_between((row, col), (new_row, new_col))
-            ):
-                dfs = self._dfs((new_row, new_col), target_row, visited)
-                if dfs != -1:
-                    return dfs + 1
-
-        return -1
+        return qgrid.is_wall_potential_block(self._grid, position[0], position[1], int(orientation))
 
     def __str__(self):
         """
@@ -509,16 +404,14 @@ class Quoridor:
         return row == self.get_goal_row(player)
 
     def can_reach(self, start_position: tuple[int, int], target_row: int):
-        visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
-        return self.board._dfs(start_position, target_row, visited) != -1
+        d = qgrid.distance_to_row(self.board._grid, start_position[0], start_position[1], target_row)
+        return d != -1
 
     def distance_to_target(self, start_position, target_row):
         """
         Returns the minimum number of moves it takes to reach the target row, or -1 if it's not reachable.
         """
-        visited = np.zeros((self.board.board_size, self.board.board_size), dtype="bool")
-        return self.board._bfs(start_position, target_row, visited)
-        # return distance_to_row(self.board._grid, start_position[0], start_position[1], target_row)
+        return qgrid.distance_to_row(self.board._grid, start_position[0], start_position[1], target_row)
 
     def player_distance_to_target(self, player: Player):
         start_position = self.board.get_player_position(player)
@@ -624,83 +517,6 @@ def construct_game_from_observation(observation: dict, player_id: str) -> tuple[
     board.set_walls_remaining(opponent, observation["opponent_walls_remaining"])
 
     return Quoridor(board, current_player), player, opponent
-
-
-# Possible values for each cell in the grid.
-CELL_FREE = -1
-# The player numbers start at 0 so that they can also be used as indices into the player positions array.
-CELL_PLAYER1 = 0
-CELL_PLAYER2 = 1
-CELL_WALL = 10
-
-
-def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row: int) -> int:
-    """
-    Args:
-        row (int): The current row of the pawn
-        col (int): The current column of the pawn
-        target_row (int): The target row to reach
-        visited (numpy.array): A 2D boolean array with the same shape as the board,
-            indicating which positions have been visited
-
-    Returns:
-        int: Number of steps to reach the target or -1 if it's unreachable
-    """
-    start_i = start_row * 2 + 2
-    start_j = start_col * 2 + 2
-    target_i = target_row * 2 + 2
-
-    if target_i == start_i:
-        return 0
-
-    visited = np.zeros(grid.shape, dtype="bool")
-    visited[start_i, start_j] = True
-
-    queue = [(start_i, start_j, 0)]
-
-    while queue:
-        i, j, steps = queue.pop(0)
-        # Iterate in the 4 directions, and if we can move to that position and we haven't already visited it, add it to the queue.
-        # This was done in a for loop before, but making everything explicit makes it significantly faster, and this method is called
-        # very often.
-
-        # Down
-        new_i = i + 2
-        wall_i = i + 1
-        if not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
-            visited[new_i, j] = True
-            if target_i == new_i:
-                return steps + 1
-            queue.append((new_i, j, steps + 1))
-
-        # Up
-        new_i = i - 2
-        wall_i = i - 1
-        if not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
-            visited[new_i, j] = True
-            if target_i == new_i:
-                return steps + 1
-            queue.append((new_i, j, steps + 1))
-
-        # Right
-        new_j = j + 2
-        wall_j = j + 1
-        if not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
-            visited[i, new_j] = True
-            if target_i == i:
-                return steps + 1
-            queue.append((i, new_j, steps + 1))
-
-        # Left
-        new_j = j - 2
-        wall_j = j - 1
-        if not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
-            visited[i, new_j] = True
-            if target_i == i:
-                return steps + 1
-            queue.append((i, new_j, steps + 1))
-
-    return -1
 
 
 if __name__ == "__main__":
