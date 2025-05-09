@@ -88,7 +88,7 @@ class SwapPlayerCallback(BaseCallback):
         total_winrate = total_wins / total_games
         wins_diff = total_wins - self.last_wins
         games_diff = total_games - self.last_total_games
-        rollout_winrate = wins_diff / games_diff
+        rollout_winrate = wins_diff / games_diff if games_diff > 0 else 0.5
         print(f"Wins: {total_wins} over {total_games} games ({wins_diff}/{games_diff} since last rollout)")
         print(f"Winrate: {total_winrate} ({rollout_winrate} since last rollout)")
 
@@ -97,11 +97,7 @@ class SwapPlayerCallback(BaseCallback):
             opponent_name = "None"
             if self.current_opponent is not None:
                 opponent_name = self.current_opponent["agent"]
-            wandb.log({
-                "rollout_winrate": rollout_winrate,
-                "total_winrate": total_winrate,
-                "opponent": opponent_name
-            })
+            wandb.log({"rollout_winrate": rollout_winrate, "total_winrate": total_winrate, "opponent": opponent_name})
 
         self.last_wins = total_wins
         self.last_total_games = total_games
@@ -165,11 +161,12 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     )
 
     opponents_config = [
-        {"agent": "random", "games": 200},
-        {"agent": "greedy:p_random=0.7", "games": 200},
-        {"agent": "greedy:p_random=0.5", "games": 200},
-        {"agent": "greedy:p_random=0.4", "games": 200},
-        {"agent": "greedy:p_random=0.3", "games": 200},
+        # {"agent": "random", "games": 40},
+        # {"agent": "greedy:p_random=0.7", "games": 200},
+        # {"agent": "greedy:p_random=0.5", "games": 200},
+        # {"agent": "greedy:p_random=0.4", "games": 200},
+        {"agent": "greedy:p_random=0.3", "games": 40},
+        {"agent": "greedy", "games": 40},
     ]
 
     total_timesteps = sum(opponent["games"] for opponent in opponents_config) * steps_per_rollout
