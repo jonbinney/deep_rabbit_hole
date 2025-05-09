@@ -50,7 +50,7 @@ class SwapPlayerCallback(BaseCallback):
         self.opponents_config = opponents_config
         self.oppponents_kwargs = opponents_kwargs
         self.current_opponent = None
-        self.current_opponent_games_left = 0
+        self.current_opponent_rollouts_left = 0
         self.monitor = monitor
         self.last_wins = 0
         self.last_total_games = 0
@@ -61,12 +61,12 @@ class SwapPlayerCallback(BaseCallback):
             if len(self.opponents_config) > 0:
                 next_opponent = self.opponents_config.pop(0)
                 self.current_opponent = next_opponent
-                self.current_opponent_games_left = next_opponent["games"]
+                self.current_opponent_rollouts_left = next_opponent["rollouts"]
                 self.opponent = AgentRegistry.create_from_encoded_name(next_opponent["agent"], **self.oppponents_kwargs)
                 self.env.set_opponent(self.opponent)
                 self.env.set_player("player_0")
         print(
-            f"Playing as {self.current_player}, against {self.current_opponent['agent']} ({self.current_opponent_games_left} rollouts left)"
+            f"Playing as {self.current_player}, against {self.current_opponent['agent']} ({self.current_opponent_rollouts_left} rollouts left)"
         )
         if self.opponent is not None:
             self.opponent.start_game(self.env, self.env.get_opponent(self.current_player))
@@ -78,8 +78,8 @@ class SwapPlayerCallback(BaseCallback):
         else:
             self.current_player = "player_0"
         self.env.set_player(self.current_player)
-        self.current_opponent_games_left -= 1
-        if self.current_opponent_games_left == 0:
+        self.current_opponent_rollouts_left -= 1
+        if self.current_opponent_rollouts_left == 0:
             self.current_opponent = None
             self.env.set_opponent(None)
         # Count the number of self.monitor.episode_returns that were positive
@@ -123,7 +123,9 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
         sync_tensorboard=True,
     )
 
-    masked_env = Monitor(ActionMasker(env, mask_fn))  # Wrap to enable masking (SB3 function)
+    masked_env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
+    masked_env = Monitor(masked_env)  # Add a monitor to keep track of per-episode stats to log to wandb
+
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
@@ -161,15 +163,15 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     )
 
     opponents_config = [
-        # {"agent": "random", "games": 40},
-        # {"agent": "greedy:p_random=0.7", "games": 200},
-        # {"agent": "greedy:p_random=0.5", "games": 200},
-        # {"agent": "greedy:p_random=0.4", "games": 200},
-        {"agent": "greedy:p_random=0.3", "games": 40},
-        {"agent": "greedy", "games": 40},
+        # {"agent": "random", "rollouts": 40},
+        # {"agent": "greedy:p_random=0.7", "rollouts": 200},
+        # {"agent": "greedy:p_random=0.5", "rollouts": 200},
+        # {"agent": "greedy:p_random=0.4", "rollouts": 200},
+        {"agent": "greedy:p_random=0.3", "rollouts": 40},
+        {"agent": "greedy", "rollouts": 40},
     ]
 
-    total_timesteps = sum(opponent["games"] for opponent in opponents_config) * steps_per_rollout
+    total_timesteps = sum(opponent["rollouts"] for opponent in opponents_config) * steps_per_rollout
 
     swap_player_callback = SwapPlayerCallback(env, masked_env, opponents_config, env_kwargs)
 
