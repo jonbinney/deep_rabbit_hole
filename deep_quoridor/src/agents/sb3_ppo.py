@@ -34,9 +34,6 @@ class SB3ActionMaskWrapper(BaseWrapper):
         self.opponent = opponent
         self.play_as = play_as
 
-        if self.opponent is not None:
-            self.opponent.start_game(self.env, env.get_opponent(self.play_as))
-
     def set_player(self, player):
         self.play_as = player
 
@@ -46,6 +43,9 @@ class SB3ActionMaskWrapper(BaseWrapper):
         This is required as SB3 is designed for single-agent RL and doesn't expect obs/action spaces to be functions
         """
         super().reset(seed, options)
+
+        if self.opponent is not None:
+            self.opponent.start_game(self.env, self.env.get_opponent(self.play_as))
 
         # If we're playing P2 against an opponent, let the opponent play the first move
         if self.opponent is not None and self.play_as == "player_1":
@@ -79,6 +79,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         opponent_agent = self.agent_selection
 
         next_state = self.observe(self.agent_selection)
+        # NOTE: Consider if only last reward should be multiplied
         reward = self.rewards[current_agent] * self.rewards_multiplier
         termination = self.terminations[current_agent]
         truncation = self.truncations[current_agent]
@@ -92,6 +93,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
             unwrapped_env.step(opponent_action)
 
             next_state = self.observe(self.agent_selection)
+            # NOTE: Consider if only last reward should be multiplied
             opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
             truncation = self.truncations[opponent_agent]
             termination = self.terminations[opponent_agent]
@@ -100,6 +102,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         # With this idea, we return negative rewards for every other step, to take into account
         # they are adversarial moves.
         # However, this failed just as with any other approach that doesn't use an actual opponent.
+        # NOTE: This is only used when playing both sides (e.g.: not with an opponent set)
         if self.opponent is None and self.play_as != current_agent:
             reward = -1 * reward
 
