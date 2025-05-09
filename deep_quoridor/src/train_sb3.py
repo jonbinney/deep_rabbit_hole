@@ -16,6 +16,7 @@ import datetime
 import glob
 import os
 import time
+from typing import override
 
 import quoridor_env
 import torch
@@ -26,6 +27,7 @@ from renderers import ArenaResultsRenderer
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from utils import resolve_path, set_deterministic
 
 import wandb
@@ -37,6 +39,29 @@ def mask_fn(env):
     # for the current env. In this example, we assume the env has a
     # helpful method we can rely on.
     return env.action_mask()
+
+
+class SwapPlayerCallback(BaseCallback):
+    def __init__(self, env):
+        super().__init__()
+        self.env = env
+        self.current_player = "player_0"
+
+    @override
+    def _on_rollout_start(self) -> None:
+        print(f"Playing as {self.current_player}")
+
+    @override
+    def _on_rollout_end(self):
+        if self.current_player == "player_0":
+            self.current_player = "player_1"
+        else:
+            self.current_player = "player_0"
+        self.env.set_player(self.current_player)
+
+    @override
+    def _on_step(self):
+        return True
 
 
 def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train_kwargs={}, **env_kwargs):
@@ -55,7 +80,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
         sync_tensorboard=True,
     )
 
-    env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
+    masked_env = ActionMasker(env, mask_fn)  # Wrap to enable masking (SB3 function)
     # MaskablePPO behaves the same as SB3's PPO unless the env is wrapped
     # with ActionMasker. If the wrapper is detected, the masks are automatically
     # retrieved and used when learning. Note that MaskablePPO does not accept
@@ -76,7 +101,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     tensorboard_log = "runs/sb3_tensorboard"
     model = MaskablePPO(
         MaskableActorCriticPolicy,
-        env,
+        masked_env,
         verbose=1,
         policy_kwargs=policy_kwargs,
         tensorboard_log=tensorboard_log,
@@ -86,12 +111,17 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     model.set_random_seed(seed)
 
     # Simplified WandbCallback with verbosity set to capture loss metrics
+    wandb_callback = WandbCallback(
+        gradient_save_freq=1000,
+        verbose=2,
+    )
+
+    swap_player_callback = SwapPlayerCallback(env)
+
+    # Play as player 1
     model.learn(
         total_timesteps=steps,
-        callback=WandbCallback(
-            gradient_save_freq=1000,
-            verbose=2,  # More verbose logging to capture loss metrics
-        ),
+        callback=CallbackList([wandb_callback, swap_player_callback]),
     )
 
     # Create an SB3PPO agent to handle model file naming
