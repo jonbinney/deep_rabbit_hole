@@ -81,7 +81,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
 
         opponent_agent = self.agent_selection
 
-        next_state = self.observe(self.agent_selection)
+        next_state = self.observe(opponent_agent)
         # NOTE: Consider if only last reward should be multiplied
         reward = self.rewards[current_agent] * self.rewards_multiplier
         termination = self.terminations[current_agent]
@@ -90,12 +90,19 @@ class SB3ActionMaskWrapper(BaseWrapper):
 
         if not truncation and not termination and self.opponent is not None:
             unwrapped_env = self.env.unwrapped
-            tmp_obs = unwrapped_env.observe(self.agent_selection)
-            opponent_action = self.opponent.get_action(tmp_obs)
+            tmp_obs = unwrapped_env.observe(opponent_agent)
+            try:
+                opponent_action = self.opponent.get_action(tmp_obs)
+            except Exception as e:
+                print(f"Exception in opponent action: {e}. Choosing a random action instead.")
+                print("Current board state (before opponent action):")
+                print(self.env.render())
+                print(f"Last action: {action}")
+                opponent_action = unwrapped_env.action_space(opponent_agent).sample(tmp_obs["action_mask"])
 
             unwrapped_env.step(opponent_action)
 
-            next_state = self.observe(self.agent_selection)
+            next_state = self.observe(current_agent)
             # NOTE: Consider if only last reward should be multiplied
             opponent_reward = self.rewards[opponent_agent] * self.rewards_multiplier
             truncation = self.truncations[opponent_agent]
