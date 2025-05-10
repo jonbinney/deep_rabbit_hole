@@ -158,6 +158,7 @@ class SB3PPOAgent(AbstractTrainableAgent):
         self.steps = 0
         self.training_mode = False
         self.episodes_rewards = []
+        self.load_model_if_needed = True
 
         self._reset_episode_related_info()
 
