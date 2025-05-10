@@ -102,7 +102,7 @@ def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orient
     else:
         start_i = start_row * 2 + 3
         start_j = start_col * 2 + 2
-        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 3 < grid_width
+        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
         return (
             grid[start_i, start_j] == CELL_FREE
@@ -152,7 +152,7 @@ def is_wall_potential_block(grid, start_row, start_col, orientation):
     else:  # HORIZONTAL
         start_i = start_row * 2 + 3
         start_j = start_col * 2 + 2
-        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 3 < grid_width
+        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
         touches = 0
         if (

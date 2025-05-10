@@ -33,20 +33,16 @@ class SimpleParams(SubargsBase):
     discount_factor: float = 0.99
 
 
-def adjust_wall_position(position: tuple[int, int]) -> tuple[float, float]:
-    """
-    Compute a wall position that reflects where its center is relative to player positions.
-    """
-    return position[0] + 0.5, position[1] + 0.5
-
-
-def compute_wall_weight(wall: WallAction, position_1: tuple[int, int], position_2: tuple[int, int], sigma) -> float:
-    wall_position = np.array(adjust_wall_position(wall.position))
-    d1 = np.linalg.norm(np.array(position_1) - wall_position)
-    d2 = np.linalg.norm(np.array(position_2) - wall_position)
-    min_distance = min(d1, d2)
-    weight = np.exp(-0.5 * (min_distance / sigma) ** 2)
-    return weight
+def compute_wall_weights(
+    wall_actions: list[WallAction], position_1: tuple[int, int], position_2: tuple[int, int], sigma
+) -> float:
+    walls_array = np.array([wall.position for wall in wall_actions], dtype=np.float32)
+    walls_array += (0.5, 0.5)  # Adjust wall positions to reflect where their center is in player coordinates.
+    squared_distances_to_position_1 = ((walls_array - position_1) ** 2).sum(axis=1)
+    squared_distances_to_position_2 = ((walls_array - position_2) ** 2).sum(axis=1)
+    min_squared_distances = np.minimum(squared_distances_to_position_1, squared_distances_to_position_2)
+    weights = np.exp(-0.5 * min_squared_distances / sigma**2)
+    return weights
 
 
 def sample_actions(game: Quoridor, n: int, wall_sigma: float | None = None) -> list[Action]:
@@ -65,11 +61,13 @@ def sample_actions(game: Quoridor, n: int, wall_sigma: float | None = None) -> l
         wall_actions = game.get_valid_wall_actions()
         if len(wall_actions) > num_wall_actions:
             if wall_sigma is None:
+                # Use a uniform distribution to sample wall actions.
                 wall_actions = random.sample(wall_actions, num_wall_actions)
             else:
+                # Weight walls based on their distance to the players.
                 position_1 = game.board.get_player_position(Player.ONE)
                 position_2 = game.board.get_player_position(Player.TWO)
-                wall_weights = [compute_wall_weight(wall, position_1, position_2, wall_sigma) for wall in wall_actions]
+                wall_weights = compute_wall_weights(wall_actions, position_1, position_2, wall_sigma)
                 wall_actions = np.random.choice(
                     wall_actions,
                     size=num_wall_actions,
@@ -106,27 +104,19 @@ def choose_action(
     actions = sample_actions(game, branching_factor, wall_sigma)
     assert len(actions) > 0, "There are no valid actions for the current player."
 
-    chosen_action = None
-    chosen_value = -float("inf") if game.get_current_player() == player else float("inf")
+    values = []
+    current_player_before_action = game.get_current_player()
+    position_before_action = game.board.get_player_position(current_player_before_action)
     for action in actions:
-        current_player_before_action = game.get_current_player()
-        position_before_action = game.board.get_player_position(current_player_before_action)
-
         # Apply the action to the game.
         game.step(action)
 
         # Recursively call this function to choose the next player's action.
         _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma, discount_factor)
+        if isinstance(action, WallAction):
+            value -= 1.0  # HACK
         value = discount_factor * value
-
-        if current_player_before_action == player:
-            if value >= chosen_value:
-                chosen_value = value
-                chosen_action = action
-        else:
-            if value <= chosen_value:
-                chosen_value = value
-                chosen_action = action
+        values.append(value)
 
         # Undo the action to put the game back to its original state.
         if isinstance(action, WallAction):
@@ -135,7 +125,19 @@ def choose_action(
             game.board.move_player(current_player_before_action, position_before_action)
         game.set_current_player(current_player_before_action)
 
-    return chosen_action, chosen_value
+    # "player" tries to maximize the reward, while "opponent" tries to minimize it.
+    values = np.array(values)
+    if current_player_before_action == player:
+        best_value = values.max()
+    else:
+        best_value = values.min()
+
+    best_action_indices = np.flatnonzero(values == best_value)
+    # There may be multiple actions with the same value, so we randomly choose one of them.
+    # chosen_action_index = np.random.choice(best_action_indices)
+    chosen_action_index = best_action_indices[-1]
+
+    return actions[chosen_action_index], values[chosen_action_index]
 
 
 class SimpleAgent(Agent):
