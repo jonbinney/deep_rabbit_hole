@@ -6,3 +6,6 @@ benchmark_B5W3:
 
 benchmark_B9W10:
   args: -t 100 --players greedy greedy:p_random=0.1,nick=greedy-ish dexp:wandb_alias=latest -r progressbar arenaresults eloresults computationtimes
+
+cuda_benchmark:
+  args: -t 50 --players simple simple:max_depth=3,branching_factor=30 cuda_minimax:max_depth=3,branching_factor=30 -r progressbar arenaresults eloresults computationtimes

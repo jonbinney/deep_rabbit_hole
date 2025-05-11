@@ -1,0 +1,8 @@
+agent_type: cuda_minimax
+agent_args:
+  max_depth: 3
+  branching_factor: 30
+  wall_sigma: 0.5
+  discount_factor: 0.99
+  cuda_batch_size: 128
+  use_cuda: true

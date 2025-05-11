@@ -179,3 +179,4 @@ wandbmodels
 runs
 deep_quoridor/td.sh
 deep_quoridor/tn.sh
+**/.claude/settings.local.json

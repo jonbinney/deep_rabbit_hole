@@ -3,6 +3,7 @@ __all__ = [
     "ActionLog",
     "Agent",
     "AgentRegistry",
+    "CudaMinimaxAgent",
     "DExpAgent",
     "FlatDQNAgent",
     "HumanAgent",
@@ -23,6 +24,7 @@ from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     ReplayBuffer,
     TrainableAgentParams,
 )
+from agents.cuda_minimax import CudaMinimaxAgent  # noqa: E402, F401
 from agents.dexp import DExpAgent  # noqa: E402
 from agents.flat_dqn import FlatDQNAgent  # noqa: E402
 from agents.greedy import GreedyAgent  # noqa: E402, F401
@@ -33,6 +35,7 @@ from agents.replay import ReplayAgent  # noqa: E402, F401
 from agents.sb3_ppo import SB3PPOAgent  # noqa: E402, F401
 from agents.simple import SimpleAgent  # noqa: E402, F401
 
+AgentRegistry.register("cuda_minimax", CudaMinimaxAgent)
 AgentRegistry.register("dexp", DExpAgent)
 AgentRegistry.register("dexp_mimic", DExpAgent.create_from_trained_instance)
 AgentRegistry.register("flatdqn", FlatDQNAgent)

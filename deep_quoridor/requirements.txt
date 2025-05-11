@@ -1,4 +1,8 @@
+nvidia-cuda-nvcc
+nvidia-cuda-nvrtc 
+nvidia-pyindex
 gymnasium
+numba
 numpy
 pettingzoo
 prettytable
