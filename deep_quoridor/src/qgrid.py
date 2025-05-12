@@ -48,7 +48,7 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
         # Down
         new_i = i + 2
         wall_i = i + 1
-        if new_i < grid_width and not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
+        if new_i < grid_height and not visited[new_i, j] and grid[wall_i, j] != CELL_WALL:
             visited[new_i, j] = True
             if target_i == new_i:
                 return steps + 1
@@ -66,7 +66,7 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
         # Right
         new_j = j + 2
         wall_j = j + 1
-        if new_j < grid_height and not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
+        if new_j < grid_width and not visited[i, new_j] and grid[i, wall_j] != CELL_WALL:
             visited[i, new_j] = True
             if target_i == i:
                 return steps + 1
@@ -111,21 +111,10 @@ def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orient
         )
 
 
+@njit
 def is_wall_potential_block(grid, start_row, start_col, orientation):
     grid_width = grid.shape[0]
     grid_height = grid.shape[1]
-
-    # potential_wall_neighbors = {
-    #   WallOrientation.VERTICAL: [
-    #       np.array([(-1, -1), (-2, 0), (-1, 1)]),
-    #       np.array([(1, -1), (1, 1)]),
-    #       np.array([(3, -1), (4, 0), (3, 1)]),
-    #   ],
-    #   WallOrientation.HORIZONTAL: [
-    #       np.array([(-1, -1), (0, -2), (1, -1)]),
-    #       np.array([(-1, 1), (1, 1)]),
-    #       np.array([(-1, 3), (0, 4), (1, 3)]),
-    #   ],
 
     if orientation == WALL_ORIENTATION_VERTICAL:
         start_i = start_row * 2 + 2
@@ -170,3 +159,80 @@ def is_wall_potential_block(grid, start_row, start_col, orientation):
         ):
             touches += 1
         return touches >= 2
+
+
+@njit
+def set_wall_cells(grid, start_row, start_col, orientation, value):
+    grid_width = grid.shape[0]
+    grid_height = grid.shape[1]
+
+    if orientation == WALL_ORIENTATION_VERTICAL:
+        start_i = start_row * 2 + 2
+        start_j = start_col * 2 + 3
+        assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
+
+        grid[start_i, start_j] = value
+        grid[start_i + 1, start_j] = value
+        grid[start_i + 2, start_j] = value
+    else:
+        start_i = start_row * 2 + 3
+        start_j = start_col * 2 + 2
+        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
+
+        grid[start_i, start_j] = value
+        grid[start_i, start_j + 1] = value
+        grid[start_i, start_j + 2] = value
+
+
+@njit
+def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
+    """
+    Return True iff all the grid cells for the wall equal the given value.
+    """
+    grid_width = grid.shape[0]
+    grid_height = grid.shape[1]
+
+    if wall_orientation == WALL_ORIENTATION_VERTICAL:
+        start_i = wall_position[0] * 2 + 2
+        start_j = wall_position[1] * 2 + 3
+        assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
+        return (
+            grid[start_i, start_j] == cell_value
+            and grid[start_i + 1, start_j] == cell_value
+            and grid[start_i + 2, start_j] == cell_value
+        )
+    else:
+        start_i = wall_position[0] * 2 + 3
+        start_j = wall_position[1] * 2 + 2
+        assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
+
+        return (
+            grid[start_i, start_j] == cell_value
+            and grid[start_i, start_j + 1] == cell_value
+            and grid[start_i, start_j + 2] == cell_value
+        )
+
+
+@njit
+def is_wall_action_valid(
+    grid, player_positions, walls_remaining, goal_rows, current_player, wall_position, wall_orientation
+):
+    is_valid = True
+    if walls_remaining[current_player] <= 0:
+        is_valid = False
+    elif not check_wall_cells(grid, wall_position, wall_orientation, CELL_FREE):
+        is_valid = False
+    elif is_wall_potential_block(grid, wall_position[0], wall_position[1], wall_orientation):
+        # Temprorarily add the wall.
+        set_wall_cells(grid, wall_position[0], wall_position[1], wall_orientation, CELL_WALL)
+
+        # Make sure all players still have some path to their goal row.
+        for i in range(len(player_positions)):
+            if distance_to_row(grid, player_positions[i][0], player_positions[i][1], goal_rows[i]) == -1:
+                is_valid = False
+                break
+
+        # Restore the grid to its previous state.
+        set_wall_cells(grid, wall_position[0], wall_position[1], wall_orientation, CELL_FREE)
+
+    return is_valid

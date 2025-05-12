@@ -117,8 +117,8 @@ class Board:
         self._old_style_walls = np.zeros((self.board_size - 1, self.board_size - 1, 2), dtype=np.int8)
 
         self._players = [Player.ONE, Player.TWO]
-        self._player_positions = [(0, self.board_size // 2), (self.board_size - 1, self.board_size // 2)]
-        self._walls_remaining = [self.max_walls, self.max_walls]
+        self._player_positions = np.array([(0, self.board_size // 2), (self.board_size - 1, self.board_size // 2)])
+        self._walls_remaining = np.array([self.max_walls, self.max_walls])
         for player, position in zip(self._players, self._player_positions):
             self.set_player_cell(position, player)
 
@@ -126,7 +126,7 @@ class Board:
         """
         Get the position of the player's pawn.
         """
-        return self._player_positions[player]
+        return tuple(self._player_positions[player])
 
     def move_player(self, player: Player, new_position: tuple[int, int]):
         """
@@ -269,7 +269,7 @@ class Quoridor:
         self.board = board
         self.current_player = current_player
 
-        self._goal_rows = {Player.ONE: self.board.board_size - 1, Player.TWO: 0}
+        self._goal_rows = np.array([self.board.board_size - 1, 0])
         self._jump_checks = create_jump_checks()
 
     def step(self, action: Action, validate: bool = True):
@@ -338,18 +338,15 @@ class Quoridor:
                 is_valid = False
 
         elif isinstance(action, WallAction):
-            if self.board.can_place_wall(player, action.position, action.orientation):
-                if self.board._is_wall_potential_block(action.position, action.orientation):
-                    # Temporarily place the wall so that we can check player paths to their goals.
-                    self.board.add_wall(self.current_player, action.position, action.orientation, check_if_valid=False)
-                    for p in [Player.ONE, Player.TWO]:
-                        if not self.can_reach(self.board.get_player_position(p), self.get_goal_row(p)):
-                            is_valid = False
-                            break
-                    # Restore the board to its previous state
-                    self.board.remove_wall(self.current_player, action.position, action.orientation)
-            else:
-                is_valid = False
+            is_valid = qgrid.is_wall_action_valid(
+                self.board._grid,
+                self.board._player_positions,
+                self.board._walls_remaining,
+                self._goal_rows,
+                int(self.current_player),
+                np.array(action.position),
+                int(action.orientation),
+            )
         else:
             raise ValueError("Invalid action type")
 
@@ -525,3 +522,7 @@ if __name__ == "__main__":
     game.step(WallAction((0, 4), WallOrientation.HORIZONTAL))
     game.step(WallAction((4, 2), WallOrientation.VERTICAL))
     print(str(game))
+
+    jump_checks = create_jump_checks()
+    for key, value in jump_checks.items():
+        print(f"{key}: {value}")
