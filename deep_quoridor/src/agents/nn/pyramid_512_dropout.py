@@ -1,3 +1,5 @@
+import numpy as np
+import torch
 import torch.nn as nn
 from utils.misc import my_device
 
@@ -43,3 +45,13 @@ class P512DropoutNetwork(nn.Module):
     @classmethod
     def id(cls):
         return "p512do"
+
+    def observation_to_tensor(self, observation):
+        """Convert the observation dict to a tensor required by the Network."""
+        flat_obs = []
+        for key, value in observation.items():
+            if isinstance(value, np.ndarray):
+                flat_obs.extend(value.flatten())
+            else:
+                flat_obs.append(value)
+        return torch.FloatTensor(flat_obs).to(my_device())

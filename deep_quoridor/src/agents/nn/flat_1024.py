@@ -1,3 +1,5 @@
+import numpy as np
+import torch
 import torch.nn as nn
 from utils.misc import my_device
 
@@ -41,3 +43,13 @@ class Flat1024Network(nn.Module):
     @classmethod
     def id(cls):
         return "flat1024"
+
+    def observation_to_tensor(self, observation):
+        """Convert the observation dict to a tensor required by the network."""
+        flat_obs = []
+        for key, value in observation.items():
+            if isinstance(value, np.ndarray):
+                flat_obs.extend(value.flatten())
+            else:
+                flat_obs.append(value)
+        return torch.FloatTensor(flat_obs).to(my_device())

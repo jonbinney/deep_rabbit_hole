@@ -27,9 +27,9 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         self.agents = [agent1, agent2]
 
     def end_game(self, game, result):
-        if self.episode_count % self.update_every == 0 and self.episode_count > 0:
-            self._save_models(f"{self.run_id}_episode_{self.episode_count}")
         self.episode_count += 1
+        if self.episode_count % self.update_every == 0:
+            self._save_models(f"{self.run_id}_episode_{self.episode_count}")
 
     def end_arena(self, game, results):
         if self.save_final:

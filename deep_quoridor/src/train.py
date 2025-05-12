@@ -92,6 +92,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
 
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help="Use cProfile to profile the game.",
+    )
+
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
@@ -115,15 +122,23 @@ if __name__ == "__main__":
     # Set random seed for reproducibility
     set_deterministic(args.seed)
 
-    train_dqn(
-        episodes=args.episodes,
-        board_size=args.board_size,
-        max_walls=args.max_walls,
-        save_frequency=args.save_frequency,
-        step_rewards=args.step_rewards,
-        players=args.players,
-        renderers=renderers,
-        wandb_params=wandb_params,
-    )
+    if args.profile:
+        import cProfile
+
+        cProfile.run(
+            "train_dqn( episodes=args.episodes, board_size=args.board_size, max_walls=args.max_walls, save_frequency=args.save_frequency, step_rewards=args.step_rewards, players=args.players, renderers=renderers, wandb_params=wandb_params)",
+            sort="tottime",
+        )
+    else:
+        train_dqn(
+            episodes=args.episodes,
+            board_size=args.board_size,
+            max_walls=args.max_walls,
+            save_frequency=args.save_frequency,
+            step_rewards=args.step_rewards,
+            players=args.players,
+            renderers=renderers,
+            wandb_params=wandb_params,
+        )
 
     print("Training completed!")

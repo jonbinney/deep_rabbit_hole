@@ -1,10 +1,11 @@
 import numpy as np
-import torch
 from gymnasium import Space, spaces
 from utils.misc import get_opponent_player_id
 
 from agents.core import AbstractTrainableAgent
 from agents.core.trainable_agent import TrainableAgentParams
+from agents.nn.cnn_v1 import CnnV1Network
+from agents.nn.cnn_v2 import CnnV2Network
 from agents.nn.flat_1024 import Flat1024Network
 from agents.nn.pyramid_512_dropout import P512DropoutNetwork
 
@@ -53,11 +54,18 @@ class AdaptableAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        if self.params.nn_version == Flat1024Network.id():
-            return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
-        elif self.params.nn_version == P512DropoutNetwork.id():
-            return P512DropoutNetwork(self._calculate_observation_size(), self._calculate_action_size())
-        # Default network
+        if self.params.nn_version is not None:
+            if self.params.nn_version == Flat1024Network.id():
+                return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
+            elif self.params.nn_version == P512DropoutNetwork.id():
+                return P512DropoutNetwork(self._calculate_observation_size(), self._calculate_action_size())
+            elif self.params.nn_version == CnnV1Network.id():
+                return CnnV1Network(self._calculate_observation_size(), self._calculate_action_size())
+            elif self.params.nn_version == CnnV2Network.id():
+                return CnnV2Network(self._calculate_observation_size(), self._calculate_action_size())
+            else:
+                raise RuntimeError(f"Unknown nn: {self.params.nn_version}")
+            # Default network
         return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
 
     def handle_opponent_step_outcome(
@@ -83,11 +91,4 @@ class AdaptableAgent(AbstractTrainableAgent):
         )
 
     def _observation_to_tensor(self, observation, obs_player_id):
-        """Convert the observation dict to a flat tensor."""
-        flat_obs = []
-        for key, value in observation.items():
-            if isinstance(value, np.ndarray):
-                flat_obs.extend(value.flatten())
-            else:
-                flat_obs.append(value)
-        return torch.FloatTensor(flat_obs).to(self.device)
+        return self.online_network.observation_to_tensor(observation)

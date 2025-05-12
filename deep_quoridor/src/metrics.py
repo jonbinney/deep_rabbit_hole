@@ -59,13 +59,15 @@ class Metrics:
         """
         # Bump if there's any change in the scoring
         VERSION = 1
-        times = 50
+        times = 20
 
         players: list[str | Agent] = [
             "greedy",
             "greedy:p_random=0.1,nick=greedy-01",
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
+            "dexp:wandb_alias=best",
+            "simple",
         ]
 
         agent = AgentRegistry.create_from_encoded_name(

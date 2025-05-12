@@ -298,14 +298,12 @@ class AbstractTrainableAgent(TrainableAgent):
         # Ideally for off policy training we could collect all moves and all the information
         # store it and use it for training without running "matches" every time.
         self.replay_buffer.add(
-            state_before_action.cpu().numpy(),
+            state_before_action,
             self._convert_to_tensor_index_from_action(action, agent_id),
             reward,
-            state_after_action.cpu().numpy()
-            if state_after_action is not None
-            else np.zeros_like(state_before_action.cpu().numpy()),
+            state_after_action if state_after_action is not None else np.zeros_like(state_before_action.cpu().numpy()),
             float(done),
-            np.zeros_like(1) if next_state_mask is None else next_state_mask.cpu().numpy(),
+            np.zeros_like(1) if next_state_mask is None else next_state_mask,
         )
 
         if len(self.replay_buffer) > self.batch_size:
@@ -409,9 +407,9 @@ class AbstractTrainableAgent(TrainableAgent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(q_values)
 
-        if self.training_mode and self.params.softmax_exploration:
+        if self.training_mode and self.params.softmax_exploration and random.random() < 0.1:
             # Apply softmax to the Q-values to get action probabilities
-            q_values = q_values.detach().cpu().numpy()
+            q_values = q_values.squeeze().detach().cpu().numpy()
             exp_q_values = np.exp(q_values)
             probabilities = exp_q_values / np.sum(exp_q_values)
             # Select an action based on the probabilities
@@ -471,10 +469,8 @@ class AbstractTrainableAgent(TrainableAgent):
         """Prepare batch data for training."""
         states, actions, rewards, next_states, dones, next_state_masks = zip(*batch)
 
-        states = torch.stack([torch.FloatTensor(s) for s in states]).to(self.device)
         actions = torch.LongTensor(actions).to(self.device).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.stack([torch.FloatTensor(s) for s in next_states]).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
         next_state_masks = torch.stack([torch.FloatTensor(s) for s in next_state_masks]).to(self.device)
 

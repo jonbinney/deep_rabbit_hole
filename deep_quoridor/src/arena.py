@@ -1,4 +1,3 @@
-import random
 import time
 from enum import Enum
 from threading import Thread
@@ -107,10 +106,11 @@ class Arena:
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
+                print(self.game.render())
                 break
 
         end_time = time.time()
-
+        # print(self.game.render())
         winner = self.game.winner()
         result = GameResult(
             player1=agent1.name(),
@@ -172,8 +172,8 @@ class Arena:
             remaining_agents = agents[1:]
 
             for _ in range(times):
-                for _ in range(len(remaining_agents)):
-                    opponent = random.choice(remaining_agents)
+                for i in range(len(remaining_agents)):
+                    opponent = remaining_agents[i]
                     agent_1, agent_2 = (
                         (first_agent, opponent)
                         if not self.swap_players or match_id % 2 == 0
