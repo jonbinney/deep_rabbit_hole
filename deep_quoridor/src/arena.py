@@ -173,16 +173,16 @@ class Arena:
 
             for _ in range(times):
                 for i in range(len(remaining_agents)):
-                    opponent = remaining_agents[i]
-                    agent_1, agent_2 = (
-                        (first_agent, opponent)
-                        if not self.swap_players or match_id % 2 == 0
-                        else (opponent, first_agent)
-                    )
-                    result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
-                    results.append(result)
-                    match_id += 1
-
+                    if match_id < 6801:
+                        opponent = remaining_agents[i]
+                        agent_1, agent_2 = (
+                            (first_agent, opponent)
+                            if not self.swap_players or match_id % 2 == 0
+                            else (opponent, first_agent)
+                        )
+                        result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                        results.append(result)
+                        match_id += 1
         self.plugins.end_arena(self.game, results)
         return results
 
