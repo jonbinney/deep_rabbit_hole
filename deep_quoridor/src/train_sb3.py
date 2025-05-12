@@ -163,12 +163,11 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
     )
 
     opponents_config = [
-        # {"agent": "random", "rollouts": 40},
-        # {"agent": "greedy:p_random=0.7", "rollouts": 200},
-        # {"agent": "greedy:p_random=0.5", "rollouts": 200},
-        # {"agent": "greedy:p_random=0.4", "rollouts": 200},
-        {"agent": "greedy:p_random=0.3", "rollouts": 40},
-        {"agent": "greedy", "rollouts": 40},
+        {"agent": "greedy:p_random=0.3", "rollouts": 100},
+        {"agent": "dexp:wandb_alias=best", "rollouts": 100},
+        {"agent": "greedy:p_random=0.3", "rollouts": 100},
+        {"agent": "simple", "rollouts": 100},
+        {"agent": "greedy:p_random=0.3", "rollouts": 100},
     ]
 
     total_timesteps = sum(opponent["rollouts"] for opponent in opponents_config) * steps_per_rollout
