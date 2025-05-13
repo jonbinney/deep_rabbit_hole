@@ -113,8 +113,6 @@ def choose_action(
 
         # Recursively call this function to choose the next player's action.
         _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma, discount_factor)
-        if isinstance(action, WallAction):
-            value -= 1.0  # HACK
         value = discount_factor * value
         values.append(value)
 

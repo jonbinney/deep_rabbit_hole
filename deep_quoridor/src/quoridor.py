@@ -297,45 +297,16 @@ class Quoridor:
         Check whether the given action is valid given the current game state.
         """
         if for_player is None:
-            player = self.get_current_player()
-        else:
-            player = for_player
-        opponent = Player(1 - player)
+            for_player = self.get_current_player()
 
         is_valid = True
         if isinstance(action, MoveAction):
-            current_position = self.board.get_player_position(player)
-            opponent_position = self.board.get_player_position(opponent)
-            opponent_offset = (opponent_position[0] - current_position[0], opponent_position[1] - current_position[1])
-            position_delta = (action.destination[0] - current_position[0], action.destination[1] - current_position[1])
-
-            # Destination cell must be free
-            if self.board.get_player_cell(action.destination) != Board.FREE:
-                is_valid = False
-
-            elif np.sum(np.abs(position_delta)) == 1:
-                # Moving to an adjacent cell, just make sure no wall is in the way.
-                if self.board.is_wall_between(current_position, action.destination):
-                    is_valid = False
-
-            elif (opponent_offset, position_delta) in self._jump_checks:
-                jump_checks = self._jump_checks[(opponent_offset, position_delta)]
-
-                for check_delta_1, check_delta_2 in jump_checks["wall"]:
-                    if not self.board.is_wall_between(
-                        (current_position[0] + check_delta_1[0], current_position[1] + check_delta_1[1]),
-                        (current_position[0] + check_delta_2[0], current_position[1] + check_delta_2[1]),
-                    ):
-                        is_valid = False
-                for check_delta_1, check_delta_2 in jump_checks["nowall"]:
-                    if self.board.is_wall_between(
-                        (current_position[0] + check_delta_1[0], current_position[1] + check_delta_1[1]),
-                        (current_position[0] + check_delta_2[0], current_position[1] + check_delta_2[1]),
-                    ):
-                        is_valid = False
-            else:
-                # This isn't a move by 1, and it isn't a jump, so it's invalid.
-                is_valid = False
+            return qgrid.is_move_action_valid(
+                self.board._grid,
+                self.board._player_positions,
+                int(for_player),
+                np.array(action.destination),
+            )
 
         elif isinstance(action, WallAction):
             is_valid = qgrid.is_wall_action_valid(
@@ -343,7 +314,7 @@ class Quoridor:
                 self.board._player_positions,
                 self.board._walls_remaining,
                 self._goal_rows,
-                int(self.current_player),
+                int(for_player),
                 np.array(action.position),
                 int(action.orientation),
             )

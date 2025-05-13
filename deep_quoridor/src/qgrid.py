@@ -25,8 +25,9 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
     Returns:
         int: Number of steps to reach the target or -1 if it's unreachable
     """
-    grid_width = grid.shape[0]
-    grid_height = grid.shape[1]
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
+
     start_i = start_row * 2 + 2
     start_j = start_col * 2 + 2
     target_i = target_row * 2 + 2
@@ -86,8 +87,8 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
 
 @njit
 def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orientation: int) -> bool:
-    grid_width = grid.shape[0]
-    grid_height = grid.shape[1]
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
 
     if orientation == WALL_ORIENTATION_VERTICAL:
         start_i = start_row * 2 + 2
@@ -113,8 +114,8 @@ def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orient
 
 @njit
 def is_wall_potential_block(grid, start_row, start_col, orientation):
-    grid_width = grid.shape[0]
-    grid_height = grid.shape[1]
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
 
     if orientation == WALL_ORIENTATION_VERTICAL:
         start_i = start_row * 2 + 2
@@ -163,8 +164,8 @@ def is_wall_potential_block(grid, start_row, start_col, orientation):
 
 @njit
 def set_wall_cells(grid, start_row, start_col, orientation, value):
-    grid_width = grid.shape[0]
-    grid_height = grid.shape[1]
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
 
     if orientation == WALL_ORIENTATION_VERTICAL:
         start_i = start_row * 2 + 2
@@ -189,8 +190,8 @@ def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
     """
     Return True iff all the grid cells for the wall equal the given value.
     """
-    grid_width = grid.shape[0]
-    grid_height = grid.shape[1]
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
 
     if wall_orientation == WALL_ORIENTATION_VERTICAL:
         start_i = wall_position[0] * 2 + 2
@@ -211,6 +212,112 @@ def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
             and grid[start_i, start_j + 1] == cell_value
             and grid[start_i, start_j + 2] == cell_value
         )
+
+
+@njit
+def is_move_action_valid(grid, player_positions, current_player, destination):
+    grid_height = grid.shape[0]
+    grid_width = grid.shape[1]
+
+    player_i = player_positions[current_player][0] * 2 + 2
+    player_j = player_positions[current_player][1] * 2 + 2
+    destination_i = destination[0] * 2 + 2
+    destination_j = destination[1] * 2 + 2
+    opponent = 1 - current_player
+
+    # This suffices for bounds cheking, since the grid cells we check for a move are always between the player its destination.
+    assert player_i >= 0 and player_i < grid_height and player_j >= 0 and player_j < grid_width
+    if destination_i < 0 or destination_i >= grid_height or destination_j < 0 or destination_j >= grid_width:
+        return False
+
+    if grid[destination_i, destination_j] != CELL_FREE:
+        return False
+
+    delta_i = destination_i - player_i
+    delta_j = destination_j - player_j
+    if delta_i == 2 and delta_j == 0:
+        return grid[player_i + 1, player_j] == CELL_FREE
+    elif delta_i == -2 and delta_j == 0:
+        return grid[player_i - 1, player_j] == CELL_FREE
+    elif delta_i == 0 and delta_j == 2:
+        return grid[player_i, player_j + 1] == CELL_FREE
+    elif delta_i == 0 and delta_j == -2:
+        return grid[player_i, player_j - 1] == CELL_FREE
+    elif delta_i == 4 and delta_j == 0:
+        return (
+            grid[player_i + 1, player_j] == CELL_FREE
+            and grid[player_i + 2, player_j] == opponent
+            and grid[player_i + 3, player_j] == CELL_FREE
+        )
+    elif delta_i == -4 and delta_j == 0:
+        return (
+            grid[player_i - 1, player_j] == CELL_FREE
+            and grid[player_i - 2, player_j] == opponent
+            and grid[player_i - 3, player_j] == CELL_FREE
+        )
+    elif delta_i == 0 and delta_j == 4:
+        pass
+        return (
+            grid[player_i, player_j + 1] == CELL_FREE
+            and grid[player_i, player_j + 2] == opponent
+            and grid[player_i, player_j + 3] == CELL_FREE
+        )
+    elif delta_i == 0 and delta_j == -4:
+        return (
+            grid[player_i, player_j - 1] == CELL_FREE
+            and grid[player_i, player_j - 2] == opponent
+            and grid[player_i, player_j - 3] == CELL_FREE
+        )
+    elif delta_i == 2 and delta_j == 2:
+        return (
+            grid[player_i + 1, player_j] == CELL_FREE
+            and grid[player_i + 2, player_j] == opponent
+            and grid[player_i + 2, player_j + 1] == CELL_FREE
+            and grid[player_i + 3, player_j] == CELL_WALL  # Wall behind opponent
+        ) or (
+            grid[player_i, player_j + 1] == CELL_FREE
+            and grid[player_i, player_j + 2] == opponent
+            and grid[player_i + 1, player_j + 2] == CELL_FREE
+            and grid[player_i, player_j + 3] == CELL_WALL  # Wall behind opponent
+        )
+    elif delta_i == -2 and delta_j == 2:
+        return (
+            grid[player_i - 1, player_j] == CELL_FREE
+            and grid[player_i - 2, player_j] == opponent
+            and grid[player_i - 2, player_j + 1] == CELL_FREE
+            and grid[player_i - 3, player_j] == CELL_WALL  # Wall behind opponent
+        ) or (
+            grid[player_i, player_j + 1] == CELL_FREE
+            and grid[player_i, player_j + 2] == opponent
+            and grid[player_i - 1, player_j + 2] == CELL_FREE
+            and grid[player_i, player_j + 3] == CELL_WALL  # Wall behind opponent
+        )
+    elif delta_i == 2 and delta_j == -2:
+        return (
+            grid[player_i + 1, player_j] == CELL_FREE
+            and grid[player_i + 2, player_j] == opponent
+            and grid[player_i + 2, player_j - 1] == CELL_FREE
+            and grid[player_i + 3, player_j] == CELL_WALL  # Wall behind opponent
+        ) or (
+            grid[player_i, player_j - 1] == CELL_FREE
+            and grid[player_i, player_j - 2] == opponent
+            and grid[player_i + 1, player_j - 2] == CELL_FREE
+            and grid[player_i, player_j - 3] == CELL_WALL  # Wall behind opponent
+        )
+    elif delta_i == -2 and delta_j == -2:
+        return (
+            grid[player_i - 1, player_j] == CELL_FREE
+            and grid[player_i - 2, player_j] == opponent
+            and grid[player_i - 2, player_j - 1] == CELL_FREE
+            and grid[player_i - 3, player_j] == CELL_WALL  # Wall behind opponent
+        ) or (
+            grid[player_i, player_j - 1] == CELL_FREE
+            and grid[player_i, player_j - 2] == opponent
+            and grid[player_i - 1, player_j - 2] == CELL_FREE
+            and grid[player_i, player_j - 3] == CELL_WALL  # Wall behind opponent
+        )
+    else:
+        return False
 
 
 @njit
