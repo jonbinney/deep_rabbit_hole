@@ -86,13 +86,13 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
 
 
 @njit
-def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orientation: int) -> bool:
+def are_wall_cells_free(grid: np.ndarray, wall_row: int, wall_col: int, wall_orientation: int) -> bool:
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
 
-    if orientation == WALL_ORIENTATION_VERTICAL:
-        start_i = start_row * 2 + 2
-        start_j = start_col * 2 + 3
+    if wall_orientation == WALL_ORIENTATION_VERTICAL:
+        start_i = wall_row * 2 + 2
+        start_j = wall_col * 2 + 3
         assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
 
         return (
@@ -101,8 +101,8 @@ def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orient
             and grid[start_i + 2, start_j] == CELL_FREE
         )
     else:
-        start_i = start_row * 2 + 3
-        start_j = start_col * 2 + 2
+        start_i = wall_row * 2 + 3
+        start_j = wall_col * 2 + 2
         assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
         return (
@@ -113,13 +113,13 @@ def are_wall_cells_free(grid: np.ndarray, start_row: int, start_col: int, orient
 
 
 @njit
-def is_wall_potential_block(grid, start_row, start_col, orientation):
+def is_wall_potential_block(grid, wall_row, wall_col, wall_orientation):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
 
-    if orientation == WALL_ORIENTATION_VERTICAL:
-        start_i = start_row * 2 + 2
-        start_j = start_col * 2 + 3
+    if wall_orientation == WALL_ORIENTATION_VERTICAL:
+        start_i = wall_row * 2 + 2
+        start_j = wall_col * 2 + 3
         assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
 
         touches = 0
@@ -140,8 +140,8 @@ def is_wall_potential_block(grid, start_row, start_col, orientation):
         return touches >= 2
 
     else:  # HORIZONTAL
-        start_i = start_row * 2 + 3
-        start_j = start_col * 2 + 2
+        start_i = wall_row * 2 + 3
+        start_j = wall_col * 2 + 2
         assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
         touches = 0
@@ -163,30 +163,30 @@ def is_wall_potential_block(grid, start_row, start_col, orientation):
 
 
 @njit
-def set_wall_cells(grid, start_row, start_col, orientation, value):
+def set_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
 
-    if orientation == WALL_ORIENTATION_VERTICAL:
-        start_i = start_row * 2 + 2
-        start_j = start_col * 2 + 3
+    if wall_orientation == WALL_ORIENTATION_VERTICAL:
+        start_i = wall_row * 2 + 2
+        start_j = wall_col * 2 + 3
         assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
 
-        grid[start_i, start_j] = value
-        grid[start_i + 1, start_j] = value
-        grid[start_i + 2, start_j] = value
+        grid[start_i, start_j] = cell_value
+        grid[start_i + 1, start_j] = cell_value
+        grid[start_i + 2, start_j] = cell_value
     else:
-        start_i = start_row * 2 + 3
-        start_j = start_col * 2 + 2
+        start_i = wall_row * 2 + 3
+        start_j = wall_col * 2 + 2
         assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
-        grid[start_i, start_j] = value
-        grid[start_i, start_j + 1] = value
-        grid[start_i, start_j + 2] = value
+        grid[start_i, start_j] = cell_value
+        grid[start_i, start_j + 1] = cell_value
+        grid[start_i, start_j + 2] = cell_value
 
 
 @njit
-def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
+def check_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
     """
     Return True iff all the grid cells for the wall equal the given value.
     """
@@ -194,8 +194,8 @@ def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
     grid_width = grid.shape[1]
 
     if wall_orientation == WALL_ORIENTATION_VERTICAL:
-        start_i = wall_position[0] * 2 + 2
-        start_j = wall_position[1] * 2 + 3
+        start_i = wall_row * 2 + 2
+        start_j = wall_col * 2 + 3
         assert start_i >= 0 and start_i + 2 < grid_height and start_j >= 0 and start_j < grid_width
         return (
             grid[start_i, start_j] == cell_value
@@ -203,8 +203,8 @@ def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
             and grid[start_i + 2, start_j] == cell_value
         )
     else:
-        start_i = wall_position[0] * 2 + 3
-        start_j = wall_position[1] * 2 + 2
+        start_i = wall_row * 2 + 3
+        start_j = wall_col * 2 + 2
         assert start_i >= 0 and start_i < grid_height and start_j >= 0 and start_j + 2 < grid_width
 
         return (
@@ -215,14 +215,14 @@ def check_wall_cells(grid, wall_position, wall_orientation, cell_value):
 
 
 @njit
-def is_move_action_valid(grid, player_positions, current_player, destination):
+def is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
 
     player_i = player_positions[current_player][0] * 2 + 2
     player_j = player_positions[current_player][1] * 2 + 2
-    destination_i = destination[0] * 2 + 2
-    destination_j = destination[1] * 2 + 2
+    destination_i = destination_row * 2 + 2
+    destination_j = destination_col * 2 + 2
     opponent = 1 - current_player
 
     # This suffices for bounds cheking, since the grid cells we check for a move are always between the player its destination.
@@ -322,16 +322,16 @@ def is_move_action_valid(grid, player_positions, current_player, destination):
 
 @njit
 def is_wall_action_valid(
-    grid, player_positions, walls_remaining, goal_rows, current_player, wall_position, wall_orientation
+    grid, player_positions, walls_remaining, goal_rows, current_player, wall_row, wall_col, wall_orientation
 ):
     is_valid = True
     if walls_remaining[current_player] <= 0:
         is_valid = False
-    elif not check_wall_cells(grid, wall_position, wall_orientation, CELL_FREE):
+    elif not check_wall_cells(grid, wall_row, wall_col, wall_orientation, CELL_FREE):
         is_valid = False
-    elif is_wall_potential_block(grid, wall_position[0], wall_position[1], wall_orientation):
+    elif is_wall_potential_block(grid, wall_row, wall_col, wall_orientation):
         # Temprorarily add the wall.
-        set_wall_cells(grid, wall_position[0], wall_position[1], wall_orientation, CELL_WALL)
+        set_wall_cells(grid, wall_row, wall_col, wall_orientation, CELL_WALL)
 
         # Make sure all players still have some path to their goal row.
         for i in range(len(player_positions)):
@@ -340,6 +340,76 @@ def is_wall_action_valid(
                 break
 
         # Restore the grid to its previous state.
-        set_wall_cells(grid, wall_position[0], wall_position[1], wall_orientation, CELL_FREE)
+        set_wall_cells(grid, wall_row, wall_col, wall_orientation, CELL_FREE)
 
     return is_valid
+
+
+@njit
+def compute_move_action_mask(
+    grid: np.ndarray,
+    player_positions: np.ndarray,
+    current_player: int,
+    action_mask: np.ndarray,
+) -> np.ndarray:
+    grid_width = grid.shape[1]
+    board_size = (grid_width - 4) // 2 + 1
+
+    assert action_mask.shape == (board_size**2,)
+
+    for k in range(len(action_mask)):
+        action_mask[k] = 0
+
+    # Check all possible moves
+    for row in np.arange(-2, 3):
+        for col in np.arange(-2, 3):
+            if is_move_action_valid(grid, player_positions, current_player, row, col):
+                action_mask[col * board_size + row] = 1
+
+    return action_mask
+
+
+@njit
+def compute_wall_action_mask(
+    grid: np.ndarray,
+    player_positions: np.ndarray,
+    walls_remaining: np.ndarray,
+    goal_rows: np.ndarray,
+    current_player: int,
+    action_mask: np.ndarray,
+) -> np.ndarray:
+    grid_width = grid.shape[1]
+    board_size = (grid_width - 4) // 2 + 1
+    wall_size = board_size - 1
+
+    assert action_mask.shape == (2 * wall_size**2,)
+
+    for k in range(len(action_mask)):
+        action_mask[k] = 0
+
+    for wall_row in range(wall_size):
+        for wall_col in range(wall_size):
+            if is_wall_action_valid(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                wall_row,
+                wall_col,
+                WALL_ORIENTATION_VERTICAL,
+            ):
+                action_mask[wall_row * wall_size + wall_row] = 1
+            if is_wall_action_valid(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                wall_row,
+                wall_col,
+                WALL_ORIENTATION_HORIZONTAL,
+            ):
+                action_mask[wall_row * wall_size + wall_col] = 1
+
+    return action_mask

@@ -305,7 +305,8 @@ class Quoridor:
                 self.board._grid,
                 self.board._player_positions,
                 int(for_player),
-                np.array(action.destination),
+                action.destination[0],
+                action.destination[1],
             )
 
         elif isinstance(action, WallAction):
@@ -315,7 +316,8 @@ class Quoridor:
                 self.board._walls_remaining,
                 self._goal_rows,
                 int(for_player),
-                np.array(action.position),
+                action.position[0],
+                action.position[1],
                 int(action.orientation),
             )
         else:
