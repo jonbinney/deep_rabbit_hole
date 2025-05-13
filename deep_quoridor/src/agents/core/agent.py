@@ -120,25 +120,29 @@ class AgentRegistry:
 
     @staticmethod
     def create_from_encoded_name(
-        encoded_name: str, remove_training_args=False, keep_args: set[str] = {}, **kwargs
+        encoded_name: str, env, remove_training_args=False, keep_args: set[str] = set(), **kwargs
     ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
-        if len(parts) == 1:
-            # No subarguments passed
-            return AgentRegistry.agents[agent_type](**kwargs)
+        if len(parts) == 2:
+            subargs_class = AgentRegistry.agents[agent_type].params_class()
+            if subargs_class is None:
+                raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
-        subargs_class = AgentRegistry.agents[agent_type].params_class()
-        if subargs_class is None:
-            raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
+            if remove_training_args:
+                args_to_remove = subargs_class.training_only_params().difference(keep_args)
+                subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
+            else:
+                subargs = parse_subargs(parts[1], subargs_class)
+            kwargs["params"] = subargs
 
-        if remove_training_args:
-            args_to_remove = subargs_class.training_only_params().difference(keep_args)
-            subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
-        else:
-            subargs = parse_subargs(parts[1], subargs_class)
-
-        return AgentRegistry.agents[agent_type](params=subargs, **kwargs)
+        return AgentRegistry.agents[agent_type](
+            board_size=env.board_size,
+            max_walls=env.max_walls,
+            observation_space=env.observation_space(None),
+            action_space=env.action_space(None),
+            **kwargs,
+        )
 
     @staticmethod
     def is_valid_encoded_name(encoded_name: str):

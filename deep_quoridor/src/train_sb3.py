@@ -43,12 +43,11 @@ def mask_fn(env):
 
 
 class SwapPlayerCallback(BaseCallback):
-    def __init__(self, env, monitor, opponents_config, opponents_kwargs):
+    def __init__(self, env, monitor, opponents_config):
         super().__init__()
         self.env = env
         self.current_player = "player_0"
         self.opponents_config = opponents_config
-        self.oppponents_kwargs = opponents_kwargs
         self.current_opponent = None
         self.current_opponent_rollouts_left = 0
         self.monitor = monitor
@@ -62,7 +61,7 @@ class SwapPlayerCallback(BaseCallback):
                 next_opponent = self.opponents_config.pop(0)
                 self.current_opponent = next_opponent
                 self.current_opponent_rollouts_left = next_opponent["rollouts"]
-                self.opponent = AgentRegistry.create_from_encoded_name(next_opponent["agent"], **self.oppponents_kwargs)
+                self.opponent = AgentRegistry.create_from_encoded_name(next_opponent["agent"], self.env)
                 self.env.set_opponent(self.opponent)
                 self.env.set_player("player_0")
         print(
@@ -172,7 +171,7 @@ def train_action_mask(env_fn, steps=10_000, seed=0, upload_to_wandb=False, train
 
     total_timesteps = sum(opponent["rollouts"] for opponent in opponents_config) * steps_per_rollout
 
-    swap_player_callback = SwapPlayerCallback(env, masked_env, opponents_config, env_kwargs)
+    swap_player_callback = SwapPlayerCallback(env, masked_env, opponents_config)
 
     # Play as player 1
     model.learn(
@@ -350,7 +349,7 @@ if __name__ == "__main__":
 
     opponent = None
     if args.opponent is not None:
-        opponent = AgentRegistry.create_from_encoded_name(args.opponent, **env_kwargs)
+        opponent = AgentRegistry.create_from_encoded_name(args.opponent, temp_env)
 
     env_fn = make_env_fn(quoridor_env.env, opponent=opponent, rewards_multiplier=args.rewards_multiplier)
 
