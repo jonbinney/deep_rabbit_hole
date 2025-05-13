@@ -54,7 +54,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
-        self.metrics = Metrics(game.board_size, game.max_walls, game.observation_space(None), game.action_space(None))
+        self.metrics = Metrics(game.board_size, game.max_walls)
 
         self.run = wandb.init(
             project=self.params.project,
