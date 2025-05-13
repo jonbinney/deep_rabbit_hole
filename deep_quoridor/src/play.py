@@ -2,9 +2,7 @@ import argparse
 
 from agents import AgentRegistry
 from arena import Arena
-from metrics import Metrics
 from plugins.arena_yaml_recorder import ArenaYAMLRecorder
-from prettytable import PrettyTable
 from renderers import Renderer
 from utils import set_deterministic, yargs
 
@@ -78,27 +76,8 @@ if __name__ == "__main__":
         default=False,
         help="Use cProfile to profile the game.",
     )
-    parser.add_argument(
-        "--metrics",
-        action="store_true",
-        default=False,
-        help="Compute the metrics for the players passed to --players",
-    )
 
     args_dict = yargs(parser, "yargs/play")
-    if len(args_dict) == 1 and list(args_dict.values())[0].metrics:
-        args = list(args_dict.values())[0]
-        m = Metrics(args.board_size, args.max_walls)
-        table = PrettyTable()
-        table.field_names = ["Agent", "Elo", "Relative Elo", "Win %"]
-
-        for player in args.players:
-            print(f"Computing metrics for {player}")
-            _, _, relative_elo, win_perc, absolute_elo = m.compute(player)
-            table.add_row([player, absolute_elo, relative_elo, win_perc])
-
-        print(table)
-        exit(1)
 
     for id, args in args_dict.items():
         if id:
