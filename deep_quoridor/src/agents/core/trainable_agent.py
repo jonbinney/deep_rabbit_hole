@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -592,6 +593,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if os.path.exists(local_filename):
             return local_filename
 
+        os.makedirs(local_filename.parent, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmpdir:
             artifact_dir = artifact.download(root=tmpdir)
 
@@ -600,6 +602,6 @@ class AbstractTrainableAgent(TrainableAgent):
             if tmp_filename is None:
                 raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 
-            os.rename(tmp_filename, local_filename)
+            shutil.copyfile(tmp_filename, local_filename)
 
             print(f"Model downloaded from wandb to {local_filename}")
