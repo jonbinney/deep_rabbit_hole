@@ -207,7 +207,8 @@ class AbstractTrainableAgent(TrainableAgent):
         self.replay_buffer = ReplayBuffer(capacity=(self.params.buffer_size if self.training_mode else 1))
         self.games_count = 0
         self.episodes_rewards = []
-        self.train_call_losses = []
+        self.episodes_losses = []
+        self.current_episode_losses = []
         self._reset_episode_related_info()
         self._resolve_and_load_model()
 
@@ -216,6 +217,7 @@ class AbstractTrainableAgent(TrainableAgent):
 
     def _reset_episode_related_info(self):
         self.current_episode_reward = 0
+        self.current_episode_losses = []
         self.player_id = None
         self.steps = 0
 
@@ -228,6 +230,12 @@ class AbstractTrainableAgent(TrainableAgent):
         self.games_count += 1
         if not self.training_mode:
             return
+
+        if self.current_episode_losses:
+            losses = [loss.item() for loss in self.current_episode_losses]
+            mean_loss = sum(losses) / len(losses)
+            self.episodes_losses.append(mean_loss)
+
         self.episodes_rewards.append(self.current_episode_reward)
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
@@ -312,7 +320,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if len(self.replay_buffer) > self.batch_size:
             loss = self._train(self.batch_size)
             if loss is not None:
-                self.train_call_losses.append(loss)
+                self.current_episode_losses.append(loss)
         return reward
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -321,11 +329,11 @@ class AbstractTrainableAgent(TrainableAgent):
             if self.episodes_rewards
             else 0.0
         )
-        if self.train_call_losses:
-            losses = torch.stack(self.train_call_losses[-length:])
-            avg_loss = losses.mean().item()
-        else:
-            avg_loss = 0.0
+        avg_loss = (
+            sum(self.episodes_losses[-length:]) / min(length, len(self.episodes_losses))
+            if self.episodes_losses
+            else 0.0
+        )
 
         return avg_loss, avg_reward
 
