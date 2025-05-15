@@ -99,7 +99,9 @@ def choose_action(
     elif game.check_win(opponent):
         return None, -WINNING_REWARD
     elif max_depth == 0:
-        return None, game.player_distance_to_target(opponent) - game.player_distance_to_target(player)
+        distance_reward = game.player_distance_to_target(opponent) - game.player_distance_to_target(player)
+        wall_reward = game.board.get_walls_remaining(player) - game.board.get_walls_remaining(opponent)
+        return None, distance_reward + wall_reward / 100
 
     actions = sample_actions(game, branching_factor, wall_sigma)
     assert len(actions) > 0, "There are no valid actions for the current player."
