@@ -136,17 +136,7 @@ class Arena:
             if isinstance(p, Agent):
                 agents.append(p)
             else:
-                agents.append(
-                    AgentRegistry.create_from_encoded_name(
-                        p,
-                        board_size=self.board_size,
-                        max_walls=self.max_walls,
-                        observation_space=self.game.observation_space(None),
-                        action_space=self.game.action_space(
-                            None
-                        ),  # We might need to do something fancier with the action space if we add agent wrappers.
-                    )
-                )
+                agents.append(AgentRegistry.create_from_encoded_name(p, self.game))
 
         if mode == PlayMode.ALL_VS_ALL:
             total_games = len(agents) * (len(agents) - 1) * times // 2

@@ -10,12 +10,10 @@ class Metrics:
     Computes metrics for an agent by making it play against other agents.
     """
 
-    def __init__(self, board_size: int, max_walls: int, observation_space, action_space):
+    def __init__(self, board_size: int, max_walls: int):
         self.board_size = board_size
         self.max_walls = max_walls
         self.stored_elos = {}
-        self.observation_space = observation_space
-        self.action_space = action_space
 
     def _win_perc(self, results: list[GameResult], agent_name: str):
         played = 0
@@ -38,7 +36,7 @@ class Metrics:
 
         return int(agent_rating - best_opponent)
 
-    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float]:
+    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float, int]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
@@ -69,18 +67,14 @@ class Metrics:
             # "dexp:wandb_alias=best",
             "simple",
         ]
+        arena = Arena(self.board_size, self.max_walls)
 
         agent = AgentRegistry.create_from_encoded_name(
             agent_encoded_name,
-            board_size=self.board_size,
-            max_walls=self.max_walls,
-            observation_space=self.observation_space,
-            action_space=self.action_space,
+            arena.game,
             remove_training_args=True,
-            keep_args={"model_filename"},
+            keep_args={"model_filename", "wandb_alias"},
         )
-
-        arena = Arena(self.board_size, self.max_walls)
 
         # We store the elos of the opponents playing against each other so we don't have to play those matches
         # every time
@@ -99,4 +93,4 @@ class Metrics:
         win_perc = self._win_perc(results, agent.name())
         absolute_elo = elo_table[agent.name()]
 
-        return VERSION, elo_table, relative_elo, win_perc, absolute_elo
+        return VERSION, elo_table, relative_elo, win_perc, int(absolute_elo)
