@@ -106,17 +106,7 @@ if __name__ == "__main__":
 
         if args.profile:
             import cProfile
-            import pstats
-            from io import StringIO
 
-            pr = cProfile.Profile()
-            pr.enable()
-            arena.play_games(players, args.times)
-            pr.disable()
-
-            s = StringIO()
-            ps = pstats.Stats(pr, stream=s).sort_stats("tottime")
-            ps.print_stats(12)
-            print(s.getvalue())
+            cProfile.run("arena.play_games(players, args.times)", sort="tottime")
         else:
             arena.play_games(players, args.times)
