@@ -429,7 +429,3 @@ if __name__ == "__main__":
     game.step(WallAction((0, 4), WallOrientation.HORIZONTAL))
     game.step(WallAction((4, 2), WallOrientation.VERTICAL))
     print(str(game))
-
-    jump_checks = create_jump_checks()
-    for key, value in jump_checks.items():
-        print(f"{key}: {value}")
