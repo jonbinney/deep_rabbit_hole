@@ -1,3 +1,4 @@
+import random
 import time
 from enum import Enum
 from threading import Thread
@@ -172,17 +173,16 @@ class Arena:
             remaining_agents = agents[1:]
 
             for _ in range(times):
-                for i in range(len(remaining_agents)):
-                    if match_id < 6801:
-                        opponent = remaining_agents[i]
-                        agent_1, agent_2 = (
-                            (first_agent, opponent)
-                            if not self.swap_players or match_id % 2 == 0
-                            else (opponent, first_agent)
-                        )
-                        result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
-                        results.append(result)
-                        match_id += 1
+                for _ in range(len(remaining_agents)):
+                    opponent = random.choice(remaining_agents)
+                    agent_1, agent_2 = (
+                        (first_agent, opponent)
+                        if not self.swap_players or match_id % 2 == 0
+                        else (opponent, first_agent)
+                    )
+                    result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                    results.append(result)
+                    match_id += 1
         self.plugins.end_arena(self.game, results)
         return results
 

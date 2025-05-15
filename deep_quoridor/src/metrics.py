@@ -66,7 +66,7 @@ class Metrics:
             "greedy:p_random=0.1,nick=greedy-01",
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
-            "dexp:wandb_alias=best",
+            # "dexp:wandb_alias=best",
             "simple",
         ]
 

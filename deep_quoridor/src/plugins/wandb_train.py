@@ -81,15 +81,14 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def end_game(self, game, result):
         assert self.agent
-        if self.episode_count % self.params.log_every == 0 or self.episode_count == (self.total_episodes - 1):
+        self.episode_count += 1
+        if self.episode_count % self.params.log_every == 0 or self.episode_count == self.total_episodes:
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.params.log_every)
 
             self.run.log(
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
                 step=self.episode_count,
             )
-
-        self.episode_count += 1
 
     def end_arena(self, game, results):
         assert self.agent

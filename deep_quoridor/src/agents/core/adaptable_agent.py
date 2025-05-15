@@ -6,6 +6,7 @@ from agents.core import AbstractTrainableAgent
 from agents.core.trainable_agent import TrainableAgentParams
 from agents.nn.cnn_v1 import CnnV1Network
 from agents.nn.cnn_v2 import CnnV2Network
+from agents.nn.cnn_v3 import CnnV3Network
 from agents.nn.flat_1024 import Flat1024Network
 from agents.nn.pyramid_512_dropout import P512DropoutNetwork
 
@@ -63,6 +64,9 @@ class AdaptableAgent(AbstractTrainableAgent):
                 return CnnV1Network(self._calculate_observation_size(), self._calculate_action_size())
             elif self.params.nn_version == CnnV2Network.id():
                 return CnnV2Network(self._calculate_observation_size(), self._calculate_action_size())
+            elif self.params.nn_version == CnnV3Network.id():
+                return CnnV3Network(self._calculate_observation_size(), self._calculate_action_size())
+
             else:
                 raise RuntimeError(f"Unknown nn: {self.params.nn_version}")
             # Default network
