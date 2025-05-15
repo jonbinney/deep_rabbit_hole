@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,7 +67,7 @@ class TrainableAgentParams(SubargsBase):
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
     # Specifies the NN version to use
-    nn_version: str = None
+    nn_version: Optional[str] = None
 
     @classmethod
     def training_only_params(cls) -> set[str]:
@@ -206,7 +207,8 @@ class AbstractTrainableAgent(TrainableAgent):
         self.replay_buffer = ReplayBuffer(capacity=(self.params.buffer_size if self.training_mode else 1))
         self.games_count = 0
         self.episodes_rewards = []
-        self.train_call_losses = []
+        self.training_losses_batch = []
+        self.avg_training_losses = []
         self._reset_episode_related_info()
         self._resolve_and_load_model()
 
@@ -215,6 +217,7 @@ class AbstractTrainableAgent(TrainableAgent):
 
     def _reset_episode_related_info(self):
         self.current_episode_reward = 0
+        self.avg_training_losses = []
         self.player_id = None
         self.steps = 0
 
@@ -227,6 +230,12 @@ class AbstractTrainableAgent(TrainableAgent):
         self.games_count += 1
         if not self.training_mode:
             return
+
+        if self.avg_training_losses:
+            losses = [loss.item() for loss in self.avg_training_losses]
+            mean_loss = sum(losses) / len(losses)
+            self.training_losses_batch.append(mean_loss)
+
         self.episodes_rewards.append(self.current_episode_reward)
         self._update_epsilon()
         if (self.games_count % self.update_target_every) == 0:
@@ -311,7 +320,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if len(self.replay_buffer) > self.batch_size:
             loss = self._train(self.batch_size)
             if loss is not None:
-                self.train_call_losses.append(loss)
+                self.avg_training_losses.append(loss)
         return reward
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -320,11 +329,11 @@ class AbstractTrainableAgent(TrainableAgent):
             if self.episodes_rewards
             else 0.0
         )
-        if self.train_call_losses:
-            losses = torch.stack(self.train_call_losses[-length:])
-            avg_loss = losses.mean().item()
-        else:
-            avg_loss = 0.0
+        avg_loss = (
+            sum(self.training_losses_batch[-length:]) / min(length, len(self.training_losses_batch))
+            if self.training_losses_batch
+            else 0.0
+        )
 
         return avg_loss, avg_reward
 
@@ -592,6 +601,7 @@ class AbstractTrainableAgent(TrainableAgent):
         if os.path.exists(local_filename):
             return local_filename
 
+        os.makedirs(local_filename.parent, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmpdir:
             artifact_dir = artifact.download(root=tmpdir)
 
@@ -600,6 +610,6 @@ class AbstractTrainableAgent(TrainableAgent):
             if tmp_filename is None:
                 raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
 
-            os.rename(tmp_filename, local_filename)
+            shutil.copyfile(tmp_filename, local_filename)
 
             print(f"Model downloaded from wandb to {local_filename}")
