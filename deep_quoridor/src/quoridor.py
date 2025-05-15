@@ -80,26 +80,6 @@ class Board:
     PLAYER2 = qgrid.CELL_PLAYER2
     WALL = qgrid.CELL_WALL
 
-    # When we check whether a new wall could potentially block all routes to the goal for a player,
-    # we first check to see whether it spans between two walls already on the board, or between
-    # one wall on the board and the border of the board. There are three possible places a new wall
-    # could touch an existing wall (or the border). At the start of the new wall, in the middle of the
-    # new wall, or at the end of the new wall. To simplify these checks, we create this list of wall
-    # grid cells that touch each of those three places on a new wall. THe positions here are relative
-    # to the starting position of the new wall.
-    _potential_wall_neighbors = {
-        WallOrientation.VERTICAL: [
-            np.array([(-1, -1), (-2, 0), (-1, 1)]),
-            np.array([(1, -1), (1, 1)]),
-            np.array([(3, -1), (4, 0), (3, 1)]),
-        ],
-        WallOrientation.HORIZONTAL: [
-            np.array([(-1, -1), (0, -2), (1, -1)]),
-            np.array([(-1, 1), (1, 1)]),
-            np.array([(-1, 3), (0, 4), (1, 3)]),
-        ],
-    }
-
     def __init__(self, board_size: int = 9, max_walls: int = 10):
         self.board_size = board_size
         self.max_walls = max_walls
@@ -242,9 +222,6 @@ class Board:
 
         return wall_slice
 
-    def _is_wall_potential_block(self, position, orientation):
-        return qgrid.is_wall_potential_block(self._grid, position[0], position[1], int(orientation))
-
     def __str__(self):
         """
         Return a pretty-printed string representation of the grid.
@@ -271,7 +248,6 @@ class Quoridor:
         self.action_encoder = ActionEncoder(board.board_size)
 
         self._goal_rows = np.array([self.board.board_size - 1, 0])
-        self._jump_checks = create_jump_checks()
 
     def step(self, action: Action, validate: bool = True):
         """
@@ -398,53 +374,6 @@ class Quoridor:
 
     def __str__(self):
         return str(self.board)
-
-
-def create_jump_checks():
-    """
-    Pre-generate a sequence of checks for possible jumps.
-
-    Pre-generating the checks saves some computation time checking validity of move actions later.
-
-    There are 2 types of checks:
-    - nowall: There must not be a wall between each of these pairs of positions.
-    - wall: There must be a wall between each of these pairs of positions.
-
-    Positions are relative to the player's current position.
-    """
-    # Checks for the case where we are moving to (row + 1, col) or jumping over
-    # an opponent at (row + 1, col)
-    checks_for_one_direction = {
-        (2, 0): {
-            "wall": [],
-            "nowall": [((0, 0), (1, 0)), ((1, 0), (2, 0))],
-        },
-        (1, 1): {
-            "wall": [((1, 0), (2, 0))],
-            "nowall": [((0, 0), (1, 0)), ((1, 0), (1, 1))],
-        },
-        (1, -1): {
-            "wall": [((1, 0), (2, 0))],
-            "nowall": [((0, 0), (1, 0)), ((1, 0), (1, -1))],
-        },
-    }
-    # Rotate the checks for all 4 possible directions
-    checks = {}
-    for opponent_offset in np.array([(1, 0), (0, 1), (-1, 0), (0, -1)]):
-        rotation_matrix = np.array((opponent_offset, -opponent_offset[::-1])).T
-        for move in checks_for_one_direction:
-            rotated_move = np.dot(rotation_matrix, move)
-            lookup_key = (tuple(opponent_offset), tuple(rotated_move))
-            checks[lookup_key] = {}
-            for check_type in checks_for_one_direction[move]:
-                checks[lookup_key][check_type] = []
-                for wall_start, wall_end in checks_for_one_direction[move][check_type]:
-                    rotated_wall = (
-                        tuple(np.dot(rotation_matrix, wall_start)),
-                        tuple(np.dot(rotation_matrix, wall_end)),
-                    )
-                    checks[lookup_key][check_type].append(rotated_wall)
-    return checks
 
 
 def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:

@@ -1,3 +1,43 @@
+"""
+Fast implementation of quoridor functions using Numba.
+
+The core data structure in this implemtation is a 2D grid that represents both the quoridor board and walls. Here is
+an ASCII representation of a 5x5 grid in an example game state:
+
+#####################
+#####################
+##.   .   .   .   .##
+##                 ##
+##.   .   .   . # .##
+##        # # # #  ##
+##.   . # .   . # 2##
+##      #          ##
+##.   . # .   .   .##
+##        # # #    ##
+##.   .   1   .   .##
+##    # # #   # # ###
+##.   .   .   .   .##
+#####################
+#####################
+
+The hashes represent walls, the dots represent positions that players can be in, and the numbers represent the players.
+Note that we add a border of two wall cells around the grid. This reduces the number of special cases we need to handle
+when checking for valid moves and wall placements.  The cells in the grid (other than the boarder) alternate between
+player cells and wall cells. Because of the border and the alternating wall and player cells, for an NxN Quoridor
+board, the corresponding grid will be (2N+2)x(2N+2) in size.
+
+Terminology:
+- row or col - the row or column on the quoridor board (each between 0 and 8 on a normal board)
+- i or j - the indices into the combined grid used to represent the board and walls (more info below)
+- cell - an element in the combined grid.
+
+In addition to the grid, there are a few arrays used to represent the game state:
+- player_positions (np.ndarray): 2D array of containing [[p1_row, p1_col], [p2_row, p2_col]]
+- walls_remaining (np.ndarray): 1D array of containing [p1_walls_remaining, p2_walls_remaining]
+- goal_rows (np.ndarray): 1D array of containing [p1_goal_row, p2_goal_row]
+- current_player (scalar): 0 or 1
+"""
+
 import numpy as np
 from numba import njit
 
