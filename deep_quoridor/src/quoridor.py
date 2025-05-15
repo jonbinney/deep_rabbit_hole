@@ -36,19 +36,19 @@ class WallAction(Action):
 
 class ActionEncoder:
     def __init__(self, board_size: int):
-        self._board_size = board_size
-        self._wall_size = board_size - 1
+        self.board_size = board_size
+        self.wall_size = board_size - 1
 
     def action_to_index(self, action) -> int:
         """
         Converts an action object to an action index
         """
         if isinstance(action, MoveAction):
-            return action.destination[0] * self._board_size + action.destination[1]
+            return action.destination[0] * self.board_size + action.destination[1]
         elif isinstance(action, WallAction) and action.orientation == WallOrientation.VERTICAL:
-            return self._board_size**2 + action.position[0] * self._wall_size + action.position[1]
+            return self.board_size**2 + action.position[0] * self.wall_size + action.position[1]
         elif isinstance(action, WallAction) and action.orientation == WallOrientation.HORIZONTAL:
-            return self._board_size**2 + self._wall_size**2 + action.position[0] * self._wall_size + action.position[1]
+            return self.board_size**2 + self.wall_size**2 + action.position[0] * self.wall_size + action.position[1]
         else:
             raise ValueError(f"Invalid action type: {action}")
 
@@ -57,13 +57,13 @@ class ActionEncoder:
         Converts an action index to an action object.
         """
         action = None
-        if idx < self._board_size**2:  # Pawn movement
-            action = MoveAction(divmod(idx, self._board_size))
-        elif idx < self._board_size**2 + self._wall_size**2:
-            action = WallAction(divmod(idx - self._board_size**2, self._wall_size), WallOrientation.VERTICAL)
-        elif idx < self._board_size**2 + (self._wall_size**2) * 2:
+        if idx < self.board_size**2:  # Pawn movement
+            action = MoveAction(divmod(idx, self.board_size))
+        elif idx < self.board_size**2 + self.wall_size**2:
+            action = WallAction(divmod(idx - self.board_size**2, self.wall_size), WallOrientation.VERTICAL)
+        elif idx < self.board_size**2 + (self.wall_size**2) * 2:
             action = WallAction(
-                divmod(idx - self._board_size**2 - self._wall_size**2, self._wall_size),
+                divmod(idx - self.board_size**2 - self.wall_size**2, self.wall_size),
                 WallOrientation.HORIZONTAL,
             )
         else:
@@ -268,6 +268,7 @@ class Quoridor:
         """
         self.board = board
         self.current_player = current_player
+        self.action_encoder = ActionEncoder(board.board_size)
 
         self._goal_rows = np.array([self.board.board_size - 1, 0])
         self._jump_checks = create_jump_checks()
@@ -329,30 +330,34 @@ class Quoridor:
         if player is None:
             player = self.get_current_player()
 
-        position = self.board.get_player_position(player)
-
-        valid_move_actions = list()
-        for delta_row in range(-2, 3):
-            for delta_col in range(-2, 3):
-                destination = (position[0] + delta_row, position[1] + delta_col)
-                if self.board.is_position_on_board(destination):
-                    move_action = MoveAction(destination)
-                    if self.is_action_valid(move_action, player):
-                        valid_move_actions.append(move_action)
-        return valid_move_actions
+        action_mask = np.zeros(self.action_encoder.board_size**2, dtype=bool)
+        qgrid.compute_move_action_mask(
+            self.board._grid,
+            self.board._player_positions,
+            int(player),
+            action_mask,
+        )
+        actions = [self.action_encoder.index_to_action(action_i) for action_i in np.flatnonzero(action_mask)]
+        return actions
 
     def get_valid_wall_actions(self, player: Optional[Player] = None) -> list[WallAction]:
         if player is None:
             player = self.get_current_player()
 
-        valid_wall_actions = list()
-        for row in range(self.board.board_size - 1):
-            for col in range(self.board.board_size - 1):
-                for orientation in [WallOrientation.VERTICAL, WallOrientation.HORIZONTAL]:
-                    wall_action = WallAction((row, col), orientation)
-                    if self.is_action_valid(wall_action, player):
-                        valid_wall_actions.append(wall_action)
-        return valid_wall_actions
+        action_mask = np.zeros(2 * self.action_encoder.wall_size**2, dtype=bool)
+        qgrid.compute_wall_action_mask(
+            self.board._grid,
+            self.board._player_positions,
+            self.board._walls_remaining,
+            self._goal_rows,
+            int(player),
+            action_mask,
+        )
+        actions = [
+            self.action_encoder.index_to_action(self.action_encoder.board_size**2 + action_i)
+            for action_i in np.flatnonzero(action_mask)
+        ]
+        return actions
 
     def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)

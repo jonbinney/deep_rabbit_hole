@@ -361,10 +361,12 @@ def compute_move_action_mask(
         action_mask[k] = 0
 
     # Check all possible moves
-    for row in np.arange(-2, 3):
-        for col in np.arange(-2, 3):
-            if is_move_action_valid(grid, player_positions, current_player, row, col):
-                action_mask[col * board_size + row] = 1
+    for delta_row in np.arange(-2, 3):
+        for delta_col in np.arange(-2, 3):
+            destination_row = player_positions[current_player][0] + delta_row
+            destination_col = player_positions[current_player][1] + delta_col
+            if is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col):
+                action_mask[destination_row * board_size + destination_col] = 1
 
     return action_mask
 
@@ -399,7 +401,8 @@ def compute_wall_action_mask(
                 wall_col,
                 WALL_ORIENTATION_VERTICAL,
             ):
-                action_mask[wall_row * wall_size + wall_row] = 1
+                action_mask[wall_row * wall_size + wall_col] = 1
+
             if is_wall_action_valid(
                 grid,
                 player_positions,
@@ -410,6 +413,6 @@ def compute_wall_action_mask(
                 wall_col,
                 WALL_ORIENTATION_HORIZONTAL,
             ):
-                action_mask[wall_row * wall_size + wall_col] = 1
+                action_mask[wall_size**2 + wall_row * wall_size + wall_col] = 1
 
     return action_mask
