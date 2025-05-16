@@ -134,8 +134,7 @@ def choose_action(
 
     best_action_indices = np.flatnonzero(values == best_value)
     # There may be multiple actions with the same value, so we randomly choose one of them.
-    # chosen_action_index = np.random.choice(best_action_indices)
-    chosen_action_index = best_action_indices[-1]
+    chosen_action_index = np.random.choice(best_action_indices)
 
     return actions[chosen_action_index], values[chosen_action_index]
 
