@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from utils.misc import my_device
+from utils.misc import cnn_output_size_per_channel, my_device
 
 from agents.nn.core.nn import BaseNN
 
@@ -14,21 +14,20 @@ class CnnV3Network(BaseNN):
         self.board_cnn = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=0, stride=2),
             nn.ReLU(),
+            # This layer should be padded to avoid reducing dimensions (v4 will have this)
             nn.Conv2d(16, 32, kernel_size=3, padding=0),
             nn.ReLU(),
         )
-
         board_size = obs_spc["observation"]["board"].shape[0]
-        board_flat_size = 32 * (board_size - 2) * (board_size - 2)
-        print(board_size)
-        print(board_flat_size)
 
-        board_flat_size = 32 * 3 * 3
+        m1 = cnn_output_size_per_channel(board_size, 0, 3, 2)
+        m2 = cnn_output_size_per_channel(m1, 0, 3, 1)
+        board_layer_output_size = 32 * m2**2
         action_size = self._calculate_action_size(action_spc)
 
         # Update Linear layer input size
         self.modelx = nn.Sequential(
-            nn.Linear(board_flat_size + 2, 512),  # +2 for remaining walls
+            nn.Linear(board_layer_output_size + 2, 512),  # +2 for remaining walls
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU(),

@@ -55,9 +55,9 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
                 obs[key] = value
                 continue
             board = value
-            # Creates a new board and place the walls as -1 in the odds rows and cols
+            # Expands the board to include spaces for walls, representing walls with -1 in the odd rows and columns
             new_board = np.full(
-                (board.shape[0] + board.shape[0] - 1, board.shape[1] + board.shape[1] - 1), 0, dtype=np.float32
+                (board.shape[0] + board.shape[0] - 1, board.shape[1] + board.shape[1] - 1), 0, dtype=np.int32
             )
             new_board[::2, ::2] = board
             h_walls = walls[:, :, 0]
@@ -74,9 +74,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
                         new_board[2 * i + 1][2 * j + 1] = -1
 
             # Pads the board with -1 (walls)
-            padded_board = np.full((new_board.shape[0] + 2, new_board.shape[1] + 2), -1, dtype=np.float32)
-            padded_board[1:-1, 1:-1] = new_board
-            obs["board"] = padded_board
+            obs["board"] = np.pad(new_board, pad_width=1, mode="constant", constant_values=-1)
 
         observation["observation"] = obs
         return observation
