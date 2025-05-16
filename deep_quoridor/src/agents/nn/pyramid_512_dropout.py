@@ -6,39 +6,41 @@ from utils.misc import my_device
 from agents.nn.core.nn import BaseNN
 
 
-class Flat1024Network(BaseNN):
-    """Neural Network architecture for Quoridor game with flat layers.
-    This network consists of fully connected layers with ReLU activations:
-    - Input layer -> 1024 neurons
-    - Hidden layer 1: 1024 -> 2048 neurons
-    - Hidden layer 2: 2048 -> 1024 neurons
-    - Output layer: 1024 -> action_size neurons
+class P512DropoutNetwork(BaseNN):
+    """Neural network architecture for policy/value evaluation with dropout layers.
+
+    This network consists of fully connected layers with ReLU activations and dropout regularization:
+    - Input layer → 512 units with ReLU and 10% dropout
+    - 512 units → 256 units with ReLU and 10% dropout
+    - 256 units → 256 units with ReLU
+    - 256 units → output layer
+
     Args:
-        observation_size (int): Size of the input observation space
-        action_size (int): Size of the output action space
-    Returns:
-        torch.Tensor: Output tensor representing action probabilities/values
-    Example:
-        >>> network = Flat1024Network(observation_size=81, action_size=20)
-        >>> observation = torch.randn(1, 81)
-        >>> output = network(observation)  # Shape: (1, 20)
+        observation_size (int): Size of the input observation vector
+        action_size (int): Size of the output action vector
+
+    Attributes:
+        model (nn.Sequential): Sequential container of the network layers
     """
 
     def __init__(self, obs_spc, action_spc):
-        super(Flat1024Network, self).__init__()
+        super(P512DropoutNetwork, self).__init__()
         action_size = self._calculate_action_size(action_spc)
         observation_size = self._calculate_observation_size(obs_spc)
 
         # Define network architecture
         self.model = nn.Sequential(
-            nn.Linear(observation_size, 1024),
+            nn.Linear(observation_size, 512),
             nn.ReLU(),
-            nn.Linear(1024, 2048),
+            nn.Dropout(0.1),
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(2048, 1024),
+            nn.Dropout(0.1),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(1024, action_size),
+            nn.Linear(256, action_size),
         )
+
         self.model.to(my_device())
 
     def forward(self, x):
@@ -49,10 +51,10 @@ class Flat1024Network(BaseNN):
 
     @classmethod
     def id(cls):
-        return "flat1024"
+        return "p512do"
 
     def observation_to_tensor(self, observation):
-        """Convert the observation dict to a tensor required by the network."""
+        """Convert the observation dict to a tensor required by the Network."""
         flat_obs = []
         for key, value in observation.items():
             if isinstance(value, np.ndarray):

@@ -64,8 +64,10 @@ class Metrics:
             "greedy:p_random=0.1,nick=greedy-01",
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
+            # "dexp:wandb_alias=best",
+            # "simple",
         ]
-        arena = Arena(self.board_size, self.max_walls)
+        arena = Arena(self.board_size, self.max_walls, max_steps=200)
 
         agent = AgentRegistry.create_from_encoded_name(
             agent_encoded_name,
