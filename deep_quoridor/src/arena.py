@@ -147,33 +147,43 @@ class Arena:
         match_id = 1
         results = []
 
-        if mode == PlayMode.ALL_VS_ALL:
-            for i in range(len(agents)):
-                for j in range(i + 1, len(agents)):
-                    for t in range(times):
+        try:
+            if mode == PlayMode.ALL_VS_ALL:
+                for i in range(len(agents)):
+                    for j in range(i + 1, len(agents)):
+                        for t in range(times):
+                            agent_1, agent_2 = (
+                                (agents[i], agents[j])
+                                if not self.swap_players or t % 2 == 0
+                                else (agents[j], agents[i])
+                            )
+                            result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                            results.append(result)
+                            match_id += 1
+            else:  # FIRST_VS_RANDOM mode
+                first_agent = agents[0]
+                remaining_agents = agents[1:]
+
+                for _ in range(times):
+                    for _ in range(len(remaining_agents)):
+                        opponent = random.choice(remaining_agents)
                         agent_1, agent_2 = (
-                            (agents[i], agents[j]) if not self.swap_players or t % 2 == 0 else (agents[j], agents[i])
+                            (first_agent, opponent)
+                            if not self.swap_players or match_id % 2 == 0
+                            else (opponent, first_agent)
                         )
                         result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                         results.append(result)
                         match_id += 1
-        else:  # FIRST_VS_RANDOM mode
-            first_agent = agents[0]
-            remaining_agents = agents[1:]
 
-            for _ in range(times):
-                for _ in range(len(remaining_agents)):
-                    opponent = random.choice(remaining_agents)
-                    agent_1, agent_2 = (
-                        (first_agent, opponent)
-                        if not self.swap_players or match_id % 2 == 0
-                        else (opponent, first_agent)
-                    )
-                    result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
-                    results.append(result)
-                    match_id += 1
+        except KeyboardInterrupt:
+            print("!!! Interrupted by user. Closing the arena before exit.")
+        except Exception as e:
+            print(f"!!! Exception occurred: {e}. Closing the arena before exit.")
+            raise
+        finally:
+            self.plugins.end_arena(self.game, results)
 
-        self.plugins.end_arena(self.game, results)
         return results
 
     def _replay_games(self, arena_data: dict, game_ids_to_replay: list[str]):
