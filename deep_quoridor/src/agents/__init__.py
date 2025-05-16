@@ -4,7 +4,6 @@ __all__ = [
     "Agent",
     "AgentRegistry",
     "DExpAgent",
-    "FlatDQNAgent",
     "HumanAgent",
     "NDexpAgent",
     "RandomAgent",
@@ -24,7 +23,6 @@ from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     TrainableAgentParams,
 )
 from agents.dexp import DExpAgent  # noqa: E402
-from agents.flat_dqn import FlatDQNAgent  # noqa: E402
 from agents.greedy import GreedyAgent  # noqa: E402, F401
 from agents.human import HumanAgent  # noqa: E402, F401
 from agents.ndexp import CnnAgent, NDexpAgent
@@ -36,7 +34,6 @@ from agents.simple import SimpleAgent  # noqa: E402, F401
 AgentRegistry.register("cnn", CnnAgent)
 AgentRegistry.register("dexp", DExpAgent)
 AgentRegistry.register("dexp_mimic", DExpAgent.create_from_trained_instance)
-AgentRegistry.register("flatdqn", FlatDQNAgent)
 AgentRegistry.register("greedy", GreedyAgent)
 AgentRegistry.register("human", HumanAgent)
 AgentRegistry.register("ndexp", NDexpAgent)
