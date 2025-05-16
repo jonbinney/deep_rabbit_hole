@@ -16,6 +16,7 @@ class TrainingStatusRenderer(Renderer):
         self.player2 = agent2.name()
 
     def end_game(self, game, result):
+        self.episode_count += 1
         for agent in self.agents:
             if not isinstance(agent, TrainableAgent) or not agent.is_training():
                 continue
@@ -24,10 +25,9 @@ class TrainingStatusRenderer(Renderer):
             won = result.winner == agent.name()
             p = "1" if result.player1 == agent.name() else "2"
             print(
-                f"{agent_name} P{p} Episode {self.episode_count + 1:5d}/{self.total_episodes} [{'*' if won else ' '}], Steps: {self.step:3d}, Avg Reward: {avg_reward:6.2f}, "
+                f"{agent_name} P{p} Episode {self.episode_count:5d}/{self.total_episodes} [{'*' if won else ' '}], Steps: {self.step:3d}, Avg Reward: {avg_reward:6.2f}, "
                 f"Avg Loss: {avg_loss:7.4f}, Epsilon: {agent.epsilon:.4f} opponent: {self.player1 if agent_name == self.player2 else self.player2}"
             )
-        self.episode_count += 1
         return
 
     def after_action(self, game, step, agent, action):

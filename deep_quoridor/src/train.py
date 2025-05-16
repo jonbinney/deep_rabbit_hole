@@ -122,15 +122,8 @@ if __name__ == "__main__":
     # Set random seed for reproducibility
     set_deterministic(args.seed)
 
-    if args.profile:
-        import cProfile
-
-        cProfile.run(
-            "train_dqn( episodes=args.episodes, board_size=args.board_size, max_walls=args.max_walls, save_frequency=args.save_frequency, step_rewards=args.step_rewards, players=args.players, renderers=renderers, wandb_params=wandb_params)",
-            sort="tottime",
-        )
-    else:
-        train_dqn(
+    def make_call():
+        return train_dqn(
             episodes=args.episodes,
             board_size=args.board_size,
             max_walls=args.max_walls,
@@ -141,4 +134,10 @@ if __name__ == "__main__":
             wandb_params=wandb_params,
         )
 
+    if args.profile:
+        import cProfile
+
+        cProfile.run("make_call()", sort="tottime")
+    else:
+        make_call()
     print("Training completed!")

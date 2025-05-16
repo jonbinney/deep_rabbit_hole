@@ -57,7 +57,7 @@ class Metrics:
         """
         # Bump if there's any change in the scoring
         VERSION = 1
-        times = 20
+        times = 50
 
         players: list[str | Agent] = [
             "greedy",
@@ -65,9 +65,9 @@ class Metrics:
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
             # "dexp:wandb_alias=best",
-            "simple",
+            # "simple",
         ]
-        arena = Arena(self.board_size, self.max_walls)
+        arena = Arena(self.board_size, self.max_walls, max_steps=200)
 
         agent = AgentRegistry.create_from_encoded_name(
             agent_encoded_name,
@@ -82,10 +82,7 @@ class Metrics:
             results = arena._play_games(players, times, PlayMode.ALL_VS_ALL)
             self.stored_elos = compute_elo(results)
 
-        m = arena.max_steps
-        arena.max_steps = 200
         results = arena._play_games([agent] + players, times, PlayMode.FIRST_VS_RANDOM)
-        arena.max_steps = m
 
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())

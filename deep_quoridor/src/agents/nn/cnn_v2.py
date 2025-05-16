@@ -21,7 +21,6 @@ class CnnV2Network(BaseNN):
         board_size = obs_spc["observation"]["board"].shape[0]
         m1 = cnn_output_size_per_channel(board_size, 0, 3, 1)
         m2 = cnn_output_size_per_channel(m1, 0, 3, 1)
-        print(m2)
         board_layer_output_size = 32 * m2**2
         action_size = self._calculate_action_size(action_spc)
 
