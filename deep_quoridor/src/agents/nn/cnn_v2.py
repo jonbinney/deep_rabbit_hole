@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from utils.misc import my_device
+from utils.misc import cnn_output_size_per_channel, my_device
 
 from agents.nn.core.nn import BaseNN
 
@@ -19,12 +19,15 @@ class CnnV2Network(BaseNN):
         )
 
         board_size = obs_spc["observation"]["board"].shape[0]
-        board_flat_size = 32 * (board_size - 2) * (board_size - 2)
+        m1 = cnn_output_size_per_channel(board_size, 0, 3, 1)
+        m2 = cnn_output_size_per_channel(m1, 0, 3, 1)
+        print(m2)
+        board_layer_output_size = 32 * m2**2
         action_size = self._calculate_action_size(action_spc)
 
         # Update Linear layer input size
         self.modelx = nn.Sequential(
-            nn.Linear(board_flat_size + 2, 512),  # +2 for remaining walls
+            nn.Linear(board_layer_output_size + 2, 512),  # +2 for remaining walls
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU(),
@@ -59,8 +62,6 @@ class CnnV2Network(BaseNN):
 
     def observation_to_tensor(self, observation):
         board = np.ascontiguousarray(observation["board"])
-        # Pad the board with -1 values to create a 9x9 grid
-        board = np.pad(board, pad_width=1, mode="constant", constant_values=-1)
         player_walls = observation["my_walls_remaining"]
         opponent_walls = observation["opponent_walls_remaining"]
         # Convert numpy arrays to tensors and move to the appropriate device
