@@ -31,7 +31,7 @@ class ReplayBuffer:
         elif isinstance(state, (int, float, bool, str)):
             return state
         else:
-            return torch.FloatTensor(state)
+            return torch.from_numpy(state)
 
     def add(self, state, action, reward, next_state, done, next_state_mask):
         self.buffer.append(

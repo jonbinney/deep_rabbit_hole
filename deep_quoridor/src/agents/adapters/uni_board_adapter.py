@@ -44,7 +44,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
         )
 
     def _transform_observation(self, observation: Any) -> Any:
-        """Transform the game observation by splitting the board into separate channels"""
+        """Transform the game observation merging the boards and walls into a single board, and adding walls on the sides"""
         if observation is None:
             return None
         observation = observation.copy()
@@ -55,6 +55,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
                 obs[key] = value
                 continue
             board = value
+            # Creates a new board and place the walls as -1 in the odds rows and cols
             new_board = np.full(
                 (board.shape[0] + board.shape[0] - 1, board.shape[1] + board.shape[1] - 1), 0, dtype=np.float32
             )
@@ -71,7 +72,11 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
                     if v_walls[i][j] == 1:
                         new_board[2 * i][2 * j + 1] = -1
                         new_board[2 * i + 1][2 * j + 1] = -1
-            obs["board"] = new_board
+
+            # Pads the board with -1 (walls)
+            padded_board = np.full((new_board.shape[0] + 2, new_board.shape[1] + 2), -1, dtype=np.float32)
+            padded_board[1:-1, 1:-1] = new_board
+            obs["board"] = padded_board
 
         observation["observation"] = obs
         return observation
@@ -83,7 +88,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
     @classmethod
     def get_observation_space(cls, original_space):
         board_shape = original_space["observation"]["board"].shape
-        new_board_shape = (board_shape[0] + board_shape[0] - 1, board_shape[1] + board_shape[1] - 1)
+        new_board_shape = (board_shape[0] + board_shape[0] + 1, board_shape[1] + board_shape[1] + 1)
         space = {}
         for key, value in original_space.items():
             if key != "observation":

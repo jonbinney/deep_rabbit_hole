@@ -3,9 +3,11 @@ import torch
 import torch.nn as nn
 from utils.misc import my_device
 
+from agents.nn.core.nn import BaseNN
 
-class CnnV3Network(nn.Module):
-    def __init__(self, observation_size, action_size):
+
+class CnnV3Network(BaseNN):
+    def __init__(self, obs_spc, action_spc):
         super(CnnV3Network, self).__init__()
 
         # CNN layers for board feature extraction
@@ -16,7 +18,13 @@ class CnnV3Network(nn.Module):
             nn.ReLU(),
         )
 
+        board_size = obs_spc["observation"]["board"].shape[0]
+        board_flat_size = 32 * (board_size - 2) * (board_size - 2)
+        print(board_size)
+        print(board_flat_size)
+
         board_flat_size = 32 * 3 * 3
+        action_size = self._calculate_action_size(action_spc)
 
         # Update Linear layer input size
         self.modelx = nn.Sequential(
@@ -55,8 +63,6 @@ class CnnV3Network(nn.Module):
 
     def observation_to_tensor(self, observation):
         board = np.ascontiguousarray(observation["board"])
-        # Pad the board with -1 values to create a 9x9 grid
-        board = np.pad(board, pad_width=1, mode="constant", constant_values=-1)
         player_walls = observation["my_walls_remaining"]
         opponent_walls = observation["opponent_walls_remaining"]
         # Convert numpy arrays to tensors and move to the appropriate device

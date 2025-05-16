@@ -3,9 +3,11 @@ import torch
 import torch.nn as nn
 from utils.misc import my_device
 
+from agents.nn.core.nn import BaseNN
 
-class CnnV2Network(nn.Module):
-    def __init__(self, observation_size, action_size):
+
+class CnnV2Network(BaseNN):
+    def __init__(self, obs_spc, action_spc):
         super(CnnV2Network, self).__init__()
 
         # CNN layers for board feature extraction
@@ -16,7 +18,9 @@ class CnnV2Network(nn.Module):
             nn.ReLU(),
         )
 
-        board_flat_size = 32 * 7 * 7
+        board_size = obs_spc["observation"]["board"].shape[0]
+        board_flat_size = 32 * (board_size - 2) * (board_size - 2)
+        action_size = self._calculate_action_size(action_spc)
 
         # Update Linear layer input size
         self.modelx = nn.Sequential(

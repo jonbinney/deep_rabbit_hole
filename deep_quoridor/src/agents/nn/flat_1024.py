@@ -3,8 +3,10 @@ import torch
 import torch.nn as nn
 from utils.misc import my_device
 
+from agents.nn.core.nn import BaseNN
 
-class Flat1024Network(nn.Module):
+
+class Flat1024Network(BaseNN):
     """Neural Network architecture for Quoridor game with flat layers.
     This network consists of fully connected layers with ReLU activations:
     - Input layer -> 1024 neurons
@@ -22,8 +24,10 @@ class Flat1024Network(nn.Module):
         >>> output = network(observation)  # Shape: (1, 20)
     """
 
-    def __init__(self, observation_size, action_size):
+    def __init__(self, obs_spc, action_spc):
         super(Flat1024Network, self).__init__()
+        action_size = self._calculate_action_size(action_spc)
+        observation_size = self._calculate_observation_size(obs_spc)
 
         # Define network architecture
         self.model = nn.Sequential(
@@ -38,6 +42,9 @@ class Flat1024Network(nn.Module):
         self.model.to(my_device())
 
     def forward(self, x):
+        # When training, we receive a tuple of all the tensors, so we need to stack all of them
+        if isinstance(x, tuple):
+            x = torch.stack([i for i in x]).to(my_device())
         return self.model(x)
 
     @classmethod
