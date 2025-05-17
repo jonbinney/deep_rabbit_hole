@@ -1,4 +1,5 @@
 gymnasium
+numba
 numpy
 pettingzoo
 prettytable

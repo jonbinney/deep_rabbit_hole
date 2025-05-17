@@ -43,6 +43,9 @@ class WandbTrainPlugin(ArenaPlugin):
         self.episode_count = 0
         self.agent = None
         self.agent_encoded_name = agent_encoded_name
+        self.best_model_filename = None
+        # Notice that the best model won't be uploaded if it's not better than the initialization.
+        self.best_model_relative_elo = -800
 
     def _initialize(self, game):
         assert self.agent
@@ -90,6 +93,24 @@ class WandbTrainPlugin(ArenaPlugin):
                 step=self.episode_count,
             )
 
+    def _upload_model(self, save_file: str, aliases: list[str] | None = None) -> str:
+        assert self.agent
+
+        artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
+        artifact.add_file(local_path=save_file)
+        artifact.save()
+        wandb.log_artifact(artifact, aliases=aliases).wait(60)
+        print(f"Done! Model uploaded with version {artifact.version} and aliases {artifact.aliases}")
+
+        wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
+
+        # Now that we know the digest, rename the file to include it, so it takes the expected name and
+        # doesn't need to be re-downloaded from wandb.
+        # Source and target file are in the same path, just a different file name
+        os.rename(save_file, wand_file)
+        print(f"Model saved to {wand_file}")
+        return str(wand_file)
+
     def end_arena(self, game, results):
         assert self.agent
         if not self.params.upload_model:
@@ -97,32 +118,32 @@ class WandbTrainPlugin(ArenaPlugin):
             wandb.finish()
             return
 
-        # Save the model in the wandb directory with the suffix "temp".  The file will be renamed
+        # Save the model in the wandb directory with the suffix "final".  The file will be renamed
         # once we upload it to wandb and have the digest.
-        save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("temp"))
+        save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("final"))
         self.agent.save_model(save_file)
 
-        artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
-        artifact.add_file(local_path=str(save_file))
-        artifact.save()
-        print("Model being uploaded to wandb")
-        wandb.log_artifact(artifact).wait(60)
-        print(f"Model uploaded with version {artifact.version}")
+        print("Uploading the final model to wandb...")
+        wandb_file = self._upload_model(str(save_file))
+        relative_elo = self.compute_tournament_metrics(wandb_file)
 
-        wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
+        if self.best_model_relative_elo > relative_elo and self.best_model_filename is not None:
+            print("Uploading the best model to wandb...")
+            self._upload_model(self.best_model_filename, aliases=[f"{self.run.id}-best"])
 
-        # Now that we know the digest, rename the file to include it.  Source and target file are in
-        # the same path, just a different file name
-        os.rename(save_file, wand_file)
-        print(f"Model saved to {wand_file}")
-        self.compute_tournament_metrics(str(wand_file))
         wandb.finish()
 
-    def compute_tournament_metrics(self, model_filename: str):
+    def compute_tournament_metrics(self, model_filename: str) -> int:
         _, elo_table, relative_elo, win_perc, absolute_elo = self.metrics.compute(
             self.agent_encoded_name + f",model_filename={model_filename}"
         )
+
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
+        if relative_elo > self.best_model_relative_elo:
+            self.best_model_relative_elo = relative_elo
+            self.best_model_filename = model_filename
+            print("Best Relative Elo so far!")
+
         wandb_elo_table = wandb.Table(
             columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
         )
@@ -130,3 +151,5 @@ class WandbTrainPlugin(ArenaPlugin):
             {"elo": wandb_elo_table, "relative_elo": relative_elo, "win_perc": win_perc, "absolute_elo": absolute_elo},
             step=self.episode_count,
         )
+
+        return relative_elo
