@@ -416,7 +416,7 @@ class AbstractTrainableAgent(TrainableAgent):
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
         self._log_action(q_values)
 
-        if self.training_mode and self.params.softmax_exploration and random.random() < 0.1:
+        if self.training_mode and self.params.softmax_exploration:
             # Apply softmax to the Q-values to get action probabilities
             q_values = q_values.squeeze().detach().cpu().numpy()
             exp_q_values = np.exp(q_values)

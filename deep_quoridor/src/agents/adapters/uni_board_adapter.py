@@ -6,6 +6,25 @@ from gymnasium import spaces
 
 
 class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
+    """A board adapter that unifies the game board and walls into a single representation.
+    This adapter transforms the game's observation space by merging the board and walls into a
+    single unified board representation. The transformed board includes:
+    - Original board positions (player positions) at even indices
+    - Wall representations as -1 at odd indices
+    - A padding of -1 around the entire board to represent boundaries
+    The unified board format:
+    - Empty spaces: 0
+    - Player 1: 1
+    - Player 2: 2
+    - Walls/Boundaries: -1
+    The transformation expands the original NxN board to a (2N+1)x(2N+1) board to accommodate:
+    1. Original board positions at even indices (i,j where i,j are even)
+    2. Horizontal walls at odd rows, even columns
+    3. Vertical walls at even rows, odd columns
+    4. Wall intersections at odd rows, odd columns
+    5. A border of walls (-1) padding the entire board
+    """
+
     def handle_step_outcome(
         self,
         observation_before_action,
