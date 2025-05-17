@@ -2,6 +2,7 @@ import json
 import random
 from collections import deque
 
+import numpy as np
 import torch
 
 
@@ -24,14 +25,16 @@ class ReplayBuffer:
 
     @classmethod
     def _from_storage_format(cls, state):
-        if isinstance(state, list):
-            return [ReplayBuffer._from_storage_format(item) for item in state]
+        if isinstance(state, np.ndarray):
+            return torch.from_numpy(state)
         elif isinstance(state, tuple):
             return tuple(ReplayBuffer._from_storage_format(item) for item in state)
+        elif isinstance(state, list):
+            return [ReplayBuffer._from_storage_format(item) for item in state]
         elif isinstance(state, (int, float, bool, str)):
             return state
         else:
-            return torch.from_numpy(state)
+            raise ValueError(f"Unexpected state type {type(state)}")
 
     def add(self, state, action, reward, next_state, done, next_state_mask):
         self.buffer.append(
