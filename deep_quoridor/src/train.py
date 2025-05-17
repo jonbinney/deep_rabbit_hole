@@ -22,6 +22,7 @@ def train_dqn(
     players: list = [],
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
+    trigger_metrics: Optional[tuple[int, int]] = None,
 ):
     plugins = []
     total_episodes = episodes * (len(players) - 1)
@@ -40,6 +41,7 @@ def train_dqn(
             save_final=wandb_params is None,
             run_id=run_id,
             after_save=after_save_method,
+            trigger_metrics=trigger_metrics,
         )
     )
 
@@ -91,7 +93,13 @@ if __name__ == "__main__":
         help="Render modes to be used. Note that TrainingStatusRenderer is always included",
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
-
+    parser.add_argument(
+        "--trigger-metrics",
+        nargs=2,
+        type=int,
+        metavar=("wins", "last_episodes"),
+        help="Trigger tournament metrics computation and save the model if there were 'wins' wins in the last 'last_episodes'",
+    )
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
@@ -124,6 +132,7 @@ if __name__ == "__main__":
         players=args.players,
         renderers=renderers,
         wandb_params=wandb_params,
+        trigger_metrics=args.trigger_metrics,
     )
 
     print("Training completed!")
