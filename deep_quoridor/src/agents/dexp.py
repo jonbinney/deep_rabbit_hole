@@ -59,6 +59,8 @@ class DExpNetwork(nn.Module):
         self.model.to(my_device())
 
     def forward(self, x):
+        if isinstance(x, tuple):
+            x = torch.stack([i for i in x]).to(my_device())
         return self.model(x)
 
 

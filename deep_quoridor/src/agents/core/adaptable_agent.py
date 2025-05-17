@@ -1,10 +1,10 @@
 import numpy as np
-import torch
 from gymnasium import Space, spaces
 from utils.misc import get_opponent_player_id
 
 from agents.core import AbstractTrainableAgent
 from agents.core.trainable_agent import TrainableAgentParams
+from agents.nn.core.nn import BaseNN
 from agents.nn.flat_1024 import Flat1024Network
 
 
@@ -52,9 +52,9 @@ class AdaptableAgent(AbstractTrainableAgent):
 
     def _create_network(self):
         """Create the neural network model."""
-        if self.params.nn_version == Flat1024Network.id():
-            return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
-        # Default network
+        if self.params.nn_version is not None:
+            network_class = BaseNN.get_network(self.params.nn_version)
+            return network_class(self.observation_space, self.action_space)
         return Flat1024Network(self._calculate_observation_size(), self._calculate_action_size())
 
     def handle_opponent_step_outcome(
@@ -80,11 +80,4 @@ class AdaptableAgent(AbstractTrainableAgent):
         )
 
     def _observation_to_tensor(self, observation, obs_player_id):
-        """Convert the observation dict to a flat tensor."""
-        flat_obs = []
-        for key, value in observation.items():
-            if isinstance(value, np.ndarray):
-                flat_obs.extend(value.flatten())
-            else:
-                flat_obs.append(value)
-        return torch.FloatTensor(flat_obs).to(self.device)
+        return self.online_network.observation_to_tensor(observation)

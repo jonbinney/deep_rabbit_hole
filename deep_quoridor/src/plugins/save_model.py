@@ -49,7 +49,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def end_game(self, game, result):
         assert self.agent
-
+        self.episode_count += 1
         trigger_save = False
         if self.win_history is not None:
             won = 1 if result.winner == self.agent.name() else 0
@@ -63,9 +63,8 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
                 self.win_history.clear()
                 trigger_save = True
 
-        if trigger_save or (self.episode_count % self.update_every == 0 and self.episode_count > 0):
+        if trigger_save or self.episode_count % self.update_every == 0:
             self._save_models(f"{self.run_id}_episode_{self.episode_count}")
-        self.episode_count += 1
 
     def end_arena(self, game, results):
         if self.save_final:
