@@ -93,6 +93,14 @@ if __name__ == "__main__":
         help="Render modes to be used. Note that TrainingStatusRenderer is always included",
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
+
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help="Use cProfile to profile the game.",
+    )
+
     parser.add_argument(
         "--trigger-metrics",
         nargs=2,
@@ -123,16 +131,23 @@ if __name__ == "__main__":
     # Set random seed for reproducibility
     set_deterministic(args.seed)
 
-    train_dqn(
-        episodes=args.episodes,
-        board_size=args.board_size,
-        max_walls=args.max_walls,
-        save_frequency=args.save_frequency,
-        step_rewards=args.step_rewards,
-        players=args.players,
-        renderers=renderers,
-        wandb_params=wandb_params,
-        trigger_metrics=args.trigger_metrics,
-    )
+    def make_call():
+        train_dqn(
+            episodes=args.episodes,
+            board_size=args.board_size,
+            max_walls=args.max_walls,
+            save_frequency=args.save_frequency,
+            step_rewards=args.step_rewards,
+            players=args.players,
+            renderers=renderers,
+            wandb_params=wandb_params,
+            trigger_metrics=args.trigger_metrics,
+        )
 
+    if args.profile:
+        import cProfile
+
+        cProfile.run("make_call()", sort="tottime")
+    else:
+        make_call()
     print("Training completed!")

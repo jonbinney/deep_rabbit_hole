@@ -107,10 +107,11 @@ class Arena:
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
+                print(self.game.render())
                 break
 
         end_time = time.time()
-
+        # print(self.game.render())
         winner = self.game.winner()
         result = GameResult(
             player1=agent1.name(),

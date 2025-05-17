@@ -154,3 +154,7 @@ def get_opponent_player_id(player_id: str) -> str:
         return "player_1"
     else:
         raise ValueError(f"Invalid player id: {player_id}")
+
+
+def cnn_output_size_per_channel(input_size, padding, kernel_size=3, stride=1):
+    return (input_size + 2 * padding - kernel_size) // stride + 1

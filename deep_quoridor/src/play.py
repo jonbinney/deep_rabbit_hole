@@ -104,9 +104,12 @@ if __name__ == "__main__":
         arena_args = {k: v for k, v in arena_args.items() if v is not None}
         arena = Arena(**arena_args)
 
+        def make_call():
+            arena.play_games(players, args.times)
+
         if args.profile:
             import cProfile
 
-            cProfile.run("arena.play_games(players, args.times)", sort="tottime")
+            cProfile.run("make_call()", sort="tottime")
         else:
-            arena.play_games(players, args.times)
+            make_call()
