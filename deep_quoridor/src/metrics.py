@@ -64,8 +64,10 @@ class Metrics:
             "greedy:p_random=0.1,nick=greedy-01",
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
-            # "dexp:wandb_alias=best",
-            # "simple",
+            "dexp:wandb_alias=best",
+            "simple",
+            "cnn:wandb_alias=v4,nick=c4",
+            "dexp:wandb_alias=v18,nick=d18",
         ]
         arena = Arena(self.board_size, self.max_walls, max_steps=200)
 
