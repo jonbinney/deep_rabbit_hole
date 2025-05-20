@@ -108,7 +108,8 @@ class Board:
         """
         Get the position of the player's pawn.
         """
-        return tuple(self._player_positions[player])
+        pos = self._player_positions[player]
+        return (pos[0], pos[1])
 
     def move_player(self, player: Player, new_position: tuple[int, int]):
         """
