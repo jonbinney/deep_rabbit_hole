@@ -2,6 +2,75 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Train Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--run_prefix", "jonbinney",
+                "-N", "5", "-W", "5", "-e", "1000", "-i", "43", "-s", "-p",
+                "dexp:rotate=true,split=true,turn=true,epsilon=1,epsilon_decay=0.999,final_reward_multiplier=10,training_mode=true,mask_targetq=true,use_opponents_actions=true",
+                "greedy:p_random=0.3",
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Quoridor: dexp v simple",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/play.py",
+            "console": "integratedTerminal",
+            "args": 
+                "-t 1 --players dexp:wandb_alias=best simple:max_depth=3,branching_factor=100 -N5 -W3 --profile -r arenaresults2 computationtimes progressbar pygame"
+        },
+        {
+            "name": "Benchmark Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/play.py",
+            "console": "integratedTerminal",
+            "args": "-yi benchmark_B5W3 --profile"
+        },
+        {
+            "name": "Play Classic Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/play.py",
+            "console": "integratedTerminal",
+            "args": 
+                "-t 10 --players greedy greedy:nick=greedy2,p_random=0.1 simple:max_depth=3 -N5 -W3 -r arenaresults2 computationtimes"
+        },
+        {
+            "name": "Play Simple Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/play.py",
+            "console": "integratedTerminal",
+            "env": {
+                "NUMBA_DISABLE_JIT": "1"
+            },
+            "args": 
+                "-t 10 --players simple:max_depth=2 simple -N5 -W3 --profile -r arenaresults2 computationtimes progressbar"
+        },
+        {
+            "name": "Play Human Quoridor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/play.py",
+            "console": "integratedTerminal",
+            "args": 
+                "-t 1 -r pygame --players human simple:max_depth=2,branching_factor=100 -N5 -W3"
+        },
+        {
+            "name": "Train SB3",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "deep_quoridor/src/train_sb3.py",
+            "console": "integratedTerminal",
+            "justMyCode":false
+        },
+        {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
@@ -210,6 +279,9 @@
             "module": "pytest",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "env": {
+                "NUMBA_DISABLE_JIT": "1"
+            },
             "args": [
                 "deep_quoridor",
                 "-s"

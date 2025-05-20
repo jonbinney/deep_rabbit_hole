@@ -44,6 +44,10 @@ from numba import njit
 WALL_ORIENTATION_VERTICAL = 0
 WALL_ORIENTATION_HORIZONTAL = 1
 
+ACTION_WALL_VERTICAL = 0
+ACTION_WALL_HORIZONTAL = 1
+ACTION_MOVE = 2
+
 # Possible values for each cell in the grid.
 CELL_FREE = -1
 # The player numbers start at 0 so that they can also be used as indices into the player positions array.
@@ -386,6 +390,43 @@ def is_wall_action_valid(
 
 
 @njit
+def get_all_move_actions(board_size: int) -> np.ndarray:
+    """
+    Return an array of all possible move actions; not just the valid ones.
+    """
+    all_move_actions = np.zeros((board_size**2, 3), dtype=np.int32)
+    index = 0
+    for row in range(board_size):
+        for col in range(board_size):
+            all_move_actions[index, 0] = row
+            all_move_actions[index, 1] = col
+            all_move_actions[index, 2] = ACTION_MOVE
+            index += 1
+    return all_move_actions
+
+
+@njit
+def get_all_wall_actions(board_size: int) -> np.ndarray:
+    """
+    Return an array of all possible wall actions; not just the valid ones.
+    """
+    all_wall_actions = np.zeros((2 * (board_size - 1) ** 2, 3), dtype=np.int32)
+    index = 0
+    for row in range(board_size - 1):
+        for col in range(board_size - 1):
+            all_wall_actions[index, 0] = row
+            all_wall_actions[index, 1] = col
+            all_wall_actions[index, 2] = ACTION_WALL_VERTICAL
+            index += 1
+
+            all_wall_actions[index, 0] = row
+            all_wall_actions[index, 1] = col
+            all_wall_actions[index, 2] = ACTION_WALL_HORIZONTAL
+            index += 1
+    return all_wall_actions
+
+
+@njit
 def compute_move_action_mask(
     grid: np.ndarray,
     player_positions: np.ndarray,
@@ -456,3 +497,81 @@ def compute_wall_action_mask(
                 action_mask[wall_size**2 + wall_row * wall_size + wall_col] = 1
 
     return action_mask
+
+
+@njit
+def check_win(player_positions, goal_rows, player):
+    """
+    Check if a player has won (Numba-optimized).
+    """
+    return player_positions[player, 0] == goal_rows[player]
+
+
+@njit
+def apply_action(grid, player_positions, walls_remaining, current_player, action):
+    """
+    Apply an action to the game state (Numba-optimized).
+    """
+    # Apply the action
+    action_type = action[2]
+
+    if action_type == ACTION_MOVE:
+        # Move action - update player position
+        new_row, new_col = action[0], action[1]
+        old_row, old_col = player_positions[current_player, 0], player_positions[current_player, 1]
+
+        # Update grid
+        old_i, old_j = old_row * 2 + 2, old_col * 2 + 2
+        new_i, new_j = new_row * 2 + 2, new_col * 2 + 2
+
+        grid[old_i, old_j] = CELL_FREE
+        grid[new_i, new_j] = current_player
+
+        # Update player positions
+        player_positions[current_player, 0] = new_row
+        player_positions[current_player, 1] = new_col
+
+    elif action_type == ACTION_WALL_VERTICAL:
+        # Vertical wall action
+        wall_row, wall_col = action[0], action[1]
+        set_wall_cells(grid, wall_row, wall_col, WALL_ORIENTATION_VERTICAL, CELL_WALL)
+        walls_remaining[current_player] -= 1
+
+    elif action_type == ACTION_WALL_HORIZONTAL:
+        # Horizontal wall action
+        wall_row, wall_col = action[0], action[1]
+        set_wall_cells(grid, wall_row, wall_col, WALL_ORIENTATION_HORIZONTAL, CELL_WALL)
+        walls_remaining[current_player] -= 1
+
+
+@njit
+def undo_action(grid, player_positions, walls_remaining, current_player, action, old_position):
+    action_type = action[2]
+
+    if action_type == ACTION_MOVE:
+        # Undo move - restore player position
+        new_row, new_col = player_positions[current_player, 0], player_positions[current_player, 1]
+        old_row, old_col = old_position[0], old_position[1]
+
+        # Update grid
+        new_i, new_j = new_row * 2 + 2, new_col * 2 + 2
+        old_i, old_j = old_row * 2 + 2, old_col * 2 + 2
+
+        grid[new_i, new_j] = CELL_FREE
+        grid[old_i, old_j] = current_player
+
+        # Restore player position
+        player_positions[current_player, 0] = old_row
+        player_positions[current_player, 1] = old_col
+
+    elif action_type == ACTION_WALL_VERTICAL:
+        # Undo vertical wall
+        wall_row, wall_col = action[0], action[1]
+        set_wall_cells(grid, wall_row, wall_col, WALL_ORIENTATION_VERTICAL, CELL_FREE)
+        walls_remaining[current_player] += 1
+
+    elif action_type == ACTION_WALL_HORIZONTAL:
+        # Undo horizontal wall
+        wall_row, wall_col = action[0], action[1]
+        set_wall_cells(grid, wall_row, wall_col, WALL_ORIENTATION_HORIZONTAL, CELL_FREE)
+        walls_remaining[current_player] += 1
