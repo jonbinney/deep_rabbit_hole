@@ -5,7 +5,7 @@ from threading import Thread
 from typing import Optional
 
 from agents import Agent, AgentRegistry, ReplayAgent
-from agents.core.trainable_agent import TrainableAgent
+from agents.core.trainable_agent import SelfPlayTrainableAgent, TrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult, MoveInfo
 from quoridor_env import env
 from renderers import PygameRenderer
@@ -129,6 +129,32 @@ class Arena:
         self.game.close()
         return result
 
+    def _self_play_game(self, agent: SelfPlayTrainableAgent, game_id: str) -> GameResult:
+        self.game.reset()
+        agent.start_game(self.game, "player_0")
+
+        self.plugins.start_game(self.game, agent, agent)
+        start_time = time.time()
+
+        winner, steps = agent.self_play(self.game.game)
+        end_time = time.time()
+
+        result = GameResult(
+            player1="player_0",
+            player2="player_1",
+            winner=winner,
+            steps=steps,
+            time_ms=int((end_time - start_time) * 1000),
+            game_id=game_id,
+            moves=[],  # We probably won't need this
+        )
+
+        agent.end_game(self.game)
+        self.plugins.end_game(self.game, result)
+
+        self.game.close()
+        return result
+
     # Replace the existing _play_games method
     def _play_games(self, players: list[str | Agent], times: int, mode: PlayMode) -> list[GameResult]:
         agents = []
@@ -149,7 +175,17 @@ class Arena:
         results = []
 
         try:
-            if mode == PlayMode.ALL_VS_ALL:
+            if len(agents) == 1:
+                agent = agents[0]
+                assert isinstance(agent, SelfPlayTrainableAgent), (
+                    "When only one agent is specified as the player it must be a SelfPlayTrainableAgent"
+                )
+                agent.set_total_episodes(times)
+                for t in range(times):
+                    result = self._self_play_game(agent, f"game_{(t + 1):04d}")
+                    results.append(result)
+
+            elif mode == PlayMode.ALL_VS_ALL:
                 for i in range(len(agents)):
                     for j in range(i + 1, len(agents)):
                         for t in range(times):

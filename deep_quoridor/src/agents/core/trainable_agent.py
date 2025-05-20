@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from quoridor import ActionEncoder
+from quoridor import ActionEncoder, Quoridor
 from utils import SubargsBase, my_device, resolve_path
 from utils.misc import get_opponent_player_id
 
@@ -153,6 +153,14 @@ class TrainableAgent(Agent):
         raise NotImplementedError()
 
     def load_model(self, path):
+        raise NotImplementedError()
+
+
+class SelfPlayTrainableAgent(TrainableAgent):
+    def set_total_episodes(self, n: int):
+        self.total_episodes = n
+
+    def self_play(self, game: Quoridor):
         raise NotImplementedError()
 
 

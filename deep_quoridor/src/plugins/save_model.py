@@ -1,7 +1,7 @@
 from collections import deque
 from typing import Any, Callable, Optional
 
-from agents.core.trainable_agent import TrainableAgent
+from agents.core.trainable_agent import SelfPlayTrainableAgent, TrainableAgent
 from arena_utils import ArenaPlugin
 from utils import resolve_path
 
@@ -34,6 +34,10 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
 
     def start_game(self, game, agent1, agent2):
         self.agent = None
+        if isinstance(agent1, SelfPlayTrainableAgent):
+            self.agent = agent1
+            return
+
         if isinstance(agent1, TrainableAgent) and agent1.is_training():
             self.agent = agent1
 

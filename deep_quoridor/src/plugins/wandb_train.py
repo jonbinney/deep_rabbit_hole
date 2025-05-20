@@ -26,7 +26,7 @@ class WandbParams(SubargsBase):
     # Optional notes to store for the run
     notes: str = ""
 
-    # Wether to upload the final model to wandb
+    # Whether to upload the final model to wandb
     upload_model: bool = True
 
     # How often to log training metrics
