@@ -1,5 +1,2 @@
 human_vs_greedy:
   args: -t 1 -r pygame --players human greedy
-
-human_vs_dexp:
-  args: -t 2 -N 5 -W 3 -r pygame --players human dexp:wandb_alias=v20,nick=d20
