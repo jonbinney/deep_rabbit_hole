@@ -2,7 +2,7 @@ benchmark_B3W0:
   args: -t 100 -N 3 -W 0 --players greedy greedy:p_random=0.1,nick=greedy-ish random sb3ppo:wandb_alias=best -r progressbar arenaresults eloresults computationtimes
 
 benchmark_B5W3:
-  args: -mx 200 -t 100 -N 5 -W 3 --players greedy greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 dexp:wandb_alias=best2,nick=d2 dexp:wandb_alias=best,nick=db dexp:wandb_alias=v19,nick=d19 dexp:wandb_alias=v18,nick=d18 simple dexp:wandb_alias=v20,nick=d20 dexp:wandb_alias=v21,nick=d21 sb3ppo:wandb_alias=best cnn:wandb_alias=v3,nick=c3 cnn:wandb_alias=v2,nick=c2 cnn:wandb_alias=v4,nick=c4 cnn:wandb_alias=v5,nick=c5 -r progressbar arenaresults eloresults computationtimes
+  args: -t 100 -N 5 -W 3 --players random greedy greedy:p_random=0.1,nick=greedy-01 greedy:p_random=0.3,nick=greedy-03 dexp:wandb_alias=best simple sb3ppo:wandb_alias=best -r progressbar arenaresults eloresults computationtimes
 
 benchmark_B9W10:
   args: -t 100 --players greedy greedy:p_random=0.1,nick=greedy-ish dexp:wandb_alias=latest -r progressbar arenaresults eloresults computationtimes
