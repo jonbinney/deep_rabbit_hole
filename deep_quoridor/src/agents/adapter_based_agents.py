@@ -1,4 +1,5 @@
 from agents.adapters.base import BaseTrainableAgentAdapter
+from agents.adapters.board_3c import Board3CAdapter
 from agents.adapters.dict_split_board_adapter import DictSplitBoardAdapter
 from agents.adapters.factory import create_agent_with_adapters
 from agents.adapters.remove_turn_adapter import RemoveTurnAdapter
@@ -51,7 +52,33 @@ class CnnAgent(BaseTrainableAgentAdapter):
         **kwargs,
     ):
         agent = create_agent_with_adapters(
-            [RemoveTurnAdapter, UseOpponentsAfterActionObsAdapter, RotateAdapter, UnifiedBoardAdapter],
+            [RemoveTurnAdapter, UseOpponentsAfterActionObsAdapter, UnifiedBoardAdapter, RotateAdapter],
+            AdaptableAgent,
+            observation_space,
+            action_space,
+            **kwargs,
+        )
+        super().__init__(agent, **kwargs)
+
+
+class Cnn3CAgent(BaseTrainableAgentAdapter):
+    @classmethod
+    def params_class(cls):
+        return AdaptableAgent.params_class()
+
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        return "cnn3c"
+
+    def __init__(
+        self,
+        observation_space,
+        action_space,
+        **kwargs,
+    ):
+        agent = create_agent_with_adapters(
+            [RemoveTurnAdapter, UseOpponentsAfterActionObsAdapter, Board3CAdapter, UnifiedBoardAdapter, RotateAdapter],
             AdaptableAgent,
             observation_space,
             action_space,

@@ -2,7 +2,7 @@ def create_agent_with_adapters(adapter_factories, agent_factory, observation_spa
     new_action_space = action_space
     new_observation_space = observation_space
 
-    for factory in adapter_factories:
+    for factory in reversed(adapter_factories):
         new_observation_space = factory.get_observation_space(new_observation_space)
         new_action_space = factory.get_action_space(new_action_space)
 
