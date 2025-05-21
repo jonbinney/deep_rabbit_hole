@@ -1,6 +1,8 @@
+from agents.nn.cnn3c_v1 import Cnn3cV1Network
 from agents.nn.cnn_v1 import CnnV1Network
 from agents.nn.cnn_v2 import CnnV2Network
 from agents.nn.cnn_v3 import CnnV3Network
+from agents.nn.cnn_v4 import CnnV4Network
 from agents.nn.flat_1024 import Flat1024Network
 from agents.nn.pyramid_512_dropout import P512DropoutNetwork
 
@@ -10,6 +12,8 @@ __all__ = [
     "CnnV1Network",
     "CnnV2Network",
     "CnnV3Network",
+    "CnnV4Network",
+    "Cnn3cV1Network",
     "Flat1024Network",
     "P512DropoutNetwork",
 ]
