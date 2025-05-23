@@ -59,7 +59,7 @@ class Node:
     def get_ucb(self, child):
         # value_sum is in -1 or 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
         # Then we invert it because we're switching players
-        q_value = 1 - ((child.value_sum / child.visit_count) + 1) / 2
+        q_value = ((child.value_sum / child.visit_count) + 1) / 2
         return q_value + self.ucb_c * math.sqrt(math.log(self.visit_count) / child.visit_count)
 
     def backpropagate(self, value):
@@ -72,7 +72,7 @@ class Node:
     # for debug
     def print(self):
         if self.action_taken:
-            q_value = 1 - ((self.value_sum / self.visit_count) + 1) / 2
+            q_value = ((self.value_sum / self.visit_count) + 1) / 2
 
             print(
                 f"{' ' * self.depth * 4}{self.game.action_encoder.action_to_index(self.action_taken)}: ({self.parent.get_ucb(self):.2f}) Q:{q_value} {self.value_sum}/{self.visit_count} {self.winner}"
@@ -88,25 +88,33 @@ class MCTS:
         self.num_searches = num_searches
         self.game = game
 
-    def search(self, game: Quoridor):
-        root = Node(game)
-        player = game.current_player
+    def select(self, node):
+        """
+        Select a node to expand, starting from the given node.
+        As long as the passed node has leaves to expand, that one will be selected.
+        Otherwise, if the node is fully expanded, then its best child will be selected.
+        """
+        while not node.should_expand():
+            node = node.select()
+        return node
+
+    def search(self, initial_game: Quoridor):
+        root = Node(initial_game)
+        good_player = initial_game.current_player
         print("====== SEARCH ========")
-        print(game.board)
-        print(f"Player: {player}")
+        print(initial_game.board)
+        print(f"Player: {good_player}")
 
         for _ in range(self.num_searches):
-            node = root
-
-            while not node.should_expand():
-                node = node.select()
+            # Select a node to expand
+            node = self.select(root)
 
             # TODO, ok? also, should this check be in the node?
-            if node.game.check_win(player):
+            if node.game.check_win(good_player):
                 terminal = True
                 value = 1
                 node.winner = "Me"
-            elif node.game.check_win(1 - player):
+            elif node.game.check_win(1 - good_player):
                 terminal = True
                 value = -1
                 node.winner = "Opp"
@@ -116,16 +124,17 @@ class MCTS:
             if not terminal:
                 node = node.expand()
                 game = copy.deepcopy(node.game)
+                next_player = game.current_player
                 while True:
+                    if game.check_win(next_player):
+                        value = -1
+                        break
+                    elif game.check_win(1 - next_player):
+                        value = 1
+                        break
                     actions = game.get_valid_actions()
                     action = np.random.choice(actions)
                     game.step(action)
-                    if game.check_win(player):
-                        value = 1
-                        break
-                    elif game.check_win(1 - player):
-                        value = -1
-                        break
 
             node.backpropagate(value)
 
