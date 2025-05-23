@@ -115,10 +115,17 @@ class MCTS:
 
             if not terminal:
                 node = node.expand()
-
-                # node.game.get_valid_actions()
-                # TODO simulation
-                value = 0
+                game = copy.deepcopy(node.game)
+                while True:
+                    actions = game.get_valid_actions()
+                    action = np.random.choice(actions)
+                    game.step(action)
+                    if game.check_win(player):
+                        value = 1
+                        break
+                    elif game.check_win(1 - player):
+                        value = -1
+                        break
 
             node.backpropagate(value)
 
