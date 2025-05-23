@@ -25,7 +25,7 @@ def train_dqn(
     trigger_metrics: Optional[tuple[int, int]] = None,
 ):
     plugins = []
-    total_episodes = episodes * (len(players) - 1)
+    total_episodes = episodes * (len(players) - 1) if len(players) > 1 else episodes
 
     after_save_method = None
     if wandb_params is not None:
@@ -55,6 +55,11 @@ def train_dqn(
         swap_players=True,
         max_steps=1000,
     )
+
+    if len(players) == 1:
+        agent1 = AgentRegistry.create_from_encoded_name(players[0], arena.game, training_mode=True)
+        agent2 = AgentRegistry.create_from_encoded_name(players[0], arena.game, training_instance=agent1)
+        players = [agent1, agent2]
 
     arena.play_games(players=players, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
     return
