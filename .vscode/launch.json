@@ -19,6 +19,15 @@
             "justMyCode": false
         },
         {
+            "name": "Python Debugger: MCTS debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": "-N 5 -W 3 -p human mcts -t 1 -r pygame -i 26"
+        },
+        {
             "name": "Test water level model (dataset)",
             "type": "debugpy",
             "request": "launch",

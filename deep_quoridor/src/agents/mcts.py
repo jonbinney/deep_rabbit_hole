@@ -23,11 +23,16 @@ class Node:
         self.depth = depth
         self.winner = ""
         # TODO maybe better to do it lazily
-        self.valid_actions = list(game.get_valid_actions())
-        random.shuffle(self.valid_actions)
+        # self.valid_actions = list(game.get_valid_actions())
+        # random.shuffle(self.valid_actions)
+
+        wall_actions = game.get_valid_wall_actions()
+        random.shuffle(wall_actions)
+        self.valid_actions = game.get_valid_move_actions() + wall_actions
+
         # print("Created a node, valid actions:", self.valid_actions)
         # TOOD arg
-        self.ucb_c = 1.4
+        self.ucb_c = 1  # 1.4
 
     def should_expand(self):
         return len(self.valid_actions) > 0 or len(self.children) == 0
@@ -79,6 +84,9 @@ class Node:
             )
         else:
             print(f"{self.value_sum}/{self.visit_count}")
+
+        if self.depth > 0:
+            return
         for ch in self.children:
             ch.print()
 
@@ -165,7 +173,7 @@ class MCTSAgent(Agent):
         observation = observation["observation"]
 
         game, player, opponent = construct_game_from_observation(observation, self.player_id)
-        mcts = MCTS(100, game)
+        mcts = MCTS(30000, game)
         best = mcts.search(game)
         return game.action_encoder.action_to_index(best.action_taken)
         # return self.action_space.sample(action_mask)
