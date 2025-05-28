@@ -5,24 +5,16 @@ from agents.adapters.base import BaseTrainableAgentAdapter
 from gymnasium import spaces
 
 
-class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
-    """A board adapter that unifies the game board and walls into a single representation.
-    This adapter transforms the game's observation space by merging the board and walls into a
-    single unified board representation. The transformed board includes:
-    - Original board positions (player positions) at even indices
-    - Wall representations as -1 at odd indices
-    - A padding of -1 around the entire board to represent boundaries
-    The unified board format:
-    - Empty spaces: 0
-    - Player 1: 1
-    - Player 2: 2
-    - Walls/Boundaries: -1
-    The transformation expands the original NxN board to a (2N+1)x(2N+1) board to accommodate:
-    1. Original board positions at even indices (i,j where i,j are even)
-    2. Horizontal walls at odd rows, even columns
-    3. Vertical walls at even rows, odd columns
-    4. Wall intersections at odd rows, odd columns
-    5. A border of walls (-1) padding the entire board
+class Board3CAdapter(BaseTrainableAgentAdapter):
+    """A board adapter that transforms the observation space for the uni board into three binary channels.
+
+    The transformed board representation has 3 channels:
+    - Channel 1: Binary mask for current player's position (1s and 0s)
+    - Channel 2: Binary mask for opponent's position (1s and 0s)
+    - Channel 3: Binary mask for walls (1s and 0s)
+
+    This representation makes it easier for neural networks to process the game state
+    by separating different elements into distinct channels.
     """
 
     def handle_step_outcome(
@@ -68,35 +60,15 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
             return None
         observation = observation.copy()
         obs = {}
-        walls = observation["observation"]["walls"]
         for key, value in observation["observation"].items():
-            if key == "walls":
-                continue
-            elif key != "board":
+            if key != "board":
                 obs[key] = value
                 continue
             board = value
-            # Expands the board to include spaces for walls, representing walls with -1 in the odd rows and columns
-            new_board = np.full(
-                (board.shape[0] + board.shape[0] - 1, board.shape[1] + board.shape[1] - 1), 0, dtype=np.int32
-            )
-            new_board[::2, ::2] = board
-            h_walls = walls[:, :, 0]
-            for i in range(h_walls.shape[0]):
-                for j in range(h_walls.shape[1]):
-                    if h_walls[i][j] == 1:
-                        new_board[2 * i + 1][2 * j] = -1
-                        new_board[2 * i + 1][2 * j + 1] = -1
-            v_walls = walls[:, :, 1]
-            for i in range(v_walls.shape[0]):
-                for j in range(v_walls.shape[1]):
-                    if v_walls[i][j] == 1:
-                        new_board[2 * i][2 * j + 1] = -1
-                        new_board[2 * i + 1][2 * j + 1] = -1
-
-            # Pads the board with -1 (walls)
-            obs["board"] = np.pad(new_board, pad_width=1, mode="constant", constant_values=-1)
-
+            board_walls = (board == -1).astype(np.float32)
+            board_my = (board == 1).astype(np.float32)
+            board_opponent = (board == 2).astype(np.float32)
+            obs["board"] = np.stack([board_my, board_opponent, board_walls], axis=0)
         observation["observation"] = obs
         return observation
 
@@ -107,7 +79,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
     @classmethod
     def get_observation_space(cls, original_space):
         board_shape = original_space["observation"]["board"].shape
-        new_board_shape = (board_shape[0] + board_shape[0] + 1, board_shape[1] + board_shape[1] + 1)
+        new_board_shape = (3, board_shape[0], board_shape[1])
         space = {}
         for key, value in original_space.items():
             if key != "observation":
@@ -117,7 +89,7 @@ class UnifiedBoardAdapter(BaseTrainableAgentAdapter):
                 for key, value in original_space["observation"].items():
                     if key == "board":
                         obs_spc["board"] = original_space["observation"]["board"].__class__(
-                            -1, 2, shape=new_board_shape, dtype=np.float32
+                            0, 1, shape=new_board_shape, dtype=np.float32
                         )
                     elif key == "walls":
                         continue

@@ -107,6 +107,7 @@ class Arena:
             step += 1
             # TODO: Move max steps with proper truncation to the environment
             if step >= self.max_steps:
+                print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
                 print(self.game.render())
                 break
 
