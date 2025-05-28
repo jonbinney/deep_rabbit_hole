@@ -10,14 +10,15 @@ class P1024DropoutNetwork(BaseNN):
     """Neural network architecture for policy/value evaluation with dropout layers.
 
     This network consists of fully connected layers with ReLU activations and dropout regularization:
-    - Input layer → 512 units with ReLU and 10% dropout
-    - 512 units → 256 units with ReLU and 10% dropout
-    - 256 units → 256 units with ReLU
-    - 256 units → output layer
+    - Input layer → 1024 units with ReLU and 10% dropout
+    - 1024 units → 512 units with ReLU and 10% dropout
+    - 512 units → 512 units with ReLU
+    - 512 units → 512 units with ReLU
+    - 512 units → output layer
 
     Args:
-        observation_size (int): Size of the input observation vector
-        action_size (int): Size of the output action vector
+        obs_spc: Observation space specification
+        action_spc: Action space specification
 
     Attributes:
         model (nn.Sequential): Sequential container of the network layers
