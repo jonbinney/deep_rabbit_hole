@@ -15,6 +15,7 @@ __all__ = [
 
 
 from agents.adapter_based_agents import Cnn3CAgent, CnnAgent, NDexpAgent
+from agents.alphazero import AlphaZeroAgent  # noqa: E402, F401
 from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     AbstractTrainableAgent,
     ActionLog,
@@ -31,6 +32,7 @@ from agents.replay import ReplayAgent  # noqa: E402, F401
 from agents.sb3_ppo import SB3PPOAgent  # noqa: E402, F401
 from agents.simple import SimpleAgent  # noqa: E402, F401
 
+AgentRegistry.register("alphazero", AlphaZeroAgent)
 AgentRegistry.register("cnn", CnnAgent)
 AgentRegistry.register("cnn3c", Cnn3CAgent)
 AgentRegistry.register("dexp", DExpAgent)
