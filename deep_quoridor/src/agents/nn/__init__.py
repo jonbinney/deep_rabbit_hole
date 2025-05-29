@@ -5,6 +5,7 @@ from agents.nn.cnn_v3 import CnnV3Network
 from agents.nn.cnn_v4 import CnnV4Network
 from agents.nn.flat_1024 import Flat1024Network
 from agents.nn.pyramid_512_dropout import P512DropoutNetwork
+from agents.nn.pyramid_1024_dropout import P1024DropoutNetwork
 
 # Simply importing the classes will trigger the registration due to the BaseNN.__init_subclass__ method
 
@@ -16,4 +17,5 @@ __all__ = [
     "Cnn3cV1Network",
     "Flat1024Network",
     "P512DropoutNetwork",
+    "P1024DropoutNetwork",
 ]
