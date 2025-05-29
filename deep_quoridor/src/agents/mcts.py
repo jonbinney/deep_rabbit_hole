@@ -18,12 +18,17 @@ class MCTSParams(SubargsBase):
     # A higher number favors exploration over exploitation
     c: float = 1.4
     # Maximum number of steps during random simulation before declaring a tie
-    max_steps: int = 1000
+    max_sim_steps: int = 1000
 
     # How to evaluate the value after the node expansion.
-    # - rand_sim: random simulation of a game until there's a winner or max_steps are reached
+    # - rand_sim: random simulation of a game until there's a winner or max_sim_steps are reached
     # - dist: based on the distance of the pawns to the target and the number of remaining walls
     eval: str = "dist"
+
+    # Reward assigned when the expansion reaches the end of the game, In particular when using the "dist" evaluation
+    # we need to make sure that this is bigger than the maximum distance possible, or otherwise the agent may see a bigger reward
+    # coming back so that the reward is based on the distance between agents than actually getting to the target.
+    rewards_multiplier: float = 100
 
 
 class Node:
@@ -110,13 +115,15 @@ class MCTS:
 
     def simulate(self, initial_game: Quoridor) -> float:
         """
-        Simulate playing randomly the rest of the game until one wins or max_steps are reached
+        Simulate playing randomly the rest of the game until one wins or max_sim_steps are reached
         """
         game = copy.deepcopy(initial_game)
 
         next_player = game.current_player
 
-        for i in range(self.params.max_steps):
+        for i in range(self.params.max_sim_steps):
+            # If the player that had the turn from the initial state wins, we need to give a negative value for the node,
+            # because from the parent's node point of view (when the opponent is playing), this node leads to losing.
             if game.check_win(next_player):
                 return -1
 
@@ -147,9 +154,9 @@ class MCTS:
             node = self.select(root)
 
             if node.game.check_win(good_player):
-                value = 100
+                value = self.params.rewards_multiplier
             elif node.game.check_win(1 - good_player):
-                value = -100
+                value = -self.params.rewards_multiplier
             else:
                 node = node.expand()
                 value = self.evaluate(node.game)
