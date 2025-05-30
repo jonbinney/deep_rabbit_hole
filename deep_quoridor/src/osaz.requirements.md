@@ -19,11 +19,27 @@ This file enumarates all the requirements for the generation of an AlphaZero age
  - All files should have a main function which can be called from the command line
  - Make sure to follow linter requirements, including not leaving any trailing blank spaces anywhere
 
+
 ## First request
 
  - First of all, generate a file tictactoe.py which uses OpenSpiel to play an MCTS agent against a random agent in the game of Tic Tac Toe
  - Make sure to add the evaluator parameter to the MCTSBot constructor in both files.  Remember that the OpenSpiel MCTSBot implementation requires an evaluator to judge the value of game states
 
+### Problems from previous generations to avoid
+
+Don't include `simple_plotlib` import, it's not used
+Avoid duplicating evaluator parameters in MCTSBot constructor
+Use OpenSpiel's built-in RandomRolloutEvaluator
+
 ## Second request
  - Then, in a different file, modify what you did in the first one and change the game to Quoridor
 
+### Problems from previous generations to avoid
+
+ - Make sure parameters in quoridor.py are converted to integers
+ - The correct parameter name is "wall_count" not "walls_per_player"
+
+## Third request
+ - Then, in a next different file, create a program that trains an AlphaZero agent to play Quoridor
+ - Make it so that the model is saved to a file after a configurable number of training iterations
+ - Include the ability to run a number of games alternating as P0 and P1 against a random agent, starting from the loaded model file
