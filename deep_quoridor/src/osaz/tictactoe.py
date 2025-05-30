@@ -1,106 +1,109 @@
 #!/usr/bin/env python3
 """
-TicTacToe game with MCTS agent vs Random agent using OpenSpiel framework.
+A script to play Tic-Tac-Toe with OpenSpiel, using MCTS agent vs random agent.
 """
 
-import sys
 import numpy as np
 import pyspiel
+from absl import app, flags
 from open_spiel.python.algorithms import mcts
-from open_spiel.python.algorithms import random_agent
+from open_spiel.python.bots import human, uniform_random
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_integer("num_games", 1, "Number of games to play.")
+flags.DEFINE_integer("num_sims", 1000, "Number of simulations for MCTS.")
+flags.DEFINE_integer("max_simulations", 1000, "Maximum simulations for MCTS.")
+flags.DEFINE_integer("rollout_count", 10, "Rollout count for MCTS.")
+flags.DEFINE_float("temperature", 1.0, "Temperature for MCTS.")
+flags.DEFINE_boolean("verbose", True, "Be verbose.")
+flags.DEFINE_boolean("human_player", False, "Add a human player.")
 
 
-def print_board(state):
-    """
-    Print the current game board.
-    
-    Args:
-        state: The current game state.
-    """
-    board_str = ""
-    for row in range(3):
-        for col in range(3):
-            idx = row * 3 + col
-            if state.observation_string()[idx] == ".":
-                board_str += "."
-            elif state.observation_string()[idx] == "o":
-                board_str += "O"
-            else:
-                board_str += "X"
-            if col < 2:
-                board_str += " "
-        if row < 2:
-            board_str += "\n"
-    
-    print(board_str)
+# Using OpenSpiel's built-in random rollout evaluator
 
 
-def play_game(mcts_bot, random_bot):
-    """
-    Play a game of TicTacToe between an MCTS agent and a Random agent.
-    
-    Args:
-        mcts_bot: The MCTS agent.
-        random_bot: The Random agent.
-    
-    Returns:
-        The final state of the game.
-    """
+def main(_):
+    """Plays Tic-Tac-Toe with MCTS vs Random."""
+    # Load the game
     game = pyspiel.load_game("tic_tac_toe")
-    state = game.new_initial_state()
-    
-    bots = [mcts_bot, random_bot]
-    
-    print("Initial state:")
-    print_board(state)
-    print()
-    
-    while not state.is_terminal():
-        current_player = state.current_player()
-        current_bot = bots[current_player]
-        action = current_bot.step(state)
-        
-        print(f"Player {current_player} ({('X' if current_player == 0 else 'O')}) chose action: {action}")
-        state.apply_action(action)
-        
-        print("New state:")
-        print_board(state)
-        print()
-    
-    # Print game outcome
-    if state.returns()[0] > 0:
-        print("Player 0 (X) won!")
-    elif state.returns()[0] < 0:
-        print("Player 1 (O) won!")
-    else:
-        print("Game ended in a draw!")
-    
-    return state
 
+    # Set up the agents
+    evaluator = mcts.RandomRolloutEvaluator(FLAGS.rollout_count)
 
-def main():
-    """Main function to run the TicTacToe game."""
-    game = pyspiel.load_game("tic_tac_toe")
-    
-    # Create MCTS bot (Player 0)
-    mcts_solver = mcts.MCTSBot(
+    # MCTS Agent (player 0)
+    mcts_bot = mcts.MCTSBot(
         game,
-        uct_c=2,
-        max_simulations=1000,
+        FLAGS.temperature,
+        FLAGS.max_simulations,
+        evaluator=evaluator,
         solve=True,
-        random_state=np.random.RandomState(seed=42))
-    
-    # Create Random bot (Player 1)
-    random_solver = random_agent.RandomAgent(
-        game,
-        player_id=1,
-        random_state=np.random.RandomState(seed=42))
-    
-    # Play game
-    final_state = play_game(mcts_solver, random_solver)
-    
-    print(f"Returns: {final_state.returns()}")
+        random_state=np.random.RandomState(42),
+    )
+
+    # Random Agent (player 1)
+    random_bot = uniform_random.UniformRandomBot(player_id=1, rng=np.random.RandomState(42))
+
+    # Human player if requested
+    if FLAGS.human_player:
+        human_bot = human.HumanBot()
+        bots = [human_bot, random_bot]
+    else:
+        bots = [mcts_bot, random_bot]
+
+    # Set up the game
+    results = np.array([0, 0, 0])  # Wins for player 0, player 1, draws
+
+    # Play the specified number of games
+    for game_num in range(FLAGS.num_games):
+        state = game.new_initial_state()
+
+        if FLAGS.verbose:
+            print(f"Game {game_num + 1}/{FLAGS.num_games}")
+            print(f"Initial state: {state}")
+
+        while not state.is_terminal():
+            if state.is_chance_node():
+                # Sample chance node outcome
+                outcomes = state.chance_outcomes()
+                action_list, prob_list = zip(*outcomes)
+                action = np.random.choice(action_list, p=prob_list)
+                state.apply_action(action)
+            else:
+                current_player = state.current_player()
+                player_bot = bots[current_player]
+                action = player_bot.step(state)
+                if FLAGS.verbose:
+                    print(f"Player {current_player} chooses action: {action}")
+                state.apply_action(action)
+                if FLAGS.verbose:
+                    print(f"State after action: {state}")
+
+        # Record the results
+        if state.returns()[0] > 0:
+            results[0] += 1
+            winner = "MCTS Bot (Player 0)"
+        elif state.returns()[1] > 0:
+            results[1] += 1
+            winner = "Random Bot (Player 1)"
+        else:
+            results[2] += 1
+            winner = "Draw"
+
+        if FLAGS.verbose:
+            print(f"Game {game_num + 1} complete. Winner: {winner}")
+
+    # Print overall results
+    print("\nOverall results:")
+    print(f"MCTS Bot (Player 0) wins: {results[0]}")
+    print(f"Random Bot (Player 1) wins: {results[1]}")
+    print(f"Draws: {results[2]}")
+    print(
+        f"Win percentages: MCTS: {results[0]/FLAGS.num_games:.1%}, "
+        f"Random: {results[1]/FLAGS.num_games:.1%}, "
+        f"Draw: {results[2]/FLAGS.num_games:.1%}"
+    )
 
 
 if __name__ == "__main__":
-    main()
+    app.run(main)
