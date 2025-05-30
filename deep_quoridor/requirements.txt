@@ -1,6 +1,7 @@
 gymnasium
 numba
 numpy
+open_spiel
 pettingzoo
 prettytable
 pygame
