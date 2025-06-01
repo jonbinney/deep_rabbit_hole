@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 import qgrid
 from numba import njit
-from quoridor import Action, ActionEncoder, MoveAction, Player, Quoridor, WallAction, construct_game_from_observation
+from quoridor import Action, ActionEncoder, Player, Quoridor, array_to_action, construct_game_from_observation
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -40,77 +40,6 @@ class SimpleParams(SubargsBase):
 
 
 @njit
-def get_move_actions(grid, player_positions, current_player, board_size):
-    """
-    Get all valid move actions (Numba-optimized).
-    Returns an array of actions where each row is [row, col, action_type=0].
-    """
-    max_actions = board_size * board_size  # Maximum possible moves
-    actions = np.zeros((max_actions, 3), dtype=np.int32)
-    count = 0
-
-    # Check all possible moves on the board
-    for dest_row in range(board_size):
-        for dest_col in range(board_size):
-            if qgrid.is_move_valid(grid, player_positions, current_player, dest_row, dest_col):
-                actions[count, 0] = dest_row
-                actions[count, 1] = dest_col
-                actions[count, 2] = ACTION_MOVE
-                count += 1
-
-    return actions[:count]  # Return only valid actions
-
-
-@njit
-def get_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player, board_size):
-    """
-    Get all valid wall actions (Numba-optimized).
-    Returns an array of actions where each row is [row, col, action_type] with action_type 1 or 2.
-    """
-    wall_size = board_size - 1
-    max_actions = wall_size * wall_size * 2  # Maximum possible wall placements
-    actions = np.zeros((max_actions, 3), dtype=np.int32)
-    count = 0
-
-    # Check all possible wall placements
-    for wall_row in range(wall_size):
-        for wall_col in range(wall_size):
-            # Check vertical walls
-            if qgrid.is_wall_action_valid(
-                grid,
-                player_positions,
-                walls_remaining,
-                goal_rows,
-                current_player,
-                wall_row,
-                wall_col,
-                qgrid.WALL_ORIENTATION_VERTICAL,
-            ):
-                actions[count, 0] = wall_row
-                actions[count, 1] = wall_col
-                actions[count, 2] = ACTION_WALL_VERTICAL
-                count += 1
-
-            # Check horizontal walls
-            if qgrid.is_wall_action_valid(
-                grid,
-                player_positions,
-                walls_remaining,
-                goal_rows,
-                current_player,
-                wall_row,
-                wall_col,
-                qgrid.WALL_ORIENTATION_HORIZONTAL,
-            ):
-                actions[count, 0] = wall_row
-                actions[count, 1] = wall_col
-                actions[count, 2] = ACTION_WALL_HORIZONTAL
-                count += 1
-
-    return actions[:count]  # Return only valid actions
-
-
-@njit
 def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
     """
     Calculate Gaussian weights for wall actions based on distance to players (Numba-optimized).
@@ -142,16 +71,16 @@ def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
 
 @njit
 def sample_actions(
-    grid, player_positions, walls_remaining, goal_rows, current_player, board_size, all_move_actions, all_wall_actions, branching_factor, wall_sigma=0.5
+    grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma=0.5
 ):
     """
     Sample actions for the minimax search (Numba-optimized).
     Returns an array of actions where each row is [row, col, action_type].
     """
-    # First get all valid move actions
-    move_actions = all_move_actions[qgrid.]
+    # Get all valid move actions
+    move_actions = qgrid.get_valid_move_actions(grid, player_positions, current_player)
 
-    # Check if we already have enough move actions
+    # Check whether we already have enough move actions
     if len(move_actions) >= branching_factor:
         # Randomly select branching_factor moves
         indices = np.arange(len(move_actions))
@@ -162,7 +91,7 @@ def sample_actions(
     num_wall_actions_needed = branching_factor - len(move_actions)
 
     # Get all valid wall actions
-    wall_actions = get_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player, board_size)
+    wall_actions = qgrid.get_valid_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player)
 
     # Combine the actions
     if len(wall_actions) <= num_wall_actions_needed:
@@ -241,9 +170,11 @@ def minimax(
     discount_factor,
 ):
     # Apply action
-    old_position = np.array([player_positions[current_player, 0], player_positions[current_player, 1]])
-    qgrid.apply_action(grid, player_positions, walls_remaining, current_player, action)
     opponent = 1 - current_player
+    opponent_old_position = np.array([player_positions[opponent, 0], player_positions[opponent, 1]])
+
+    # Apply the action the opponent took
+    qgrid.apply_action(grid, player_positions, walls_remaining, opponent, action)
 
     # Did we win?
     if qgrid.check_win(player_positions, goal_rows, current_player):
@@ -266,7 +197,6 @@ def minimax(
             walls_remaining,
             goal_rows,
             current_player,
-            len(goal_rows),
             branching_factor,
             wall_sigma,
         )
@@ -305,7 +235,7 @@ def minimax(
                 best_value = min(best_value, value)
 
     # Undo action
-    qgrid.undo_action(grid, player_positions, walls_remaining, current_player, action, old_position)
+    qgrid.undo_action(grid, player_positions, walls_remaining, opponent, action, opponent_old_position)
 
     return best_value
 
@@ -328,7 +258,7 @@ def choose_action_numba(
     """
     # Sample actions to evaluate
     actions = sample_actions(
-        grid, player_positions, walls_remaining, goal_rows, current_player, len(goal_rows), branching_factor, wall_sigma
+        grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma
     )
     assert len(actions) > 0, "No valid actions found"
 
@@ -387,7 +317,6 @@ def choose_action(
     goal_rows[1] = game.get_goal_row(Player.TWO)
 
     current_player = int(game.get_current_player())
-    agent_player = current_player
 
     # Use Numba-optimized minimax to choose the best action
     sigma = wall_sigma if wall_sigma is not None else 0.5
@@ -397,7 +326,6 @@ def choose_action(
         walls_remaining,
         goal_rows,
         current_player,
-        agent_player,
         max_depth,
         branching_factor,
         sigma,
@@ -408,7 +336,7 @@ def choose_action(
     if action[0] == -1:  # No valid action found
         return None
 
-    return action
+    return array_to_action(action)
 
 
 class SimpleAgent(Agent):
@@ -439,7 +367,7 @@ class SimpleAgent(Agent):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
 
-        game, player, opponent = construct_game_from_observation(observation, self.player_id)
+        game, _, _ = construct_game_from_observation(observation, self.player_id)
 
         chosen_action = choose_action(
             game,
@@ -450,7 +378,7 @@ class SimpleAgent(Agent):
         )
 
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
-        action_id = self.action_encoder.array_to_index(chosen_action)
+        action_id = self.action_encoder.action_to_index(chosen_action)
         assert action_mask[action_id] == 1, "The action is not valid according to the action mask."
 
         return action_id

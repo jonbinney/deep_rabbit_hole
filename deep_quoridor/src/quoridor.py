@@ -73,21 +73,22 @@ class ActionEncoder:
 
         return action
 
-    def array_to_action(action: np.ndarray) -> Action:
-        """
-        Convert a NumPy array action [row, col, action_type] to a Quoridor Action object.
-        """
-        action = None
-        if action[2] == qgrid.ACTION_MOVE:
-            action = MoveAction((action[0], action[1]))
-        elif action[2] == qgrid.ACTION_WALL_VERTICAL:
-            action = WallAction((action[0], action[1]), qgrid.WALL_ORIENTATION_VERTICAL)
-        elif action[2] == qgrid.ACTION_WALL_HORIZONTAL:
-            action = WallAction((action[0], action[1]), qgrid.WALL_ORIENTATION_HORIZONTAL)
-        else:
-            raise ValueError(f"Invalid action type: {action[2]}")
 
-        return action
+def array_to_action(action_array: np.ndarray) -> Action:
+    """
+    Convert a NumPy array action [row, col, action_type] to a Quoridor Action object.
+    """
+    action = None
+    if action_array[2] == qgrid.ACTION_MOVE:
+        action = MoveAction((action_array[0], action_array[1]))
+    elif action_array[2] == qgrid.ACTION_WALL_VERTICAL:
+        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_VERTICAL)
+    elif action_array[2] == qgrid.ACTION_WALL_HORIZONTAL:
+        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_HORIZONTAL)
+    else:
+        raise ValueError(f"Invalid action type: {action_array[2]}")
+
+    return action
 
 
 class Board:
