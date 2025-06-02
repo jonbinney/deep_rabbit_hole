@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 import qgrid
 from numba import njit, prange
-from quoridor import Action, ActionEncoder, Player, Quoridor, array_to_action, construct_game_from_observation
+from quoridor import ActionEncoder, Player, array_to_action, construct_game_from_observation
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -12,11 +12,6 @@ from agents.core import Agent
 # We use a large reward to encourage the agent to win the game, but we can't use infinity
 # because then multiplying by a discount factor won't decrease the reward.
 WINNING_REWARD = 1e6
-
-# Constants for action type
-ACTION_MOVE = 0
-ACTION_WALL_VERTICAL = 1
-ACTION_WALL_HORIZONTAL = 2
 
 
 @dataclass
