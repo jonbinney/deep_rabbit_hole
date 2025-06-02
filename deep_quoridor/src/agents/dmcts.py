@@ -4,10 +4,12 @@ import random
 from dataclasses import dataclass
 from typing import Optional
 
+import torch
 from quoridor import Action, Player, Quoridor, construct_game_from_observation
 from utils.subargs import SubargsBase
 
 from agents.core import Agent
+from agents.dexp import DExpAgent, DExpAgentParams
 
 
 @dataclass
@@ -19,15 +21,9 @@ class DMCTSParams(SubargsBase):
     c: float = 1.4
     # Maximum number of steps during random simulation before declaring a tie
     max_sim_steps: int = 1000
-
-    # How to evaluate the value after the node expansion.
-    # - rand_sim: random simulation of a game until there's a winner or max_sim_steps are reached
-    # - dist: based on the distance of the pawns to the target and the number of remaining walls
-    eval: str = "dist"
-
-    # Reward assigned when the expansion reaches the end of the game, In particular when using the "dist" evaluation
-    # we need to make sure that this is bigger than the maximum distance possible, or otherwise the agent may see a bigger reward
-    # coming back so that the reward is based on the distance between agents than actually getting to the target.
+    # DQN network parameters
+    dqn_params: DExpAgentParams = DExpAgentParams()
+    # Reward assigned when the expansion reaches the end of the game
     rewards_multiplier: float = 100
 
 
@@ -87,9 +83,19 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, game: Quoridor, params: MCTSParams):
+    def __init__(self, game: Quoridor, params: DMCTSParams):
         self.game = game
         self.params = params
+
+        # Initialize DQN agent for value estimation
+        self.dqn = DExpAgent(
+            board_size=game.board.size,
+            max_walls=game.board.max_walls,
+            observation_space=None,  # Not needed for inference
+            action_space=None,  # Not needed for inference
+            params=self.params.dqn_params,
+            load_model_if_needed=True,
+        )
 
     def select(self, node: Node) -> Node:
         """
@@ -137,6 +143,19 @@ class MCTS:
         return 0
 
     def evaluate(self, game: Quoridor) -> float:
+        """Return an evaluation of the current position"""
+        # Convert game state to observation format
+        observation = game.get_observation()
+        # Get DQN's value estimation
+        state = self.dqn._observation_to_tensor(observation["observation"], str(game.current_player))
+        with torch.no_grad():
+            q_values = self.dqn.online_network(state)
+            # Use the maximum Q-value as position evaluation
+            value = torch.max(q_values).item()
+            # Normalize to [-1, 1] range
+            value = math.tanh(value / 10.0)  # Division by 10 to avoid extreme values
+            return value
+
         if self.params.eval == "rand_sim":
             return self.simulate(game)
 
@@ -166,17 +185,17 @@ class MCTS:
         return root.children
 
 
-class MCTSAgent(Agent):
-    def __init__(self, params=MCTSParams(), **kwargs):
+class DMCTSAgent(Agent):
+    def __init__(self, params=DMCTSParams(), **kwargs):
         super().__init__()
         self.params = params
 
     def name(self):
-        return self.params.nick if self.params.nick else "mcts"
+        return self.params.nick if self.params.nick else "dmcts"
 
     @classmethod
     def params_class(cls):
-        return MCTSParams
+        return DMCTSParams
 
     def start_game(self, game, player_id):
         self.player_id = player_id
