@@ -3,7 +3,7 @@ from typing import Optional
 
 import numpy as np
 import qgrid
-from numba import njit
+from numba import njit, prange
 from quoridor import Action, ActionEncoder, Player, Quoridor, array_to_action, construct_game_from_observation
 from utils import SubargsBase
 
@@ -240,8 +240,8 @@ def minimax(
     return best_value
 
 
-@njit
-def choose_action_numba(
+@njit(parallel=True)
+def evaluate_actions(
     grid,
     player_positions,
     walls_remaining,
@@ -253,8 +253,7 @@ def choose_action_numba(
     discount_factor,
 ):
     """
-    Choose the best action using minimax (Numba-optimized).
-    Returns the action array [row, col, action_type] and its value.
+    Evaluate all actions for the current player using the minimax algorithm.
     """
     # Sample actions to evaluate
     actions = sample_actions(
@@ -264,12 +263,13 @@ def choose_action_numba(
 
     # Evaluate all actions
     values = np.zeros(len(actions), dtype=np.float32)
-    for i in range(len(actions)):
+    for i in prange(len(actions)):
+        # Since we run this loop in parallel, we need to copy the game state arrays for each minimax call
         values[i] = minimax(
             actions[i],
-            grid,
-            player_positions,
-            walls_remaining,
+            grid.copy(),
+            player_positions.copy(),
+            walls_remaining.copy(),
             goal_rows,
             1 - current_player,
             current_player,  # Assume we are choosing an action for the current player.
@@ -279,64 +279,7 @@ def choose_action_numba(
             discount_factor,
         )
 
-    # If multiple actions have the same value, choose randomly among them
-    best_value = np.max(values)
-    indices = np.flatnonzero(values == best_value)
-    assert len(indices) > 0, "No best action found"
-    if len(indices) == 1:
-        best_action_i = indices[0]
-    else:
-        best_action_i = indices[np.random.randint(0, len(indices))]
-
-    return actions[best_action_i]
-
-
-def choose_action(
-    game: Quoridor,
-    max_depth: int,
-    branching_factor: int,
-    wall_sigma: float | None,
-    discount_factor: float,
-) -> tuple[Optional[Action], float]:
-    """
-    Minimax algorithm to choose the best action for the current player.
-    This is a wrapper around the Numba-optimized implementation.
-    """
-    # Extract the game state as NumPy arrays
-    grid = game.board._grid
-    player_positions = np.zeros((2, 2), dtype=np.int32)
-    player_positions[0] = game.board.get_player_position(Player.ONE)
-    player_positions[1] = game.board.get_player_position(Player.TWO)
-
-    walls_remaining = np.zeros(2, dtype=np.int32)
-    walls_remaining[0] = game.board.get_walls_remaining(Player.ONE)
-    walls_remaining[1] = game.board.get_walls_remaining(Player.TWO)
-
-    goal_rows = np.zeros(2, dtype=np.int32)
-    goal_rows[0] = game.get_goal_row(Player.ONE)
-    goal_rows[1] = game.get_goal_row(Player.TWO)
-
-    current_player = int(game.get_current_player())
-
-    # Use Numba-optimized minimax to choose the best action
-    sigma = wall_sigma if wall_sigma is not None else 0.5
-    action = choose_action_numba(
-        grid,
-        player_positions,
-        walls_remaining,
-        goal_rows,
-        current_player,
-        max_depth,
-        branching_factor,
-        sigma,
-        discount_factor,
-    )
-
-    # Convert the action to a Quoridor Action object
-    if action[0] == -1:  # No valid action found
-        return None
-
-    return array_to_action(action)
+    return actions, values
 
 
 class SimpleAgent(Agent):
@@ -360,23 +303,58 @@ class SimpleAgent(Agent):
                 param_strings.append(f"{f.name}={getattr(self.params, f.name)}")
         return "simple " + ",".join(param_strings)
 
-    def start_game(self, game, player_id):
+    def start_game(self, _, player_id):
         self.player_id = player_id
 
     def get_action(self, observation):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
-
         game, _, _ = construct_game_from_observation(observation, self.player_id)
 
-        chosen_action = choose_action(
-            game,
+        # Convert the game state to arrays that can be used by Numba
+        grid = game.board._grid
+        player_positions = np.zeros((2, 2), dtype=np.int32)
+        player_positions[0] = game.board.get_player_position(Player.ONE)
+        player_positions[1] = game.board.get_player_position(Player.TWO)
+        walls_remaining = np.zeros(2, dtype=np.int32)
+        walls_remaining[0] = game.board.get_walls_remaining(Player.ONE)
+        walls_remaining[1] = game.board.get_walls_remaining(Player.TWO)
+        goal_rows = np.zeros(2, dtype=np.int32)
+        goal_rows[0] = game.get_goal_row(Player.ONE)
+        goal_rows[1] = game.get_goal_row(Player.TWO)
+        current_player = int(game.get_current_player())
+
+        # Use Numba-optimized minimax to evaluate possible actions
+        actions, values = evaluate_actions(
+            grid,
+            player_positions,
+            walls_remaining,
+            goal_rows,
+            current_player,
             self.params.max_depth,
             self.params.branching_factor,
             self.params.wall_sigma,
             self.params.discount_factor,
         )
 
+        # Choose the best action. If multiple actions have the same value, choose randomly among them
+        best_value = np.max(values)
+        indices = np.flatnonzero(values == best_value)
+        assert len(indices) > 0, "No best action found"
+        if len(indices) == 1:
+            best_action_i = indices[0]
+        else:
+            best_action_i = indices[np.random.randint(0, len(indices))]
+        best_action = actions[best_action_i]
+        chosen_action = array_to_action(best_action)
+
+        # Log the actions we considered
+        if self.action_log.is_enabled():
+            self.action_log.clear()
+            action_score_dict = {array_to_action(actions[i]): values[i] for i in range(len(actions))}
+            self.action_log.action_score_ranking(action_score_dict)
+
+        # Sanity checks
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
         action_id = self.action_encoder.action_to_index(chosen_action)
         assert action_mask[action_id] == 1, "The action is not valid according to the action mask."
