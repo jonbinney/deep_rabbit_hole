@@ -19,10 +19,10 @@ class SimpleParams(SubargsBase):
     nick: Optional[str] = None
 
     # How many moves to look ahead in the minimax algorithm.
-    max_depth: int = 2
+    max_depth: int = 4
 
     # How many actions to consider at each minimax stage.
-    branching_factor: int = 20
+    branching_factor: int = 100
 
     # We use a Guassian distribution centered around each player's position to sample wall actions.
     # Sigma is the standard deviation of this distribution; a smaller sigma means the agent is more
