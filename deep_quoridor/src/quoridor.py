@@ -53,7 +53,6 @@ class ActionEncoder:
         else:
             raise ValueError(f"Invalid action type: {action}")
 
-    @cache
     def index_to_action(self, idx) -> Action:
         """
         Converts an action index to an action object.
