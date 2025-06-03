@@ -19,7 +19,7 @@ class SimpleParams(SubargsBase):
     nick: Optional[str] = None
 
     # How many moves to look ahead in the minimax algorithm.
-    max_depth: int = 4
+    max_depth: int = 3
 
     # How many actions to consider at each minimax stage.
     branching_factor: int = 100
@@ -31,7 +31,11 @@ class SimpleParams(SubargsBase):
 
     # Future rewards are worth less. This makes the agent try to win quickly. Without this,
     # once the agent knows it can win, it may oscillate between two moves instead of just winning.
-    discount_factor: float = 0.99
+    discount_factor: float = 0.999
+
+    # After searching both walls and moves for max_depth, search this much more looking only at moves.
+    # This is better than just using shortest path because it considers opponent positions for jumps.
+    extra_move_only_depth: int = 3
 
 
 @njit
@@ -66,7 +70,14 @@ def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
 
 @njit
 def sample_actions(
-    grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma=0.5
+    grid,
+    player_positions,
+    walls_remaining,
+    goal_rows,
+    current_player,
+    branching_factor,
+    wall_sigma=0.5,
+    moves_only=False,
 ):
     """
     Sample actions for the minimax search (Numba-optimized).
@@ -76,7 +87,7 @@ def sample_actions(
     move_actions = qgrid.get_valid_move_actions(grid, player_positions, current_player)
 
     # Check whether we already have enough move actions
-    if len(move_actions) >= branching_factor:
+    if len(move_actions) >= branching_factor or moves_only:
         # Randomly select branching_factor moves
         indices = np.arange(len(move_actions))
         np.random.shuffle(indices)
@@ -159,10 +170,12 @@ def minimax(
     goal_rows,
     current_player,
     agent_player,
-    depth,
+    moves_only,
+    max_depth,
     branching_factor,
     wall_sigma,
     discount_factor,
+    extra_move_only_depth,
 ):
     # Apply action
     opponent = 1 - current_player
@@ -180,20 +193,20 @@ def minimax(
         best_value = -WINNING_REWARD if current_player == agent_player else WINNING_REWARD
 
     # Have we reached the maximum depth?
-    elif depth == 0:
+    elif max_depth == 0 and extra_move_only_depth == 0:
         best_value = compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player)
 
     # Try actions from this state.
     else:
+        if max_depth == 0 and extra_move_only_depth > 0:
+            # Keep searching, but only for moves.
+            moves_only = True
+            max_depth = extra_move_only_depth
+            extra_move_only_depth = 0
+
         # Sample actions to evaluate
         next_actions = sample_actions(
-            grid,
-            player_positions,
-            walls_remaining,
-            goal_rows,
-            current_player,
-            branching_factor,
-            wall_sigma,
+            grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma, moves_only
         )
         assert len(next_actions) > 0, "No valid actions found"
 
@@ -214,10 +227,12 @@ def minimax(
                 goal_rows,
                 1 - current_player,
                 agent_player,
-                depth - 1,
+                moves_only,
+                max_depth - 1,
                 branching_factor,
                 wall_sigma,
                 discount_factor,
+                extra_move_only_depth,
             )
 
             # Apply discount factor
@@ -246,13 +261,24 @@ def evaluate_actions(
     branching_factor,
     wall_sigma,
     discount_factor,
+    extra_move_only_depth,
 ):
     """
     Evaluate all actions for the current player using the minimax algorithm.
     """
+    moves_only = False
+    if max_depth == 0:
+        if extra_move_only_depth > 0:
+            # If we are only looking for moves, we can skip the wall actions.
+            moves_only = True
+            extra_move_only_depth = 0
+            max_depth = extra_move_only_depth
+        else:
+            # Doesn't make sense to evaluate without any search depth.
+            raise ValueError("Depth must be greater than 0 or extra_move_only_depth must be greater than 0.")
     # Sample actions to evaluate
     actions = sample_actions(
-        grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma
+        grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma, moves_only
     )
     assert len(actions) > 0, "No valid actions found"
 
@@ -268,10 +294,12 @@ def evaluate_actions(
             goal_rows,
             1 - current_player,
             current_player,  # Assume we are choosing an action for the current player.
+            moves_only,
             max_depth - 1,
             branching_factor,
             wall_sigma,
             discount_factor,
+            extra_move_only_depth,
         )
 
     return actions, values
@@ -330,6 +358,7 @@ class SimpleAgent(Agent):
             self.params.branching_factor,
             self.params.wall_sigma,
             self.params.discount_factor,
+            self.params.extra_move_only_depth,
         )
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them
