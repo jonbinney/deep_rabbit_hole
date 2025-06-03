@@ -1,9 +1,10 @@
-import random
 from dataclasses import dataclass, fields
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, ActionEncoder, Player, Quoridor, WallAction, construct_game_from_observation
+import qgrid
+from numba import njit, prange
+from quoridor import ActionEncoder, Player, array_to_action, construct_game_from_observation
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -18,10 +19,10 @@ class SimpleParams(SubargsBase):
     nick: Optional[str] = None
 
     # How many moves to look ahead in the minimax algorithm.
-    max_depth: int = 2
+    max_depth: int = 4
 
     # How many actions to consider at each minimax stage.
-    branching_factor: int = 20
+    branching_factor: int = 100
 
     # We use a Guassian distribution centered around each player's position to sample wall actions.
     # Sigma is the standard deviation of this distribution; a smaller sigma means the agent is more
@@ -33,110 +34,247 @@ class SimpleParams(SubargsBase):
     discount_factor: float = 0.99
 
 
-def compute_wall_weights(
-    wall_actions: list[WallAction], position_1: tuple[int, int], position_2: tuple[int, int], sigma
-) -> float:
-    walls_array = np.array([wall.position for wall in wall_actions], dtype=np.float32)
-    walls_array += (0.5, 0.5)  # Adjust wall positions to reflect where their center is in player coordinates.
-    squared_distances_to_position_1 = ((walls_array - position_1) ** 2).sum(axis=1)
-    squared_distances_to_position_2 = ((walls_array - position_2) ** 2).sum(axis=1)
-    min_squared_distances = np.minimum(squared_distances_to_position_1, squared_distances_to_position_2)
-    weights = np.exp(-0.5 * min_squared_distances / sigma**2)
+@njit
+def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
+    """
+    Calculate Gaussian weights for wall actions based on distance to players (Numba-optimized).
+    """
+    num_actions = len(wall_actions)
+    weights = np.zeros(num_actions, dtype=np.float32)
+
+    for i in range(num_actions):
+        wall_row, wall_col = wall_actions[i, 0], wall_actions[i, 1]
+        wall_pos = np.array([wall_row + 0.5, wall_col + 0.5], dtype=np.float32)
+
+        # Calculate distance to both players
+        d1 = (wall_pos[0] - p1_pos[0]) ** 2 + (wall_pos[1] - p1_pos[1]) ** 2
+        d2 = (wall_pos[0] - p2_pos[0]) ** 2 + (wall_pos[1] - p2_pos[1]) ** 2
+        min_dist = min(d1, d2)
+
+        # Calculate Gaussian weight
+        weights[i] = np.exp(-0.5 * min_dist / (sigma**2))
+
+    # Normalize weights
+    weights_sum = np.sum(weights)
+    if weights_sum > 0:
+        weights = weights / weights_sum
+    else:
+        weights.fill(1.0 / num_actions)
+
     return weights
 
 
-def sample_actions(game: Quoridor, n: int, wall_sigma: float | None = None) -> list[Action]:
+@njit
+def sample_actions(
+    grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma=0.5
+):
     """
-    Choose a sample of valid actions for the current player.
-
-    Starts by including all valid move actions, then adds a random sample of valid wall actions. May return less than
-    n actions if there are not enough valid actions.
+    Sample actions for the minimax search (Numba-optimized).
+    Returns an array of actions where each row is [row, col, action_type].
     """
-    actions = game.get_valid_move_actions()
-    if len(actions) > n:
-        actions = random.sample(actions, n)
+    # Get all valid move actions
+    move_actions = qgrid.get_valid_move_actions(grid, player_positions, current_player)
 
-    if len(actions) < n:
-        num_wall_actions = n - len(actions)
-        wall_actions = game.get_valid_wall_actions()
-        if len(wall_actions) > num_wall_actions:
-            if wall_sigma is None:
-                # Use a uniform distribution to sample wall actions.
-                wall_actions = random.sample(wall_actions, num_wall_actions)
-            else:
-                # Weight walls based on their distance to the players.
-                position_1 = game.board.get_player_position(Player.ONE)
-                position_2 = game.board.get_player_position(Player.TWO)
-                wall_weights = compute_wall_weights(wall_actions, position_1, position_2, wall_sigma)
-                wall_actions = np.random.choice(
-                    wall_actions,
-                    size=num_wall_actions,
-                    replace=False,
-                    p=wall_weights / np.sum(wall_weights),
-                )
+    # Check whether we already have enough move actions
+    if len(move_actions) >= branching_factor:
+        # Randomly select branching_factor moves
+        indices = np.arange(len(move_actions))
+        np.random.shuffle(indices)
+        return move_actions[indices[:branching_factor]]
 
-        actions.extend(wall_actions)
+    # Calculate how many wall actions we need
+    num_wall_actions_needed = branching_factor - len(move_actions)
 
-    return actions
+    # Get all valid wall actions
+    wall_actions = qgrid.get_valid_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player)
 
-
-def choose_action(
-    game: Quoridor,
-    player: Player,
-    opponent: Player,
-    max_depth: int,
-    branching_factor: int,
-    wall_sigma: float | None,
-    discount_factor: float,
-) -> tuple[Optional[Action], float]:
-    """
-    Minimax algorithm to choose the best action for the current player.
-
-    The other agent tries to minimize the reward of the current player.
-    """
-    if game.check_win(player):
-        return None, WINNING_REWARD
-    elif game.check_win(opponent):
-        return None, -WINNING_REWARD
-    elif max_depth == 0:
-        distance_reward = game.player_distance_to_target(opponent) - game.player_distance_to_target(player)
-        wall_reward = game.board.get_walls_remaining(player) - game.board.get_walls_remaining(opponent)
-        return None, distance_reward + wall_reward / 100
-
-    actions = sample_actions(game, branching_factor, wall_sigma)
-    assert len(actions) > 0, "There are no valid actions for the current player."
-
-    values = []
-    current_player_before_action = game.get_current_player()
-    position_before_action = game.board.get_player_position(current_player_before_action)
-    for action in actions:
-        # Apply the action to the game.
-        game.step(action)
-
-        # Recursively call this function to choose the next player's action.
-        _, value = choose_action(game, player, opponent, max_depth - 1, branching_factor, wall_sigma, discount_factor)
-        value = discount_factor * value
-        values.append(value)
-
-        # Undo the action to put the game back to its original state.
-        if isinstance(action, WallAction):
-            game.board.remove_wall(current_player_before_action, action.position, action.orientation)
-        else:
-            game.board.move_player(current_player_before_action, position_before_action)
-        game.set_current_player(current_player_before_action)
-
-    # "player" tries to maximize the reward, while "opponent" tries to minimize it.
-    values = np.array(values)
-    if current_player_before_action == player:
-        best_value = values.max()
+    # Combine the actions
+    if len(wall_actions) <= num_wall_actions_needed:
+        # Use all wall actions
+        combined_actions = np.zeros((len(move_actions) + len(wall_actions), 3), dtype=np.int32)
+        combined_actions[: len(move_actions)] = move_actions
+        combined_actions[len(move_actions) :] = wall_actions
+        return combined_actions
     else:
-        best_value = values.min()
+        # Sample wall actions based on distance to players
+        if wall_sigma > 0:
+            weights = gaussian_wall_weights(wall_actions, player_positions[0], player_positions[1], wall_sigma)
 
-    best_action_indices = np.flatnonzero(values == best_value)
-    # There may be multiple actions with the same value, so we randomly choose one of them.
-    chosen_action_index = np.random.choice(best_action_indices)
+            # Sample wall actions using weights
+            indices = np.zeros(num_wall_actions_needed, dtype=np.int32)
+            cumulative = np.cumsum(weights)
 
-    return actions[chosen_action_index], values[chosen_action_index]
+            for i in range(num_wall_actions_needed):
+                r = np.random.random()
+                for j in range(len(cumulative)):
+                    if r <= cumulative[j]:
+                        indices[i] = j
+                        break
+        else:
+            # Sample wall actions uniformly
+            indices = np.zeros(num_wall_actions_needed, dtype=np.int32)
+            temp_indices = np.arange(len(wall_actions))
+            np.random.shuffle(temp_indices)
+            for i in range(min(num_wall_actions_needed, len(temp_indices))):
+                indices[i] = temp_indices[i]
+
+        # Combine move actions with sampled wall actions
+        sampled_wall_actions = wall_actions[indices]
+        combined_actions = np.zeros((len(move_actions) + len(sampled_wall_actions), 3), dtype=np.int32)
+        combined_actions[: len(move_actions)] = move_actions
+        combined_actions[len(move_actions) :] = sampled_wall_actions
+
+        return combined_actions
+
+
+@njit
+def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player):
+    """
+    Evaluate a board position (Numba-optimized).
+    """
+    # Get distances to goals
+    opponent = 1 - agent_player
+    agent_distance = qgrid.distance_to_row(
+        grid, player_positions[agent_player, 0], player_positions[agent_player, 1], goal_rows[agent_player]
+    )
+    opponent_distance = qgrid.distance_to_row(
+        grid, player_positions[opponent, 0], player_positions[opponent, 1], goal_rows[opponent]
+    )
+
+    assert agent_distance != -1 and opponent_distance != -1
+
+    # Compute heuristic value based on distances and walls
+    distance_reward = opponent_distance - agent_distance
+    wall_reward = (walls_remaining[agent_player] - walls_remaining[opponent]) / 100.0
+
+    return distance_reward + wall_reward
+
+
+@njit
+def minimax(
+    action,
+    grid,
+    player_positions,
+    walls_remaining,
+    goal_rows,
+    current_player,
+    agent_player,
+    depth,
+    branching_factor,
+    wall_sigma,
+    discount_factor,
+):
+    # Apply action
+    opponent = 1 - current_player
+    opponent_old_position = np.array([player_positions[opponent, 0], player_positions[opponent, 1]])
+
+    # Apply the action the opponent took
+    qgrid.apply_action(grid, player_positions, walls_remaining, opponent, action)
+
+    # Did we win?
+    if qgrid.check_win(player_positions, goal_rows, current_player):
+        best_value = WINNING_REWARD if current_player == agent_player else -WINNING_REWARD
+
+    # Did the opponent win?
+    elif qgrid.check_win(player_positions, goal_rows, opponent):
+        best_value = -WINNING_REWARD if current_player == agent_player else WINNING_REWARD
+
+    # Have we reached the maximum depth?
+    elif depth == 0:
+        best_value = compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player)
+
+    # Try actions from this state.
+    else:
+        # Sample actions to evaluate
+        next_actions = sample_actions(
+            grid,
+            player_positions,
+            walls_remaining,
+            goal_rows,
+            current_player,
+            branching_factor,
+            wall_sigma,
+        )
+        assert len(next_actions) > 0, "No valid actions found"
+
+        # Determine if maximizing or minimizing
+        is_maximizing = current_player == agent_player
+        best_value = -np.float32(WINNING_REWARD * 2) if is_maximizing else np.float32(WINNING_REWARD * 2)
+
+        # Evaluate all actions
+        for i in range(len(next_actions)):
+            next_action = next_actions[i]
+
+            # Recursively evaluate position
+            value = minimax(
+                next_action,
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                1 - current_player,
+                agent_player,
+                depth - 1,
+                branching_factor,
+                wall_sigma,
+                discount_factor,
+            )
+
+            # Apply discount factor
+            value *= discount_factor
+
+            # Update best value
+            if is_maximizing:
+                best_value = max(best_value, value)
+            else:
+                best_value = min(best_value, value)
+
+    # Undo action
+    qgrid.undo_action(grid, player_positions, walls_remaining, opponent, action, opponent_old_position)
+
+    return best_value
+
+
+@njit(parallel=True)
+def evaluate_actions(
+    grid,
+    player_positions,
+    walls_remaining,
+    goal_rows,
+    current_player,
+    max_depth,
+    branching_factor,
+    wall_sigma,
+    discount_factor,
+):
+    """
+    Evaluate all actions for the current player using the minimax algorithm.
+    """
+    # Sample actions to evaluate
+    actions = sample_actions(
+        grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma
+    )
+    assert len(actions) > 0, "No valid actions found"
+
+    # Evaluate all actions
+    values = np.zeros(len(actions), dtype=np.float32)
+    for i in prange(len(actions)):
+        # Since we run this loop in parallel, we need to copy the game state arrays for each minimax call
+        values[i] = minimax(
+            actions[i],
+            grid.copy(),
+            player_positions.copy(),
+            walls_remaining.copy(),
+            goal_rows,
+            1 - current_player,
+            current_player,  # Assume we are choosing an action for the current player.
+            max_depth - 1,
+            branching_factor,
+            wall_sigma,
+            discount_factor,
+        )
+
+    return actions, values
 
 
 class SimpleAgent(Agent):
@@ -160,25 +298,58 @@ class SimpleAgent(Agent):
                 param_strings.append(f"{f.name}={getattr(self.params, f.name)}")
         return "simple " + ",".join(param_strings)
 
-    def start_game(self, game, player_id):
+    def start_game(self, _, player_id):
         self.player_id = player_id
 
     def get_action(self, observation):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
+        game, _, _ = construct_game_from_observation(observation, self.player_id)
 
-        game, player, opponent = construct_game_from_observation(observation, self.player_id)
+        # Convert the game state to arrays that can be used by Numba
+        grid = game.board._grid
+        player_positions = np.zeros((2, 2), dtype=np.int32)
+        player_positions[0] = game.board.get_player_position(Player.ONE)
+        player_positions[1] = game.board.get_player_position(Player.TWO)
+        walls_remaining = np.zeros(2, dtype=np.int32)
+        walls_remaining[0] = game.board.get_walls_remaining(Player.ONE)
+        walls_remaining[1] = game.board.get_walls_remaining(Player.TWO)
+        goal_rows = np.zeros(2, dtype=np.int32)
+        goal_rows[0] = game.get_goal_row(Player.ONE)
+        goal_rows[1] = game.get_goal_row(Player.TWO)
+        current_player = int(game.get_current_player())
 
-        chosen_action, chosen_value = choose_action(
-            game,
-            player,
-            opponent,
+        # Use Numba-optimized minimax to evaluate possible actions
+        actions, values = evaluate_actions(
+            grid,
+            player_positions,
+            walls_remaining,
+            goal_rows,
+            current_player,
             self.params.max_depth,
             self.params.branching_factor,
             self.params.wall_sigma,
             self.params.discount_factor,
         )
 
+        # Choose the best action. If multiple actions have the same value, choose randomly among them
+        best_value = np.max(values)
+        indices = np.flatnonzero(values == best_value)
+        assert len(indices) > 0, "No best action found"
+        if len(indices) == 1:
+            best_action_i = indices[0]
+        else:
+            best_action_i = indices[np.random.randint(0, len(indices))]
+        best_action = actions[best_action_i]
+        chosen_action = array_to_action(best_action)
+
+        # Log the actions we considered
+        if self.action_log.is_enabled():
+            self.action_log.clear()
+            action_score_dict = {array_to_action(actions[i]): values[i] for i in range(len(actions))}
+            self.action_log.action_score_ranking(action_score_dict)
+
+        # Sanity checks
         assert game.is_action_valid(chosen_action), "The chosen action is not valid."
         action_id = self.action_encoder.action_to_index(chosen_action)
         assert action_mask[action_id] == 1, "The action is not valid according to the action mask."
