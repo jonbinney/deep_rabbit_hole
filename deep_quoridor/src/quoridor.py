@@ -1,7 +1,6 @@
 import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from functools import cache
 from typing import Optional, Sequence
 
 import numpy as np
