@@ -6,7 +6,3 @@ benchmark_B5W3:
 
 benchmark_B9W10:
   args: -t 100 --players greedy greedy:p_random=0.1,nick=greedy-ish dexp:wandb_alias=latest -r progressbar arenaresults eloresults computationtimes
-
-# Benchmark for the Numba-optimized agent
-numba_speedup:
-  args: -t 10 -N 5 -W 3 --players simple:max_depth=3,branching_factor=30 simple:max_depth=3,branching_factor=30,nick=simple_old -r progressbar arenaresults computationtimes
