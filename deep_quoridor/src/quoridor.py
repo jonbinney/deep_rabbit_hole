@@ -1,7 +1,6 @@
 import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from functools import cache
 from typing import Optional, Sequence
 
 import numpy as np
@@ -53,7 +52,6 @@ class ActionEncoder:
         else:
             raise ValueError(f"Invalid action type: {action}")
 
-    @cache
     def index_to_action(self, idx) -> Action:
         """
         Converts an action index to an action object.
