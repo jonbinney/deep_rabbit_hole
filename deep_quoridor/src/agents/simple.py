@@ -34,7 +34,7 @@ class SimpleParams(SubargsBase):
     discount_factor: float = 0.99
 
 
-@njit
+@njit(cache=True)
 def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
     """
     Calculate Gaussian weights for wall actions based on distance to players (Numba-optimized).
@@ -64,7 +64,7 @@ def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
     return weights
 
 
-@njit
+@njit(cache=True)
 def sample_actions(
     grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma=0.5
 ):
@@ -127,7 +127,7 @@ def sample_actions(
         return combined_actions
 
 
-@njit
+@njit(cache=True)
 def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player):
     """
     Evaluate a board position (Numba-optimized).
@@ -150,7 +150,7 @@ def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, go
     return distance_reward + wall_reward
 
 
-@njit
+@njit(cache=True)
 def minimax(
     action,
     grid,
@@ -235,7 +235,7 @@ def minimax(
     return best_value
 
 
-@njit(parallel=True)
+@njit(cache=True, parallel=True)
 def evaluate_actions(
     grid,
     player_positions,
