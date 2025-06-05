@@ -56,7 +56,7 @@ CELL_PLAYER2 = 1
 CELL_WALL = 10
 
 
-@njit
+@njit(cache=True)
 def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row: int) -> int:
     """
     Args:
@@ -129,7 +129,7 @@ def distance_to_row(grid: np.ndarray, start_row: int, start_col: int, target_row
     return -1
 
 
-@njit
+@njit(cache=True)
 def are_wall_cells_free(grid: np.ndarray, wall_row: int, wall_col: int, wall_orientation: int) -> bool:
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
@@ -156,7 +156,7 @@ def are_wall_cells_free(grid: np.ndarray, wall_row: int, wall_col: int, wall_ori
         )
 
 
-@njit
+@njit(cache=True)
 def is_wall_potential_block(grid, wall_row, wall_col, wall_orientation):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
@@ -206,7 +206,7 @@ def is_wall_potential_block(grid, wall_row, wall_col, wall_orientation):
         return touches >= 2
 
 
-@njit
+@njit(cache=True)
 def set_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
@@ -229,7 +229,7 @@ def set_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
         grid[start_i, start_j + 2] = cell_value
 
 
-@njit
+@njit(cache=True)
 def check_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
     """
     Return True iff all the grid cells for the wall equal the given value.
@@ -258,7 +258,7 @@ def check_wall_cells(grid, wall_row, wall_col, wall_orientation, cell_value):
         )
 
 
-@njit
+@njit(cache=True)
 def is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col):
     grid_height = grid.shape[0]
     grid_width = grid.shape[1]
@@ -364,7 +364,7 @@ def is_move_action_valid(grid, player_positions, current_player, destination_row
         return False
 
 
-@njit
+@njit(cache=True)
 def is_wall_action_valid(
     grid, player_positions, walls_remaining, goal_rows, current_player, wall_row, wall_col, wall_orientation
 ):
@@ -389,7 +389,7 @@ def is_wall_action_valid(
     return is_valid
 
 
-@njit
+@njit(cache=True)
 def compute_move_action_mask(
     grid: np.ndarray,
     player_positions: np.ndarray,
@@ -415,7 +415,7 @@ def compute_move_action_mask(
     return action_mask
 
 
-@njit
+@njit(cache=True)
 def compute_wall_action_mask(
     grid: np.ndarray,
     player_positions: np.ndarray,
@@ -462,7 +462,7 @@ def compute_wall_action_mask(
     return action_mask
 
 
-@njit
+@njit(cache=True)
 def check_win(player_positions, goal_rows, player):
     """
     Check if a player has won (Numba-optimized).
@@ -470,7 +470,7 @@ def check_win(player_positions, goal_rows, player):
     return player_positions[player, 0] == goal_rows[player]
 
 
-@njit
+@njit(cache=True)
 def apply_action(grid, player_positions, walls_remaining, current_player, action):
     """
     Apply an action to the game state (Numba-optimized).
@@ -507,7 +507,7 @@ def apply_action(grid, player_positions, walls_remaining, current_player, action
         walls_remaining[current_player] -= 1
 
 
-@njit
+@njit(cache=True)
 def undo_action(grid, player_positions, walls_remaining, player_that_took_action, action, previous_position):
     action_type = action[2]
 
@@ -543,7 +543,7 @@ def undo_action(grid, player_positions, walls_remaining, player_that_took_action
         walls_remaining[player_that_took_action] += 1
 
 
-@njit
+@njit(cache=True)
 def get_valid_move_actions(grid, player_positions, current_player):
     """
     Get all valid move actions (Numba-optimized).
@@ -566,7 +566,7 @@ def get_valid_move_actions(grid, player_positions, current_player):
     return actions[:count]  # Return only valid actions
 
 
-@njit
+@njit(cache=True)
 def get_valid_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player):
     """
     Get all valid wall actions (Numba-optimized).
