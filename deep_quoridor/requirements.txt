@@ -7,7 +7,6 @@ prettytable
 pygame
 pytest
 pyyaml
-tensorflow
 torch
 wandb
 sb3_contrib
