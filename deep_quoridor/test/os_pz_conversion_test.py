@@ -41,9 +41,48 @@ class TestOpenSpielPettingZooConversion:
 
         return env, agent
 
-    def test_movements(self):
+    def test_gym_to_os_3by3(self):
         """
-        Test movement action conversions between OpenSpiel and PettingZoo.
+        Test action conversions between PettingZoo and OpenSpiel.
+        """
+        # Setup environment from a simple board with player positions
+        board_str = """
+            . . 1
+            . . .
+            2 . .
+        """
+
+        # Hand crafted action pairs to check (gym action, expected OpenSpiel action)
+        movement_pairs = [(3, 2), (7, 14)]
+        wall_placement_pairs = [(9, 1), (10, 3), (11, 11), (12, 13), (13, 5)]
+
+        env, agent = self.setup_env_from_board(board_str)
+
+        obs = env.observe("player_1")["observation"]
+        action_mask = env.observe("player_1")["action_mask"]
+
+        # Print observation for user to examine
+        print(f"Observation: {obs}")
+
+        for gym_move, expected_os_move in movement_pairs:
+            assert action_mask[gym_move] == 1, f"Move {gym_move} is not enabled by the action mask"
+
+            os_move = agent._convert_gym_action_to_openspiel(gym_move, obs)
+
+            assert os_move == expected_os_move
+
+        for gym_wall_placement, expected_os_wall_placement in wall_placement_pairs:
+            assert (
+                action_mask[gym_wall_placement] == 1
+            ), f"Wall placement {gym_wall_placement} is not enabled by the action mask"
+
+            os_wall_placement = agent._convert_gym_action_to_openspiel(gym_wall_placement, obs)
+
+            assert os_wall_placement == expected_os_wall_placement
+
+    def test_os_to_gym_3by3(self):
+        """
+        Test OpenSpiel to PettingZoo movement action conversions.
         """
         # Setup environment from a simple board with player positions
         board_str = """
@@ -64,20 +103,14 @@ class TestOpenSpielPettingZooConversion:
         # Print observation for user to examine
         print(f"Observation: {obs}")
 
-        for gym_move, expected_os_move in movement_pairs:
-            assert action_mask[gym_move] == 1, f"Move {gym_move} is not enabled by the action mask"
+        for expected_gym_move, os_move in movement_pairs:
+            gym_move = agent._convert_openspiel_action_to_gym(os_move, obs)
 
-            os_move = agent._convert_gym_action_to_openspiel(gym_move, obs)
-            print(f"OpenSpiel move: {os_move}")
+            assert gym_move == expected_gym_move
+            assert action_mask[gym_move] == 1
 
-            assert os_move == expected_os_move
+        for expected_gym_wall_placement, os_wall_placement in wall_placement_pairs:
+            gym_wall_placement = agent._convert_openspiel_action_to_gym(os_wall_placement, obs)
 
-        for gym_wall_placement, expected_os_wall_placement in wall_placement_pairs:
-            assert (
-                action_mask[gym_wall_placement] == 1
-            ), f"Wall placement {gym_wall_placement} is not enabled by the action mask"
-
-            os_wall_placement = agent._convert_gym_action_to_openspiel(gym_wall_placement, obs)
-            print(f"OpenSpiel wall placement: {os_wall_placement}")
-
-            assert os_wall_placement == expected_os_wall_placement
+            assert action_mask[gym_wall_placement] == 1
+            assert gym_wall_placement == expected_gym_wall_placement

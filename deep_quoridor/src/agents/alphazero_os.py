@@ -167,7 +167,7 @@ class AlphaZeroOSAgent(TrainableAgent):
             # Remember it's relative, so all we can do here is calculate -1 / 0 / +1 with respect to the current position
             row_diff = (openspiel_action // os_row_stride) - 1
             col_diff = (openspiel_action % os_row_stride) // os_col_stride - 1
-            (cur_row, cur_col) = np.where(observation["board"] == 1)[0]
+            (cur_row, cur_col) = np.where(observation["board"] == 1)
 
             gym_action = (cur_row + row_diff) * self.board_size + (cur_col + col_diff)
 
