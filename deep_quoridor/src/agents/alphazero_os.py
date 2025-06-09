@@ -7,7 +7,6 @@ import pyspiel
 from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
-from quoridor import ActionEncoder
 from utils.subargs import SubargsBase
 
 from agents.core import Agent
@@ -42,7 +41,6 @@ class AlphaZeroOSAgent(Agent):
         self.board_size = kwargs["board_size"]
         self.max_walls = kwargs["max_walls"]
         self.action_space = kwargs["action_space"]
-        self.action_encoder = ActionEncoder(self.board_size)
 
         # Player ID (set in start_game)
         self.player_id = None
@@ -114,9 +112,45 @@ class AlphaZeroOSAgent(Agent):
 
         This needs to map from the gym environment's action space to
         OpenSpiel's action IDs for the current state.
+
+        NOTE: The action and observations are from the player's point of view
         """
-        # TODO: Implement the conversion from gym action index to OpenSpiel action ID
-        pass
+        # The grid size in OpenSpiel is board_size * 2 - 1. Starts with cell and interleaves walls
+        # The vertical / row stride in this case is then two rows of size board_size - 1
+        os_row_stride = (self.board_size * 2 - 1) * 2
+        # On the column side it only needs to skip wall positions
+        os_col_stride = 2
+
+        if action_idx < self.board_size**2:
+            # Move action
+            # Calculate different of -1, 0 or +1 with respect to previous position
+            (cur_row, cur_col) = np.where(observation["board"] == 1)
+            new_row = action_idx // self.board_size
+            new_col = action_idx % self.board_size
+            row_dif = new_row - cur_row
+            col_dif = new_col - cur_col
+
+            # The movement is always represented with the top left of the board, to make it relative
+            os_action = (1 + row_dif) * os_row_stride + (1 + col_dif) * os_col_stride
+
+            return os_action
+        else:
+            # It's a wall placement
+
+            # Shift by the piece move action space
+            wall_idx = action_idx - self.board_size**2
+            # Then identify if vertical or horizontal and shift by the vertical wall action space if needed
+            if wall_idx < (self.board_size - 1) ** 2:
+                row = wall_idx // (self.board_size - 1)
+                col = wall_idx % (self.board_size - 1)
+                os_action = 1 + (row * os_row_stride) + (col * os_col_stride)
+            else:
+                wall_idx -= (self.board_size - 1) ** 2
+                row = wall_idx // (self.board_size - 1)
+                col = wall_idx % (self.board_size - 1)
+                os_action = (self.board_size * 2 - 1) + (row * os_row_stride) + (col * os_col_stride)
+
+            return os_action
 
     def _convert_openspiel_action_to_gym(self, openspiel_action, observation=None):
         """Convert an OpenSpiel action ID to a gym action index."""
