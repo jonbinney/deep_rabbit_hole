@@ -185,10 +185,10 @@ def create_bot_from_checkpoint(checkpoint_path, game):
     # Create the MCTS bot with the AlphaZero evaluator
     bot = mcts.MCTSBot(
         game,
-        2.0,  # uct_c parameter - reasonable default
-        800,  # max_simulations parameter - reasonable default
+        FLAGS.uct_c,
+        FLAGS.max_simulations,
         evaluator,
-        random_state=np.random.RandomState(42),
+        random_state=np.random.RandomState(FLAGS.seed),
         solve=False,
         verbose=FLAGS.verbose,
     )
