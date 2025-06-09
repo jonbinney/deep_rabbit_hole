@@ -116,15 +116,16 @@ class AlphaZeroOSAgent(Agent):
         NOTE: The action and observations are from the player's point of view
         """
         # The grid size in OpenSpiel is board_size * 2 - 1. Starts with cell and interleaves walls
+        os_board_size = self.board_size * 2 - 1
         # The vertical / row stride in this case is then two rows of size board_size - 1
-        os_row_stride = (self.board_size * 2 - 1) * 2
+        os_row_stride = os_board_size * 2
         # On the column side it only needs to skip wall positions
         os_col_stride = 2
 
         if action_idx < self.board_size**2:
             # Move action
             # Calculate different of -1, 0 or +1 with respect to previous position
-            (cur_row, cur_col) = np.where(observation["board"] == 1)
+            (cur_row, cur_col) = np.where(observation["board"] == 1)[0]
             new_row = action_idx // self.board_size
             new_col = action_idx % self.board_size
             row_dif = new_row - cur_row
@@ -133,7 +134,6 @@ class AlphaZeroOSAgent(Agent):
             # The movement is always represented with the top left of the board, to make it relative
             os_action = (1 + row_dif) * os_row_stride + (1 + col_dif) * os_col_stride
 
-            return os_action
         else:
             # It's a wall placement
 
@@ -150,12 +150,37 @@ class AlphaZeroOSAgent(Agent):
                 col = wall_idx % (self.board_size - 1)
                 os_action = (self.board_size * 2 - 1) + (row * os_row_stride) + (col * os_col_stride)
 
-            return os_action
+        return os_action
 
     def _convert_openspiel_action_to_gym(self, openspiel_action, observation=None):
         """Convert an OpenSpiel action ID to a gym action index."""
-        # TODO: Implement the conversion from OpenSpiel action ID to gym action index
-        pass
+        # The grid size in OpenSpiel is board_size * 2 - 1. Starts with cell and interleaves walls
+        os_board_size = self.board_size * 2 - 1
+        # The vertical / row stride in this case is then two rows of size board_size - 1
+        os_row_stride = os_board_size * 2
+        # On the column side it only needs to skip wall positions
+        os_col_stride = 2
+
+        if openspiel_action % 2 == 0:
+            # It's a move action: it happens on even indices, which are always cell positions
+            # Remember it's relative, so all we can do here is calculate -1 / 0 / +1 with respect to the current position
+            row_diff = (openspiel_action // os_row_stride) - 1
+            col_diff = (openspiel_action % os_row_stride) // os_col_stride - 1
+            (cur_row, cur_col) = np.where(observation["board"] == 1)[0]
+
+            gym_action = (cur_row + row_diff) * self.board_size + (cur_col + col_diff)
+
+        else:
+            # It's a wall placement
+            cell_row = openspiel_action // os_row_stride
+            cell_col = openspiel_action % os_board_size // os_col_stride
+            is_vertical = (openspiel_action % os_board_size) % 2 == 1
+
+            gym_action = self.board_size**2 + cell_row * (self.board_size - 1) + cell_col
+            if not is_vertical:
+                gym_action += (self.board_size - 1) ** 2
+
+        return gym_action
 
     def handle_opponent_step_outcome(
         self,
