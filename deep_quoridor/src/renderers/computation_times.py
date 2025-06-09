@@ -12,7 +12,7 @@ class ComputationTimesRenderer(Renderer):
                 if player not in player_moves:
                     player_moves[player] = []
 
-                player_moves[player] = [move for move in result.moves if move.player == player]
+                player_moves[player].extend([move for move in result.moves if move.player == player])
 
         table = PrettyTable()
         table.field_names = ["Player", "Average Time (ms)", "Min Time (ms)", "Max Time (ms)"]

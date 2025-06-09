@@ -36,9 +36,29 @@ class WallAction(Action):
 
 
 class ActionEncoder:
+    _instances = {}
+
+    def __new__(cls, board_size: int):
+        """
+        We use a singleton pattern to avoid creating multiple instances of the ActionEncoder for the same board size.
+        """
+        if board_size not in cls._instances:
+            cls._instances[board_size] = super().__new__(cls)
+
+        return cls._instances[board_size]
+
     def __init__(self, board_size: int):
+        if hasattr(self, "board_size"):
+            return
+
         self.board_size = board_size
         self.wall_size = board_size - 1
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
 
     def action_to_index(self, action) -> int:
         """
@@ -72,6 +92,23 @@ class ActionEncoder:
             raise ValueError(f"Invalid action index: {idx}")
 
         return action
+
+
+def array_to_action(action_array: np.ndarray) -> Action:
+    """
+    Convert a NumPy array action [row, col, action_type] to a Quoridor Action object.
+    """
+    action = None
+    if action_array[2] == qgrid.ACTION_MOVE:
+        action = MoveAction((action_array[0], action_array[1]))
+    elif action_array[2] == qgrid.ACTION_WALL_VERTICAL:
+        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_VERTICAL)
+    elif action_array[2] == qgrid.ACTION_WALL_HORIZONTAL:
+        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_HORIZONTAL)
+    else:
+        raise ValueError(f"Invalid action type: {action_array[2]}")
+
+    return action
 
 
 class Board:

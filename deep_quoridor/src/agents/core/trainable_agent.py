@@ -211,6 +211,8 @@ class AbstractTrainableAgent(TrainableAgent):
         self.avg_training_losses = []
         self._reset_episode_related_info()
         self._resolve_and_load_model()
+        if not self.training_mode:
+            self.online_network.eval()
 
     def is_training(self):
         return self.training_mode
