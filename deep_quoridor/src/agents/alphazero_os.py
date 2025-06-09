@@ -1,19 +1,18 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, override
 
 import numpy as np
 import pyspiel
 from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
-from utils.subargs import SubargsBase
 
-from agents.core import Agent
+from agents.core import TrainableAgent, TrainableAgentParams
 
 
 @dataclass
-class AlphaZeroOSParams(SubargsBase):
+class AlphaZeroOSParams(TrainableAgentParams):
     """Parameters for AlphaZero OpenSpiel Agent."""
 
     # Just used to display a user friendly name
@@ -32,11 +31,11 @@ class AlphaZeroOSParams(SubargsBase):
     seed: int = 42
 
 
-class AlphaZeroOSAgent(Agent):
+class AlphaZeroOSAgent(TrainableAgent):
     """Agent that uses a trained AlphaZero model from OpenSpiel to play Quoridor."""
 
     def __init__(self, params=AlphaZeroOSParams(), **kwargs):
-        super().__init__()
+        super().__init__(params=params, **kwargs)
         self.params = params
         self.board_size = kwargs["board_size"]
         self.max_walls = kwargs["max_walls"]
@@ -59,7 +58,9 @@ class AlphaZeroOSAgent(Agent):
         self.state = None
 
         # Load the model if the checkpoint path exists
-        if os.path.exists(self.params.checkpoint_path):
+        if self.params.checkpoint_path is not None:
+            if not os.path.exists(self.params.checkpoint_path):
+                raise FileNotFoundError(f"Checkpoint file {self.params.checkpoint_path} not found")
             self.load_model()
 
     @classmethod
@@ -125,7 +126,7 @@ class AlphaZeroOSAgent(Agent):
         if action_idx < self.board_size**2:
             # Move action
             # Calculate different of -1, 0 or +1 with respect to previous position
-            (cur_row, cur_col) = np.where(observation["board"] == 1)[0]
+            (cur_row, cur_col) = np.where(observation["board"] == 1)
             new_row = action_idx // self.board_size
             new_col = action_idx % self.board_size
             row_dif = new_row - cur_row
