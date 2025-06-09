@@ -93,8 +93,7 @@ class AlphaZeroOSAgent(TrainableAgent):
             )
             print(f"Successfully loaded AlphaZero model from {self.params.checkpoint_path}")
         except Exception as e:
-            print(f"Error loading AlphaZero model: {e}")
-            self.bot = None
+            raise ValueError(f"Error loading AlphaZero model: {e}")
 
     def start_game(self, game, player_id):
         """Reset the internal state when a new game starts."""
