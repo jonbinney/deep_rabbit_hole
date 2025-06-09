@@ -232,14 +232,6 @@ def play_games(game, bot_1, bot_2, num_games):
             action = players[player].step(state)
             state.apply_action(action)
 
-            # Incorporate negative reward learning for losses as per memory
-            # If terminal state is reached and player 1 is the current agent who lost
-            # This encourages the agent to avoid actions that lead to losses
-            if state.is_terminal() and player == 1 and state.returns()[0] > 0:
-                # Apply significant negative reward for the loss
-                # This is handled internally by AlphaZero's MCTS algorithm
-                pass
-
         # Record results
         returns = state.returns()
         if returns[0] > returns[1]:
