@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Optional, override
+from typing import Optional
 
 import numpy as np
 import pyspiel
@@ -8,7 +8,7 @@ from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
 
-from agents.core import TrainableAgent, TrainableAgentParams
+from agents.core import TrainableAgent, TrainableAgentParams, rotation
 
 
 @dataclass
@@ -59,7 +59,7 @@ class AlphaZeroOSAgent(TrainableAgent):
 
         # Load the model if the checkpoint path exists
         if self.params.checkpoint_path is not None:
-            if not os.path.exists(self.params.checkpoint_path):
+            if not os.path.exists(f"{self.params.checkpoint_path}.index"):
                 raise FileNotFoundError(f"Checkpoint file {self.params.checkpoint_path} not found")
             self.load_model()
 
@@ -101,12 +101,10 @@ class AlphaZeroOSAgent(TrainableAgent):
         self.player_id = player_id
         # Initialize a fresh game state
         self.state = self.game.new_initial_state()
-        print(f"AlphaZeroOSAgent: Starting new game as player {player_id}")
 
     def end_game(self, game):
         """Clean up when the game ends."""
         self.state = None
-        print("AlphaZeroOSAgent: Game ended")
 
     def _convert_gym_action_to_openspiel(self, action_idx, observation=None):
         """Convert a gym action index to an OpenSpiel action ID.
@@ -114,7 +112,7 @@ class AlphaZeroOSAgent(TrainableAgent):
         This needs to map from the gym environment's action space to
         OpenSpiel's action IDs for the current state.
 
-        NOTE: The action and observations are from the player's point of view
+        NOTE: The action and observations are always from the current player's perspective
         """
         # The grid size in OpenSpiel is board_size * 2 - 1. Starts with cell and interleaves walls
         os_board_size = self.board_size * 2 - 1
@@ -125,12 +123,18 @@ class AlphaZeroOSAgent(TrainableAgent):
 
         if action_idx < self.board_size**2:
             # Move action
-            # Calculate different of -1, 0 or +1 with respect to previous position
-            (cur_row, cur_col) = np.where(observation["board"] == 1)
+            # Calculate difference of -1, 0 or +1 with respect to previous position
             new_row = action_idx // self.board_size
             new_col = action_idx % self.board_size
+            (cur_row, cur_col) = np.where(observation["board"] == 1)
             row_dif = new_row - cur_row
             col_dif = new_col - cur_col
+
+            # If there was a straight jump, open spiel represents it as a single move
+            if abs(row_dif) == 2:
+                row_dif = row_dif // 2
+            if abs(col_dif) == 2:
+                col_dif = col_dif // 2
 
             # The movement is always represented with the top left of the board, to make it relative
             os_action = (1 + row_dif) * os_row_stride + (1 + col_dif) * os_col_stride
@@ -168,6 +172,12 @@ class AlphaZeroOSAgent(TrainableAgent):
             row_diff = (openspiel_action // os_row_stride) - 1
             col_diff = (openspiel_action % os_row_stride) // os_col_stride - 1
             (cur_row, cur_col) = np.where(observation["board"] == 1)
+            (opp_row, opp_col) = np.where(observation["board"] == 2)
+
+            # On straight jumps, the row and column differences should be doubled
+            if cur_row + row_diff == opp_row and cur_col + col_diff == opp_col:
+                row_diff *= 2
+                col_diff *= 2
 
             gym_action = (cur_row + row_diff) * self.board_size + (cur_col + col_diff)
 
@@ -200,15 +210,21 @@ class AlphaZeroOSAgent(TrainableAgent):
         if self.state is None:
             raise ValueError("Internal state is None")
 
+        opponent_action = rotation.convert_rotated_action_index_to_original(self.board_size, opponent_action)
+        opponent_observation_before_action = self._rotate_observation(opponent_observation_before_action)
+        obs = opponent_observation_before_action["observation"]
+
         # Convert the opponent's gym action to an OpenSpiel action
         # Using my observation after opponent's action to help with the conversion
-        openspiel_action = self._convert_gym_action_to_openspiel(opponent_action, opponent_observation_before_action)
+        openspiel_action = self._convert_gym_action_to_openspiel(opponent_action, obs)
 
         # Update our internal state with the opponent's action
         self.state.apply_action(openspiel_action)
 
     def get_action(self, observation):
         """Get an action from the agent for the current observation."""
+        observation = self._rotate_observation(observation)
+
         action_mask = observation["action_mask"]
 
         # If model failed to load, fallback to random action
@@ -224,7 +240,7 @@ class AlphaZeroOSAgent(TrainableAgent):
         openspiel_action = self.bot.step(self.state)
 
         # Convert the OpenSpiel action to a gym action index
-        gym_action = self._convert_openspiel_action_to_gym(openspiel_action, observation)
+        gym_action = self._convert_openspiel_action_to_gym(openspiel_action, observation["observation"])
 
         # Make sure it's a valid action according to the mask
         if gym_action < len(action_mask) and action_mask[gym_action]:
@@ -233,4 +249,15 @@ class AlphaZeroOSAgent(TrainableAgent):
         else:
             raise ValueError(f"AlphaZero selected invalid action {gym_action}")
 
+        # Rotate the action back to the original player's perspective
+        gym_action = rotation.convert_rotated_action_index_to_original(self.board_size, gym_action)
+
         return gym_action
+
+    def _rotate_observation(self, observation):
+        observation = observation.copy()
+        observation["action_mask"] = rotation.rotate_action_mask(self.board_size, observation["action_mask"])
+        observation["observation"] = observation["observation"].copy()
+        observation["observation"]["board"] = rotation.rotate_board(observation["observation"]["board"])
+        observation["observation"]["walls"] = rotation.rotate_walls(observation["observation"]["walls"])
+        return observation

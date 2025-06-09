@@ -61,9 +61,6 @@ class TestOpenSpielPettingZooConversion:
         obs = env.observe("player_1")["observation"]
         action_mask = env.observe("player_1")["action_mask"]
 
-        # Print observation for user to examine
-        print(f"Observation: {obs}")
-
         for gym_move, expected_os_move in movement_pairs:
             assert action_mask[gym_move] == 1, f"Move {gym_move} is not enabled by the action mask"
 
@@ -100,9 +97,6 @@ class TestOpenSpielPettingZooConversion:
         obs = env.observe("player_1")["observation"]
         action_mask = env.observe("player_1")["action_mask"]
 
-        # Print observation for user to examine
-        print(f"Observation: {obs}")
-
         for expected_gym_move, os_move in movement_pairs:
             gym_move = agent._convert_openspiel_action_to_gym(os_move, obs)
 
@@ -114,3 +108,33 @@ class TestOpenSpielPettingZooConversion:
 
             assert action_mask[gym_wall_placement] == 1
             assert gym_wall_placement == expected_gym_wall_placement
+
+    def test_jump(self):
+        """
+        Test OpenSpiel to PettingZoo jump movement actions.
+        """
+        # Setup environment from a simple board with player positions
+        board_str = """
+            . . .
+            . 1 .
+            . 2 .
+        """
+
+        # Hand crafted movement pairs to check (gym action, expected OpenSpiel action)
+        movement_pairs = [(1, 2), (6, 10), (8, 14)]
+
+        env, agent = self.setup_env_from_board(board_str)
+
+        obs = env.observe("player_1")["observation"]
+        action_mask = env.observe("player_1")["action_mask"]
+
+        for expected_gym_move, os_move in movement_pairs:
+            gym_move = agent._convert_openspiel_action_to_gym(os_move, obs)
+
+            assert gym_move == expected_gym_move
+            assert action_mask[gym_move] == 1
+
+        for gym_move, expected_os_move in movement_pairs:
+            os_move = agent._convert_gym_action_to_openspiel(gym_move, obs)
+
+            assert os_move == expected_os_move
