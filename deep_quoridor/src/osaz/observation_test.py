@@ -44,9 +44,9 @@ def trace_simple_game():
     print("\n--- TRACING A SIMPLE QUORIDOR GAME ---")
 
     # Create the Quoridor game with specified parameters
-    board_size = 9
+    board_size = 3
     players = 2
-    wall_count = 10
+    wall_count = 0
 
     game = pyspiel.load_game("quoridor", {"board_size": board_size, "players": players, "wall_count": wall_count})
     state = game.new_initial_state()
