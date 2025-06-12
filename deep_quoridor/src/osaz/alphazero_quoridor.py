@@ -80,7 +80,7 @@ flags.DEFINE_integer("evaluators", 2, "Number of evaluation processes to run in 
 # Evaluation parameters
 flags.DEFINE_integer("eval_games", 10, "Number of games for evaluation.")
 flags.DEFINE_boolean("eval_only", False, "Skip training and only evaluate an existing model.")
-flags.DEFINE_bool("verbose", True, "Be verbose.")
+flags.DEFINE_bool("verbose", False, "Be verbose.")
 
 # Weights & Biases parameters
 flags.DEFINE_string("wandb_project", "deep_quoridor", "Name of the wandb project.")
