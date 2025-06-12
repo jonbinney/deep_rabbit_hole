@@ -4,18 +4,25 @@ A script to train an AlphaZero agent to play Quoridor using OpenSpiel.
 """
 
 import collections
+import datetime
+import getpass
 import json
 import os
 
 import numpy as np
 import pyspiel
 from absl import app, flags
+from agents.alphazero_os import AlphaZeroOSAgent, AlphaZeroOSParams
 from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import alpha_zero
 from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
 from open_spiel.python.bots import uniform_random
 from open_spiel.python.utils import spawn
+
+import wandb
+
+# Import wandb for logging and visualization is at the top
 
 # Force TensorFlow to use CPU only to avoid CUDA errors
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -74,9 +81,56 @@ flags.DEFINE_integer("eval_games", 10, "Number of games for evaluation.")
 flags.DEFINE_boolean("eval_only", False, "Skip training and only evaluate an existing model.")
 flags.DEFINE_bool("verbose", True, "Be verbose.")
 
+# Weights & Biases parameters
+flags.DEFINE_string("wandb_project", "deep_quoridor", "Name of the wandb project.")
+flags.DEFINE_string("wandb_run_prefix", getpass.getuser(), "User-defined prefix for the wandb run name.")
+flags.DEFINE_string(
+    "wandb_run_suffix", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), "Suffix for the wandb run name."
+)
+flags.DEFINE_string("wandb_notes", "", "Optional notes for the wandb run.")
+flags.DEFINE_bool("use_wandb", True, "Whether to use wandb for logging.")
+flags.DEFINE_bool("upload_model", True, "Whether to upload the model to wandb.")
+flags.DEFINE_integer("log_interval", 1, "How often to log to wandb during training (every N iterations).")
+
 
 def main(_):
     """Trains an AlphaZero agent to play Quoridor and evaluates against a random agent."""
+    # Initialize wandb if enabled
+    wandb_run = None
+    if FLAGS.use_wandb:
+        run_id = f"{FLAGS.wandb_run_prefix}-{FLAGS.wandb_run_suffix}"
+        # Configure wandb and initialize run
+        wandb_run = wandb.init(
+            project=FLAGS.wandb_project,
+            name=run_id,
+            id=run_id,
+            config={
+                # Game parameters
+                "board_size": FLAGS.board_size,
+                "num_players": FLAGS.num_players,
+                "wall_count": FLAGS.wall_count,
+                # Training parameters
+                "num_iterations": FLAGS.num_iterations,
+                "num_train_episodes": FLAGS.num_train_episodes,
+                "learning_rate": FLAGS.learning_rate,
+                "weight_decay": FLAGS.weight_decay,
+                "train_batch_size": FLAGS.train_batch_size,
+                "replay_buffer_size": FLAGS.replay_buffer_size,
+                "replay_buffer_reuse": FLAGS.replay_buffer_reuse,
+                "learning_rate_decay": FLAGS.learning_rate_decay,
+                "uct_c": FLAGS.uct_c,
+                "max_simulations": FLAGS.max_simulations,
+                "policy_alpha": FLAGS.policy_alpha,
+                "policy_epsilon": FLAGS.policy_epsilon,
+                "temperature": FLAGS.temperature,
+                "nn_model": FLAGS.nn_model,
+                "nn_width": FLAGS.nn_width,
+                "nn_depth": FLAGS.nn_depth,
+            },
+            notes=FLAGS.wandb_notes,
+            tags=["alphazero", "quoridor", "openspiel"],
+        )
+
     # Format the game string with parameters to match OpenSpiel's requirements
     game_string = f"quoridor(board_size={FLAGS.board_size},players={FLAGS.num_players},wall_count={FLAGS.wall_count})"
 
@@ -136,6 +190,24 @@ def main(_):
             alpha_zero.alpha_zero(config)
 
         final_checkpoint = f"{checkpoint_dir}/checkpoint--1"
+        # Log model as artifact if wandb is enabled
+        if FLAGS.use_wandb and FLAGS.upload_model and not FLAGS.eval_only:
+            # Create a temporary instance of AlphaZeroOSAgent to generate consistent artifact name
+            temp_agent = AlphaZeroOSAgent(
+                params=AlphaZeroOSParams(),
+                board_size=FLAGS.board_size,
+                max_walls=FLAGS.wall_count,
+                action_space=None,  # Not needed for model_id
+            )
+            artifact_name = temp_agent.model_id()
+            print(f"Uploading model from {final_checkpoint} to wandb as {artifact_name}")
+            model_artifact = wandb.Artifact(
+                name=artifact_name,
+                type="model",
+                description=f"AlphaZero model trained on Quoridor ({FLAGS.board_size}x{FLAGS.board_size}, {FLAGS.wall_count} walls)",
+            )
+            model_artifact.add_dir(checkpoint_dir)
+            wandb_run.log_artifact(model_artifact)
     else:
         # Just use the existing checkpoint for evaluation
         final_checkpoint = f"{checkpoint_dir}/checkpoint--1"
@@ -146,6 +218,39 @@ def main(_):
     results = evaluate_bot(game, final_checkpoint, FLAGS.eval_games)
     print("Evaluation results:")
     print(results)
+    # Log evaluation results to wandb
+    if FLAGS.use_wandb:
+        # Log evaluation metrics
+        wandb_run.log(
+            {
+                "eval/trained_first_win_rate": results["trained_first"].get(0, 0),
+                "eval/trained_first_loss_rate": results["trained_first"].get(1, 0),
+                "eval/trained_first_draw_rate": results["trained_first"].get(2, 0),
+                "eval/trained_second_win_rate": results["trained_second"].get(1, 0),
+                "eval/trained_second_loss_rate": results["trained_second"].get(0, 0),
+                "eval/trained_second_draw_rate": results["trained_second"].get(2, 0),
+            }
+        )
+        # Create and log a wandb Table with evaluation results
+        columns = ["Position", "Win Rate", "Loss Rate", "Draw Rate"]
+        data = [
+            [
+                "First",
+                results["trained_first"].get(0, 0),
+                results["trained_first"].get(1, 0),
+                results["trained_first"].get(2, 0),
+            ],
+            [
+                "Second",
+                results["trained_second"].get(1, 0),
+                results["trained_second"].get(0, 0),
+                results["trained_second"].get(2, 0),
+            ],
+        ]
+        results_table = wandb.Table(columns=columns, data=data)
+        wandb_run.log({"eval_results_table": results_table})
+        # Finish the wandb run
+        wandb_run.finish()
 
     return 0
 
@@ -188,7 +293,7 @@ def create_bot_from_checkpoint(checkpoint_path, game):
         FLAGS.uct_c,
         FLAGS.max_simulations,
         evaluator,
-        random_state=np.random.RandomState(FLAGS.seed),
+        random_state=np.random.RandomState(42),
         solve=False,
         verbose=FLAGS.verbose,
     )

@@ -8,6 +8,7 @@ from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
 
+import wandb
 from agents.core import TrainableAgent, TrainableAgentParams, rotation
 
 
@@ -19,7 +20,15 @@ class AlphaZeroOSParams(TrainableAgentParams):
     nick: Optional[str] = None
 
     # Path to the checkpoint
-    checkpoint_path: str = "models/osaz/checkpoint--1"
+    checkpoint_path: str = None
+    # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
+    wandb_alias: Optional[str] = None
+    # When loading from wandb, the project name to be used
+    wandb_project: str = "deep_quoridor"
+    # Directory where wandb models are stored
+    wandb_dir: str = "wandbmodels"
+    # Directory where local models are stored
+    model_dir: str = "models"
 
     # UCT exploration constant
     uct_c: float = 2.0
@@ -61,6 +70,7 @@ class AlphaZeroOSAgent(TrainableAgent):
         if self.params.checkpoint_path is not None:
             if not os.path.exists(f"{self.params.checkpoint_path}.index"):
                 raise FileNotFoundError(f"Checkpoint file {self.params.checkpoint_path} not found")
+        if self.params.wandb_alias or self.params.checkpoint_path is not None:
             self.load_model()
 
     @classmethod
@@ -72,10 +82,66 @@ class AlphaZeroOSAgent(TrainableAgent):
             return self.params.nick
         return "alphazero_os"
 
+    def model_id(self):
+        """Return a unique identifier for this model type and configuration."""
+        return f"{self.name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+
+    def model_name(self):
+        """Return the base name of the model."""
+        return "alphazero_os"
+
+    def version(self):
+        """Return the version of this model type."""
+        return "1"
+
+    def get_model_extension(self):
+        """Get the file extension for stored models."""
+        return "zip"
+
+    def _fetch_model_from_wandb_and_update_params(self):
+        """
+        This function doesn't do anything if wandb_alias is not set in self.params.
+        Otherwise, it will download the file if there's not a local copy.
+        The params are updated to the artifact metadata.
+        """
+        alias = self.params.wandb_alias
+        if not alias:
+            return
+
+        api = wandb.Api()
+        path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
+        print(f"Fetching model from wandb: {path}")
+        try:
+            artifact = api.artifact(path, type="model")
+            # Create a consistent local path for the downloaded model
+            # Since AlphaZero OpenSpiel uses checkpoint files with index files,
+            # we'll download the entire artifact and point to the checkpoint path
+
+            # If checkpoint_path is None, set a default download location
+            if self.params.checkpoint_path is None:
+                self.params.checkpoint_path = os.path.join("models", "osaz", "checkpoint--1")
+            os.makedirs(os.path.dirname(self.params.checkpoint_path), exist_ok=True)
+            download_dir = os.path.dirname(self.params.checkpoint_path)
+
+            print(f"Downloading artifact to {download_dir}")
+            artifact.download(root=download_dir)
+
+            # The checkpoint path should now point to the correct location
+            # OpenSpiel expects checkpoint--1 without extension
+            self.params.checkpoint_path = os.path.join(download_dir, "checkpoint--1")
+            print(f"Model downloaded from wandb to {self.params.checkpoint_path}")
+        except Exception as e:
+            print(f"Error fetching model from wandb: {e}")
+            return
+
     def load_model(self):
         """Load the AlphaZero model from checkpoint."""
         try:
-            # Load the model from checkpoint
+            # If wandb_alias is provided, try to fetch the model from wandb first
+            if self.params.wandb_alias:
+                self._fetch_model_from_wandb_and_update_params()
+
+            # Load the model from checkpoint (either local or downloaded from wandb)
             self.model = az_model.Model.from_checkpoint(self.params.checkpoint_path)
 
             # Create the AlphaZero evaluator with the loaded model
