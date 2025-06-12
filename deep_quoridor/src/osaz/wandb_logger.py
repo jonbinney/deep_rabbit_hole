@@ -99,8 +99,17 @@ class AlphaZeroWandbLogger:
             # Convert all scalar values to a flattened dict
             metrics = {}
             for k, v in entry.items():
-                if k != "step" and isinstance(v, (int, float)):
-                    metrics[k] = v
+                if k != "step":
+                    # Handle nested loss metrics
+                    if k == "loss" and isinstance(v, dict):
+                        for loss_key, loss_val in v.items():
+                            if isinstance(loss_val, (int, float)):
+                                metrics[f"loss_{loss_key}"] = loss_val
+                    if k == "game_length" and isinstance(v, dict):
+                        metrics["avg_game_length"] = v.get("avg", 0)
+                    # Handle regular scalar metrics
+                    elif isinstance(v, (int, float)):
+                        metrics[k] = v
 
             # Log metrics to wandb
             if metrics:
