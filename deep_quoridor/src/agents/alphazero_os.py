@@ -93,15 +93,11 @@ class AlphaZeroOSAgent(TrainableAgent):
         """Return the version of this model type."""
         return "1"
 
-    def get_model_extension(self):
-        """Get the file extension for stored models."""
-        return "zip"
-
     def _fetch_model_from_wandb_and_update_params(self):
         """
-        This function doesn't do anything if wandb_alias is not set in self.params.
-        Otherwise, it will download the file if there's not a local copy.
-        The params are updated to the artifact metadata.
+        Re-implements _fetch_model_from_wandb_and_update_params from TrainableAgent becuase the model
+        in this case it's a directory full of files.
+        TODO: Update the superclass method to handle this case and remove this method
         """
         alias = self.params.wandb_alias
         if not alias:
@@ -118,16 +114,13 @@ class AlphaZeroOSAgent(TrainableAgent):
 
             # If checkpoint_path is None, set a default download location
             if self.params.checkpoint_path is None:
-                self.params.checkpoint_path = os.path.join("models", "osaz", "checkpoint--1")
-            os.makedirs(os.path.dirname(self.params.checkpoint_path), exist_ok=True)
-            download_dir = os.path.dirname(self.params.checkpoint_path)
+                self.params.checkpoint_path = os.path.join("models", "osaz", f"{self.model_id()}_{alias}")
 
-            print(f"Downloading artifact to {download_dir}")
-            artifact.download(root=download_dir)
+            os.makedirs(self.params.checkpoint_path, exist_ok=True)
 
-            # The checkpoint path should now point to the correct location
-            # OpenSpiel expects checkpoint--1 without extension
-            self.params.checkpoint_path = os.path.join(download_dir, "checkpoint--1")
+            print(f"Downloading artifact to {self.params.checkpoint_path}")
+            artifact.download(root=self.params.checkpoint_path)
+
             print(f"Model downloaded from wandb to {self.params.checkpoint_path}")
         except Exception as e:
             print(f"Error fetching model from wandb: {e}")
@@ -141,7 +134,7 @@ class AlphaZeroOSAgent(TrainableAgent):
                 self._fetch_model_from_wandb_and_update_params()
 
             # Load the model from checkpoint (either local or downloaded from wandb)
-            self.model = az_model.Model.from_checkpoint(self.params.checkpoint_path)
+            self.model = az_model.Model.from_checkpoint(f"{self.params.checkpoint_path}/checkpoint--1")
 
             # Create the AlphaZero evaluator with the loaded model
             evaluator = az_evaluator.AlphaZeroEvaluator(self.game, self.model)
