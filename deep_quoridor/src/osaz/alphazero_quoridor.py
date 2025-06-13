@@ -7,22 +7,22 @@ import collections
 import datetime
 import getpass
 import json
-import os
-import sys
 import multiprocessing
+import os
 
 # Set TF environment variables for GPU memory management and device visibility.
 # This must be done BEFORE TensorFlow is imported.
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 # Set the start method to 'spawn' for CUDA compatibility and monkey-patch
 # to prevent OpenSpiel from overriding it.
 try:
     multiprocessing.set_start_method("spawn", force=True)
+
     # Monkey-patch to prevent OpenSpiel from changing the start method.
     def _do_nothing_set_start_method(method, force=False):
         pass
+
     multiprocessing.set_start_method = _do_nothing_set_start_method
 except RuntimeError:
     # This may be raised in child processes where the context is already set.
@@ -43,7 +43,6 @@ from osaz.wandb_logger import AlphaZeroWandbLogger
 import wandb
 
 # Import wandb for logging and visualization is at the top
-
 
 
 # Add a custom JSON encoder to handle NumPy types
