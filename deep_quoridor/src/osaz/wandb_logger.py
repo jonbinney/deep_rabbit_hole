@@ -100,12 +100,14 @@ class AlphaZeroWandbLogger:
             metrics = {}
             for k, v in entry.items():
                 if k != "step":
-                    # Handle nested loss metrics
+                    # Handle loss metrics - extract all components
                     if k == "loss" and isinstance(v, dict):
-                        for loss_key, loss_val in v.items():
-                            if isinstance(loss_val, (int, float)):
-                                metrics[f"loss_{loss_key}"] = loss_val
-                    if k == "game_length" and isinstance(v, dict):
+                        # Log the individual loss components with better names
+                        metrics["loss_total"] = v.get("sum", 0)
+                        metrics["loss_policy"] = v.get("policy", 0)
+                        metrics["loss_value"] = v.get("value", 0)
+                        metrics["loss_l2"] = v.get("l2reg", 0)
+                    elif k == "game_length" and isinstance(v, dict):
                         metrics["avg_game_length"] = v.get("avg", 0)
                     # Handle regular scalar metrics
                     elif isinstance(v, (int, float)):
