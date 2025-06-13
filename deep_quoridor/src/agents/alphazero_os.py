@@ -114,7 +114,11 @@ class AlphaZeroOSAgent(TrainableAgent):
 
             # If checkpoint_path is None, set a default download location
             if self.params.checkpoint_path is None:
-                self.params.checkpoint_path = os.path.join("models", "osaz", f"{self.model_id()}_{alias}")
+                self.params.checkpoint_path = os.path.join("models", "osaz", f"{self.model_id()}_{artifact.digest[:5]}")
+
+            if os.path.exists(self.params.checkpoint_path):
+                print(f"Model already exists at {self.params.checkpoint_path}")
+                return
 
             os.makedirs(self.params.checkpoint_path, exist_ok=True)
 
