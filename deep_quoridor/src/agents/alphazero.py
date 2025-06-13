@@ -17,12 +17,17 @@ from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentPa
 
 def observation_to_tensor(observation, board_size, device):
     """Convert Quoridor observation to tensor format for neural network."""
-    # Extract components from observation
-    board = observation["board"]  # board_size x board_size with player positions
-    walls = observation["walls"]  # (board_size-1) x (board_size-1) x 2 for h/v walls
-    my_walls = observation["my_walls_remaining"]
-    opponent_walls = observation["opponent_walls_remaining"]
-    my_turn = 1.0 if observation["my_turn"] else 0.0
+    # Extract components from observation - handle nested structure
+    if "observation" in observation:
+        obs_data = observation["observation"]
+    else:
+        obs_data = observation
+        
+    board = obs_data["board"]  # board_size x board_size with player positions
+    walls = obs_data["walls"]  # (board_size-1) x (board_size-1) x 2 for h/v walls
+    my_walls = obs_data["my_walls_remaining"]
+    opponent_walls = obs_data["opponent_walls_remaining"]
+    my_turn = 1.0 if obs_data["my_turn"] else 0.0
 
     # Flatten board and walls
     board_flat = board.flatten()
@@ -271,14 +276,43 @@ class AlphaZeroAgent(AbstractTrainableAgent):
     def save_model(self, path):
         # Create directory for saving models if it doesn't exist
         os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
-        # TO DO
-        # torch.save(self.online_network.state_dict(), path)
+        
+        # Save the neural network state dict
+        model_state = {
+            'network_state_dict': self.nn.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'episode_count': self.episode_count,
+            'board_size': self.board_size,
+            'max_walls': self.max_walls,
+            'params': self.params.__dict__,
+        }
+        torch.save(model_state, path)
+        print(f"AlphaZero model saved to {path}")
 
     def load_model(self, path):
         """Load the model from disk."""
         print(f"Loading pre-trained model from {path}")
-        # TO DO
-        # self.online_network.load_state_dict(torch.load(path, map_location=my_device()))
+        
+        try:
+            model_state = torch.load(path, map_location=my_device())
+            
+            # Load network state
+            self.nn.load_state_dict(model_state['network_state_dict'])
+            
+            # Load optimizer state if available
+            if 'optimizer_state_dict' in model_state and hasattr(self, 'optimizer'):
+                self.optimizer.load_state_dict(model_state['optimizer_state_dict'])
+            
+            # Load episode count if available
+            if 'episode_count' in model_state:
+                self.episode_count = model_state['episode_count']
+            
+            print(f"Successfully loaded AlphaZero model from {path}")
+            print(f"Model was trained for {self.episode_count} episodes")
+            
+        except Exception as e:
+            print(f"Error loading model from {path}: {e}")
+            raise
 
     def handle_step_outcome(
         self,
@@ -290,15 +324,17 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         done=False,
     ):
         """Override to handle episode end properly for AlphaZero."""
-        # Call parent method for basic handling
-        super().handle_step_outcome(
-            observation_before_action,
-            opponent_observation_after_action,
-            observation_after_action,
-            reward,
-            action,
-            done,
-        )
+        # For AlphaZero, we don't use the standard replay buffer from the parent class
+        # Instead, we store training data in our own format and handle episode end differently
+        
+        # Only increment steps counter from parent class
+        self.steps += 1
+        
+        if not self.training_mode:
+            return
+            
+        # Track current episode reward for metrics
+        self.current_episode_reward += reward
 
         # Handle episode end for AlphaZero training
         if done:
