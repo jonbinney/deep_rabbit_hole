@@ -83,7 +83,7 @@ class AlphaZeroOSAgent(TrainableAgent):
 
     def model_id(self):
         """Return a unique identifier for this model type and configuration."""
-        return f"{self.name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+        return f"alphazero_os_B{self.board_size}W{self.max_walls}_mv{self.version()}"
 
     def model_name(self):
         """Return the base name of the model."""
