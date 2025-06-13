@@ -67,7 +67,7 @@ class AlphaZeroOSAgent(TrainableAgent):
 
         # Load the model if the checkpoint path exists
         if self.params.checkpoint_path is not None:
-            if not os.path.exists(f"{self.params.checkpoint_path}.index"):
+            if not os.path.exists(f"{self.params.checkpoint_path}/checkpoint--1.index"):
                 raise FileNotFoundError(f"Checkpoint file {self.params.checkpoint_path} not found")
         if self.params.wandb_alias or self.params.checkpoint_path is not None:
             self.load_model()
