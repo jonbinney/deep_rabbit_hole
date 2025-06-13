@@ -24,28 +24,28 @@ def run_games(n_games: int = 10) -> Tuple[int, int, int]:
     random_wins = 0
     draws = 0
 
+    # Create a new environment for each game
+    quoridor_env = env(board_size=5, max_walls=3)
+
+    # Setup action space
+    action_space = spaces.Discrete(quoridor_env.board_size**2 + (quoridor_env.wall_size**2) * 2)
+
+    # Initialize agents
+    alphazero_agent = AlphaZeroOSAgent(
+        board_size=quoridor_env.board_size,
+        max_walls=quoridor_env.max_walls,
+        action_space=action_space,
+        params=AlphaZeroOSParams(
+            n=100,  # Number of MCTS simulations
+            c=1.4,  # Exploration constant
+            checkpoint_path=os.path.join("models", "osaz", "alphazero_os_B5W3_mv1_best"),
+        ),
+    )
+
+    random_agent = RandomAgent(action_space=action_space)
+
     for game_idx in range(n_games):
         print(f"Starting game {game_idx+1}/{n_games}")
-
-        # Create a new environment for each game
-        quoridor_env = env(board_size=5, max_walls=3)
-
-        # Setup action space
-        action_space = spaces.Discrete(quoridor_env.board_size**2 + (quoridor_env.wall_size**2) * 2)
-
-        # Initialize agents
-        alphazero_agent = AlphaZeroOSAgent(
-            board_size=quoridor_env.board_size,
-            max_walls=quoridor_env.max_walls,
-            action_space=action_space,
-            params=AlphaZeroOSParams(
-                n=100,  # Number of MCTS simulations
-                c=1.4,  # Exploration constant
-                checkpoint_path=os.path.join("models", "osaz", "alphazero_os_B5W3_mv1_best"),
-            ),
-        )
-
-        random_agent = RandomAgent(action_space=action_space)
 
         # Assign agents
         agents = {
@@ -67,13 +67,13 @@ def run_games(n_games: int = 10) -> Tuple[int, int, int]:
             observation = quoridor_env.observe(agent_id)
 
             # Get action from agent
-            action = agent.get_action(observation)
+            action = int(agent.get_action(observation))
 
             # Step environment
             quoridor_env.step(action)
 
             if agent_id == "player_1":
-                alphazero_agent.handle_opponent_step_outcome(observation, None, None, None, None, action)
+                alphazero_agent.handle_opponent_step_outcome(observation, None, None, None, action)
 
         # Check winner
         winner = quoridor_env.winner()
