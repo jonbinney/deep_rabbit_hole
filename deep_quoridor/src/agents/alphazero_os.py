@@ -18,6 +18,11 @@ class AlphaZeroOSParams(TrainableAgentParams):
 
     # Just used to display a user friendly name
     nick: Optional[str] = None
+    # Number of searches
+    n: int = 100
+    # UCT exploration constant
+    # A higher number favors exploration over exploitation
+    c: float = 1.4
 
     # Path to the checkpoint
     checkpoint_path: str = None
@@ -29,12 +34,6 @@ class AlphaZeroOSParams(TrainableAgentParams):
     wandb_dir: str = "wandbmodels"
     # Directory where local models are stored
     model_dir: str = "models"
-
-    # UCT exploration constant
-    uct_c: float = 2.0
-
-    # Maximum number of simulations for MCTS
-    max_simulations: int = 100
 
     # Random seed
     seed: int = 42
@@ -150,8 +149,8 @@ class AlphaZeroOSAgent(TrainableAgent):
             # Create the MCTS bot with the AlphaZero evaluator
             self.bot = mcts.MCTSBot(
                 self.game,
-                self.params.uct_c,
-                self.params.max_simulations,
+                self.params.c,
+                self.params.n,
                 evaluator,
                 random_state=np.random.RandomState(self.params.seed),
                 solve=False,

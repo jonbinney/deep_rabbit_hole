@@ -69,12 +69,12 @@ flags.DEFINE_integer("max_simulations", 100, "Maximum number of MCTS simulations
 flags.DEFINE_float("policy_alpha", 1.0, "Dirichlet noise alpha parameter.")
 flags.DEFINE_float("policy_epsilon", 0.25, "Dirichlet noise epsilon parameter.")
 flags.DEFINE_float("temperature", 1.0, "Temperature for move selection.")
-flags.DEFINE_integer("temperature_drop", 10, "Drop temperature to 0 after this many moves.")
+flags.DEFINE_integer("temperature_drop", 15, "Drop temperature to 0 after this many moves.")
 flags.DEFINE_string("nn_model", "mlp", "Neural network model architecture.")
-flags.DEFINE_integer("nn_width", 128, "Width of the neural network.")
-flags.DEFINE_integer("nn_depth", 8, "Depth of the neural network.")
+flags.DEFINE_integer("nn_width", 1024, "Width of the neural network.")
+flags.DEFINE_integer("nn_depth", 4, "Depth of the neural network.")
 flags.DEFINE_integer("eval_levels", 7, "Number of evaluation levels.")
-flags.DEFINE_integer("actors", 4, "Number of actor processes to run in parallel.")
+flags.DEFINE_integer("actors", 2, "Number of actor processes to run in parallel.")
 flags.DEFINE_integer("evaluators", 2, "Number of evaluation processes to run in parallel.")
 
 # Evaluation parameters
