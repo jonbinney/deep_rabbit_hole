@@ -8,6 +8,9 @@ from agents.random import RandomAgent
 from gymnasium import spaces
 from quoridor_env import env
 
+# Disable GPU usage for tensorflow
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 
 def run_games(n_games: int = 10) -> Tuple[int, int, int]:
     """
