@@ -68,7 +68,7 @@ class AzNode:
 
     def expand(self, policy_probs: np.ndarray):
         """
-        Create a child of the current node.
+        Create all the children of the current node.
         """
         for action, prob in policy_probs:
             game = copy.deepcopy(self.game)
