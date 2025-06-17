@@ -1,9 +1,16 @@
+import copy
+import math
 import os
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
+import numpy as np
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from quoridor import Action, Player, Quoridor
 from utils.subargs import SubargsBase
 
 from agents.core.trainable_agent import TrainableAgent
@@ -29,6 +36,119 @@ class AlphaZeroParams(SubargsBase):
 
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
     temperature: float = 1.0
+
+    # Number of searches
+    n: int = 1000
+    # A higher number favors exploration over exploitation
+    c: float = 1.4
+
+
+class AzNode:
+    def __init__(
+        self,
+        game: Quoridor,
+        parent: Optional["AzNode"] = None,
+        action_taken: Optional[Action] = None,
+        ucb_c: float = 1.0,
+        prior: float = 0.0,
+    ):
+        self.game = game
+        self.parent = parent
+        self.action_taken = action_taken
+
+        self.children = []
+        self.visit_count = 0
+        self.value_sum = 0.0
+
+        self.ucb_c = ucb_c
+        self.prior = prior
+
+    def should_expand(self):
+        return len(self.children) == 0
+
+    def expand(self, policy_probs: np.ndarray):
+        """
+        Create all the children of the current node.
+        """
+        for action, prob in policy_probs:
+            game = copy.deepcopy(self.game)
+            game.step(action)
+
+            child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            self.children.append(child)
+
+    def select(self) -> "AzNode":
+        """
+        Return the child of the current node with the highest ucb
+        """
+        return max(self.children, key=self.get_ucb)
+
+    def get_ucb(self, child):
+        if child.visit_count == 0:
+            return self.ucb_c * self.prior * math.sqrt(self.visit_count)
+
+        # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
+        q_value = ((child.value_sum / child.visit_count) + 1) / 2
+
+        return q_value + self.ucb_c * self.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
+
+    def backpropagate(self, value: float):
+        """
+        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
+        """
+        self.value_sum += value
+        self.visit_count += 1
+
+        if self.parent is not None:
+            self.parent.backpropagate(-value)
+
+
+class AzMCTS:
+    def __init__(self, nn: nn.Module, params: AlphaZeroParams):
+        self.nn = nn
+        self.params = params
+
+    def select(self, node: AzNode) -> AzNode:
+        """
+        Select a node to expand, starting from the given node.
+        As long as the passed node has leaves to expand, that one will be selected.
+        Otherwise, if the node is fully expanded, then its best child will be selected.
+        """
+        while not node.should_expand():
+            node = node.select()
+        return node
+
+    def search(self, initial_game: Quoridor):
+        root = AzNode(initial_game, ucb_c=self.params.c)
+        good_player = initial_game.current_player
+
+        for _ in range(self.params.n):
+            # Traverse down the tree guided by maximum UCB until we find a node to expand
+            node = self.select(root)
+
+            if node.game.check_win(good_player):
+                value = 1
+            elif node.game.check_win(1 - good_player):
+                value = -1
+            else:
+                with torch.no_grad():
+                    policy, value = self.nn(node.game)
+
+                policy = torch.softmax(policy, dim=1).squeeze(0)
+
+                # Mask the policy to make
+                valid_actions = node.game.get_valid_actions()
+                valid_action_indices = [node.game.action_encoder.action_to_index(action) for action in valid_actions]
+                policy_masked = torch.zeros_like(policy)
+                policy_masked[valid_action_indices] = policy[valid_action_indices]
+
+                policy_probs = policy_masked.cpu().numpy()
+                policy_probs = policy_probs / policy_probs.sum()
+                node.expand(policy_probs)
+
+            node.backpropagate(value)
+
+        return root.children
 
 
 class AlphaZeroAgent(TrainableAgent):
