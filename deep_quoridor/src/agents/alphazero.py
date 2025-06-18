@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import my_device
 
-from agents.core.trainable_agent import AbstractTrainableAgent, TrainableAgentParams
+from agents.core import AbstractTrainableAgent, TrainableAgentParams, rotation
 
 
 def observation_to_tensor(observation, board_size, device):
@@ -22,7 +22,7 @@ def observation_to_tensor(observation, board_size, device):
         obs_data = observation["observation"]
     else:
         obs_data = observation
-        
+
     board = obs_data["board"]  # board_size x board_size with player positions
     walls = obs_data["walls"]  # (board_size-1) x (board_size-1) x 2 for h/v walls
     my_walls = obs_data["my_walls_remaining"]
@@ -42,7 +42,7 @@ def observation_to_tensor(observation, board_size, device):
 @dataclass
 class AlphaZeroParams(TrainableAgentParams):
     # After how many self play games we train the network
-    train_every: int = 100
+    train_every: int = 10
 
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
     temperature: float = 1.0
@@ -147,7 +147,7 @@ class MCTSNode:
 
 
 class MCTS:
-    def __init__(self, network, c_puct=1.0):
+    def __init__(self, network, c_puct):
         self.network = network
         self.c_puct = c_puct
 
@@ -215,21 +215,21 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         params=AlphaZeroParams(),
         **kwargs,
     ):
+        self.nn = None
         super().__init__(board_size, max_walls, observation_space, action_space, params=params, **kwargs)
+
+        # The parent class may cause us to load a model. If not, and we're in training mode, create it ourselves.
+        if self.nn is None:
+            assert params.training_mode
+            self.nn = self._create_network()
+
         self.episode_count = 0
 
-        # If a training instance is passed, this instance is playing to train the other, sharing the NN and temperature
-        if training_instance:
-            self.nn = training_instance.nn
-            self.mcts = training_instance.mcts
-            self.temperature = training_instance.temperature
-        else:
-            self.nn = self._create_network()
-            self.mcts = MCTS(self.nn, params.c_puct)
-            self.mcts.set_board_size(board_size)
+        self.mcts = MCTS(self.nn, params.c_puct)
+        self.mcts.set_board_size(board_size)
 
-            # When playing use 0.0 for temperature so we always chose the best available action.
-            self.temperature = params.temperature if self.training_mode else 0.0
+        # When playing use 0.0 for temperature so we always chose the best available action.
+        self.temperature = params.temperature if self.training_mode else 0.0
 
         # Training data storage
         self.replay_buffer = deque(maxlen=params.replay_buffer_size)
@@ -276,15 +276,15 @@ class AlphaZeroAgent(AbstractTrainableAgent):
     def save_model(self, path):
         # Create directory for saving models if it doesn't exist
         os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
-        
+
         # Save the neural network state dict
         model_state = {
-            'network_state_dict': self.nn.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'episode_count': self.episode_count,
-            'board_size': self.board_size,
-            'max_walls': self.max_walls,
-            'params': self.params.__dict__,
+            "network_state_dict": self.nn.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "episode_count": self.episode_count,
+            "board_size": self.board_size,
+            "max_walls": self.max_walls,
+            "params": self.params.__dict__,
         }
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
@@ -292,24 +292,25 @@ class AlphaZeroAgent(AbstractTrainableAgent):
     def load_model(self, path):
         """Load the model from disk."""
         print(f"Loading pre-trained model from {path}")
-        
+
         try:
             model_state = torch.load(path, map_location=my_device())
-            
+
             # Load network state
-            self.nn.load_state_dict(model_state['network_state_dict'])
-            
+            self.nn = self._create_network()
+            self.nn.load_state_dict(model_state["network_state_dict"])
+
             # Load optimizer state if available
-            if 'optimizer_state_dict' in model_state and hasattr(self, 'optimizer'):
-                self.optimizer.load_state_dict(model_state['optimizer_state_dict'])
-            
+            if "optimizer_state_dict" in model_state and hasattr(self, "optimizer"):
+                self.optimizer.load_state_dict(model_state["optimizer_state_dict"])
+
             # Load episode count if available
-            if 'episode_count' in model_state:
-                self.episode_count = model_state['episode_count']
-            
+            if "episode_count" in model_state:
+                self.episode_count = model_state["episode_count"]
+
             print(f"Successfully loaded AlphaZero model from {path}")
             print(f"Model was trained for {self.episode_count} episodes")
-            
+
         except Exception as e:
             print(f"Error loading model from {path}: {e}")
             raise
@@ -326,13 +327,13 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         """Override to handle episode end properly for AlphaZero."""
         # For AlphaZero, we don't use the standard replay buffer from the parent class
         # Instead, we store training data in our own format and handle episode end differently
-        
+
         # Only increment steps counter from parent class
         self.steps += 1
-        
+
         if not self.training_mode:
             return
-            
+
         # Track current episode reward for metrics
         self.current_episode_reward += reward
 
@@ -432,6 +433,11 @@ class AlphaZeroAgent(AbstractTrainableAgent):
     def get_action(self, observation) -> int:
         action_mask = observation["action_mask"]
 
+        action_mask = action_mask = rotation.rotate_action_mask(self.board_size, observation["action_mask"])
+        observation["observation"] = observation["observation"].copy()
+        observation["observation"]["board"] = rotation.rotate_board(observation["observation"]["board"])
+        observation["observation"]["walls"] = rotation.rotate_walls(observation["observation"]["walls"])
+
         # Run MCTS to get action visit counts
         visit_counts = self.mcts.search(observation, action_mask, self.params.mcts_simulations)
 
@@ -461,7 +467,8 @@ class AlphaZeroAgent(AbstractTrainableAgent):
             policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
             self.store_training_data(observation, policy_target)
 
-        return int(action)
+        rotated_action = rotation.convert_rotated_action_index_to_original(self.board_size, action)
+        return int(rotated_action)
 
     def store_training_data(self, observation, mcts_policy):
         """Store training data for later use in training."""
