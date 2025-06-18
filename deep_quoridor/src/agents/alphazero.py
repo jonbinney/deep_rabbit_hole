@@ -99,7 +99,7 @@ class AzNode:
 
     def expand(self, policy_probs: np.ndarray):
         """
-        Create a child of the current node.
+        Create all the children of the current node.
         """
         for action_index, prob in enumerate(policy_probs):
             if prob == 0.0:

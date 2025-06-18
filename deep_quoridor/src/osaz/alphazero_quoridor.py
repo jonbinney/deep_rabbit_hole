@@ -7,7 +7,26 @@ import collections
 import datetime
 import getpass
 import json
+import multiprocessing
 import os
+
+# Set TF environment variables for GPU memory management and device visibility.
+# This must be done BEFORE TensorFlow is imported.
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+
+# Set the start method to 'spawn' for CUDA compatibility and monkey-patch
+# to prevent OpenSpiel from overriding it.
+try:
+    multiprocessing.set_start_method("spawn", force=True)
+
+    # Monkey-patch to prevent OpenSpiel from changing the start method.
+    def _do_nothing_set_start_method(method, force=False):
+        pass
+
+    multiprocessing.set_start_method = _do_nothing_set_start_method
+except RuntimeError:
+    # This may be raised in child processes where the context is already set.
+    pass
 
 import numpy as np
 import pyspiel
@@ -19,13 +38,11 @@ from open_spiel.python.algorithms.alpha_zero import evaluator as az_evaluator
 from open_spiel.python.algorithms.alpha_zero import model as az_model
 from open_spiel.python.bots import uniform_random
 from open_spiel.python.utils import spawn
+from osaz.wandb_logger import AlphaZeroWandbLogger
 
 import wandb
 
 # Import wandb for logging and visualization is at the top
-
-# Force TensorFlow to use CPU only to avoid CUDA errors
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 # Add a custom JSON encoder to handle NumPy types
@@ -68,18 +85,18 @@ flags.DEFINE_integer("max_simulations", 100, "Maximum number of MCTS simulations
 flags.DEFINE_float("policy_alpha", 1.0, "Dirichlet noise alpha parameter.")
 flags.DEFINE_float("policy_epsilon", 0.25, "Dirichlet noise epsilon parameter.")
 flags.DEFINE_float("temperature", 1.0, "Temperature for move selection.")
-flags.DEFINE_integer("temperature_drop", 10, "Drop temperature to 0 after this many moves.")
+flags.DEFINE_integer("temperature_drop", 15, "Drop temperature to 0 after this many moves.")
 flags.DEFINE_string("nn_model", "mlp", "Neural network model architecture.")
-flags.DEFINE_integer("nn_width", 128, "Width of the neural network.")
-flags.DEFINE_integer("nn_depth", 8, "Depth of the neural network.")
+flags.DEFINE_integer("nn_width", 1024, "Width of the neural network.")
+flags.DEFINE_integer("nn_depth", 4, "Depth of the neural network.")
 flags.DEFINE_integer("eval_levels", 7, "Number of evaluation levels.")
-flags.DEFINE_integer("actors", 4, "Number of actor processes to run in parallel.")
+flags.DEFINE_integer("actors", 2, "Number of actor processes to run in parallel.")
 flags.DEFINE_integer("evaluators", 2, "Number of evaluation processes to run in parallel.")
 
 # Evaluation parameters
 flags.DEFINE_integer("eval_games", 10, "Number of games for evaluation.")
 flags.DEFINE_boolean("eval_only", False, "Skip training and only evaluate an existing model.")
-flags.DEFINE_bool("verbose", True, "Be verbose.")
+flags.DEFINE_bool("verbose", False, "Be verbose.")
 
 # Weights & Biases parameters
 flags.DEFINE_string("wandb_project", "deep_quoridor", "Name of the wandb project.")
@@ -185,10 +202,24 @@ def main(_):
 
     # Train the model if not in eval_only mode
     if not FLAGS.eval_only:
+        # Initialize the wandb logger thread if wandb is enabled
+        wandb_logger = None
+        if FLAGS.use_wandb and wandb_run is not None:
+            # Create and start the logger thread
+            wandb_logger = AlphaZeroWandbLogger(
+                experiment_dir=checkpoint_dir,
+                wandb_run=wandb_run,
+                watch_interval_seconds=30,
+            )
+            wandb_logger.start()
+            print(f"Started wandb metrics logger thread for {checkpoint_dir}/learner.jsonl")
         # Run Alpha Zero with the given configuration
         with spawn.main_handler():
             alpha_zero.alpha_zero(config)
 
+        # Stop the logger thread if it was started
+        if wandb_logger is not None:
+            wandb_logger.stop()
         final_checkpoint = f"{checkpoint_dir}/checkpoint--1"
         # Log model as artifact if wandb is enabled
         if FLAGS.use_wandb and FLAGS.upload_model and not FLAGS.eval_only:

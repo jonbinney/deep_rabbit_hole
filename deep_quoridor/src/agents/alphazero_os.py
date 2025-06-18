@@ -18,6 +18,11 @@ class AlphaZeroOSParams(TrainableAgentParams):
 
     # Just used to display a user friendly name
     nick: Optional[str] = None
+    # Number of searches
+    n: int = 100
+    # UCT exploration constant
+    # A higher number favors exploration over exploitation
+    c: float = 1.4
 
     # Path to the checkpoint
     checkpoint_path: str = None
@@ -29,12 +34,6 @@ class AlphaZeroOSParams(TrainableAgentParams):
     wandb_dir: str = "wandbmodels"
     # Directory where local models are stored
     model_dir: str = "models"
-
-    # UCT exploration constant
-    uct_c: float = 2.0
-
-    # Maximum number of simulations for MCTS
-    max_simulations: int = 100
 
     # Random seed
     seed: int = 42
@@ -84,7 +83,7 @@ class AlphaZeroOSAgent(TrainableAgent):
 
     def model_id(self):
         """Return a unique identifier for this model type and configuration."""
-        return f"{self.name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
+        return f"alphazero_os_B{self.board_size}W{self.max_walls}_mv{self.version()}"
 
     def model_name(self):
         """Return the base name of the model."""
@@ -94,15 +93,11 @@ class AlphaZeroOSAgent(TrainableAgent):
         """Return the version of this model type."""
         return "1"
 
-    def get_model_extension(self):
-        """Get the file extension for stored models."""
-        return "zip"
-
     def _fetch_model_from_wandb_and_update_params(self):
         """
-        This function doesn't do anything if wandb_alias is not set in self.params.
-        Otherwise, it will download the file if there's not a local copy.
-        The params are updated to the artifact metadata.
+        Re-implements _fetch_model_from_wandb_and_update_params from TrainableAgent becuase the model
+        in this case it's a directory full of files.
+        TODO: Update the superclass method to handle this case and remove this method
         """
         alias = self.params.wandb_alias
         if not alias:
@@ -119,16 +114,17 @@ class AlphaZeroOSAgent(TrainableAgent):
 
             # If checkpoint_path is None, set a default download location
             if self.params.checkpoint_path is None:
-                self.params.checkpoint_path = os.path.join("models", "osaz", "checkpoint--1")
-            os.makedirs(os.path.dirname(self.params.checkpoint_path), exist_ok=True)
-            download_dir = os.path.dirname(self.params.checkpoint_path)
+                self.params.checkpoint_path = os.path.join("models", "osaz", f"{self.model_id()}_{artifact.digest[:5]}")
 
-            print(f"Downloading artifact to {download_dir}")
-            artifact.download(root=download_dir)
+            if os.path.exists(self.params.checkpoint_path):
+                print(f"Model already exists at {self.params.checkpoint_path}")
+                return
 
-            # The checkpoint path should now point to the correct location
-            # OpenSpiel expects checkpoint--1 without extension
-            self.params.checkpoint_path = os.path.join(download_dir, "checkpoint--1")
+            os.makedirs(self.params.checkpoint_path, exist_ok=True)
+
+            print(f"Downloading artifact to {self.params.checkpoint_path}")
+            artifact.download(root=self.params.checkpoint_path)
+
             print(f"Model downloaded from wandb to {self.params.checkpoint_path}")
         except Exception as e:
             print(f"Error fetching model from wandb: {e}")
@@ -142,7 +138,7 @@ class AlphaZeroOSAgent(TrainableAgent):
                 self._fetch_model_from_wandb_and_update_params()
 
             # Load the model from checkpoint (either local or downloaded from wandb)
-            self.model = az_model.Model.from_checkpoint(self.params.checkpoint_path)
+            self.model = az_model.Model.from_checkpoint(f"{self.params.checkpoint_path}/checkpoint--1")
 
             # Create the AlphaZero evaluator with the loaded model
             evaluator = az_evaluator.AlphaZeroEvaluator(self.game, self.model)
@@ -150,8 +146,8 @@ class AlphaZeroOSAgent(TrainableAgent):
             # Create the MCTS bot with the AlphaZero evaluator
             self.bot = mcts.MCTSBot(
                 self.game,
-                self.params.uct_c,
-                self.params.max_simulations,
+                self.params.c,
+                self.params.n,
                 evaluator,
                 random_state=np.random.RandomState(self.params.seed),
                 solve=False,
