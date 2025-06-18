@@ -1,33 +1,41 @@
+import copy
 import math
 import os
 import random
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from quoridor import Action, ActionEncoder, Quoridor, construct_game_from_observation
 from utils import my_device
+from utils.subargs import SubargsBase
 
-from agents.core import AbstractTrainableAgent, TrainableAgentParams, rotation
+from agents.core import Agent
 
 
-def observation_to_tensor(observation, board_size, device):
+def game_to_tensor(game: Quoridor, device):
     """Convert Quoridor observation to tensor format for neural network."""
-    # Extract components from observation - handle nested structure
-    if "observation" in observation:
-        obs_data = observation["observation"]
-    else:
-        obs_data = observation
+    player = game.get_current_player()
+    opponent = int(1 - player)
 
-    board = obs_data["board"]  # board_size x board_size with player positions
-    walls = obs_data["walls"]  # (board_size-1) x (board_size-1) x 2 for h/v walls
-    my_walls = obs_data["my_walls_remaining"]
-    opponent_walls = obs_data["opponent_walls_remaining"]
-    my_turn = 1.0 if obs_data["my_turn"] else 0.0
+    player_position = game.board.get_player_position(player)
+    opponent_position = game.board.get_player_position(opponent)
+
+    board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.int8)
+    board[player_position] = 1
+    board[opponent_position] = 2
+
+    # Make a copy of walls
+    walls = game.board.get_old_style_walls()
+
+    my_walls = game.board.get_walls_remaining(player)
+    opponent_walls = game.board.get_walls_remaining(opponent)
+    my_turn = 1.0  # Assume it is our turn
 
     # Flatten board and walls
     board_flat = board.flatten()
@@ -40,19 +48,139 @@ def observation_to_tensor(observation, board_size, device):
 
 
 @dataclass
-class AlphaZeroParams(TrainableAgentParams):
+class AlphaZeroParams(SubargsBase):
+    training_mode: bool = False
+
     # After how many self play games we train the network
     train_every: int = 10
+
+    # Learning rate to use for the optimizer
+    learning_rate: float = 0.001
 
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
     temperature: float = 1.0
 
-    # MCTS parameters
-    mcts_simulations: int = 800
-    c_puct: float = 1.0  # UCB exploration constant
-
     # Training parameters specific to AlphaZero
     replay_buffer_size: int = 10000
+
+    # Number of MCTS selections
+    n: int = 1000
+    # A higher number favors exploration over exploitation
+    c: float = 1.4
+
+
+class AzNode:
+    def __init__(
+        self,
+        game: Quoridor,
+        parent: Optional["AzNode"] = None,
+        action_taken: Optional[Action] = None,
+        ucb_c: float = 1.0,
+        prior: float = 0.0,
+    ):
+        self.game = game
+        self.parent = parent
+        self.action_taken = action_taken
+
+        self.children = []
+        self.visit_count = 0
+        self.value_sum = 0.0
+
+        self.ucb_c = ucb_c
+        self.prior = prior
+
+        self.action_encoder = ActionEncoder(game.board.board_size)
+
+    def should_expand(self):
+        return len(self.children) == 0
+
+    def expand(self, policy_probs: np.ndarray):
+        """
+        Create a child of the current node.
+        """
+        for action_index, prob in enumerate(policy_probs):
+            if prob == 0.0:
+                continue
+
+            action = self.action_encoder.index_to_action(action_index)
+            game = copy.deepcopy(self.game)
+            game.step(action)
+
+            child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            self.children.append(child)
+
+    def select(self) -> "AzNode":
+        """
+        Return the child of the current node with the highest ucb
+        """
+        return max(self.children, key=self.get_ucb)
+
+    def get_ucb(self, child):
+        if child.visit_count == 0:
+            return self.ucb_c * self.prior * math.sqrt(self.visit_count)
+
+        # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
+        q_value = ((child.value_sum / child.visit_count) + 1) / 2
+
+        return q_value + self.ucb_c * self.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
+
+    def backpropagate(self, value: float):
+        """
+        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
+        """
+        self.value_sum += value
+        self.visit_count += 1
+
+        if self.parent is not None:
+            self.parent.backpropagate(-value)
+
+
+class AzMCTS:
+    def __init__(self, nn: nn.Module, params: AlphaZeroParams):
+        self.nn = nn
+        self.params = params
+
+    def select(self, node: AzNode) -> AzNode:
+        """
+        Select a node to expand, starting from the given node.
+        As long as the passed node has leaves to expand, that one will be selected.
+        Otherwise, if the node is fully expanded, then its best child will be selected.
+        """
+        while not node.should_expand():
+            node = node.select()
+        return node
+
+    def search(self, initial_game: Quoridor):
+        root = AzNode(initial_game, ucb_c=self.params.c)
+        good_player = initial_game.current_player
+
+        for _ in range(self.params.n):
+            # Traverse down the tree guided by maximum UCB until we find a node to expand
+            node = self.select(root)
+
+            if node.game.check_win(good_player):
+                value = 1
+            elif node.game.check_win(1 - good_player):
+                value = -1
+            else:
+                with torch.no_grad():
+                    input_tensor = game_to_tensor(node.game, my_device())
+                    policy, value = self.nn(input_tensor)
+
+                # Mask the policy to ignore invalid actions
+                valid_actions = node.game.get_valid_actions()
+                valid_action_indices = [node.game.action_encoder.action_to_index(action) for action in valid_actions]
+                policy_masked = torch.zeros_like(policy)
+                policy_masked[valid_action_indices] = policy[valid_action_indices]
+
+                # Re-normalize probbailities after masking.
+                policy_probs = policy_masked.cpu().numpy()
+                policy_probs = policy_probs / policy_probs.sum()
+                node.expand(policy_probs)
+
+            node.backpropagate(value)
+
+        return root.children
 
 
 class AlphaZeroNetwork(nn.Module):
@@ -82,7 +210,7 @@ class AlphaZeroNetwork(nn.Module):
         )
 
         # Policy head - outputs action probabilities
-        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size))
+        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax())
 
         # Value head - outputs position evaluation (-1 to 1)
         self.value_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, 1), nn.Tanh())
@@ -100,111 +228,7 @@ class AlphaZeroNetwork(nn.Module):
         return policy, value
 
 
-class MCTSNode:
-    def __init__(self, state, parent=None, action=None, prior_prob=0.0):
-        self.state = state
-        self.parent = parent
-        self.action = action
-        self.prior_prob = prior_prob
-
-        self.children = {}  # action -> child node
-        self.visit_count = 0
-        self.value_sum = 0.0
-        self.is_expanded = False
-
-    def is_root(self):
-        return self.parent is None
-
-    def is_leaf(self):
-        return len(self.children) == 0
-
-    def get_value(self):
-        if self.visit_count == 0:
-            return 0.0
-        return self.value_sum / self.visit_count
-
-    def get_ucb_score(self, c_puct):
-        if self.visit_count == 0:
-            return float("inf")
-
-        exploration = c_puct * self.prior_prob * math.sqrt(self.parent.visit_count) / (1 + self.visit_count)
-        return self.get_value() + exploration
-
-    def select_child(self, c_puct):
-        return max(self.children.values(), key=lambda child: child.get_ucb_score(c_puct))
-
-    def expand(self, action_probs):
-        for action, prob in action_probs:
-            if action not in self.children:
-                self.children[action] = MCTSNode(None, parent=self, action=action, prior_prob=prob)
-        self.is_expanded = True
-
-    def backup(self, value):
-        self.visit_count += 1
-        self.value_sum += value
-        if not self.is_root():
-            self.parent.backup(-value)  # Flip value for opponent
-
-
-class MCTS:
-    def __init__(self, network, c_puct):
-        self.network = network
-        self.c_puct = c_puct
-
-    def search(self, root_state, action_mask, num_simulations):
-        root = MCTSNode(root_state)
-
-        for _ in range(num_simulations):
-            node = root
-
-            # Selection - traverse down to leaf
-            while not node.is_leaf() and node.is_expanded:
-                node = node.select_child(self.c_puct)
-
-            # Expansion and Evaluation
-            if not node.is_expanded:
-                # Get network predictions for this state
-                with torch.no_grad():
-                    state_tensor = self._state_to_tensor(node.state if node.state else root_state)
-                    policy_logits, value = self.network(state_tensor.unsqueeze(0))
-
-                    # Apply action mask and get valid action probabilities
-                    valid_actions = np.where(action_mask)[0]
-                    policy_probs = F.softmax(policy_logits, dim=1).cpu().numpy()[0]
-
-                    # Normalize probabilities for valid actions only
-                    valid_probs = [(action, policy_probs[action]) for action in valid_actions]
-                    total_prob = sum(prob for _, prob in valid_probs)
-                    if total_prob > 0:
-                        valid_probs = [(action, prob / total_prob) for action, prob in valid_probs]
-                    else:
-                        # Uniform distribution if all probabilities are 0
-                        uniform_prob = 1.0 / len(valid_actions)
-                        valid_probs = [(action, uniform_prob) for action in valid_actions]
-
-                    node.expand(valid_probs)
-
-                    # Backup the value
-                    node.backup(value.item())
-            else:
-                # If already expanded, just backup a default value
-                node.backup(0.0)
-
-        # Return visit counts for all actions
-        action_visits = np.zeros(len(action_mask))
-        for child in root.children.values():
-            action_visits[child.action] = child.visit_count
-
-        return action_visits
-
-    def _state_to_tensor(self, observation):
-        return observation_to_tensor(observation, self.board_size, my_device())
-
-    def set_board_size(self, board_size):
-        self.board_size = board_size
-
-
-class AlphaZeroAgent(AbstractTrainableAgent):
+class AlphaZeroAgent(Agent):
     def __init__(
         self,
         board_size,
@@ -215,21 +239,27 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         params=AlphaZeroParams(),
         **kwargs,
     ):
-        self.nn = None
-        super().__init__(board_size, max_walls, observation_space, action_space, params=params, **kwargs)
+        super().__init__(**kwargs)
+
+        self.params = params
+        self.board_size = board_size
+        self.max_walls = max_walls
+        self.action_space = action_space
+        self.action_size = self.board_size**2 + (self.board_size - 1) ** 2 * 2
 
         # The parent class may cause us to load a model. If not, and we're in training mode, create it ourselves.
-        if self.nn is None:
-            assert params.training_mode
-            self.nn = self._create_network()
+        if params.training_mode:
+            self.nn = AlphaZeroNetwork(self.board_size, self.action_size)
+        else:
+            assert False, "Only training mode supported"
 
         self.episode_count = 0
 
-        self.mcts = MCTS(self.nn, params.c_puct)
-        self.mcts.set_board_size(board_size)
+        self.mcts = AzMCTS(self.nn, params)
+        self.action_encoder = ActionEncoder(board_size)
 
         # When playing use 0.0 for temperature so we always chose the best available action.
-        self.temperature = params.temperature if self.training_mode else 0.0
+        self.temperature = params.temperature if params.training_mode else 0.0
 
         # Training data storage
         self.replay_buffer = deque(maxlen=params.replay_buffer_size)
@@ -238,21 +268,6 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         # Metrics tracking
         self.recent_losses = []
         self.recent_rewards = []
-
-        # TODO remove, this is because TrainingStatusRenderer assumes we have epsilon, we need a workaround
-        self.epsilon = 0
-
-    def _calculate_action_size(self):
-        """Calculate the size of the action space."""
-        return self.board_size**2 + (self.board_size - 1) ** 2 * 2
-
-    def _create_network(self):
-        """Create the neural network model."""
-        return AlphaZeroNetwork(self.board_size, self.action_size)
-
-    def _observation_to_tensor(self, observation, obs_player_id):
-        """Convert observation to tensor format."""
-        return observation_to_tensor(observation, self.board_size, self.device)
 
     def version(self):
         return "1.0"
@@ -263,9 +278,6 @@ class AlphaZeroAgent(AbstractTrainableAgent):
     @classmethod
     def params_class(cls):
         return AlphaZeroParams
-
-    def is_training(self):
-        return self.training_mode
 
     def model_id(self):
         return f"{self.model_name()}_B{self.board_size}W{self.max_walls}_mv{self.version()}"
@@ -297,7 +309,7 @@ class AlphaZeroAgent(AbstractTrainableAgent):
             model_state = torch.load(path, map_location=my_device())
 
             # Load network state
-            self.nn = self._create_network()
+            self.nn = AlphaZeroNetwork(self.board_size, self.action_size)
             self.nn.load_state_dict(model_state["network_state_dict"])
 
             # Load optimizer state if available
@@ -315,55 +327,15 @@ class AlphaZeroAgent(AbstractTrainableAgent):
             print(f"Error loading model from {path}: {e}")
             raise
 
-    def handle_step_outcome(
-        self,
-        observation_before_action,
-        opponent_observation_after_action,
-        observation_after_action,
-        reward,
-        action,
-        done=False,
-    ):
-        """Override to handle episode end properly for AlphaZero."""
-        # For AlphaZero, we don't use the standard replay buffer from the parent class
-        # Instead, we store training data in our own format and handle episode end differently
+    def start_game(self, game, player_id):
+        self.player_id = player_id
 
-        # Only increment steps counter from parent class
-        self.steps += 1
-
-        if not self.training_mode:
+    def end_game(self, game):
+        if not self.params.training_mode:
             return
 
         # Track current episode reward for metrics
-        self.current_episode_reward += reward
-
-        # Handle episode end for AlphaZero training
-        if done:
-            self.handle_episode_end(reward, done)
-
-    def end_game(self, game):
-        """Override to handle episode end for AlphaZero."""
-        super().end_game(game)
-        # Additional AlphaZero-specific cleanup if needed
-
-    def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
-        # Return some basic metrics if available
-        if hasattr(self, "recent_losses") and self.recent_losses:
-            avg_loss = sum(self.recent_losses[-length:]) / min(length, len(self.recent_losses))
-        else:
-            avg_loss = 0.0
-
-        # For AlphaZero, reward is based on win/loss, not cumulative
-        avg_reward = 0.0
-        if hasattr(self, "recent_rewards") and self.recent_rewards:
-            avg_reward = sum(self.recent_rewards[-length:]) / min(length, len(self.recent_rewards))
-
-        return avg_loss, avg_reward
-
-    def handle_episode_end(self, reward: float, done: bool):
-        """Handle end of episode - assign final rewards to training data."""
-        if not self.training_mode or not done:
-            return
+        reward = game.rewards[self.agent_id]
 
         # Store reward for metrics
         self.recent_rewards.append(reward)
@@ -387,6 +359,20 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         if self.episode_count % self.params.train_every == 0:
             self.train_network()
 
+    def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
+        # Return some basic metrics if available
+        if hasattr(self, "recent_losses") and self.recent_losses:
+            avg_loss = sum(self.recent_losses[-length:]) / min(length, len(self.recent_losses))
+        else:
+            avg_loss = 0.0
+
+        # For AlphaZero, reward is based on win/loss, not cumulative
+        avg_reward = 0.0
+        if hasattr(self, "recent_rewards") and self.recent_rewards:
+            avg_reward = sum(self.recent_rewards[-length:]) / min(length, len(self.recent_rewards))
+
+        return avg_loss, avg_reward
+
     def train_network(self):
         """Train the neural network on collected self-play data."""
         if len(self.replay_buffer) < self.params.batch_size:
@@ -401,7 +387,7 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         target_values = []
 
         for data in batch_data:
-            state_tensor = observation_to_tensor(data["observation"], self.board_size, self.device)
+            state_tensor = game_to_tensor(data["game"], self.board_size, self.device)
             states.append(state_tensor)
             target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
             target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
@@ -431,15 +417,14 @@ class AlphaZeroAgent(AbstractTrainableAgent):
         return {"total_loss": total_loss.item(), "policy_loss": policy_loss.item(), "value_loss": value_loss.item()}
 
     def get_action(self, observation) -> int:
-        action_mask = observation["action_mask"]
-
-        action_mask = action_mask = rotation.rotate_action_mask(self.board_size, observation["action_mask"])
-        observation["observation"] = observation["observation"].copy()
-        observation["observation"]["board"] = rotation.rotate_board(observation["observation"]["board"])
-        observation["observation"]["walls"] = rotation.rotate_walls(observation["observation"]["walls"])
+        game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
 
         # Run MCTS to get action visit counts
-        visit_counts = self.mcts.search(observation, action_mask, self.params.mcts_simulations)
+        root_children = self.mcts.search(game)
+        visit_counts = np.zeros(self.action_size, dtype=np.float32)
+        for child in root_children:
+            action_index = self.action_encoder.action_to_index(child.action_taken)
+            visit_counts[action_index] = child.visit_count
 
         if self.temperature == 0.0:
             # Greedy selection - choose action with highest visit count
@@ -449,7 +434,7 @@ class AlphaZeroAgent(AbstractTrainableAgent):
             # Convert visit counts to probabilities
             if np.sum(visit_counts) == 0:
                 # If no visits, uniform over valid actions
-                valid_actions = np.where(action_mask)[0]
+                valid_actions = np.where(observation["action_mask"])[0]
                 action = np.random.choice(valid_actions)
             else:
                 # Apply temperature
@@ -462,19 +447,18 @@ class AlphaZeroAgent(AbstractTrainableAgent):
                 action = np.random.choice(len(visit_counts), p=visit_probs)
 
         # Store training data if in training mode
-        if self.training_mode:
+        if self.params.training_mode:
             # Convert visit counts to policy target (normalized)
             policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
-            self.store_training_data(observation, policy_target)
+            self.store_training_data(game, policy_target)
 
-        rotated_action = rotation.convert_rotated_action_index_to_original(self.board_size, action)
-        return int(rotated_action)
+        return int(action)
 
-    def store_training_data(self, observation, mcts_policy):
+    def store_training_data(self, game, mcts_policy):
         """Store training data for later use in training."""
         self.replay_buffer.append(
             {
-                "observation": observation.copy(),
+                "game": copy.deepcopy(game),
                 "mcts_policy": mcts_policy.copy(),
                 "value": None,  # Will be filled in at end of episode
             }
