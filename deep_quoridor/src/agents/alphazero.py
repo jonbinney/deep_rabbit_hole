@@ -18,8 +18,33 @@ from utils.subargs import SubargsBase
 from agents.core import Agent
 
 
+@dataclass
+class AlphaZeroParams(SubargsBase):
+    training_mode: bool = False
+
+    # After how many self play games we train the network
+    train_every: int = 1
+
+    # Learning rate to use for the optimizer
+    learning_rate: float = 0.001
+
+    # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
+    temperature: float = 1.0
+
+    # How many moves to remember. The training batches are sampled from this replay buffer.
+    replay_buffer_size: int = 10000
+
+    # Batch size for training
+    batch_size: int = 2
+
+    # Number of MCTS selections
+    n: int = 1000
+    # A higher number favors exploration over exploitation
+    c: float = 1.4
+
+
 def game_to_tensor(game: Quoridor, device):
-    """Convert Quoridor observation to tensor format for neural network."""
+    """Convert Quoridor game state to tensor format for neural network."""
     player = game.get_current_player()
     opponent = int(1 - player)
 
@@ -45,28 +70,6 @@ def game_to_tensor(game: Quoridor, device):
     features = np.concatenate([board_flat, walls_flat, [my_walls, opponent_walls, my_turn]])
 
     return torch.FloatTensor(features).to(device)
-
-
-@dataclass
-class AlphaZeroParams(SubargsBase):
-    training_mode: bool = False
-
-    # After how many self play games we train the network
-    train_every: int = 10
-
-    # Learning rate to use for the optimizer
-    learning_rate: float = 0.001
-
-    # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
-    temperature: float = 1.0
-
-    # Training parameters specific to AlphaZero
-    replay_buffer_size: int = 10000
-
-    # Number of MCTS selections
-    n: int = 1000
-    # A higher number favors exploration over exploitation
-    c: float = 1.4
 
 
 class AzNode:
@@ -136,9 +139,10 @@ class AzNode:
 
 
 class AzMCTS:
-    def __init__(self, nn: nn.Module, params: AlphaZeroParams):
+    def __init__(self, nn: nn.Module, params: AlphaZeroParams, device):
         self.nn = nn
         self.params = params
+        self.device = device
 
     def select(self, node: AzNode) -> AzNode:
         """
@@ -164,7 +168,7 @@ class AzMCTS:
                 value = -1
             else:
                 with torch.no_grad():
-                    input_tensor = game_to_tensor(node.game, my_device())
+                    input_tensor = game_to_tensor(node.game, self.device)
                     policy, value = self.nn(input_tensor)
 
                 # Mask the policy to ignore invalid actions
@@ -246,6 +250,7 @@ class AlphaZeroAgent(Agent):
         self.max_walls = max_walls
         self.action_space = action_space
         self.action_size = self.board_size**2 + (self.board_size - 1) ** 2 * 2
+        self.device = my_device()
 
         # The parent class may cause us to load a model. If not, and we're in training mode, create it ourselves.
         if params.training_mode:
@@ -255,13 +260,12 @@ class AlphaZeroAgent(Agent):
 
         self.episode_count = 0
 
-        self.mcts = AzMCTS(self.nn, params)
+        self.mcts = AzMCTS(self.nn, params, self.device)
         self.action_encoder = ActionEncoder(board_size)
 
         # When playing use 0.0 for temperature so we always chose the best available action.
         self.temperature = params.temperature if params.training_mode else 0.0
 
-        # Training data storage
         self.replay_buffer = deque(maxlen=params.replay_buffer_size)
         self.optimizer = torch.optim.Adam(self.nn.parameters(), lr=params.learning_rate)
 
@@ -306,7 +310,7 @@ class AlphaZeroAgent(Agent):
         print(f"Loading pre-trained model from {path}")
 
         try:
-            model_state = torch.load(path, map_location=my_device())
+            model_state = torch.load(path, map_location=self.device)
 
             # Load network state
             self.nn = AlphaZeroNetwork(self.board_size, self.action_size)
@@ -335,7 +339,7 @@ class AlphaZeroAgent(Agent):
             return
 
         # Track current episode reward for metrics
-        reward = game.rewards[self.agent_id]
+        reward = game.rewards[self.player_id]
 
         # Store reward for metrics
         self.recent_rewards.append(reward)
@@ -387,7 +391,7 @@ class AlphaZeroAgent(Agent):
         target_values = []
 
         for data in batch_data:
-            state_tensor = game_to_tensor(data["game"], self.board_size, self.device)
+            state_tensor = game_to_tensor(data["game"], self.device)
             states.append(state_tensor)
             target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
             target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
