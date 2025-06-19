@@ -167,10 +167,23 @@ def main(_):
     # - wall placements (horizontal or vertical at each intersection) = (board_size-1)^2 * 2
     output_size = (FLAGS.board_size**2) * 4 + ((FLAGS.board_size - 1) ** 2) * 2
 
+    # Create a temporary instance of AlphaZeroOSAgent to generate consistent model_id
+    temp_agent = AlphaZeroOSAgent(
+        params=AlphaZeroOSParams(),
+        board_size=FLAGS.board_size,
+        max_walls=FLAGS.wall_count,
+        action_space=None,  # Not needed for model_id
+    )
+    # Get model_id from the agent for consistency
+    model_id = temp_agent.model_id()
+
+    # Use the model_id to construct the path
+    model_path = os.path.join(FLAGS.model_path, f"{model_id}_training")
+
     # Create the AlphaZero config
     config = alpha_zero.Config(
         game=game_string,  # Use the game string, not the game object
-        path=FLAGS.model_path,
+        path=model_path,
         learning_rate=FLAGS.learning_rate,
         weight_decay=FLAGS.weight_decay,
         train_batch_size=FLAGS.train_batch_size,
@@ -223,14 +236,8 @@ def main(_):
         final_checkpoint = f"{checkpoint_dir}/checkpoint--1"
         # Log model as artifact if wandb is enabled
         if FLAGS.use_wandb and FLAGS.upload_model and not FLAGS.eval_only:
-            # Create a temporary instance of AlphaZeroOSAgent to generate consistent artifact name
-            temp_agent = AlphaZeroOSAgent(
-                params=AlphaZeroOSParams(),
-                board_size=FLAGS.board_size,
-                max_walls=FLAGS.wall_count,
-                action_space=None,  # Not needed for model_id
-            )
-            artifact_name = temp_agent.model_id()
+            # Use the same model_id that was used for the path
+            artifact_name = model_id
             print(f"Uploading model from {final_checkpoint} to wandb as {artifact_name}")
             model_artifact = wandb.Artifact(
                 name=artifact_name,
