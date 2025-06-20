@@ -23,7 +23,7 @@ class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
     # After how many self play games we train the network
-    train_every: int = 1
+    train_every: int = 10
 
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
@@ -35,7 +35,7 @@ class AlphaZeroParams(SubargsBase):
     replay_buffer_size: int = 10000
 
     # Batch size for training
-    batch_size: int = 2
+    batch_size: int = 10
 
     # Number of MCTS selections
     n: int = 1000
@@ -116,16 +116,19 @@ class AzNode:
         """
         Return the child of the current node with the highest ucb
         """
-        return max(self.children, key=self.get_ucb)
+        child_ucbs = self.get_child_ucbs()
+        child_i = np.argmax(child_ucbs)
+        return self.children[child_i]
 
-    def get_ucb(self, child):
-        if child.visit_count == 0:
-            return self.ucb_c * self.prior * math.sqrt(self.visit_count)
+    def get_child_ucbs(self):
+        visit_counts = np.array([child.visit_count for child in self.children])
+        value_sums = np.array([child.value_sum for child in self.children])
+        priors = np.array([child.prior for child in self.children])
 
         # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
-        q_value = ((child.value_sum / child.visit_count) + 1) / 2
+        q_values = (np.divide(value_sums, visit_counts, where=visit_counts != 0) + 1) / 2
 
-        return q_value + self.ucb_c * self.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
+        return q_values + self.ucb_c * priors * np.sqrt(visit_counts) / (visit_counts + 1)
 
     def backpropagate(self, value: float):
         """
@@ -170,6 +173,7 @@ class AzMCTS:
                 with torch.no_grad():
                     input_tensor = game_to_tensor(node.game, self.device)
                     policy, value = self.nn(input_tensor)
+                    value = value.item()
 
                 # Mask the policy to ignore invalid actions
                 valid_actions = node.game.get_valid_actions()
