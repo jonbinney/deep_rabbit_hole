@@ -17,7 +17,8 @@ class ComputationTimesRenderer(Renderer):
                 player_moves[player].extend([move for move in result.moves if move.player == player])
 
         table = PrettyTable()
-        table.field_names = ["Player", "Average Time (ms)", "Min Time (ms)", "Max Time (ms)", "Median Time (ms)"]
+        table.title = "Computation times (ms)"
+        table.field_names = ["Player", "Average", "Min", "Max", "Median"]
 
         for player, moves in player_moves.items():
             num_moves = len(moves)
