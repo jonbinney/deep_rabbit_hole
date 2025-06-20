@@ -1,3 +1,5 @@
+import statistics
+
 from arena import GameResult
 from prettytable import PrettyTable
 
@@ -15,7 +17,7 @@ class ComputationTimesRenderer(Renderer):
                 player_moves[player].extend([move for move in result.moves if move.player == player])
 
         table = PrettyTable()
-        table.field_names = ["Player", "Average Time (ms)", "Min Time (ms)", "Max Time (ms)"]
+        table.field_names = ["Player", "Average Time (ms)", "Min Time (ms)", "Max Time (ms)", "Median Time (ms)"]
 
         for player, moves in player_moves.items():
             num_moves = len(moves)
@@ -26,6 +28,7 @@ class ComputationTimesRenderer(Renderer):
                     f"{sum(computation_times_ms) / num_moves:.3f}",
                     f"{min(computation_times_ms):.3f}",
                     f"{max(computation_times_ms):.3f}",
+                    f"{statistics.median(computation_times_ms):.3f}",
                 ]
             )
 
