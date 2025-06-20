@@ -1,11 +1,13 @@
 gymnasium
 numba
 numpy
+open_spiel
 pettingzoo
 prettytable
 pygame
 pytest
 pyyaml
+tensorflow
 torch
 wandb
 sb3_contrib

@@ -1,0 +1,8 @@
+numpy>=1.19.0
+absl-py>=0.10.0
+pyspiel>=0.3.0
+open_spiel>=1.0.0
+tensorflow>=2.5.0
+# OpenSpiel depends on these but they're not always auto-installed
+matplotlib>=3.3.0
+pygame>=2.0.0

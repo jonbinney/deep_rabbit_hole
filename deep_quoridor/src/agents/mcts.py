@@ -12,18 +12,21 @@ from agents.core import Agent
 
 @dataclass
 class MCTSParams(SubargsBase):
+    # Just used to display a user friendly name
     nick: Optional[str] = None
     # Number of searches
-    n: int = 1000
+    n: int = 100
+    # UCT exploration constant
     # A higher number favors exploration over exploitation
     c: float = 1.4
+
     # Maximum number of steps during random simulation before declaring a tie
     max_sim_steps: int = 1000
 
     # How to evaluate the value after the node expansion.
     # - rand_sim: random simulation of a game until there's a winner or max_sim_steps are reached
     # - dist: based on the distance of the pawns to the target and the number of remaining walls
-    eval: str = "dist"
+    eval: str = "rand_sim"
 
     # Reward assigned when the expansion reaches the end of the game, In particular when using the "dist" evaluation
     # we need to make sure that this is bigger than the maximum distance possible, or otherwise the agent may see a bigger reward
