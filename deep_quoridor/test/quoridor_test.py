@@ -1,6 +1,14 @@
 import numpy as np
 import pytest
-from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
+from quoridor import (
+    ActionEncoder,
+    Board,
+    MoveAction,
+    Player,
+    Quoridor,
+    WallAction,
+    WallOrientation,
+)
 from quoridor_env import env as quoridor_env
 
 
@@ -386,3 +394,20 @@ class TestQuoridor:
             . . . . . .
             . . 2 . . .
         """)
+
+
+class TestActionEncoder:
+    def test_action_encoder(self):
+        a5 = ActionEncoder(5)
+        a5_again = ActionEncoder(5)
+        assert a5 is a5_again
+
+        a9 = ActionEncoder(9)
+        assert a5 is not a9
+
+        action_a = a5.index_to_action(10)
+        action_b = a5_again.index_to_action(10)
+        assert action_a is action_b
+
+        action_c = a9.index_to_action(10)
+        assert action_a is not action_c

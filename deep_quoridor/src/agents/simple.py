@@ -33,8 +33,14 @@ class SimpleParams(SubargsBase):
     # once the agent knows it can win, it may oscillate between two moves instead of just winning.
     discount_factor: float = 0.99
 
+    # Which heuristic function for evaluting game states at non-terminal leaf nodes.
+    #
+    #  0: no heuristic, just return zero
+    #  1: relative distances to goal, ties broken by relative walls remaining
+    heuristic: int = 1
 
-@njit
+
+@njit(cache=True)
 def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
     """
     Calculate Gaussian weights for wall actions based on distance to players (Numba-optimized).
@@ -64,10 +70,8 @@ def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
     return weights
 
 
-@njit
-def sample_actions(
-    grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma=0.5
-):
+@njit(cache=True)
+def sample_actions(grid, player_positions, walls_remaining, goal_rows, current_player, branching_factor, wall_sigma):
     """
     Sample actions for the minimax search (Numba-optimized).
     Returns an array of actions where each row is [row, col, action_type].
@@ -127,30 +131,33 @@ def sample_actions(
         return combined_actions
 
 
-@njit
-def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player):
+@njit(cache=True)
+def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player, heuristic):
     """
     Evaluate a board position (Numba-optimized).
     """
-    # Get distances to goals
-    opponent = 1 - agent_player
-    agent_distance = qgrid.distance_to_row(
-        grid, player_positions[agent_player, 0], player_positions[agent_player, 1], goal_rows[agent_player]
-    )
-    opponent_distance = qgrid.distance_to_row(
-        grid, player_positions[opponent, 0], player_positions[opponent, 1], goal_rows[opponent]
-    )
+    if heuristic == 0:
+        return 0.0
+    else:
+        # Get distances to goals
+        opponent = 1 - agent_player
+        agent_distance = qgrid.distance_to_row(
+            grid, player_positions[agent_player, 0], player_positions[agent_player, 1], goal_rows[agent_player]
+        )
+        opponent_distance = qgrid.distance_to_row(
+            grid, player_positions[opponent, 0], player_positions[opponent, 1], goal_rows[opponent]
+        )
 
-    assert agent_distance != -1 and opponent_distance != -1
+        assert agent_distance != -1 and opponent_distance != -1
 
-    # Compute heuristic value based on distances and walls
-    distance_reward = opponent_distance - agent_distance
-    wall_reward = (walls_remaining[agent_player] - walls_remaining[opponent]) / 100.0
+        # Compute heuristic value based on distances and walls
+        distance_reward = opponent_distance - agent_distance
+        wall_reward = (walls_remaining[agent_player] - walls_remaining[opponent]) / 100.0
 
-    return distance_reward + wall_reward
+        return distance_reward + wall_reward
 
 
-@njit
+@njit(cache=True)
 def minimax(
     action,
     grid,
@@ -163,12 +170,12 @@ def minimax(
     branching_factor,
     wall_sigma,
     discount_factor,
+    heuristic,
 ):
-    # Apply action
     opponent = 1 - current_player
     opponent_old_position = np.array([player_positions[opponent, 0], player_positions[opponent, 1]])
 
-    # Apply the action the opponent took
+    # Apply the action the opponent just took
     qgrid.apply_action(grid, player_positions, walls_remaining, opponent, action)
 
     # Did we win?
@@ -181,7 +188,9 @@ def minimax(
 
     # Have we reached the maximum depth?
     elif depth == 0:
-        best_value = compute_heuristic_for_game_state(grid, player_positions, walls_remaining, goal_rows, agent_player)
+        best_value = compute_heuristic_for_game_state(
+            grid, player_positions, walls_remaining, goal_rows, agent_player, heuristic
+        )
 
     # Try actions from this state.
     else:
@@ -218,6 +227,7 @@ def minimax(
                 branching_factor,
                 wall_sigma,
                 discount_factor,
+                heuristic,
             )
 
             # Apply discount factor
@@ -235,7 +245,7 @@ def minimax(
     return best_value
 
 
-@njit(parallel=True)
+@njit(cache=True, parallel=True)
 def evaluate_actions(
     grid,
     player_positions,
@@ -246,6 +256,7 @@ def evaluate_actions(
     branching_factor,
     wall_sigma,
     discount_factor,
+    heuristic,
 ):
     """
     Evaluate all actions for the current player using the minimax algorithm.
@@ -272,6 +283,7 @@ def evaluate_actions(
             branching_factor,
             wall_sigma,
             discount_factor,
+            heuristic,
         )
 
     return actions, values
@@ -330,6 +342,7 @@ class SimpleAgent(Agent):
             self.params.branching_factor,
             self.params.wall_sigma,
             self.params.discount_factor,
+            self.params.heuristic,
         )
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them

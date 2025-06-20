@@ -1,6 +1,7 @@
 import copy
 from dataclasses import dataclass
 from enum import IntEnum, unique
+from functools import cache
 from typing import Optional, Sequence
 
 import numpy as np
@@ -35,9 +36,29 @@ class WallAction(Action):
 
 
 class ActionEncoder:
+    _instances = {}
+
+    def __new__(cls, board_size: int):
+        """
+        We use a singleton pattern to avoid creating multiple instances of the ActionEncoder for the same board size.
+        """
+        if board_size not in cls._instances:
+            cls._instances[board_size] = super().__new__(cls)
+
+        return cls._instances[board_size]
+
     def __init__(self, board_size: int):
+        if hasattr(self, "board_size"):
+            return
+
         self.board_size = board_size
         self.wall_size = board_size - 1
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
 
     def action_to_index(self, action) -> int:
         """
@@ -52,6 +73,7 @@ class ActionEncoder:
         else:
             raise ValueError(f"Invalid action type: {action}")
 
+    @cache
     def index_to_action(self, idx) -> Action:
         """
         Converts an action index to an action object.
