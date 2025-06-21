@@ -141,6 +141,16 @@ class Board:
         for player, position in zip(self._players, self._player_positions):
             self.set_player_cell(position, player)
 
+    def rotate_board(self):
+        self._grid = np.rot90(self._grid, k=2)
+        rotated_old_style_walls = np.zeros_like(self._old_style_walls)
+        for i in range(self._old_style_walls.shape[2]):
+            rotated_old_style_walls[:, :, i] = np.rot90(self._old_style_walls[:, :, i], k=2)
+        self._old_style_walls = rotated_old_style_walls
+        self._player_positions = np.array(
+            [(self.board_size - 1 - row, self.board_size - 1 - col) for (row, col) in self._player_positions]
+        )
+
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
         Get the position of the player's pawn.
@@ -288,6 +298,10 @@ class Quoridor:
         self.action_encoder = ActionEncoder(board.board_size)
 
         self._goal_rows = np.array([self.board.board_size - 1, 0])
+
+    def rotate_board(self):
+        self.board.rotate_board()
+        self._goal_rows = self._goal_rows[::-1]
 
     def step(self, action: Action, validate: bool = True):
         """
