@@ -34,6 +34,25 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from quoridor import ActionEncoder, Board, Player, Quoridor
+from utils.misc import get_opponent_player_id
+
+
+def make_observation(game, player, opponent, is_player_turns):
+    board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.int8)
+    player_position = game.board.get_player_position(player)
+    opponent_position = game.board.get_player_position(opponent)
+    board[player_position] = 1
+    board[opponent_position] = 2
+
+    walls = game.board.get_old_style_walls()
+
+    return {
+        "my_turn": is_player_turns,
+        "board": board,
+        "walls": walls,
+        "my_walls_remaining": game.board.get_walls_remaining(player),
+        "opponent_walls_remaining": game.board.get_walls_remaining(opponent),
+    }
 
 
 class QuoridorEnv(AECEnv):
@@ -113,7 +132,7 @@ class QuoridorEnv(AECEnv):
         """
         agent = self.agent_selection
         player = self.agent_to_player[agent]
-        opponent = self.agent_to_player[self.get_opponent(agent)]
+        opponent = self.agent_to_player[get_opponent_player_id(agent)]
 
         if self.terminations[agent]:
             self._next_player()
@@ -136,12 +155,12 @@ class QuoridorEnv(AECEnv):
         if self.game.check_win(player):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
-            self.rewards[self.get_opponent(agent)] = -1
+            self.rewards[get_opponent_player_id(agent)] = -1
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.
             self.rewards[agent] = step_reward_calculator.after_step()
-            self.rewards[self.get_opponent(agent)] = 0
+            self.rewards[get_opponent_player_id(agent)] = 0
 
         # TODO: Confirm if this is needed and if it's doing anything
         self._accumulate_rewards()
@@ -169,26 +188,8 @@ class QuoridorEnv(AECEnv):
 
     def _get_observation(self, agent_id):
         player = self.agent_to_player[agent_id]
-        opponent = self.agent_to_player[self.get_opponent(agent_id)]
-        # TODO: Do we need to make copies of the state or can we return references directly?
-
-        # Calculate board from self.positions
-        board = np.zeros((self.game.board.board_size, self.game.board.board_size), dtype=np.int8)
-        player_position = self.game.board.get_player_position(player)
-        opponent_position = self.game.board.get_player_position(opponent)
-        board[player_position] = 1
-        board[opponent_position] = 2
-
-        # Make a copy of walls
-        walls = self.game.board.get_old_style_walls()
-
-        return {
-            "my_turn": self.agent_selection == agent_id,
-            "board": board,
-            "walls": walls,
-            "my_walls_remaining": self.game.board.get_walls_remaining(player),
-            "opponent_walls_remaining": self.game.board.get_walls_remaining(opponent),
-        }
+        opponent = self.agent_to_player[get_opponent_player_id(agent_id)]
+        return make_observation(self.game, player, opponent, self.agent_selection == agent_id)
 
     def _get_action_mask(self, agent_id):
         # Start with an empty mask (nothing possible)
@@ -248,9 +249,6 @@ class QuoridorEnv(AECEnv):
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]
-
-    def get_opponent(self, agent):
-        return "player_1" if agent == "player_0" else "player_0"
 
 
 # Wrapping the environment for PettingZoo compatibility

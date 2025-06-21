@@ -242,6 +242,23 @@ class DExpAgent(AbstractTrainableAgent):
             return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
+    def evaluate_qvalues_for_state(self, grid, player_positions, walls_remaining, goal_rows, current_player):
+        """
+        Given a game state (arrays), return Q-values for all actions.
+        """
+        # Construct observation dict as expected by _observation_to_tensor
+        # This assumes you have a function to convert arrays to observation dicts.
+        # You may need to adapt this to your actual observation structure.
+        from quoridor import construct_observation_from_arrays
+
+        observation = construct_observation_from_arrays(
+            grid, player_positions, walls_remaining, goal_rows, current_player, self.board_size
+        )
+        obs_tensor = self._observation_to_tensor(observation, f"player_{current_player}")
+        with torch.no_grad():
+            qvalues = self.online_network(obs_tensor)
+        return qvalues.cpu().numpy()
+
     @classmethod
     def create_from_trained_instance(_cls, **kwargs):
         """Create a new mimic model for the agent."""
