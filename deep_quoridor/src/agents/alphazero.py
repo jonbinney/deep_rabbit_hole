@@ -1,5 +1,4 @@
 import copy
-import math
 import os
 import random
 from collections import deque
@@ -11,11 +10,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from quoridor import Action, ActionEncoder, Quoridor, construct_game_from_observation
+from quoridor import Action, ActionEncoder, Board, Player, Quoridor, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
-from agents.core import Agent
+from agents.core import TrainableAgent
 
 
 @dataclass
@@ -35,15 +34,20 @@ class AlphaZeroParams(SubargsBase):
     replay_buffer_size: int = 10000
 
     # Batch size for training
-    batch_size: int = 10
+    batch_size: int = 100
+
+    # How many iterations of optimizer each time we update the model
+    optimizer_iterations: int = 100
 
     # Number of MCTS selections
-    n: int = 1000
+    n: int = 100
     # A higher number favors exploration over exploitation
     c: float = 1.4
 
+    model_dir = "models"
 
-def game_to_tensor(game: Quoridor, device):
+
+def game_to_input_tensor(game: Quoridor, device) -> torch.FloatTensor:
     """Convert Quoridor game state to tensor format for neural network."""
     player = game.get_current_player()
     opponent = int(1 - player)
@@ -51,23 +55,21 @@ def game_to_tensor(game: Quoridor, device):
     player_position = game.board.get_player_position(player)
     opponent_position = game.board.get_player_position(opponent)
 
-    board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.int8)
-    board[player_position] = 1
-    board[opponent_position] = 2
+    player_board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.float32)
+    player_board[player_position] = 1
+    opponent_board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.float32)
+    opponent_board[opponent_position] = 1
 
     # Make a copy of walls
     walls = game.board.get_old_style_walls()
 
     my_walls = game.board.get_walls_remaining(player)
     opponent_walls = game.board.get_walls_remaining(opponent)
-    my_turn = 1.0  # Assume it is our turn
-
-    # Flatten board and walls
-    board_flat = board.flatten()
-    walls_flat = walls.flatten()
 
     # Combine all features into single tensor
-    features = np.concatenate([board_flat, walls_flat, [my_walls, opponent_walls, my_turn]])
+    features = np.concatenate(
+        [player_board.flatten(), opponent_board.flatten(), walls.flatten(), [my_walls, opponent_walls]]
+    )
 
     return torch.FloatTensor(features).to(device)
 
@@ -92,7 +94,8 @@ class AzNode:
         self.ucb_c = ucb_c
         self.prior = prior
 
-        self.action_encoder = ActionEncoder(game.board.board_size)
+        if game is not None:
+            self.action_encoder = ActionEncoder(game.board.board_size)
 
     def should_expand(self):
         return len(self.children) == 0
@@ -102,15 +105,18 @@ class AzNode:
         Create all the children of the current node.
         """
         for action_index, prob in enumerate(policy_probs):
-            if prob == 0.0:
-                continue
+            if prob < 0.0 or prob > 1.0:
+                raise ValueError("Invalid action probability in policy")
 
             action = self.action_encoder.index_to_action(action_index)
-            game = copy.deepcopy(self.game)
-            game.step(action)
 
-            child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
-            self.children.append(child)
+            if prob > 0.0:
+                # Apply the action.
+                game = copy.deepcopy(self.game)
+                game.step(action)
+
+                child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+                self.children.append(child)
 
     def select(self) -> "AzNode":
         """
@@ -171,7 +177,7 @@ class AzMCTS:
                 value = -1
             else:
                 with torch.no_grad():
-                    input_tensor = game_to_tensor(node.game, self.device)
+                    input_tensor = game_to_input_tensor(node.game, self.device)
                     policy, value = self.nn(input_tensor)
                     value = value.item()
 
@@ -181,7 +187,7 @@ class AzMCTS:
                 policy_masked = torch.zeros_like(policy)
                 policy_masked[valid_action_indices] = policy[valid_action_indices]
 
-                # Re-normalize probbailities after masking.
+                # Re-normalize probabilities after masking.
                 policy_probs = policy_masked.cpu().numpy()
                 policy_probs = policy_probs / policy_probs.sum()
                 node.expand(policy_probs)
@@ -195,15 +201,10 @@ class AlphaZeroNetwork(nn.Module):
     def __init__(self, board_size, action_size):
         super(AlphaZeroNetwork, self).__init__()
 
-        # Calculate input dimensions
-        # Board: board_size x board_size (combined player positions)
-        # Walls: (board_size-1) x (board_size-1) x 2 channels (horizontal/vertical)
-        # Additional features: my_walls_remaining, opponent_walls_remaining, my_turn
-        board_input_size = board_size * board_size
-        walls_input_size = (board_size - 1) * (board_size - 1) * 2
-        additional_features = 3  # walls remaining for both players + turn indicator
-
-        input_size = board_input_size + walls_input_size + additional_features
+        # Create a temporary game just to see how  big the input tensors are.
+        temp_game = Quoridor(Board(board_size))
+        temp_input = game_to_input_tensor(temp_game, my_device())
+        input_size = len(temp_input)
 
         # Shared layers
         self.shared = nn.Sequential(
@@ -218,7 +219,7 @@ class AlphaZeroNetwork(nn.Module):
         )
 
         # Policy head - outputs action probabilities
-        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax())
+        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax(dim=0))
 
         # Value head - outputs position evaluation (-1 to 1)
         self.value_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, 1), nn.Tanh())
@@ -236,7 +237,7 @@ class AlphaZeroNetwork(nn.Module):
         return policy, value
 
 
-class AlphaZeroAgent(Agent):
+class AlphaZeroAgent(TrainableAgent):
     def __init__(
         self,
         board_size,
@@ -277,11 +278,17 @@ class AlphaZeroAgent(Agent):
         self.recent_losses = []
         self.recent_rewards = []
 
+        # Just to make the training status plugin happy
+        self.epsilon = 0.0
+
     def version(self):
         return "1.0"
 
     def model_name(self):
         return "alphazero"
+
+    def is_training(self):
+        return self.params.training_mode
 
     @classmethod
     def params_class(cls):
@@ -370,14 +377,14 @@ class AlphaZeroAgent(Agent):
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         # Return some basic metrics if available
         if hasattr(self, "recent_losses") and self.recent_losses:
-            avg_loss = sum(self.recent_losses[-length:]) / min(length, len(self.recent_losses))
+            avg_loss = np.mean(self.recent_losses[-length:])
         else:
             avg_loss = 0.0
 
         # For AlphaZero, reward is based on win/loss, not cumulative
         avg_reward = 0.0
         if hasattr(self, "recent_rewards") and self.recent_rewards:
-            avg_reward = sum(self.recent_rewards[-length:]) / min(length, len(self.recent_rewards))
+            avg_reward = np.mean(self.recent_rewards[-length:])
 
         return avg_loss, avg_reward
 
@@ -386,36 +393,38 @@ class AlphaZeroAgent(Agent):
         if len(self.replay_buffer) < self.params.batch_size:
             return
 
-        # Sample random batch from replay buffer
-        batch_data = random.sample(list(self.replay_buffer), self.params.batch_size)
+        for _ in range(self.params.optimizer_iterations):
+            # Sample random batch from replay buffer
+            batch_data = random.sample(list(self.replay_buffer), self.params.batch_size)
 
-        # Prepare batch tensors
-        states = []
-        target_policies = []
-        target_values = []
+            # Prepare batch tensors
+            states = []
+            target_policies = []
+            target_values = []
 
-        for data in batch_data:
-            state_tensor = game_to_tensor(data["game"], self.device)
-            states.append(state_tensor)
-            target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
-            target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
+            for data in batch_data:
+                state_tensor = game_to_input_tensor(data["game"], self.device)
+                states.append(state_tensor)
+                target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
+                target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
 
-        states = torch.stack(states)
-        target_policies = torch.stack(target_policies)
-        target_values = torch.stack(target_values)
+            states = torch.stack(states)
+            target_policies = torch.stack(target_policies)
+            target_values = torch.stack(target_values)
 
-        # Forward pass
-        pred_policies, pred_values = self.nn(states)
+            # Forward pass
+            pred_policies, pred_values = self.nn(states)
 
-        # Compute losses
-        policy_loss = F.cross_entropy(pred_policies, target_policies)
-        value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze())
-        total_loss = policy_loss + value_loss
+            # Compute losses
+            policy_loss = F.cross_entropy(pred_policies, target_policies, reduction="mean")
+            value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
+            total_loss = policy_loss + value_loss
+            # print(f"{total_loss.item():3.3f} {policy_loss.item():3.3f} {value_loss.item():3.3f}")
 
-        # Backward pass
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        self.optimizer.step()
+            # Backward pass
+            self.optimizer.zero_grad()
+            total_loss.backward()
+            self.optimizer.step()
 
         # Store loss for metrics
         self.recent_losses.append(total_loss.item())
@@ -426,41 +435,40 @@ class AlphaZeroAgent(Agent):
 
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
+        if self.player_id == "player_1":
+            game.rotate_board()
 
         # Run MCTS to get action visit counts
         root_children = self.mcts.search(game)
-        visit_counts = np.zeros(self.action_size, dtype=np.float32)
-        for child in root_children:
-            action_index = self.action_encoder.action_to_index(child.action_taken)
-            visit_counts[action_index] = child.visit_count
+        visit_counts = np.array([child.visit_count for child in root_children])
 
-        if self.temperature == 0.0:
-            # Greedy selection - choose action with highest visit count
-            action = np.argmax(visit_counts)
+        if np.sum(visit_counts) == 0:
+            raise RuntimeError("No nodes visited during MCTS")
         else:
-            # Temperature-based selection
-            # Convert visit counts to probabilities
-            if np.sum(visit_counts) == 0:
-                # If no visits, uniform over valid actions
-                valid_actions = np.where(observation["action_mask"])[0]
-                action = np.random.choice(valid_actions)
-            else:
-                # Apply temperature
-                visit_probs = visit_counts / np.sum(visit_counts)
-                if self.temperature != 1.0:
-                    visit_probs = visit_probs ** (1.0 / self.temperature)
-                    visit_probs = visit_probs / np.sum(visit_probs)
+            visit_probs = visit_counts / np.sum(visit_counts)
+            if self.temperature != 1.0:
+                visit_probs = visit_probs ** (1.0 / self.temperature)
+                visit_probs = visit_probs / np.sum(visit_probs)
 
-                # Sample from probability distribution
-                action = np.random.choice(len(visit_counts), p=visit_probs)
+            # Sample from probability distribution
+            best_child = np.random.choice(root_children, p=visit_probs)
+            action = best_child.action_taken
 
         # Store training data if in training mode
         if self.params.training_mode:
             # Convert visit counts to policy target (normalized)
-            policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
+            visit_counts_sum = np.sum(visit_counts)
+            policy_target = np.zeros(self.action_size, dtype=np.float32)
+            if visit_counts_sum > 0:
+                for child_i, child in enumerate(root_children):
+                    policy_target[child_i] = child.visit_count / visit_counts_sum
             self.store_training_data(game, policy_target)
 
-        return int(action)
+        # Rotated the action back since we rotated the board before searching.
+        if self.player_id == "player_1":
+            action = game.rotate_action(action)
+
+        return self.action_encoder.action_to_index(action)
 
     def store_training_data(self, game, mcts_policy):
         """Store training data for later use in training."""

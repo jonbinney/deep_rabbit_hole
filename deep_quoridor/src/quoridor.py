@@ -392,6 +392,21 @@ class Quoridor:
     def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
 
+    def rotate_action(self, action):
+        """
+        Get the equivalent action for a rotated board.
+        """
+        if isinstance(action, MoveAction):
+            return MoveAction(
+                (self.board.board_size - 1 - action.destination[0], self.board.board_size - 1 - action.destination[1])
+            )
+        elif isinstance(action, WallAction):
+            return WallAction(
+                ((self.board.wall_size - 1 - action.position[0], self.board.wall_size - 1 - action.position[1]))
+            )
+        else:
+            raise ValueError("Invalid action type")
+
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)
 
