@@ -53,6 +53,7 @@ class ActionEncoder:
 
         self.board_size = board_size
         self.wall_size = board_size - 1
+        self.num_actions = self.board_size**2 + self.wall_size**2 * 2
 
     def __copy__(self):
         return self
@@ -402,7 +403,8 @@ class Quoridor:
             )
         elif isinstance(action, WallAction):
             return WallAction(
-                ((self.board.wall_size - 1 - action.position[0], self.board.wall_size - 1 - action.position[1]))
+                (self.board.board_size - 2 - action.position[0], self.board.board_size - 2 - action.position[1]),
+                action.orientation,
             )
         else:
             raise ValueError("Invalid action type")
