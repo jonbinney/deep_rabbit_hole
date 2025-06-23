@@ -26,7 +26,7 @@ class NNEvaluator:
 
         # Create a temporary game just to see how  big the input tensors are.
         temp_game = Quoridor(Board(board_size))
-        temp_input, _ = self.game_to_input_tensor(temp_game)
+        temp_input, _ = self.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
         self.nn = AlphaZeroNetwork(self.input_size, self.action_encoder.num_actions, self.device)
@@ -40,7 +40,7 @@ class NNEvaluator:
 
     def evaluate(self, game: Quoridor):
         with torch.no_grad():
-            input_array, is_board_rotated = self.game_to_input_tensor(game)
+            input_array, is_board_rotated = self.game_to_input_array(game)
             raw_policy, value = self.nn(torch.from_numpy(input_array).float())
             value = value.item()
 
@@ -59,7 +59,7 @@ class NNEvaluator:
 
         return value, policy_probs
 
-    def game_to_input_tensor(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
+    def game_to_input_array(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
         opponent = int(1 - player)
@@ -84,44 +84,36 @@ class NNEvaluator:
         opponent_walls = game.board.get_walls_remaining(opponent)
 
         # Combine all features into single tensor
-        features = np.concatenate(
-            [player_board.flatten(), opponent_board.flatten(), walls.flatten(), [my_walls, opponent_walls]]
+        input_array = np.concatenate(
+            [player_board.flatten(), opponent_board.flatten(), walls.flatten(), [my_walls, opponent_walls]],
+            dtype=np.float32,
         )
 
-        return features, rotate
+        return input_array, rotate
 
-    def train_network(self, replay_buffer):
-        """Train the neural network on collected self-play data."""
-        if len(replay_buffer) < self.batch_size:
-            return
+    def train_network(self, replay_buffer, learning_rate, batch_size, optimizer_iterations):
+        optimizer = torch.optim.Adam(self.nn.parameters(), lr=learning_rate)
 
-        optimizer = torch.optim.Adam(self.nn.parameters(), lr=self.learning_rate)
-
-        for _ in range(self.optimizer_iterations):
+        for _ in range(optimizer_iterations):
             # Sample random batch from replay buffer
-            batch_data = random.sample(list(replay_buffer), self.batch_size)
+            batch_data = random.sample(list(replay_buffer), batch_size)
 
             # Prepare batch tensors
-            states = []
+            inputs = []
             target_policies = []
             target_values = []
 
             for data in batch_data:
-                game = data["game"]
-                if game.get_goal_row(game.get_current_player()) != game.board.board_size - 1:
-                    raise ValueError("Training expects board to be oriented with player moving in positive direction")
-
-                state_tensor = self.game_to_input_tensor(game, self.device)
-                states.append(state_tensor)
+                inputs.append(torch.from_numpy(self.game_to_input_array(data["game"])[0]).to(self.device))
                 target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
                 target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
 
-            states = torch.stack(states)
+            inputs = torch.stack(inputs)
             target_policies = torch.stack(target_policies)
             target_values = torch.stack(target_values)
 
             # Forward pass
-            pred_policies, pred_values = self.nn(states)
+            pred_policies, pred_values = self.nn(inputs)
 
             # Compute losses
             policy_loss = F.cross_entropy(pred_policies, target_policies, reduction="mean")
@@ -133,11 +125,6 @@ class NNEvaluator:
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
-
-        # Store loss for metrics
-        self.recent_losses.append(total_loss.item())
-        if len(self.recent_losses) > 1000:  # Keep only recent losses
-            self.recent_losses = self.recent_losses[-1000:]
 
         return {"total_loss": total_loss.item(), "policy_loss": policy_loss.item(), "value_loss": value_loss.item()}
 
