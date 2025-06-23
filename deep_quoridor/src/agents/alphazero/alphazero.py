@@ -154,12 +154,12 @@ class AlphaZeroAgent(TrainableAgent):
     def start_game(self, game, player_id):
         self.player_id = player_id
 
-    def end_game(self, game):
+    def end_game(self, env):
         if not self.params.training_mode:
             return
 
         # Track current episode reward for metrics
-        reward = game.rewards[self.player_id]
+        reward = env.rewards[self.player_id]
 
         # Store reward for metrics
         self.recent_rewards.append(reward)
@@ -198,12 +198,22 @@ class AlphaZeroAgent(TrainableAgent):
         return avg_loss, avg_reward
 
     def train_network(self):
-        pass
+        """Train the neural network on collected data."""
+
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
+
+        metrics = self.evaluator.train_network(
+            self.replay_buffer, self.params.learning_rate, self.params.batch_size, self.params.optimizer_iterations
+        )
+
+        # Store loss for metrics
+        self.recent_losses.append(metrics["total_loss"])
+        if len(self.recent_losses) > 1000:  # Keep only recent losses
+            self.recent_losses = self.recent_losses[-1000:]
 
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
-        if self.player_id == "player_1":
-            game.rotate_board()
 
         # Run MCTS to get action visit counts
         root_children = self.mcts.search(game)
@@ -230,10 +240,6 @@ class AlphaZeroAgent(TrainableAgent):
                     action_index = self.action_encoder.action_to_index(child.action_taken)
                     policy_target[action_index] = child.visit_count / visit_counts_sum
                 self.store_training_data(game, policy_target)
-
-        # Rotated the action back since we rotated the board before searching.
-        if self.player_id == "player_1":
-            action = game.rotate_action(action)
 
         return self.action_encoder.action_to_index(action)
 
