@@ -53,6 +53,7 @@ class ActionEncoder:
 
         self.board_size = board_size
         self.wall_size = board_size - 1
+        self.num_actions = self.board_size**2 + self.wall_size**2 * 2
 
     def __copy__(self):
         return self
@@ -140,6 +141,16 @@ class Board:
         self._walls_remaining = np.array([self.max_walls, self.max_walls])
         for player, position in zip(self._players, self._player_positions):
             self.set_player_cell(position, player)
+
+    def rotate_board(self):
+        self._grid = np.rot90(self._grid, k=2)
+        rotated_old_style_walls = np.zeros_like(self._old_style_walls)
+        for i in range(self._old_style_walls.shape[2]):
+            rotated_old_style_walls[:, :, i] = np.rot90(self._old_style_walls[:, :, i], k=2)
+        self._old_style_walls = rotated_old_style_walls
+        self._player_positions = np.array(
+            [(self.board_size - 1 - row, self.board_size - 1 - col) for (row, col) in self._player_positions]
+        )
 
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
@@ -289,6 +300,10 @@ class Quoridor:
 
         self._goal_rows = np.array([self.board.board_size - 1, 0])
 
+    def rotate_board(self):
+        self.board.rotate_board()
+        self._goal_rows = self._goal_rows[::-1]
+
     def step(self, action: Action, validate: bool = True):
         """
         Execute the given action and update the game state.
@@ -377,6 +392,22 @@ class Quoridor:
 
     def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
+
+    def rotate_action(self, action):
+        """
+        Get the equivalent action for a rotated board.
+        """
+        if isinstance(action, MoveAction):
+            return MoveAction(
+                (self.board.board_size - 1 - action.destination[0], self.board.board_size - 1 - action.destination[1])
+            )
+        elif isinstance(action, WallAction):
+            return WallAction(
+                (self.board.board_size - 2 - action.position[0], self.board.board_size - 2 - action.position[1]),
+                action.orientation,
+            )
+        else:
+            raise ValueError("Invalid action type")
 
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)

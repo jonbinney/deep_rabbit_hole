@@ -171,6 +171,20 @@ class TestQuoridor:
         player_two_position = game.board.get_player_position(Player.TWO)
         assert moves_p2 == game.distance_to_target(player_two_position, 0)
 
+    def _test_board_rotation(self, s, s2):
+        game, _, _ = parse_board(s)
+        game2, _, _ = parse_board(s2)
+
+        game.rotate_board()
+        assert np.all(game.board._grid == game2.board._grid)
+        assert game.get_current_player() == game2.get_current_player()
+        for player in [Player.ONE, Player.TWO]:
+            assert game.board.get_player_position(player) == game2.board.get_player_position(player)
+
+        # Goal rows are swapped compared to a non-rotated board.
+        assert game.get_goal_row(Player.ONE) == 0
+        assert game.get_goal_row(Player.TWO) == game.board.board_size - 1
+
     def test_distance_to_goal(self):
         self._test_distance_to_target(
             """
@@ -394,6 +408,24 @@ class TestQuoridor:
             . . . . . .
             . . 2 . . .
         """)
+
+    def test_board_rotation(self):
+        self._test_board_rotation(
+            """
+           . 1 .|.
+           -+-  +
+           . . 2|.
+           . . . .
+           . . . .
+        """,
+            """
+           . . . .
+           . . . .
+           .|2 . .
+            +  -+-
+           .|. 1 .
+        """,
+        )
 
 
 class TestActionEncoder:
