@@ -34,7 +34,7 @@ class RotateWrapper(BaseWrapper):
         observation["walls"] = rotation.rotate_walls(observation["walls"])
 
         # Rotate action mask for player_1
-        rotated_mask = rotation.rotate_action_mask(self.board_size, action_mask)
+        rotated_mask = rotation.rotate_action_vector(self.board_size, action_mask)
 
         return {"observation": observation, "action_mask": rotated_mask}
 

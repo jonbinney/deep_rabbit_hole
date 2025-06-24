@@ -12,7 +12,7 @@ class RotateAdapter(BaseTrainableAgentAdapter):
 
     def _rotate_observation(self, observation):
         observation = observation.copy()
-        observation["action_mask"] = rotation.rotate_action_mask(self.board_size, observation["action_mask"])
+        observation["action_mask"] = rotation.rotate_action_vector(self.board_size, observation["action_mask"])
         observation["observation"] = observation["observation"].copy()
         observation["observation"]["board"] = rotation.rotate_board(observation["observation"]["board"])
         observation["observation"]["walls"] = rotation.rotate_walls(observation["observation"]["walls"])

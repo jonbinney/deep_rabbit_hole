@@ -228,7 +228,7 @@ class DExpAgent(AbstractTrainableAgent):
         """
         if player_id == "player_0" or not self.params.rotate:
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
-        rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
+        rotated_mask = rotation.rotate_action_vector(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def _convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):

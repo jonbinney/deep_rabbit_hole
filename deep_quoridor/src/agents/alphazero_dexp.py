@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from quoridor import Action, ActionEncoder, Player, Quoridor, construct_game_from_observation
-from quoridor_env import make_observation
+from quoridor_env import make_action_mask, make_observation
 from utils import my_device
 from utils.misc import get_opponent_player_id
 
@@ -115,7 +115,7 @@ class DAZAgentParams(TrainableAgentParams):
     train_every: int = 1
 
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
-    temperature: float = 1.0
+    temperature: float = 0
 
     # Batch size for training
     batch_size: int = 2
@@ -125,6 +125,13 @@ class DAZAgentParams(TrainableAgentParams):
 
     # A higher number favors exploration over exploitation
     c: float = 1.4
+
+    # not used but kept for compatibility with dexp models
+    split: bool = True
+    turn: bool = False
+    rotate: bool = True
+    use_opponents_actions: bool = True
+    target_as_source_for_opponent: bool = True
 
     @classmethod
     def training_only_params(cls) -> set[str]:
@@ -150,6 +157,7 @@ class AzNode:
         self.parent = parent
         self.action_taken = action_taken
 
+        self.expanded = False
         self.children = []
         self.visit_count = 0
         self.value_sum = 0.0
@@ -160,12 +168,13 @@ class AzNode:
         self.action_encoder = ActionEncoder(game.board.board_size)
 
     def should_expand(self):
-        return len(self.children) == 0
+        return not self.expanded
 
-    def expand(self, policy_probs: np.ndarray):
+    def expand(self, policy_probs: np.ndarray, nodes: dict[str, "AzNode"]):
         """
         Create all the children of the current node.
         """
+        self.expanded = True
         for action_index, prob in enumerate(policy_probs):
             if prob == 0.0:
                 continue
@@ -173,24 +182,31 @@ class AzNode:
             action = self.action_encoder.index_to_action(action_index)
             game = copy.deepcopy(self.game)
             game.step(action)
-
+            ##node_key = game.get_state_hash()
+            ##if node_key in nodes:
+            ##    continue
             child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            ##nodes[node_key] = child
+
             self.children.append(child)
 
     def select(self) -> "AzNode":
         """
         Return the child of the current node with the highest ucb
         """
+        if not self.children:
+            self.parent.children.remove(self)
+            return self.parent
         return max(self.children, key=self.get_ucb)
 
     def get_ucb(self, child):
         if child.visit_count == 0:
-            return self.ucb_c * self.prior * math.sqrt(self.visit_count)
+            return self.ucb_c * child.prior * math.sqrt(self.visit_count)
 
         # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
         q_value = ((child.value_sum / child.visit_count) + 1) / 2
 
-        return q_value + self.ucb_c * self.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
+        return q_value + self.ucb_c * child.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
 
     def backpropagate(self, value: float):
         """
@@ -204,7 +220,7 @@ class AzNode:
 
 
 class DAZAgent(AbstractTrainableAgent):
-    """Diego experimental Agent using DRL."""
+    nodes: dict[str, AzNode] = {}
 
     def check_congiguration(self):
         """
@@ -231,7 +247,7 @@ class DAZAgent(AbstractTrainableAgent):
         return f"daz ({self.params})"
 
     def model_name(self):
-        return "daz"
+        return "dexp"
 
     @classmethod
     def params_class(cls):
@@ -288,7 +304,7 @@ class DAZAgent(AbstractTrainableAgent):
         """
         if player_id == "player_0":
             return torch.tensor(mask, dtype=torch.float32, device=self.device)
-        rotated_mask = rotation.rotate_action_mask(self.board_size, mask)
+        rotated_mask = rotation.rotate_action_vector(self.board_size, mask)
         return torch.tensor(rotated_mask, dtype=torch.float32, device=self.device)
 
     def _convert_to_action_from_tensor_index_for_player(self, action_index_in_tensor, player_id):
@@ -302,41 +318,42 @@ class DAZAgent(AbstractTrainableAgent):
             return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
+    def _log_action(self, child_nodes):
+        if not self.action_log.is_enabled():
+            return
+
+        self.action_log.clear()
+
+        # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
+        action_scores = {
+            child.action_taken: child.value_sum / child.visit_count if child.visit_count > 0 else -np.inf
+            for child in child_nodes
+        }
+        # Order actions by their computed value (descending) and keep only the top 5
+        sorted_action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True)[:5])
+        self.action_log.action_score_ranking(sorted_action_scores)
+
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
 
         # Run MCTS to get action visit counts
-        root_children = self.mcts.search(game)
+        root_children = self.search(game)
         visit_counts = np.zeros(self.action_size, dtype=np.float32)
         for child in root_children:
             action_index = self.action_encoder.action_to_index(child.action_taken)
             visit_counts[action_index] = child.visit_count
 
-        if self.temperature == 0.0:
-            # Greedy selection - choose action with highest visit count
-            action = np.argmax(visit_counts)
-        else:
-            # Temperature-based selection
-            # Convert visit counts to probabilities
-            if np.sum(visit_counts) == 0:
-                # If no visits, uniform over valid actions
-                valid_actions = np.where(observation["action_mask"])[0]
-                action = np.random.choice(valid_actions)
-            else:
-                # Apply temperature
-                visit_probs = visit_counts / np.sum(visit_counts)
-                if self.temperature != 1.0:
-                    visit_probs = visit_probs ** (1.0 / self.temperature)
-                    visit_probs = visit_probs / np.sum(visit_probs)
-
-                # Sample from probability distribution
-                action = np.random.choice(len(visit_counts), p=visit_probs)
+        self._log_action(root_children)
+        child_index = np.argmax(
+            [child.value_sum / child.visit_count if child.visit_count > 0 else -np.inf for child in root_children]
+        )
+        action = self.action_encoder.action_to_index(root_children[child_index].action_taken)
 
         # Store training data if in training mode
-        if self.params.training_mode:
-            # Convert visit counts to policy target (normalized)
-            policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
-            self.store_training_data(game, policy_target)
+        # if self.params.training_mode:
+        # Convert visit counts to policy target (normalized)
+        # policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
+        # self.store_training_data(game, policy_target)
 
         return int(action)
 
@@ -346,38 +363,20 @@ class DAZAgent(AbstractTrainableAgent):
         with torch.no_grad():
             q_values = self.online_network(state)
 
-        mask_tensor = self._convert_action_mask_to_tensor(mask)
+        mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, player_id)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
 
         # Apply softmax to the Q-values to get action probabilities
         exp_q_values = torch.exp(q_values)
         probabilities = exp_q_values / torch.sum(exp_q_values)
 
-        return probabilities.squeeze().detach().cpu().numpy()
-
-    def _get_best_action(self, observation, mask):
-        """Get the best action based on Q-values."""
-        state = self._observation_to_tensor(observation, self.player_id)
-        with torch.no_grad():
-            q_values = self.online_network(state)
-
-        mask_tensor = self._convert_action_mask_to_tensor(mask)
-        q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
-        self._log_action(q_values)
-
-        if self.training_mode and self.params.softmax_exploration:
-            # Apply softmax to the Q-values to get action probabilities
-            q_values = q_values.squeeze().detach().cpu().numpy()
-            exp_q_values = np.exp(q_values)
-            probabilities = exp_q_values / np.sum(exp_q_values)
-            # Select an action based on the probabilities
-            selected_action = np.random.choice(len(probabilities), p=probabilities)
-        else:
-            selected_action = torch.argmax(q_values).item()
-
-        idx = self._convert_to_action_from_tensor_index(selected_action)
-        assert mask[idx] == 1
-        return idx
+        # This is an action vector with probabilities for each action
+        # but it might be rotated for player_1
+        p = probabilities.squeeze().detach().cpu().numpy()
+        if player_id == "player_1":
+            # Rotate probabilities for player_1
+            p = rotation.rotate_action_vector(self.board_size, p)
+        return p
 
     def select(self, node: AzNode) -> AzNode:
         """
@@ -390,9 +389,10 @@ class DAZAgent(AbstractTrainableAgent):
         return node
 
     def search(self, initial_game: Quoridor):
+        self.nodes.clear()
         root = AzNode(initial_game, ucb_c=self.params.c)
         good_player = initial_game.current_player
-
+        self.nodes[initial_game.get_state_hash()] = root
         for _ in range(self.params.n):
             # Traverse down the tree guided by maximum UCB until we find a node to expand
             node = self.select(root)
@@ -405,16 +405,16 @@ class DAZAgent(AbstractTrainableAgent):
                 agent_id = player_to_agent[node.game.current_player]
                 observation = make_observation(
                     node.game,
-                    agent_id,
-                    get_opponent_player_id(agent_id),
+                    node.game.current_player,
                     True,
                 )
-                policy = self._compute_qvalues_softmax(observation["observation"], observation["action_mask"], agent_id)
-                policy_probs = np.zeros_like(policy)
-                for i, prob in enumerate(policy):
-                    idx = self._convert_to_action_from_tensor_index_for_player(i, agent_id)
-                    policy_probs[idx] = prob
-                node.expand(policy_probs)
+                action_mask = make_action_mask(
+                    self.action_size, node.game.get_valid_actions(node.game.current_player), self.action_encoder
+                )
+                policy = self._compute_qvalues_softmax(observation, action_mask, agent_id)
+                node.expand(policy, self.nodes)
+                non_zero_policy = policy[policy > 0]
+                value = float(np.mean(non_zero_policy)) if non_zero_policy.size > 0 else 0.0
 
             node.backpropagate(value)
 

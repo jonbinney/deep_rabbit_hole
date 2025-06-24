@@ -9,6 +9,7 @@ from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult, MoveInfo
 from quoridor_env import env
 from renderers import PygameRenderer
+from utils.misc import get_opponent_player_id
 
 
 # Add after imports
@@ -54,7 +55,7 @@ class Arena:
         for agent_id in self.game.agent_iter():
             observation_before_action, _, termination, truncation, _ = self.game.last()
             agent = agents[agent_id]
-            opponent_agent_id = self.game.get_opponent(agent_id)
+            opponent_agent_id = get_opponent_player_id(agent_id)
             opponent_agent = agents[opponent_agent_id]
 
             if termination or truncation:

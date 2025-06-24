@@ -2,7 +2,7 @@ import numpy as np
 from agents.core.rotation import (
     convert_original_action_index_to_rotated,
     convert_rotated_action_index_to_original,
-    rotate_action_mask,
+    rotate_action_vector,
     rotate_board,
     rotate_walls,
 )
@@ -35,7 +35,7 @@ def test_rotate_action_mask_simple():
     print("\nInput mask visualization:")
     print(mask[:9].reshape(3, 3))  # Print board positions
 
-    rotated = rotate_action_mask(board_size, mask)
+    rotated = rotate_action_vector(board_size, mask)
 
     print("\nRotated mask visualization:")
     print(rotated[:9].reshape(3, 3))  # Print rotated board positions
@@ -61,8 +61,8 @@ def test_rotate_action_mask_identity():
     print("\nOriginal random mask (board positions):")
     print(mask[:9].reshape(3, 3))
 
-    rotated_once = rotate_action_mask(board_size, mask)
-    rotated_twice = rotate_action_mask(board_size, rotated_once)
+    rotated_once = rotate_action_vector(board_size, mask)
+    rotated_twice = rotate_action_vector(board_size, rotated_once)
 
     print("\nRotated twice mask (board positions):")
     print(rotated_twice[:9].reshape(3, 3))
@@ -83,7 +83,7 @@ def test_rotate_action_mask_shape():
     wall_actions = (board_size - 1) ** 2
 
     mask = np.ones(total_actions + 2 * wall_actions)
-    rotated = rotate_action_mask(board_size, mask)
+    rotated = rotate_action_vector(board_size, mask)
 
     print("\nInput 5x5 board positions:")
     print(mask[:25].reshape(5, 5))
@@ -177,7 +177,7 @@ def test_rotate_action_mask_all_zeros():
     total_actions = board_size * board_size
     wall_actions = (board_size - 1) ** 2
     mask = np.zeros(total_actions + 2 * wall_actions)
-    rotated = rotate_action_mask(board_size, mask)
+    rotated = rotate_action_vector(board_size, mask)
     np.testing.assert_array_equal(rotated, mask)
 
 

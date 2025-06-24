@@ -21,18 +21,28 @@ class WallOrientation(IntEnum):
 
 
 class Action:
-    pass
+    def is_wall_action(self) -> bool:
+        False
+
+    def is_move_action(self) -> bool:
+        False
 
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class MoveAction(Action):
     destination: tuple[int, int]  # Destination cell (row, col)
 
+    def is_move_action(self) -> bool:
+        return True
+
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class WallAction(Action):
     position: tuple[int, int]  # Start position of the wall (row, col)
     orientation: WallOrientation
+
+    def is_wall_action(self) -> bool:
+        return True
 
 
 class ActionEncoder:
@@ -297,7 +307,7 @@ class Quoridor:
         and also makes it easier to teleport players around the board for testing purposes.
         """
         if validate and not self.is_action_valid(action):
-            raise ValueError("Invalid action")
+            raise ValueError(f"Invalid action: {action} for player {self.current_player}, in board {self.board}")
 
         if isinstance(action, MoveAction):
             self.board.move_player(self.current_player, action.destination)
@@ -305,7 +315,7 @@ class Quoridor:
             self.board.add_wall(self.current_player, action.position, action.orientation)
             # TODO: Check that the wall doesn't block any player from reaching their goal.
         else:
-            raise ValueError("Invalid action type")
+            raise ValueError(f"Invalid action type {action} for player {self.current_player}, in board {self.board}")
 
         self.go_to_next_player()
 
@@ -414,6 +424,9 @@ class Quoridor:
 
     def __str__(self):
         return str(self.board)
+
+    def get_state_hash(self) -> str:
+        return str(self.board) + f"-{self.current_player}"
 
 
 def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:

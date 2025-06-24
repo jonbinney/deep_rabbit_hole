@@ -37,7 +37,8 @@ from quoridor import ActionEncoder, Board, Player, Quoridor
 from utils.misc import get_opponent_player_id
 
 
-def make_observation(game, player, opponent, is_player_turns):
+def make_observation(game, player, is_player_turns):
+    opponent = Player(1 - player)
     board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.int8)
     player_position = game.board.get_player_position(player)
     opponent_position = game.board.get_player_position(opponent)
@@ -53,6 +54,17 @@ def make_observation(game, player, opponent, is_player_turns):
         "my_walls_remaining": game.board.get_walls_remaining(player),
         "opponent_walls_remaining": game.board.get_walls_remaining(opponent),
     }
+
+
+def make_action_mask(size, valid_actions, action_encoder: ActionEncoder):
+    # Start with an empty mask (nothing possible)
+    action_mask = np.zeros(size, dtype=np.int8)
+
+    # Mark valid moves
+    for action in valid_actions:
+        action_i = action_encoder.action_to_index(action)
+        action_mask[action_i] = 1
+    return action_mask
 
 
 class QuoridorEnv(AECEnv):
@@ -188,19 +200,12 @@ class QuoridorEnv(AECEnv):
 
     def _get_observation(self, agent_id):
         player = self.agent_to_player[agent_id]
-        opponent = self.agent_to_player[get_opponent_player_id(agent_id)]
-        return make_observation(self.game, player, opponent, self.agent_selection == agent_id)
+        return make_observation(self.game, player, self.agent_selection == agent_id)
 
     def _get_action_mask(self, agent_id):
-        # Start with an empty mask (nothing possible)
         player = self.agent_to_player[agent_id]
-        action_mask = np.zeros((self.board_size**2 + (self.wall_size**2) * 2,), dtype=np.int8)
-
-        # Mark valid moves
-        for action in self.game.get_valid_actions(player):
-            action_i = self._action_encoder.action_to_index(action)
-            action_mask[action_i] = 1
-
+        size = (self.board_size**2 + (self.wall_size**2) * 2,)
+        action_mask = make_action_mask(size, self.game.get_valid_actions(player), self._action_encoder)
         self.last_action_mask[agent_id] = action_mask
         return action_mask
 
