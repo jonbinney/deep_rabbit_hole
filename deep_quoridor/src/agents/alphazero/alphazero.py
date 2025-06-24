@@ -30,7 +30,7 @@ class AlphaZeroParams(SubargsBase):
     temperature: float = 1.0
 
     # How many moves to remember. The training batches are sampled from this replay buffer.
-    replay_buffer_size: int = 10000
+    replay_buffer_size: int = 1000
 
     # Batch size for training
     batch_size: int = 100
@@ -66,14 +66,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.device = my_device()
 
         self.action_encoder = ActionEncoder(board_size)
-        self.evaluator = NNEvaluator(
-            self.board_size,
-            self.params.learning_rate,
-            self.params.batch_size,
-            self.params.optimizer_iterations,
-            self.action_encoder,
-            self.device,
-        )
+        self.evaluator = NNEvaluator(self.action_encoder, self.device)
         self.mcts = MCTS(params.mcts_n, params.mcts_ucb_c, self.evaluator)
 
         self.episode_count = 0
@@ -114,7 +107,7 @@ class AlphaZeroAgent(TrainableAgent):
         os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
 
         # Save the neural network state dict
-        nn = self.evaluator.nn
+        nn = self.evaluator.network
         model_state = {
             "network_state_dict": nn.state_dict(),
             "episode_count": self.episode_count,
@@ -124,32 +117,6 @@ class AlphaZeroAgent(TrainableAgent):
         }
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
-
-    def load_model(self, path):
-        """Load the model from disk."""
-        print(f"Loading pre-trained model from {path}")
-
-        try:
-            model_state = torch.load(path, map_location=self.device)
-
-            # Load network state
-            self.nn = AlphaZeroNetwork(self.board_size, self.action_encoder.num_actions)
-            self.nn.load_state_dict(model_state["network_state_dict"])
-
-            # Load optimizer state if available
-            if "optimizer_state_dict" in model_state and hasattr(self, "optimizer"):
-                self.optimizer.load_state_dict(model_state["optimizer_state_dict"])
-
-            # Load episode count if available
-            if "episode_count" in model_state:
-                self.episode_count = model_state["episode_count"]
-
-            print(f"Successfully loaded AlphaZero model from {path}")
-            print(f"Model was trained for {self.episode_count} episodes")
-
-        except Exception as e:
-            print(f"Error loading model from {path}: {e}")
-            raise
 
     def start_game(self, game, player_id):
         self.player_id = player_id
@@ -163,8 +130,8 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Store reward for metrics
         self.recent_rewards.append(reward)
-        if len(self.recent_rewards) > 1000:  # Keep only recent rewards
-            self.recent_rewards = self.recent_rewards[-1000:]
+        if len(self.recent_rewards) > 100:  # Keep only recent rewards
+            self.recent_rewards = self.recent_rewards[-100:]
 
         # Assign the final game outcome to all positions in this episode
         # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
@@ -182,6 +149,17 @@ class AlphaZeroAgent(TrainableAgent):
         # Train network if we have enough episodes
         if self.episode_count % self.params.train_every == 0:
             self.train_network()
+
+        wins, losses, ties = 0, 0, 0
+        for reward in self.recent_rewards:
+            if reward == -1:
+                losses += 1
+            elif reward == 0:
+                ties += 1
+            elif reward == 1:
+                wins += 1
+            else:
+                raise ValueError(f"Invalid reward: {reward}")
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         # Return some basic metrics if available
@@ -209,8 +187,8 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Store loss for metrics
         self.recent_losses.append(metrics["total_loss"])
-        if len(self.recent_losses) > 1000:  # Keep only recent losses
-            self.recent_losses = self.recent_losses[-1000:]
+        if len(self.recent_losses) > 100:  # Keep only recent losses
+            self.recent_losses = self.recent_losses[-100:]
 
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)

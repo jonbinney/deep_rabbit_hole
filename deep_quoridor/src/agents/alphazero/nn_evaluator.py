@@ -3,33 +3,27 @@ import random
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from quoridor import ActionEncoder, Board, Quoridor
+
+from agents.alphazero.mlp_network import MLPNetwork
 
 
 class NNEvaluator:
     def __init__(
         self,
-        board_size: int,
-        learning_rate: float,
-        batch_size: int,
-        optimization_iterations: int,
         action_encoder: ActionEncoder,
         device,
     ):
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.optimization_iterations = optimization_iterations
         self.action_encoder = action_encoder
         self.device = device
 
         # Create a temporary game just to see how  big the input tensors are.
-        temp_game = Quoridor(Board(board_size))
+        temp_game = Quoridor(Board(self.action_encoder.board_size))
         temp_input, _ = self.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
-        self.nn = AlphaZeroNetwork(self.input_size, self.action_encoder.num_actions, self.device)
+        self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
 
         self.rotated_action_mapping = np.zeros(action_encoder.num_actions, dtype=int)
         for action_i in range(len(self.rotated_action_mapping)):
@@ -41,21 +35,24 @@ class NNEvaluator:
     def evaluate(self, game: Quoridor):
         with torch.no_grad():
             input_array, is_board_rotated = self.game_to_input_array(game)
-            raw_policy, value = self.nn(torch.from_numpy(input_array).float())
+            unmasked_policy, value = self.network(torch.from_numpy(input_array).float())
             value = value.item()
 
         if is_board_rotated:
-            raw_policy = raw_policy[self.rotated_action_mapping]
+            unmasked_policy = unmasked_policy[self.rotated_action_mapping]
 
         # Mask the policy to ignore invalid actions
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        policy_masked = np.zeros_like(raw_policy)
-        policy_masked[valid_action_indices] = raw_policy[valid_action_indices]
+        policy_masked = np.zeros_like(unmasked_policy)
+        policy_masked[valid_action_indices] = unmasked_policy[valid_action_indices]
 
         # Re-normalize probabilities after masking.
         policy_probs = policy_masked
         policy_probs = policy_probs / policy_probs.sum()
+
+        if not (np.isfinite(policy_probs).all() and np.isfinite(value)):
+            raise ValueError("Non-finite number in policy")
 
         return value, policy_probs
 
@@ -92,7 +89,7 @@ class NNEvaluator:
         return input_array, rotate
 
     def train_network(self, replay_buffer, learning_rate, batch_size, optimizer_iterations):
-        optimizer = torch.optim.Adam(self.nn.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
 
         for _ in range(optimizer_iterations):
             # Sample random batch from replay buffer
@@ -100,7 +97,12 @@ class NNEvaluator:
 
             # Prepare batch tensors
             inputs = []
+
+            # The network predicts the natural log of the probability of each next action. When we use
+            # it to make predictions, we take the softamx of its output which un-logifies it and also
+            # normalizes it to a valid probability distribution.
             target_policies = []
+
             target_values = []
 
             for data in batch_data:
@@ -112,8 +114,11 @@ class NNEvaluator:
             target_policies = torch.stack(target_policies)
             target_values = torch.stack(target_values)
 
+            if inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any():
+                raise ValueError("NaN in training data")
+
             # Forward pass
-            pred_policies, pred_values = self.nn(inputs)
+            pred_policies, pred_values = self.network(inputs)
 
             # Compute losses
             policy_loss = F.cross_entropy(pred_policies, target_policies, reduction="mean")
@@ -127,40 +132,3 @@ class NNEvaluator:
             optimizer.step()
 
         return {"total_loss": total_loss.item(), "policy_loss": policy_loss.item(), "value_loss": value_loss.item()}
-
-
-class AlphaZeroNetwork(nn.Module):
-    def __init__(self, input_size, action_size, device):
-        super(AlphaZeroNetwork, self).__init__()
-
-        self.device = device
-
-        # Shared layers
-        self.shared = nn.Sequential(
-            nn.Linear(input_size, 512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-        )
-
-        # Policy head - outputs action probabilities
-        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax(dim=0))
-
-        # Value head - outputs position evaluation (-1 to 1)
-        self.value_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, 1), nn.Tanh())
-
-        self.to(self.device)
-
-    def forward(self, x):
-        if isinstance(x, tuple):
-            x = torch.stack([i for i in x]).to(self.device)
-
-        shared_features = self.shared(x)
-        policy = self.policy_head(shared_features)
-        value = self.value_head(shared_features)
-
-        return policy, value
