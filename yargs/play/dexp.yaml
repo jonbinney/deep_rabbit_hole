@@ -11,4 +11,4 @@ dexp_1v1:
   args: -r pygame -t 1 -N 5 -W 3 --players dexp:wandb_alias=best,nick=dexp human
  
 dexp_1v1_2:
-  args: -r pygame -t 100 -N 5 -W 3 --players dexp:wandb_alias=best,nick=dexp daz:wandb_alias=best,nick=daz
+  args: -r pygame -t 100 -N 5 -W 3 --players simple daz:wandb_alias=best,nick=daz
