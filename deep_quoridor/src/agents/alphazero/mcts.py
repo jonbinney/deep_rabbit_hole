@@ -96,16 +96,14 @@ class MCTS:
 
     def search(self, initial_game: Quoridor):
         root = Node(initial_game, ucb_c=self.ucb_c)
-        good_player = initial_game.current_player
 
         for _ in range(self.n):
             # Traverse down the tree guided by maximum UCB until we find a node to expand
             node = self.select(root)
 
-            if node.game.check_win(good_player):
+            if node.game.is_game_over():
+                # The player who just made a move must have won.
                 value = 1
-            elif node.game.check_win(1 - good_player):
-                value = -1
             # TODO: Handle ties (these happen when arena decides game is taking too long)
             else:
                 value, priors = self.evaluator.evaluate(node.game)
