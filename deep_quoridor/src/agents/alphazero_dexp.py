@@ -348,7 +348,7 @@ class DAZAgent(AbstractTrainableAgent):
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def score(self, child, total_visits=None, total_wins=None, total_losses=None):
-        if True:
+        if False:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
             # Fraction of visits that are wins or losses (i.e., decisive outcomes)
@@ -361,6 +361,25 @@ class DAZAgent(AbstractTrainableAgent):
             # avg_value = child.value_sum / child.visit_count
             avg_value = child.total_wins / (child.total_losses + 1)
             return value_weight * avg_value + prior_weight * child.prior
+        elif True:
+            if child.visit_count == 0:
+                return -np.inf if child.prior == 0.0 else child.prior
+            # avg_value = child.value_sum / child.visit_count
+            # Use win rate as avg_value, normalized between 0 and 1
+            total_games = child.total_wins + child.total_losses
+            if total_games > 0:
+                avg_value = child.total_wins / total_games
+            else:
+                avg_value = 0.0  # No data yet
+            # Fraction of visits that are wins or losses (i.e., decisive outcomes)
+            decisive_frac = (child.total_wins + child.total_losses) / child.visit_count
+            # When decisive_frac is low, rely more on prior; when high, rely more on value_sum
+            # Increase value_weight using a tunable constant (e.g., value_weight_scale)
+            value_weight_scale = 4.0  # You can tune this constant as needed
+            value_weight = min(1.0, decisive_frac * value_weight_scale)
+            prior_weight = 1.0 - value_weight
+            # Optionally, add a small smoothing factor to avoid 0/0 or 1/0 issues
+            return value_weight * avg_value + prior_weight * (child.prior * 0.2)
         return (child.value_sum + child.prior) / (child.visit_count + 1) if child.visit_count > 0 else -np.inf
 
     def scores(self, child_nodes):
