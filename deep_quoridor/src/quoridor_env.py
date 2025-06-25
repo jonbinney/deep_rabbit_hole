@@ -252,6 +252,11 @@ class QuoridorEnv(AECEnv):
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
 
+    def set_current_player(self, agent: str):
+        """Shouldn't be called during regular play, just for setting up scenarios for testing or metrics"""
+        self.agent_selection = agent
+        self.game.set_current_player(self.agent_to_player[agent])
+
 
 # Wrapping the environment for PettingZoo compatibility
 def env(**kwargs):

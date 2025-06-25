@@ -2,6 +2,8 @@ from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
+from quoridor import Player
+from quoridor_env import env
 from utils.misc import compute_elo
 
 
@@ -36,7 +38,7 @@ class Metrics:
 
         return int(agent_rating - best_opponent)
 
-    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float, int]:
+    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float, int, int]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
@@ -49,6 +51,7 @@ class Metrics:
                 - elo_table (dict[str, float]): A dictionary mapping agent names to their computed Elo ratings.
                 - relative_elo (int): The evaluated agent's Elo rating minus the elo for the best opponent.
                 - win_perc (float): The win percentage of the evaluated agent against the opponents.
+                - dumb_score (int): A score between 0 (perfect) and 100 (always wrong) on how the agent performs in certain basic situations
 
         Notes:
             - The method disables training mode for trainable agents during evaluation and restores it afterward.
@@ -92,4 +95,113 @@ class Metrics:
         win_perc = self._win_perc(results, agent.name())
         absolute_elo = elo_table[agent.name()]
 
-        return VERSION, elo_table, relative_elo, win_perc, int(absolute_elo)
+        dumb_score = self.dumb_score(agent)
+
+        return VERSION, elo_table, relative_elo, win_perc, int(absolute_elo), dumb_score
+
+    def dumb_score(self, agent: Agent, verbose: bool = False):
+        def print_fail(initial: str, current: str):
+            print("Initial position:")
+            print(initial)
+            print("Moved:")
+            print(current)
+
+        N = self.board_size
+        quoridor = env(board_size=N, max_walls=self.max_walls)
+        dumb_score = 0
+        count = 0
+
+        for player in [Player.ONE, Player.TWO]:
+            agent_id = quoridor.player_to_agent[player]
+            opponent = Player.ONE if player == Player.TWO else Player.TWO
+
+            # The agent is right before the goal (no walls blocking), and the opponent in the goal row in the middle column.
+            # Moving forward (or forward and left or right in the middle) will lead it to winning.
+            # E.g., the agent is player 2 and moving up:
+            # . 1 .    . 1 .   . 1 .
+            # 2 . .    . 2 .   . . 2
+            for i in range(N):
+                count += 1
+                agent.start_game(quoridor.game, agent_id)
+                quoridor.reset()
+                row = quoridor.game.get_goal_row(player)
+                row = 1 if row == 0 else row - 1  # Move 1 away from the goal
+                quoridor.game.board.move_player(player, (row, i))
+                quoridor.set_current_player(agent_id)
+                initial_pos = str(quoridor.game)
+
+                action = agent.get_action(quoridor.observe(agent_id))
+                quoridor.step(action)
+
+                if not quoridor.game.check_win(player):
+                    dumb_score += 1
+                    if verbose:
+                        print("Agent was expected to win but did something else.")
+                        print_fail(initial_pos, str(quoridor.game))
+
+            # The agent needs to jump over the opponent and win
+            # E.g., the agent is player 2 and moving up:
+            # . . .    . . .   . . .
+            # 1 . .    . 1 .   . . 1
+            # 2 . .    . 2 .   . . 2
+            for i in range(N):
+                count += 1
+                agent.start_game(quoridor.game, agent_id)
+                quoridor.reset()
+                goal_row = quoridor.game.get_goal_row(player)
+                agent_row = 2 if goal_row == 0 else goal_row - 2  # Our agent is 2 away from the goal
+                opp_row = 1 if goal_row == 0 else goal_row - 1  # The opponent is 1 away from the goal
+
+                quoridor.game.board.move_player(opponent, (opp_row, i))
+
+                quoridor.game.board.move_player(player, (agent_row, i))
+                quoridor.set_current_player(agent_id)
+                initial_pos = str(quoridor.game)
+
+                action = agent.get_action(quoridor.observe(agent_id))
+                quoridor.step(action)
+
+                if not quoridor.game.check_win(player):
+                    dumb_score += 1
+                    if verbose:
+                        print("Agent was expected to win but did something else.")
+                        print_fail(initial_pos, str(quoridor.game))
+
+            # The opponent is about to win and we're 2 away, so the agent should place a wall to block it.
+            # This will be run only if the board is 5 or plus and we're playing with walls.
+            # E.g., the agent is player 2 and moving up:
+            # . . . . .
+            # . . . . .
+            # . . 2 . .
+            # . . 1 . .
+            # . . . . .
+            for i in range(N):
+                if N < 5 or self.max_walls == 0:
+                    # We could put an if before the for above but I don't like indenting everything more
+                    continue
+
+                count += 1
+                agent.start_game(quoridor.game, agent_id)
+                quoridor.reset()
+                goal_row = quoridor.game.get_goal_row(player)
+                agent_row = 2 if goal_row == 0 else goal_row - 2  # Our agent is 2 away from the goal
+
+                opp_goal_row = quoridor.game.get_goal_row(opponent)
+                opp_row = 1 if opp_goal_row == 0 else opp_goal_row - 1  # The opponent is 1 away from the goal
+
+                quoridor.game.board.move_player(opponent, (opp_row, i))
+
+                quoridor.game.board.move_player(player, (agent_row, i))
+                quoridor.set_current_player(agent_id)
+                initial_pos = str(quoridor.game)
+
+                action = agent.get_action(quoridor.observe(agent_id))
+                quoridor.step(action)
+
+                if not quoridor.game.board.is_wall_between((opp_row, i), (opp_goal_row, i)):
+                    dumb_score += 1
+                    if verbose:
+                        print("Agent was expected to block the opponent but did something else.")
+                        print_fail(initial_pos, str(quoridor.game))
+
+        return int((100.0 * dumb_score) / count)
