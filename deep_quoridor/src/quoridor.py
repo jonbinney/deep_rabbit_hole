@@ -35,6 +35,9 @@ class MoveAction(Action):
     def is_move_action(self) -> bool:
         return True
 
+    def __str__(self):
+        return f"MA({self.destination[0]},{self.destination[1]})"
+
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class WallAction(Action):
@@ -43,6 +46,9 @@ class WallAction(Action):
 
     def is_wall_action(self) -> bool:
         return True
+
+    def __str__(self):
+        return f"WA({self.position[0]},{self.position[1]} o={self.orientation.name})"
 
 
 class ActionEncoder:
@@ -426,7 +432,7 @@ class Quoridor:
         return str(self.board)
 
     def get_state_hash(self) -> str:
-        return str(self.board) + f"-{self.current_player}"
+        return str(self.board) + f"-{self.current_player}-{self.board.get_walls_remaining(self.current_player)}"
 
 
 def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:

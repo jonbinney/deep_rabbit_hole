@@ -124,7 +124,7 @@ class DAZAgentParams(TrainableAgentParams):
     n: int = 1000
 
     # A higher number favors exploration over exploitation
-    c: float = 1.4
+    c: float = 1.8
 
     # not used but kept for compatibility with dexp models
     split: bool = True
@@ -154,21 +154,49 @@ class AzNode:
         prior: float = 0.0,
     ):
         self.game = game
-        self.parent = parent
         self.action_taken = action_taken
+        self.parent = parent
+        self.leaf_state = game.is_game_over()
 
-        self.expanded = False
         self.children = []
         self.visit_count = 0
         self.value_sum = 0.0
+        self.total_wins = 0
+        self.total_losses = 0
 
         self.ucb_c = ucb_c
         self.prior = prior
+        self.node_key = game.get_state_hash()
 
         self.action_encoder = ActionEncoder(game.board.board_size)
 
-    def should_expand(self):
-        return not self.expanded
+    def is_expanded(self):
+        return len(self.children) > 0
+
+    def is_loop(self, child_node: str) -> bool:
+        ancestors = set()
+        current = self
+        while current is not None:
+            ancestors.add(current)
+            current = current.parent
+
+        if child_node in ancestors:
+            return True
+
+        # DFS to check if any successor of child_node is in ancestors
+        stack = [child_node] + self.children
+        visited = set()
+        while stack:
+            node = stack.pop()
+            if node in ancestors:
+                # print(
+                #     f"Adding child_node {child_node.node_key} as child of {self.node_key} would create a loop via successor {node.node_key}"
+                # )
+                return True
+            if node in visited:
+                continue
+            visited.add(node)
+            stack.extend([c for c in node.children if c is not None])
 
     def expand(self, policy_probs: np.ndarray, nodes: dict[str, "AzNode"]):
         """
@@ -182,21 +210,21 @@ class AzNode:
             action = self.action_encoder.index_to_action(action_index)
             game = copy.deepcopy(self.game)
             game.step(action)
-            ##node_key = game.get_state_hash()
-            ##if node_key in nodes:
-            ##    continue
-            child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
-            ##nodes[node_key] = child
 
+            child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
             self.children.append(child)
 
-    def select(self) -> "AzNode":
+    def select_child_by_ucb(self) -> "AzNode":
         """
         Return the child of the current node with the highest ucb
         """
         if not self.children:
-            self.parent.children.remove(self)
-            return self.parent
+            # self.parent.children.remove(self)
+            # print("No children, returning parent")
+            # return self.parent
+            print(
+                f"Unexpected for node {self.game.board}, previous node: {self.parent.game.board if self.parent else None}"
+            )
         return max(self.children, key=self.get_ucb)
 
     def get_ucb(self, child):
@@ -214,7 +242,8 @@ class AzNode:
         """
         self.value_sum += value
         self.visit_count += 1
-
+        self.total_wins += 1 if value > 0 else 0
+        self.total_losses += 1 if value < 0 else 0
         if self.parent is not None:
             self.parent.backpropagate(-value)
 
@@ -318,20 +347,45 @@ class DAZAgent(AbstractTrainableAgent):
             return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
-    def _log_action(self, child_nodes):
+    def score(self, child, total_visits=None, total_wins=None, total_losses=None):
+        if True:
+            if child.visit_count == 0:
+                return -np.inf if child.prior == 0.0 else child.prior
+            # Fraction of visits that are wins or losses (i.e., decisive outcomes)
+            decisive_frac = (child.total_wins + child.total_losses) / child.visit_count
+            # When decisive_frac is low, rely more on prior; when high, rely more on value_sum
+            # Increase value_weight using a tunable constant (e.g., value_weight_scale)
+            value_weight_scale = 5.0  # You can tune this constant as needed
+            value_weight = min(1.0, decisive_frac * value_weight_scale)
+            prior_weight = 1.0 - value_weight
+            # avg_value = child.value_sum / child.visit_count
+            avg_value = child.total_wins / (child.total_losses + 1)
+            return value_weight * avg_value + prior_weight * child.prior
+        return (child.value_sum + child.prior) / (child.visit_count + 1) if child.visit_count > 0 else -np.inf
+
+    def scores(self, child_nodes):
+        """
+        Compute scores for all child nodes.
+        Returns a dictionary: action_taken -> score
+        """
+        total_visits = 0
+        total_wins = 0
+        total_losses = 0
+        for child in child_nodes:
+            total_visits += child.visit_count
+            total_wins += child.total_wins
+            total_losses += child.total_losses
+        return {child: self.score(child, total_visits, total_wins, total_losses) for child in child_nodes}
+
+    def _log_action(self, children_scores):
         if not self.action_log.is_enabled():
             return
 
         self.action_log.clear()
 
         # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
-        action_scores = {
-            child.action_taken: child.value_sum / child.visit_count if child.visit_count > 0 else -np.inf
-            for child in child_nodes
-        }
-        # Order actions by their computed value (descending) and keep only the top 5
-        sorted_action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True)[:5])
-        self.action_log.action_score_ranking(sorted_action_scores)
+        action_scores = {child.action_taken: score for child, score in list(children_scores.items())[:5]}
+        self.action_log.action_score_ranking(action_scores)
 
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
@@ -343,11 +397,24 @@ class DAZAgent(AbstractTrainableAgent):
             action_index = self.action_encoder.action_to_index(child.action_taken)
             visit_counts[action_index] = child.visit_count
 
-        self._log_action(root_children)
-        child_index = np.argmax(
-            [child.value_sum / child.visit_count if child.visit_count > 0 else -np.inf for child in root_children]
-        )
-        action = self.action_encoder.action_to_index(root_children[child_index].action_taken)
+        # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
+        action_scores = self.scores(root_children)
+        action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True))
+        self._log_action(action_scores)
+        print(f"Action visit counts: {visit_counts}")
+        for child, score in action_scores.items():
+            print(
+                f"Action: {str(child.action_taken):<25} "
+                f"Score: {score:>10.8f} "
+                f"Visit count: {child.visit_count:>5} "
+                f"Value sum: {child.value_sum:>7} "
+                f"Prior: {child.prior:>10.8f} "
+                f"Avg: {child.value_sum / child.visit_count if child.visit_count > 0 else 0:>10.8f} "
+                f"Wins: {child.total_wins:>3} "
+                f"Losses: {child.total_losses:>3} "
+            )
+        best_child = max(action_scores, key=action_scores.get)
+        action = self.action_encoder.action_to_index(best_child.action_taken)
 
         # Store training data if in training mode
         # if self.params.training_mode:
@@ -378,29 +445,31 @@ class DAZAgent(AbstractTrainableAgent):
             p = rotation.rotate_action_vector(self.board_size, p)
         return p
 
-    def select(self, node: AzNode) -> AzNode:
+    def select_for_expansion(self, node: AzNode) -> AzNode:
         """
         Select a node to expand, starting from the given node.
         As long as the passed node has leaves to expand, that one will be selected.
         Otherwise, if the node is fully expanded, then its best child will be selected.
         """
-        while not node.should_expand():
-            node = node.select()
+        nodes = set()
+        while node.is_expanded():
+            if node in nodes:
+                print(f"Loop detected in node {node}, returning None")
+            nodes.add(node)
+            node = node.select_child_by_ucb()
         return node
 
     def search(self, initial_game: Quoridor):
-        self.nodes.clear()
         root = AzNode(initial_game, ucb_c=self.params.c)
-        good_player = initial_game.current_player
         self.nodes[initial_game.get_state_hash()] = root
         for _ in range(self.params.n):
             # Traverse down the tree guided by maximum UCB until we find a node to expand
-            node = self.select(root)
+            node = self.select_for_expansion(root)
 
-            if node.game.check_win(good_player):
-                value = 1
-            elif node.game.check_win(1 - good_player):
-                value = -1
+            if node.leaf_state:
+                # If the node is a leaf, we can assign a value based on the game outcome
+                # Since the end state belongs to the winner, we give a value of 1
+                value = 1.0
             else:
                 agent_id = player_to_agent[node.game.current_player]
                 observation = make_observation(
@@ -414,7 +483,8 @@ class DAZAgent(AbstractTrainableAgent):
                 policy = self._compute_qvalues_softmax(observation, action_mask, agent_id)
                 node.expand(policy, self.nodes)
                 non_zero_policy = policy[policy > 0]
-                value = float(np.mean(non_zero_policy)) if non_zero_policy.size > 0 else 0.0
+                # value = float(np.mean(non_zero_policy)) if non_zero_policy.size > 0 else 0.0
+                value = 0
 
             node.backpropagate(value)
 
