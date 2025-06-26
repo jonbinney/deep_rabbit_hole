@@ -1,6 +1,9 @@
+import copy
+
 import numpy as np
 import pytest
 from quoridor import (
+    Action,
     ActionEncoder,
     Board,
     MoveAction,
@@ -184,6 +187,22 @@ class TestQuoridor:
         # Goal rows are swapped compared to a non-rotated board.
         assert game.get_goal_row(Player.ONE) == 0
         assert game.get_goal_row(Player.TWO) == game.board.board_size - 1
+
+    def _test_board_and_action_rotation(self, game: Quoridor, action: Action):
+        """
+        Applying an action to the game should give the same result as rotating the board,
+        applying the rotated version of the action, and rotating the board back.
+        """
+        g1 = copy.deepcopy(game)
+        g1.step(action, validate=False)
+
+        g2 = copy.deepcopy(game)
+        rotated_action = g2.rotate_action(action)
+        g2.rotate_board()
+        g2.step(rotated_action, validate=False)
+        g2.rotate_board()
+
+        assert g2 == g1
 
     def test_distance_to_goal(self):
         self._test_distance_to_target(
@@ -426,6 +445,30 @@ class TestQuoridor:
            .|. 1 .
         """,
         )
+
+    def test_move_action_rotation(self):
+        game = Quoridor(Board(board_size=5, max_walls=10))
+
+        m1 = MoveAction((1, 3))
+        m1_rotated = MoveAction((3, 1))
+        assert game.rotate_action(m1) == m1_rotated
+        self._test_board_and_action_rotation(game, m1)
+
+    def test_wall_action_rotation(self):
+        game = Quoridor(Board(board_size=5, max_walls=10))
+
+        w1 = WallAction((0, 0), WallOrientation.VERTICAL)
+        w1_rotated = WallAction((3, 3), WallOrientation.VERTICAL)
+        assert game.rotate_action(w1) == w1_rotated
+        self._test_board_and_action_rotation(game, w1)
+
+        w2 = WallAction((0, 0), WallOrientation.HORIZONTAL)
+        w2_rotated = WallAction((3, 3), WallOrientation.HORIZONTAL)
+        assert game.rotate_action(w2) == w2_rotated
+        self._test_board_and_action_rotation(game, w2)
+
+        self._test_board_and_action_rotation(game, WallAction((1, 2), WallOrientation.VERTICAL))
+        self._test_board_and_action_rotation(game, WallAction((1, 2), WallOrientation.HORIZONTAL))
 
 
 class TestActionEncoder:

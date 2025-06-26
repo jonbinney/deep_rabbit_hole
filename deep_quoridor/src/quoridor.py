@@ -143,6 +143,9 @@ class Board:
             self.set_player_cell(position, player)
 
     def rotate_board(self):
+        """
+        Rotate board in place.
+        """
         self._grid = np.rot90(self._grid, k=2)
         rotated_old_style_walls = np.zeros_like(self._old_style_walls)
         for i in range(self._old_style_walls.shape[2]):
@@ -244,6 +247,9 @@ class Board:
         # board is on the other side of that player.
         return True
 
+    def get_grid(self):
+        return self._grid
+
     def get_old_style_walls(self):
         return copy.copy(self._old_style_walls)
 
@@ -273,6 +279,14 @@ class Board:
 
         return wall_slice
 
+    def __eq__(self, other: "Board") -> bool:
+        return (
+            self.board_size == other.board_size
+            and (self.get_grid() == other.get_grid()).all()
+            and self.get_walls_remaining(Player.ONE) == other.get_walls_remaining(Player.ONE)
+            and self.get_walls_remaining(Player.TWO) == other.get_walls_remaining(Player.TWO)
+        )
+
     def __str__(self):
         """
         Return a pretty-printed string representation of the grid.
@@ -301,6 +315,11 @@ class Quoridor:
         self._goal_rows = np.array([self.board.board_size - 1, 0])
 
     def rotate_board(self):
+        """
+        Rotates the board, but leaves the current player the same.
+
+        NOTE: Applied in place - modifies this game.
+        """
         self.board.rotate_board()
         self._goal_rows = self._goal_rows[::-1]
 
@@ -442,6 +461,14 @@ class Quoridor:
 
     def is_game_over(self):
         return self.check_win(Player.ONE) or self.check_win(Player.TWO)
+
+    def __eq__(self, other: "Quoridor") -> bool:
+        return (
+            self.board == other.board
+            and self.get_current_player() == other.get_current_player()
+            and self.get_goal_row(Player.ONE) == other.get_goal_row(Player.ONE)
+            and self.get_goal_row(Player.TWO) == other.get_goal_row(Player.TWO)
+        )
 
     def __str__(self):
         return str(self.board)
