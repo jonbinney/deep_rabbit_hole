@@ -474,7 +474,8 @@ class Quoridor:
         return str(self.board)
 
 
-def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:
+def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
+    player_id = observation["player_turn"]
     if player_id == "player_0":
         player = Player.ONE
         opponent = Player.TWO

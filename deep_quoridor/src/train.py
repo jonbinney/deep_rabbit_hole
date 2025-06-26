@@ -56,10 +56,10 @@ def train_dqn(
         max_steps=1000,
     )
 
+    # Self play
     if len(players) == 1:
-        agent1 = AgentRegistry.create_from_encoded_name(players[0], arena.game, training_mode=True)
-        agent2 = AgentRegistry.create_from_encoded_name(players[0], arena.game, training_instance=agent1)
-        players = [agent1, agent2]
+        agent = AgentRegistry.create_from_encoded_name(players[0], arena.game)
+        players = [agent, agent]
 
     arena.play_games(players=players, times=episodes, mode=PlayMode.FIRST_VS_RANDOM)
     return

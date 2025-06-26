@@ -184,6 +184,7 @@ class QuoridorEnv(AECEnv):
 
         return {
             "my_turn": self.agent_selection == agent_id,
+            "player_turn": agent_id,
             "board": board,
             "walls": walls,
             "my_walls_remaining": self.game.board.get_walls_remaining(player),

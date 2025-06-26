@@ -174,7 +174,7 @@ class GreedyAgent(Agent):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
         # Reconstruct the game from the observation.
-        game, player, opponent = construct_game_from_observation(observation, self.player_id)
+        game, player, opponent = construct_game_from_observation(observation)
 
         if random.random() < self.params.p_random:
             if self.action_log.is_enabled():

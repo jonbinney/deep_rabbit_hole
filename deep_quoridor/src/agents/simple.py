@@ -4,7 +4,12 @@ from typing import Optional
 import numpy as np
 import qgrid
 from numba import njit, prange
-from quoridor import ActionEncoder, Player, array_to_action, construct_game_from_observation
+from quoridor import (
+    ActionEncoder,
+    Player,
+    array_to_action,
+    construct_game_from_observation,
+)
 from utils import SubargsBase
 
 from agents.core import Agent
@@ -316,7 +321,7 @@ class SimpleAgent(Agent):
     def get_action(self, observation):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
-        game, _, _ = construct_game_from_observation(observation, self.player_id)
+        game, _, _ = construct_game_from_observation(observation)
 
         # Convert the game state to arrays that can be used by Numba
         grid = game.board._grid
