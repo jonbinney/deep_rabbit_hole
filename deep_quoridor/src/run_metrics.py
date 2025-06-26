@@ -26,11 +26,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     m = Metrics(args.board_size, args.max_walls)
     table = PrettyTable()
-    table.field_names = ["Agent", "Elo", "Relative Elo", "Win %"]
+    table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score"]
 
     for player in args.players:
         print(f"Computing metrics for {player}")
-        _, _, relative_elo, win_perc, absolute_elo = m.compute(player)
-        table.add_row([player, absolute_elo, relative_elo, win_perc])
+        _, _, relative_elo, win_perc, absolute_elo, dumb_score = m.compute(player)
+        table.add_row([player, absolute_elo, relative_elo, win_perc, dumb_score])
 
     print(table)
