@@ -191,7 +191,7 @@ class AlphaZeroAgent(TrainableAgent):
             self.recent_losses = self.recent_losses[-100:]
 
     def get_action(self, observation) -> int:
-        game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
+        game, _, _ = construct_game_from_observation(observation["observation"])
 
         # Run MCTS to get action visit counts
         root_children = self.mcts.search(game)
