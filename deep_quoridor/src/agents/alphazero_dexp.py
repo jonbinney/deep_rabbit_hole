@@ -418,20 +418,20 @@ class DAZAgent(AbstractTrainableAgent):
 
         # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
         action_scores = self.scores(root_children)
-        action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True))
-        self._log_action(action_scores)
-        print(f"Action visit counts: {visit_counts}")
-        for child, score in action_scores.items():
-            print(
-                f"Action: {str(child.action_taken):<25} "
-                f"Score: {score:>10.8f} "
-                f"Visit count: {child.visit_count:>5} "
-                f"Value sum: {child.value_sum:>7} "
-                f"Prior: {child.prior:>10.8f} "
-                f"Avg: {child.value_sum / child.visit_count if child.visit_count > 0 else 0:>10.8f} "
-                f"Wins: {child.total_wins:>3} "
-                f"Losses: {child.total_losses:>3} "
-            )
+        # action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True))
+        # self._log_action(action_scores)
+        # print(f"Action visit counts: {visit_counts}")
+        # for child, score in action_scores.items():
+        #     print(
+        #         f"Action: {str(child.action_taken):<25} "
+        #         f"Score: {score:>10.8f} "
+        #         f"Visit count: {child.visit_count:>5} "
+        #         f"Value sum: {child.value_sum:>7} "
+        #         f"Prior: {child.prior:>10.8f} "
+        #         f"Avg: {child.value_sum / child.visit_count if child.visit_count > 0 else 0:>10.8f} "
+        #         f"Wins: {child.total_wins:>3} "
+        #         f"Losses: {child.total_losses:>3} "
+        #     )
         best_child = max(action_scores, key=action_scores.get)
         action = self.action_encoder.action_to_index(best_child.action_taken)
 
