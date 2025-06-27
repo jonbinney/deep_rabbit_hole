@@ -419,7 +419,7 @@ class DAZAgent(AbstractTrainableAgent):
             # avg_value = child.value_sum / child.visit_count
             avg_value = child.total_wins / (child.total_losses + 1)
             return value_weight * avg_value + prior_weight * child.prior
-        elif False:
+        elif True:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
             # avg_value = child.value_sum / child.visit_count
