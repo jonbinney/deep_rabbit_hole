@@ -6,7 +6,7 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.nn as nn
-from quoridor import Action, ActionEncoder, Player, Quoridor, construct_game_from_observation
+from quoridor import Action, Player, Quoridor, construct_game_from_observation
 from quoridor_env import make_action_mask, make_observation
 from utils import my_device
 from utils.misc import get_opponent_player_id
@@ -184,8 +184,22 @@ class CacheNode:
         return self.node(*args, **kwargs)
 
 
+class QuoridorKey:
+    def __init__(self, game: Quoridor):
+        self.game = game
+        self.hash = None
+
+    def __hash__(self):
+        if self.hash is None:
+            self.hash = self.game.get_state_hash()
+        return self.hash
+
+    def __eq__(self, other):
+        return isinstance(other, QuoridorKey) and self.__hash__() == other.__hash__() and self.game == other.game
+
+
 class AzNode:
-    node_cache: dict[str, "AzNode"] = {}
+    node_cache: dict[QuoridorKey, "AzNode"] = {}
 
     def __init__(
         self,
@@ -208,8 +222,8 @@ class AzNode:
 
         self.ucb_c = ucb_c
         self.prior = prior
-        self.node_key = game.get_state_hash()
-        self.action_encoder = ActionEncoder(game.board.board_size)
+        self.node_key = QuoridorKey(game)
+        self.action_encoder = game.action_encoder
         AzNode.node_cache[self.node_key] = self
 
     def is_expanded(self):
@@ -225,13 +239,13 @@ class AzNode:
                 continue
 
             action = self.action_encoder.index_to_action(action_index)
-            game = copy.deepcopy(self.game)
+            game = self.game.create_new()
             game.step(action)
 
             child = None
-            if game.get_state_hash() in AzNode.node_cache:
+            if QuoridorKey(game) in AzNode.node_cache:
                 # If the game state already exists in the cache, use that node
-                child = CacheNode(AzNode.node_cache[game.get_state_hash()])
+                child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
                 self.backpropagate_child(node_path, child, -1)
             else:
                 child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
@@ -254,7 +268,7 @@ class AzNode:
             if child in node_path:
                 # Penalize by multiplying UCB by a factor (e.g., 0.2 ** count) where count is the number of times child appears in node_path
                 count = node_path.count(child)
-                print(f"{len(node_path)}-{count}")
+                # print(f"{len(node_path)}-{count}")
                 return self.get_ucb(child) * (0.2**count)
             return self.get_ucb(child)
 
@@ -390,7 +404,7 @@ class DAZAgent(AbstractTrainableAgent):
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def score(self, child, total_visits=None, total_wins=None, total_losses=None):
-        if True:
+        if False:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
             # Fraction of visits that are wins or losses (i.e., decisive outcomes)
@@ -403,7 +417,7 @@ class DAZAgent(AbstractTrainableAgent):
             # avg_value = child.value_sum / child.visit_count
             avg_value = child.total_wins / (child.total_losses + 1)
             return value_weight * avg_value + prior_weight * child.prior
-        elif False:
+        elif True:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
             # avg_value = child.value_sum / child.visit_count

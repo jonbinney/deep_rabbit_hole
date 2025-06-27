@@ -112,6 +112,7 @@ if __name__ == "__main__":
         if args.profile:
             import cProfile
 
+            print("Profiling the game...")
             cProfile.run("make_call()", sort="tottime")
         else:
             make_call()

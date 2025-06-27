@@ -171,6 +171,17 @@ class Board:
             [(self.board_size - 1 - row, self.board_size - 1 - col) for (row, col) in self._player_positions]
         )
 
+    def create_new(self):
+        new_board = Board.__new__(Board)
+        new_board.board_size = self.board_size
+        new_board.max_walls = self.max_walls
+        new_board._grid = np.copy(self._grid)
+        new_board._old_style_walls = np.copy(self._old_style_walls)
+        new_board._players = self._players
+        new_board._player_positions = self._player_positions.copy()
+        new_board._walls_remaining = self._walls_remaining.copy()
+        return new_board
+
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
         Get the position of the player's pawn.
@@ -320,15 +331,24 @@ class Board:
 
 
 class Quoridor:
-    def __init__(self, board: Board, current_player: Player = Player.ONE):
+    def __init__(
+        self,
+        board: Board,
+        current_player: Player = Player.ONE,
+        action_encoder: Optional[ActionEncoder] = None,
+        goal_rows: Optional[np.ndarray] = None,
+    ):
         """
         If you want to start from the initial game state, pass in board=Board(board_size, max_walls).
         """
         self.board = board
         self.current_player = current_player
-        self.action_encoder = ActionEncoder(board.board_size)
+        self.action_encoder = action_encoder if action_encoder is not None else ActionEncoder(board.board_size)
 
-        self._goal_rows = np.array([self.board.board_size - 1, 0])
+        self._goal_rows = goal_rows if goal_rows is not None else np.array([self.board.board_size - 1, 0])
+
+    def create_new(self):
+        return Quoridor(self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows)
 
     def rotate_board(self):
         """
@@ -490,7 +510,18 @@ class Quoridor:
         return str(self.board)
 
     def get_state_hash(self) -> str:
-        return str(self.board) + f"-{self.current_player}-{self.board.get_walls_remaining(self.current_player)}"
+        # return str(self.board) + f"-{self.current_player}-{self.board.get_walls_remaining(self.current_player)}"
+        return self.get_state_id()
+
+    def get_state_id(self):
+        # Use a fast, unique hash based on the board, player positions, walls, and current player.
+        # We'll use numpy's .tobytes() for fast serialization and hash().
+        board_bytes = self.board._grid.tobytes()
+        player_bytes = self.board._player_positions.tobytes()
+        walls_remaining_bytes = self.board._walls_remaining.tobytes()
+        player_byte = bytes([self.current_player])
+        # Combine all bytes and hash
+        return hash(board_bytes + player_bytes + walls_remaining_bytes + player_byte)
 
 
 def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
