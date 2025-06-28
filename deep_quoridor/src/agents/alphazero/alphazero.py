@@ -230,7 +230,7 @@ class AlphaZeroAgent(TrainableAgent):
             raise RuntimeError("No nodes visited during MCTS")
         else:
             visit_probs = visit_counts / visit_counts_sum
-            if self.temperature != 1.0:
+            if self.temperature != 0.0:
                 visit_probs = visit_probs ** (1.0 / self.temperature)
                 visit_probs = visit_probs / np.sum(visit_probs)
 
