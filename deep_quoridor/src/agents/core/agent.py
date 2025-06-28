@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from quoridor import Action
@@ -75,7 +76,7 @@ class ActionLog:
         self.records.append(self.Path(path))
 
 
-class Agent:
+class Agent(ABC):
     """
     Base class for all agents.
     Given a game state, the agent should return an action.
@@ -107,8 +108,9 @@ class Agent:
         """
         pass
 
+    @abstractmethod
     def get_action(self, observation) -> int:
-        raise NotImplementedError("You must implement the get_action method")
+        pass
 
 
 class AgentRegistry:

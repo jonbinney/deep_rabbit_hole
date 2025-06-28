@@ -2,6 +2,7 @@ import os
 import random
 import shutil
 import tempfile
+from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -128,32 +129,40 @@ class TrainableAgent(Agent):
     ):
         pass
 
+    @abstractmethod
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
-        raise NotImplementedError()
+        pass
 
     def model_hyperparameters(self):
         return {}
 
+    @abstractmethod
     def version(self):
-        raise NotImplementedError()
+        pass
 
-    def model_id(self):
-        raise NotImplementedError()
+    @abstractmethod
+    def model_id(self) -> str:
+        pass
 
+    @abstractmethod
     def model_name(self):
-        raise NotImplementedError()
+        pass
 
+    @abstractmethod
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
-        raise NotImplementedError()
+        pass
 
+    @abstractmethod
     def resolve_filename(self, suffix):
-        raise NotImplementedError()
+        pass
 
+    @abstractmethod
     def save_model(self, path):
-        raise NotImplementedError()
+        pass
 
+    @abstractmethod
     def load_model(self, path):
-        raise NotImplementedError()
+        pass
 
 
 class AbstractTrainableAgent(TrainableAgent):
