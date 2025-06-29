@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pyspiel
@@ -322,3 +322,16 @@ class AlphaZeroOSAgent(TrainableAgent):
         observation["observation"]["board"] = rotation.rotate_board(observation["observation"]["board"])
         observation["observation"]["walls"] = rotation.rotate_walls(observation["observation"]["walls"])
         return observation
+
+    # TODO: Implement these methods to be able to use wandb
+    def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
+        raise NotImplementedError()
+
+    def resolve_filename(self, suffix):
+        raise NotImplementedError()
+
+    def save_model(self, path):
+        raise NotImplementedError()
+
+    def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
+        raise NotImplementedError()

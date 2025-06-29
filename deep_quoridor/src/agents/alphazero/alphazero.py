@@ -3,7 +3,7 @@ import os
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -11,6 +11,7 @@ from quoridor import ActionEncoder, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
+import wandb
 from agents.alphazero.mcts import MCTS
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core import TrainableAgent
@@ -40,10 +41,32 @@ class AlphaZeroParams(SubargsBase):
 
     # Number of MCTS selections
     mcts_n: int = 100
+
     # A higher number favors exploration over exploitation
     mcts_ucb_c: float = 1.4
 
+    # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
+    wandb_alias: Optional[str] = None
+
+    # When loading from wandb, the project name to be used
+    wandb_project: str = "deep_quoridor"
+
+    # If a filename is provided, the model will be loaded from disc
+    model_filename: Optional[str] = None
+
+    # Directory where wandb models are stored
+    wandb_dir: str = "wandbmodels"
+
+    # Directory where local models are stored
     model_dir = "models"
+
+    @classmethod
+    def training_only_params(cls) -> set[str]:
+        """
+        Returns a set of parameters that are used only during training.
+        These parameters should not be used during playing.
+        """
+        return {"train_every", "learning_rate", "optimizer_iterations", "batch_size", "replay_buffer_size"}
 
 
 class AlphaZeroAgent(TrainableAgent):
@@ -53,7 +76,6 @@ class AlphaZeroAgent(TrainableAgent):
         max_walls,
         observation_space,
         action_space,
-        training_instance=None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -102,6 +124,9 @@ class AlphaZeroAgent(TrainableAgent):
     def resolve_filename(self, suffix):
         return f"{self.model_id()}{suffix}.pt"
 
+    def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
+        return f"{self.model_id()}_{artifact.digest[:5]}.pt"
+
     def save_model(self, path):
         # Create directory for saving models if it doesn't exist
         os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
@@ -117,6 +142,9 @@ class AlphaZeroAgent(TrainableAgent):
         }
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
+
+    def load_model(self, path):
+        self.evaluator.network.load_state_dict(torch.load(path, map_location=my_device()))
 
     def start_game(self, game, player_id):
         self.player_id = player_id
@@ -173,7 +201,7 @@ class AlphaZeroAgent(TrainableAgent):
         if hasattr(self, "recent_rewards") and self.recent_rewards:
             avg_reward = np.mean(self.recent_rewards[-length:])
 
-        return avg_loss, avg_reward
+        return float(avg_loss), float(avg_reward)
 
     def train_network(self):
         """Train the neural network on collected data."""
@@ -202,7 +230,7 @@ class AlphaZeroAgent(TrainableAgent):
             raise RuntimeError("No nodes visited during MCTS")
         else:
             visit_probs = visit_counts / visit_counts_sum
-            if self.temperature != 1.0:
+            if self.temperature != 0.0:
                 visit_probs = visit_probs ** (1.0 / self.temperature)
                 visit_probs = visit_probs / np.sum(visit_probs)
 
