@@ -4,6 +4,7 @@ from arena import Arena, PlayMode
 from arena_utils import GameResult
 from quoridor import Player
 from quoridor_env import env
+from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo
 
 
@@ -60,24 +61,24 @@ class Metrics:
         """
         # Bump if there's any change in the scoring
         VERSION = 1
-        times = 20
+        times = 10
 
         players: list[str | Agent] = [
             "greedy",
             "greedy:p_random=0.1,nick=greedy-01",
             "greedy:p_random=0.3,nick=greedy-03",
             "greedy:p_random=0.5,nick=greedy-05",
-            # "cnn:wandb_alias=v4,nick=c4",
-            # "cnn3c:wandb_alias=v6,nick=c6",
-            # "dexp:wandb_alias=v20,nick=d20",
+            "cnn3c:wandb_alias=best,nick=cnn3c",
+            "dexp:wandb_alias=best,nick=dexp",
+            "simple",
         ]
-        arena = Arena(self.board_size, self.max_walls, max_steps=200)
+        arena = Arena(self.board_size, self.max_walls, max_steps=200, renderers=[MatchResultsRenderer()])
 
         agent = AgentRegistry.create_from_encoded_name(
             agent_encoded_name,
             arena.game,
             remove_training_args=True,
-            keep_args={"model_filename", "wandb_alias"},
+            keep_args={"model_filename"},
         )
 
         # We store the elos of the opponents playing against each other so we don't have to play those matches

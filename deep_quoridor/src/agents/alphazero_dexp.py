@@ -141,6 +141,7 @@ class DAZAgentParams(TrainableAgentParams):
         """
         return super().training_only_params() | {
             "use_opponents_actions",
+            "register_for_reuse",
         }
 
 
@@ -243,7 +244,7 @@ class AzNode:
             game.step(action)
 
             child = None
-            if QuoridorKey(game) in AzNode.node_cache:
+            if False and QuoridorKey(game) in AzNode.node_cache:
                 # If the game state already exists in the cache, use that node
                 child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
                 self.backpropagate_child(node_path, child, -1)
@@ -324,12 +325,13 @@ class DAZAgent(AbstractTrainableAgent):
         self.check_congiguration()
         DAZAgent._instance_being_trained = None
         if params.register_for_reuse and self.is_training():
+            print("Registering DAZAgent for reuse")
             DAZAgent._instance_being_trained = self
 
     def name(self):
         if self.params.nick:
             return self.params.nick
-        return f"daz ({self.params})"
+        return "daz"
 
     def model_name(self):
         return "dexp"
@@ -343,7 +345,7 @@ class DAZAgent(AbstractTrainableAgent):
         return 4
 
     def resolve_filename(self, suffix):
-        return f"{self.model_id()}_C{self.params}_{suffix}.pt"
+        return f"{self.model_id()}_{suffix}.pt"
 
     def _calculate_action_size(self):
         """Calculate the size of the action space."""
@@ -417,7 +419,7 @@ class DAZAgent(AbstractTrainableAgent):
             # avg_value = child.value_sum / child.visit_count
             avg_value = child.total_wins / (child.total_losses + 1)
             return value_weight * avg_value + prior_weight * child.prior
-        elif True:
+        elif False:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
             # avg_value = child.value_sum / child.visit_count
@@ -436,6 +438,24 @@ class DAZAgent(AbstractTrainableAgent):
             prior_weight = 1.0 - value_weight
             # Optionally, add a small smoothing factor to avoid 0/0 or 1/0 issues
             return value_weight * avg_value + prior_weight * (child.prior * 0.2)
+        elif True:
+            if child.visit_count == 0:
+                return -np.inf if child.prior == 0.0 else child.prior
+            # avg_value = child.value_sum / child.visit_count
+            # Use win rate as avg_value, normalized between 0 and 1
+            total_games = child.total_wins + child.total_losses
+            if total_games > 0:
+                avg_value = child.total_wins / total_games
+            else:
+                avg_value = 0.0  # No data yet
+            # Fraction of visits that are wins or losses (i.e., decisive outcomes)
+            decisive_frac = (child.total_wins + child.total_losses) / child.visit_count
+            # When decisive_frac is low, rely more on prior; when high, rely more on value_sum
+            # Increase value_weight using a tunable constant (e.g., value_weight_scale)
+            value_weight = min(0.8, decisive_frac)
+            prior_weight = 1.0 - value_weight
+            # Optionally, add a small smoothing factor to avoid 0/0 or 1/0 issues
+            return value_weight * avg_value + prior_weight * child.prior
         elif False:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
@@ -481,8 +501,8 @@ class DAZAgent(AbstractTrainableAgent):
         action_scores = {child.action_taken: score for child, score in list(children_scores.items())[:5]}
         self.action_log.action_score_ranking(action_scores)
 
-    def get_action(self, observation) -> int:
-        game, _, _ = construct_game_from_observation(observation["observation"], self.player_id)
+    def _get_best_action(self, observation, mask) -> int:
+        game, _, _ = construct_game_from_observation(observation, self.player_id)
 
         # Run MCTS to get action visit counts
         root_children = self.search(game)
@@ -493,8 +513,10 @@ class DAZAgent(AbstractTrainableAgent):
 
         # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
         action_scores = self.scores(root_children)
-        # action_scores = dict(sorted(action_scores.items(), key=lambda item: item[1], reverse=True))
-        # self._log_action(action_scores)
+        action_scores = dict(
+            sorted(action_scores.items(), key=lambda item: (item[1], item[0].visit_count), reverse=True)
+        )
+        self._log_action(action_scores)
         # print(f"Action visit counts: {visit_counts}")
         # for child, score in action_scores.items():
         #     print(
@@ -507,14 +529,8 @@ class DAZAgent(AbstractTrainableAgent):
         #         f"Wins: {child.total_wins:>3} "
         #         f"Losses: {child.total_losses:>3} "
         #     )
-        best_child = max(action_scores, key=action_scores.get)
+        best_child = list(action_scores.items())[0][0]
         action = self.action_encoder.action_to_index(best_child.action_taken)
-
-        # Store training data if in training mode
-        # if self.params.training_mode:
-        # Convert visit counts to policy target (normalized)
-        # policy_target = visit_counts / np.sum(visit_counts) if np.sum(visit_counts) > 0 else visit_counts
-        # self.store_training_data(game, policy_target)
 
         return int(action)
 
@@ -522,7 +538,7 @@ class DAZAgent(AbstractTrainableAgent):
         """Compute Q-values using softmax exploration."""
         state = self._observation_to_tensor(observation, player_id)
         with torch.no_grad():
-            q_values = self.online_network(state)
+            q_values = self.run_in_evaluation_mode_if_not_training(self.online_network, state)
 
         mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, player_id)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
@@ -591,7 +607,7 @@ class DAZAgent(AbstractTrainableAgent):
     def create_from_trained_instance(_cls, **kwargs):
         """Create a new mimic model for the agent."""
         if DAZAgent._instance_being_trained is None:
-            raise RuntimeError("Dexp version being trained must have param register_for_reuse set to True")
+            raise RuntimeError("DAZ version being trained must have param register_for_reuse set to True")
         s = DAZAgent._instance_being_trained
         p = copy.deepcopy(s.params)
         p.nick = s.name() + "_m"
