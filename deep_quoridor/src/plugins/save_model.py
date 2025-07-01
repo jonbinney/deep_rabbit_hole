@@ -37,7 +37,7 @@ class SaveModelEveryNEpisodesPlugin(ArenaPlugin):
         if isinstance(agent1, TrainableAgent) and agent1.is_training():
             self.agent = agent1
 
-        if isinstance(agent2, TrainableAgent) and agent2.is_training():
+        if agent1 != agent2 and isinstance(agent2, TrainableAgent) and agent2.is_training():
             if self.agent:
                 raise ValueError(
                     "SaveModelEveryNEpisodesPlugin can only be used with 1 training agent, but 2 are present."

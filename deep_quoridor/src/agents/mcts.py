@@ -201,7 +201,7 @@ class MCTSAgent(Agent):
     def get_action(self, observation):
         observation = observation["observation"]
 
-        game, _, _ = construct_game_from_observation(observation, self.player_id)
+        game, _, _ = construct_game_from_observation(observation)
         mcts = MCTS(game, self.params)
         children = mcts.search(game)
 

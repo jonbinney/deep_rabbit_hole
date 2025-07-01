@@ -184,6 +184,7 @@ class QuoridorEnv(AECEnv):
 
         return {
             "my_turn": self.agent_selection == agent_id,
+            "player_turn": agent_id,
             "board": board,
             "walls": walls,
             "my_walls_remaining": self.game.board.get_walls_remaining(player),
@@ -251,6 +252,11 @@ class QuoridorEnv(AECEnv):
 
     def get_opponent(self, agent):
         return "player_1" if agent == "player_0" else "player_0"
+
+    def set_current_player(self, agent: str):
+        """Shouldn't be called during regular play, just for setting up scenarios for testing or metrics"""
+        self.agent_selection = agent
+        self.game.set_current_player(self.agent_to_player[agent])
 
 
 # Wrapping the environment for PettingZoo compatibility
