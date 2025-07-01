@@ -273,6 +273,8 @@ class AzNode:
                 return self.get_ucb(child) * (0.2**count)
             return self.get_ucb(child)
 
+        probabilities = [c.prior for c in self.children]
+        return np.random.choice(self.children, p=probabilities)
         return max(self.children, key=penalized_ucb)
 
     def get_ucb(self, child):
@@ -541,15 +543,16 @@ class DAZAgent(AbstractTrainableAgent):
             q_values = self.run_in_evaluation_mode_if_not_training(self.online_network, state)
 
         mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, player_id)
-        q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
+        q_values = np.array(q_values * mask_tensor - 1e9 * (1 - mask_tensor)).astype(np.float64)
 
         # Apply softmax to the Q-values to get action probabilities
-        exp_q_values = torch.exp(q_values)
-        probabilities = exp_q_values / torch.sum(exp_q_values)
+        exp_q_values = np.exp(q_values)
+        probabilities = exp_q_values / np.sum(exp_q_values)
 
         # This is an action vector with probabilities for each action
         # but it might be rotated for player_1
-        p = probabilities.squeeze().detach().cpu().numpy()
+        p = probabilities.squeeze()
+
         if player_id == "player_1":
             # Rotate probabilities for player_1
             p = rotation.rotate_action_vector(self.board_size, p)
