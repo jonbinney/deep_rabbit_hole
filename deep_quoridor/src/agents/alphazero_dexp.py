@@ -241,8 +241,8 @@ class AzNode:
                 continue
 
             action = self.action_encoder.index_to_action(action_index)
-            game = self.game.create_new()
-            game.step(action)
+            # game = self.game.create_new()
+            # game.step(action)
 
             child = None
             # Fix node stepping before enabling this
@@ -251,7 +251,7 @@ class AzNode:
             #     child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
             #     self.backpropagate_child(node_path, child, -1)
             # else:
-            child = AzNode(parent=self, game=game, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            child = AzNode(parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
             self.children.append(child)
 
     def select_child_by_ucb(self, node_path: list["AzNode"]) -> "AzNode":
