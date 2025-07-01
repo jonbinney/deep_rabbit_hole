@@ -504,7 +504,7 @@ class DAZAgent(AbstractTrainableAgent):
         self.action_log.action_score_ranking(action_scores)
 
     def _get_best_action(self, observation, mask) -> int:
-        game, _, _ = construct_game_from_observation(observation, self.player_id)
+        game, _, _ = construct_game_from_observation(observation)
 
         # Run MCTS to get action visit counts
         root_children = self.search(game)
