@@ -139,10 +139,7 @@ class DAZAgentParams(TrainableAgentParams):
         Returns a set of parameters that are used only during training.
         These parameters should not be used during playing.
         """
-        return super().training_only_params() | {
-            "use_opponents_actions",
-            "register_for_reuse",
-        }
+        return super().training_only_params() | {"use_opponents_actions", "register_for_reuse", "nick"}
 
 
 def is_loop(starting_node, child_node: str) -> bool:
@@ -204,7 +201,7 @@ class AzNode:
 
     def __init__(
         self,
-        game: Quoridor,
+        game: Optional["Quoridor"] = None,
         parent: Optional["AzNode"] = None,
         action_taken: Optional[Action] = None,
         ucb_c: float = 1.0,
@@ -213,7 +210,6 @@ class AzNode:
         self.game = game
         self.action_taken = action_taken
         self.parent = parent
-        self.leaf_state = game.is_game_over()
 
         self.children = []
         self.visit_count = 0
@@ -223,12 +219,17 @@ class AzNode:
 
         self.ucb_c = ucb_c
         self.prior = prior
-        self.node_key = QuoridorKey(game)
-        self.action_encoder = game.action_encoder
-        AzNode.node_cache[self.node_key] = self
+        # self.node_key = QuoridorKey(game)
+        self.action_encoder = game.action_encoder if game is not None else parent.game.action_encoder
+        # AzNode.node_cache[self.node_key] = self
 
     def is_expanded(self):
         return len(self.children) > 0
+
+    def step(self):
+        if self.game is None:
+            self.game = self.parent.game.create_new()
+            self.game.step(self.action_taken)
 
     def expand(self, policy_probs: np.ndarray, node_path: list["AzNode"]):
         """
@@ -244,12 +245,13 @@ class AzNode:
             game.step(action)
 
             child = None
-            if False and QuoridorKey(game) in AzNode.node_cache:
-                # If the game state already exists in the cache, use that node
-                child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
-                self.backpropagate_child(node_path, child, -1)
-            else:
-                child = AzNode(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            # Fix node stepping before enabling this
+            # if False and QuoridorKey(game) in AzNode.node_cache:
+            #     # If the game state already exists in the cache, use that node
+            #     child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
+            #     self.backpropagate_child(node_path, child, -1)
+            # else:
+            child = AzNode(parent=self, game=game, action_taken=action, ucb_c=self.ucb_c, prior=prob)
             self.children.append(child)
 
     def select_child_by_ucb(self, node_path: list["AzNode"]) -> "AzNode":
@@ -543,7 +545,7 @@ class DAZAgent(AbstractTrainableAgent):
             q_values = self.run_in_evaluation_mode_if_not_training(self.online_network, state)
 
         mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, player_id)
-        q_values = np.array(q_values * mask_tensor - 1e9 * (1 - mask_tensor)).astype(np.float64)
+        q_values = np.array((q_values * mask_tensor - 1e9 * (1 - mask_tensor)).cpu()).astype(np.float64)
 
         # Apply softmax to the Q-values to get action probabilities
         exp_q_values = np.exp(q_values)
@@ -574,14 +576,15 @@ class DAZAgent(AbstractTrainableAgent):
     def search(self, initial_game: Quoridor):
         AzNode.node_cache.clear()
 
-        root = AzNode(initial_game, ucb_c=self.params.c)
+        root = AzNode(game=initial_game, ucb_c=self.params.c)
         for _ in range(self.params.n):
             # Traverse down the tree guided by maximum UCB until we find a node to expand or a leaf node
             node_path = self.select_for_expansion(root)
 
             node = node_path[-1]
             path_till_node = node_path[:-1]
-            if node.leaf_state:
+            node.step()
+            if node.game.is_game_over():
                 # If the node is a leaf, we can assign a value based on the game outcome
                 # Since the end state belongs to the winner, we give a value of 1
                 value = 1.0
