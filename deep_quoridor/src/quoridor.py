@@ -69,6 +69,7 @@ class ActionEncoder:
 
         self.board_size = board_size
         self.wall_size = board_size - 1
+        self.num_actions = self.board_size**2 + self.wall_size**2 * 2
 
     def __copy__(self):
         return self
@@ -156,6 +157,19 @@ class Board:
         self._walls_remaining = np.array([self.max_walls, self.max_walls])
         for player, position in zip(self._players, self._player_positions):
             self.set_player_cell(position, player)
+
+    def rotate_board(self):
+        """
+        Rotate board in place.
+        """
+        self._grid = np.rot90(self._grid, k=2)
+        rotated_old_style_walls = np.zeros_like(self._old_style_walls)
+        for i in range(self._old_style_walls.shape[2]):
+            rotated_old_style_walls[:, :, i] = np.rot90(self._old_style_walls[:, :, i], k=2)
+        self._old_style_walls = rotated_old_style_walls
+        self._player_positions = np.array(
+            [(self.board_size - 1 - row, self.board_size - 1 - col) for (row, col) in self._player_positions]
+        )
 
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
@@ -249,6 +263,9 @@ class Board:
         # board is on the other side of that player.
         return True
 
+    def get_grid(self):
+        return self._grid
+
     def get_old_style_walls(self):
         return copy.copy(self._old_style_walls)
 
@@ -278,6 +295,14 @@ class Board:
 
         return wall_slice
 
+    def __eq__(self, other: "Board") -> bool:
+        return (
+            self.board_size == other.board_size
+            and (self.get_grid() == other.get_grid()).all()
+            and self.get_walls_remaining(Player.ONE) == other.get_walls_remaining(Player.ONE)
+            and self.get_walls_remaining(Player.TWO) == other.get_walls_remaining(Player.TWO)
+        )
+
     def __str__(self):
         """
         Return a pretty-printed string representation of the grid.
@@ -304,6 +329,15 @@ class Quoridor:
         self.action_encoder = ActionEncoder(board.board_size)
 
         self._goal_rows = np.array([self.board.board_size - 1, 0])
+
+    def rotate_board(self):
+        """
+        Rotates the board, but leaves the current player the same.
+
+        NOTE: Applied in place - modifies this game.
+        """
+        self.board.rotate_board()
+        self._goal_rows = self._goal_rows[::-1]
 
     def step(self, action: Action, validate: bool = True):
         """
@@ -394,6 +428,22 @@ class Quoridor:
     def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
 
+    def rotate_action(self, action):
+        """
+        Get the equivalent action for a rotated board.
+        """
+        if isinstance(action, MoveAction):
+            return MoveAction(
+                (self.board.board_size - 1 - action.destination[0], self.board.board_size - 1 - action.destination[1])
+            )
+        elif isinstance(action, WallAction):
+            return WallAction(
+                (self.board.board_size - 2 - action.position[0], self.board.board_size - 2 - action.position[1]),
+                action.orientation,
+            )
+        else:
+            raise ValueError("Invalid action type")
+
     def go_to_next_player(self):
         self.current_player = Player(1 - self.current_player)
 
@@ -428,6 +478,14 @@ class Quoridor:
     def is_game_over(self):
         return self.check_win(Player.ONE) or self.check_win(Player.TWO)
 
+    def __eq__(self, other: "Quoridor") -> bool:
+        return (
+            self.board == other.board
+            and self.get_current_player() == other.get_current_player()
+            and self.get_goal_row(Player.ONE) == other.get_goal_row(Player.ONE)
+            and self.get_goal_row(Player.TWO) == other.get_goal_row(Player.TWO)
+        )
+
     def __str__(self):
         return str(self.board)
 
@@ -435,7 +493,8 @@ class Quoridor:
         return str(self.board) + f"-{self.current_player}-{self.board.get_walls_remaining(self.current_player)}"
 
 
-def construct_game_from_observation(observation: dict, player_id: str) -> tuple[Quoridor, Player, Player]:
+def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
+    player_id = observation["player_turn"]
     if player_id == "player_0":
         player = Player.ONE
         opponent = Player.TWO

@@ -37,7 +37,7 @@ from quoridor import ActionEncoder, Board, Player, Quoridor
 from utils.misc import get_opponent_player_id
 
 
-def make_observation(game, player, is_player_turns):
+def make_observation(game, agent_id, player, is_player_turns):
     opponent = Player(1 - player)
     board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.int8)
     player_position = game.board.get_player_position(player)
@@ -49,6 +49,7 @@ def make_observation(game, player, is_player_turns):
 
     return {
         "my_turn": is_player_turns,
+        "player_turn": agent_id,
         "board": board,
         "walls": walls,
         "my_walls_remaining": game.board.get_walls_remaining(player),
@@ -200,7 +201,7 @@ class QuoridorEnv(AECEnv):
 
     def _get_observation(self, agent_id):
         player = self.agent_to_player[agent_id]
-        return make_observation(self.game, player, self.agent_selection == agent_id)
+        return make_observation(self.game, agent_id, player, self.agent_selection == agent_id)
 
     def _get_action_mask(self, agent_id):
         player = self.agent_to_player[agent_id]
@@ -254,6 +255,11 @@ class QuoridorEnv(AECEnv):
     def _next_player(self):
         idx = self.agent_order.index(self.agent_selection)
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]
+
+    def set_current_player(self, agent: str):
+        """Shouldn't be called during regular play, just for setting up scenarios for testing or metrics"""
+        self.agent_selection = agent
+        self.game.set_current_player(self.agent_to_player[agent])
 
 
 # Wrapping the environment for PettingZoo compatibility
