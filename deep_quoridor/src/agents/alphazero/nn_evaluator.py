@@ -35,7 +35,8 @@ class NNEvaluator:
     def evaluate(self, game: Quoridor):
         with torch.no_grad():
             input_array, is_board_rotated = self.game_to_input_array(game)
-            unmasked_policy, value = self.network(torch.from_numpy(input_array).float())
+            unmasked_policy, value = self.network(torch.from_numpy(input_array).float().to(self.device))
+            unmasked_policy = unmasked_policy.cpu().numpy()
             value = value.item()
 
         if is_board_rotated:
