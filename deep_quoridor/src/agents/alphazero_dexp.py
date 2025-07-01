@@ -493,6 +493,7 @@ class DAZAgent(AbstractTrainableAgent):
                 agent_id = player_to_agent[node.game.current_player]
                 observation = make_observation(
                     node.game,
+                    agent_id,
                     node.game.current_player,
                     True,
                 )
