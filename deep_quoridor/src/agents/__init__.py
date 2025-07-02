@@ -18,6 +18,7 @@ __all__ = [
 
 from agents.adapter_based_agents import Cnn3CAgent, CnnAgent, NDexpAgent
 from agents.alphazero import AlphaZeroAgent  # noqa: E402, F401
+from agents.alphazero_dexp import DAZAgent
 from agents.alphazero_os import AlphaZeroOSAgent  # noqa: E402, F401
 from agents.core import (  # noqa: E402, F401  # noqa: E402, F401
     AbstractTrainableAgent,
@@ -40,6 +41,8 @@ AgentRegistry.register("alphazero", AlphaZeroAgent)
 AgentRegistry.register("alphazero_os", AlphaZeroOSAgent)
 AgentRegistry.register("cnn", CnnAgent)
 AgentRegistry.register("cnn3c", Cnn3CAgent)
+AgentRegistry.register("daz", DAZAgent)
+AgentRegistry.register("daz_mimic", DAZAgent.create_from_trained_instance)
 AgentRegistry.register("dexp", DExpAgent)
 AgentRegistry.register("dexp_mimic", DExpAgent.create_from_trained_instance)
 AgentRegistry.register("greedy", GreedyAgent)

@@ -226,6 +226,15 @@ class AbstractTrainableAgent(TrainableAgent):
     def is_training(self):
         return self.training_mode
 
+    def run_in_evaluation_mode_if_not_training(self, network, state):
+        t = network.training
+        if not self.is_training() and t:
+            network.eval()
+        q_values = network(state)
+        if t and not self.is_training():
+            network.train()
+        return q_values
+
     def _reset_episode_related_info(self):
         self.current_episode_reward = 0
         self.avg_training_losses = []
@@ -370,6 +379,7 @@ class AbstractTrainableAgent(TrainableAgent):
     def _update_target_network(self):
         """Copy parameters from online network to target network."""
         self.target_network.load_state_dict(self.online_network.state_dict())
+        self.target_network.eval()  # Set target network to evaluation mode
 
     def get_action(self, observation):
         """Select an action using epsilon-greedy policy."""
@@ -421,7 +431,7 @@ class AbstractTrainableAgent(TrainableAgent):
         """Get the best action based on Q-values."""
         state = self._observation_to_tensor(observation, self.player_id)
         with torch.no_grad():
-            q_values = self.online_network(state)
+            q_values = self.run_in_evaluation_mode_if_not_training(self.online_network, state)
 
         mask_tensor = self._convert_action_mask_to_tensor(mask)
         q_values = q_values * mask_tensor - 1e9 * (1 - mask_tensor)
@@ -448,7 +458,7 @@ class AbstractTrainableAgent(TrainableAgent):
         opponent_player_id = get_opponent_player_id(self.player_id)
         state = self._observation_to_tensor(observation, opponent_player_id)
         with torch.no_grad():
-            q_values = self.online_network(state)
+            q_values = self.run_in_evaluation_mode_if_not_training(self.online_network, state)
 
         mask = observation["action_mask"]
         mask_tensor = self._convert_action_mask_to_tensor_for_player(mask, opponent_player_id)
@@ -549,7 +559,7 @@ class AbstractTrainableAgent(TrainableAgent):
 
     def load_model(self, path):
         """Load the model from disk."""
-        print(f"Loading pre-trained model from {path}")
+        print(f"{self.name()} - Loading pre-trained model from {path}")
         self.online_network.load_state_dict(torch.load(path, map_location=my_device()))
         self._update_target_network()
 
@@ -592,11 +602,14 @@ class AbstractTrainableAgent(TrainableAgent):
 
         api = wandb.Api()
         path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
-        print(f"Fetching model from wandb: {path}")
+        print(f"{self.name()} - Fetching model from wandb: {path}")
         artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
-        all_params = self.params_class()(**artifact.metadata)
+        param_fields = set(self.params_class().__dataclass_fields__.keys())
+        filtered_metadata = {k: v for k, v in artifact.metadata.items() if k in param_fields}
+
+        all_params = self.params_class()(**filtered_metadata)
 
         # Override params, but only the ones that are not training only
         for key, value in artifact.metadata.items():

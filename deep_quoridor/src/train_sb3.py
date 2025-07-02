@@ -30,6 +30,7 @@ from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from stable_baselines3.common.monitor import Monitor
 from utils import resolve_path, set_deterministic
+from utils.misc import get_opponent_player_id
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -68,7 +69,7 @@ class SwapPlayerCallback(BaseCallback):
             f"Playing as {self.current_player}, against {self.current_opponent['agent']} ({self.current_opponent_rollouts_left} rollouts left)"
         )
         if self.opponent is not None:
-            self.opponent.start_game(self.env, self.env.get_opponent(self.current_player))
+            self.opponent.start_game(self.env, get_opponent_player_id(self.current_player))
 
     @override
     def _on_rollout_end(self):

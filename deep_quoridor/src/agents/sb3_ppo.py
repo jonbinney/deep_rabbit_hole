@@ -5,6 +5,7 @@ from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.torch_layers import FlattenExtractor
+from utils.misc import get_opponent_player_id
 
 from agents.core.agent import ActionLog, Agent, AgentRegistry
 from agents.core.rotation import convert_rotated_action_index_to_original
@@ -48,7 +49,7 @@ class SB3ActionMaskWrapper(BaseWrapper):
         super().reset(seed, options)
 
         if self.opponent is not None:
-            self.opponent.start_game(self.env, self.env.get_opponent(self.play_as))
+            self.opponent.start_game(self.env, get_opponent_player_id(self.play_as))
 
         # If we're playing P2 against an opponent, let the opponent play the first move
         if self.opponent is not None and self.play_as == "player_1":

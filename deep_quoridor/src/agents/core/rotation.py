@@ -1,13 +1,13 @@
 import numpy as np
 
 
-def rotate_action_mask(board_size, mask):
+def rotate_action_vector(board_size, orig_vector):
     total_actions = board_size * board_size  # Movement actions
     wall_actions = (board_size - 1) ** 2  # Actions for each wall type
 
     # Split the mask into board moves and wall placements
     indices = np.array([total_actions, total_actions + wall_actions])
-    board_mask, walls_v, walls_h = np.split(mask, indices)
+    board_mask, walls_v, walls_h = np.split(orig_vector, indices)
 
     # Rotate board moves (first part of mask)
     board_mask = board_mask.reshape(board_size, board_size)
@@ -20,9 +20,9 @@ def rotate_action_mask(board_size, mask):
     walls_h = np.rot90(walls_h, k=2).flatten()
 
     # Combine rotated masks back together
-    rotated_mask = np.concatenate([board_mask, walls_v, walls_h])
+    rotated_vector = np.concatenate([board_mask, walls_v, walls_h])
 
-    return rotated_mask
+    return rotated_vector
 
 
 def _map_rotated_index_to_original(index, grid_size, offset=0):
