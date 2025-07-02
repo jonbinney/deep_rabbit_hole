@@ -45,12 +45,16 @@ class NNEvaluator:
         # Mask the policy to ignore invalid actions
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        policy_masked = np.zeros_like(unmasked_policy)
+        policy_masked = np.full_like(unmasked_policy, -1e32)
         policy_masked[valid_action_indices] = unmasked_policy[valid_action_indices]
 
-        # Re-normalize probabilities after masking.
-        policy_probs = policy_masked
-        policy_probs = policy_probs / policy_probs.sum()
+        if np.all(policy_masked == 0):
+            print("Policy is all zeros")
+            print(policy_masked)
+            print(game)
+
+        # Apply softmax to convert to probabilities
+        policy_probs = F.softmax(torch.from_numpy(policy_masked), dim=0).numpy()
 
         if not (np.isfinite(policy_probs).all() and np.isfinite(value)):
             raise ValueError("Non-finite number in policy")

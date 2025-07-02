@@ -31,6 +31,8 @@ class ComputationTimesRenderer(Renderer):
                     f"{max(computation_times_ms):.3f}",
                     f"{statistics.median(computation_times_ms):.3f}",
                 ]
+                if num_moves > 0
+                else [player, "-", "-", "-", "-"],
             )
 
         print(table)
