@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from agents import AgentRegistry
 from arena import Arena
@@ -79,6 +80,7 @@ if __name__ == "__main__":
 
     args_dict = yargs(parser, "yargs/play")
 
+    sys.setrecursionlimit(10000)  # Increase recursion limit for deep games
     for id, args in args_dict.items():
         if id:
             print(f"====< Running {id} >====")
@@ -110,6 +112,7 @@ if __name__ == "__main__":
         if args.profile:
             import cProfile
 
+            print("Profiling the game...")
             cProfile.run("make_call()", sort="tottime")
         else:
             make_call()
