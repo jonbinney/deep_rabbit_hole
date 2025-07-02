@@ -8,13 +8,19 @@ from quoridor import Action, ActionEncoder, Quoridor
 class Node:
     def __init__(
         self,
-        game: Quoridor,
+        game: Optional[Quoridor],  # If None, the game will be computed lazily from the parent when needed
         parent: Optional["Node"] = None,
         action_taken: Optional[Action] = None,
         ucb_c: float = 1.0,
         prior: float = 0.0,
     ):
-        self.game = game
+        if game is None:
+            assert parent is not None, "When constructing a node without a game, the parent should be provided"
+            assert action_taken is not None, (
+                "When constructing a node without a game, the action_taken should be provided"
+            )
+
+        self._game = game
         self.parent = parent
         self.action_taken = action_taken
 
@@ -25,8 +31,18 @@ class Node:
         self.ucb_c = ucb_c
         self.prior = prior
 
-        if game is not None:
-            self.action_encoder = ActionEncoder(game.board.board_size)
+    @property
+    def game(self) -> Quoridor:
+        """
+        The game is lazily set when used, by copying the parent's game and applying the action taken.
+        """
+        if self._game is None:
+            assert self.parent is not None, "The root node should have a non-None game attribute"
+            assert self.action_taken is not None, "The root node should have a non-None action_taken attribute"
+            self._game = copy.deepcopy(self.parent.game)
+            self._game.step(self.action_taken)
+
+        return self._game
 
     def should_expand(self):
         return len(self.children) == 0
@@ -39,14 +55,10 @@ class Node:
             if prob < 0.0 or prob > 1.0:
                 raise ValueError("Invalid action probability in policy")
 
-            action = self.action_encoder.index_to_action(action_index)
+            action = self.game.action_encoder.index_to_action(action_index)
 
             if prob > 0.0:
-                # Apply the action.
-                game = copy.deepcopy(self.game)
-                game.step(action)
-
-                child = Node(game, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+                child = Node(game=None, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
                 self.children.append(child)
 
     def select(self) -> "Node":
