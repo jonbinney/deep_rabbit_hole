@@ -29,7 +29,7 @@ class TrainingStatusRenderer(Renderer):
             won = result.winner == agent.name()
             p = "1" if result.player1 == agent.name() else "2"
             print(
-                f"{agent_name} P{p} Episode {self.episode_count:5d}/{self.total_episodes} [{'*' if won else ' '}], Steps: {self.step:3d}, time: {total_time:5d}ms  Avg Reward: {avg_reward:6.2f}, "
+                f"{agent_name} P{p} Episode {self.episode_count:5d}/{self.total_episodes} [{'*' if won else ' '}], Steps: {self.step:3d}, Time: {total_time:5d}ms,  Avg Reward: {avg_reward:6.2f}, "
                 f"Avg Loss: {avg_loss:7.4f}, Epsilon: {agent.epsilon:.4f} opponent: {self.player1 if agent_name == self.player2 else self.player2}"
             )
         return

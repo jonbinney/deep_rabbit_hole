@@ -84,6 +84,21 @@ class DExpAgentParams(TrainableAgentParams):
 
     register_for_reuse: bool = False
 
+    # After how many self play games we train the network
+    train_every: int = 1
+
+    # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
+    temperature: float = 0
+
+    # Batch size for training
+    batch_size: int = 2
+
+    # Number of MCTS selections
+    n: int = 1000
+
+    # A higher number favors exploration over exploitation
+    c: float = 1.8
+
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
