@@ -606,7 +606,10 @@ class AbstractTrainableAgent(TrainableAgent):
         artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
-        all_params = self.params_class()(**artifact.metadata)
+        param_fields = set(self.params_class().__dataclass_fields__.keys())
+        filtered_metadata = {k: v for k, v in artifact.metadata.items() if k in param_fields}
+
+        all_params = self.params_class()(**filtered_metadata)
 
         # Override params, but only the ones that are not training only
         for key, value in artifact.metadata.items():

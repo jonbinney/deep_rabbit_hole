@@ -21,19 +21,12 @@ class WallOrientation(IntEnum):
 
 
 class Action:
-    def is_wall_action(self) -> bool:
-        False
-
-    def is_move_action(self) -> bool:
-        False
+    pass
 
 
 @dataclass(frozen=True)  # Frozen to make it hashable.
 class MoveAction(Action):
     destination: tuple[int, int]  # Destination cell (row, col)
-
-    def is_move_action(self) -> bool:
-        return True
 
     def __str__(self):
         return f"MA({self.destination[0]},{self.destination[1]})"
@@ -43,9 +36,6 @@ class MoveAction(Action):
 class WallAction(Action):
     position: tuple[int, int]  # Start position of the wall (row, col)
     orientation: WallOrientation
-
-    def is_wall_action(self) -> bool:
-        return True
 
     def __str__(self):
         return f"WA({self.position[0]},{self.position[1]} o={self.orientation.name})"
@@ -308,10 +298,9 @@ class Board:
 
     def __eq__(self, other: "Board") -> bool:
         return (
-            self.board_size == other.board_size
+            (self._player_positions == other.player_positions).all()
+            and (self._walls_remaining == other._walls_remaining).all()
             and (self.get_grid() == other.get_grid()).all()
-            and self.get_walls_remaining(Player.ONE) == other.get_walls_remaining(Player.ONE)
-            and self.get_walls_remaining(Player.TWO) == other.get_walls_remaining(Player.TWO)
         )
 
     def __str__(self):
@@ -337,6 +326,7 @@ class Quoridor:
         current_player: Player = Player.ONE,
         action_encoder: Optional[ActionEncoder] = None,
         goal_rows: Optional[np.ndarray] = None,
+        rotated=False,
     ):
         """
         If you want to start from the initial game state, pass in board=Board(board_size, max_walls).
@@ -346,6 +336,7 @@ class Quoridor:
         self.action_encoder = action_encoder if action_encoder is not None else ActionEncoder(board.board_size)
 
         self._goal_rows = goal_rows if goal_rows is not None else np.array([self.board.board_size - 1, 0])
+        self._rotated = rotated
 
     def create_new(self):
         return Quoridor(self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows)
@@ -358,6 +349,7 @@ class Quoridor:
         """
         self.board.rotate_board()
         self._goal_rows = self._goal_rows[::-1]
+        self._rotated = not self.rotated
 
     def step(self, action: Action, validate: bool = True):
         """
@@ -500,28 +492,24 @@ class Quoridor:
 
     def __eq__(self, other: "Quoridor") -> bool:
         return (
-            self.board == other.board
+            self._rotated == other._rotated
             and self.get_current_player() == other.get_current_player()
-            and self.get_goal_row(Player.ONE) == other.get_goal_row(Player.ONE)
-            and self.get_goal_row(Player.TWO) == other.get_goal_row(Player.TWO)
+            and self.board == other.board
         )
 
     def __str__(self):
         return str(self.board)
 
-    def get_state_hash(self) -> str:
-        # return str(self.board) + f"-{self.current_player}-{self.board.get_walls_remaining(self.current_player)}"
-        return self.get_state_id()
-
-    def get_state_id(self):
+    def get_fast_hash(self):
         # Use a fast, unique hash based on the board, player positions, walls, and current player.
         # We'll use numpy's .tobytes() for fast serialization and hash().
         board_bytes = self.board._grid.tobytes()
-        player_bytes = self.board._player_positions.tobytes()
         walls_remaining_bytes = self.board._walls_remaining.tobytes()
         player_byte = bytes([self.current_player])
+        rotated_byte = bytes([1] if self._rotated else [])
+
         # Combine all bytes and hash
-        return hash(board_bytes + player_bytes + walls_remaining_bytes + player_byte)
+        return hash(board_bytes + walls_remaining_bytes + player_byte + rotated_byte)
 
 
 def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
@@ -569,7 +557,7 @@ def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player
     board.set_walls_remaining(player, observation["my_walls_remaining"])
     board.set_walls_remaining(opponent, observation["opponent_walls_remaining"])
 
-    return Quoridor(board, current_player), player, opponent
+    return Quoridor(board=board, current_player=current_player), player, opponent
 
 
 if __name__ == "__main__":

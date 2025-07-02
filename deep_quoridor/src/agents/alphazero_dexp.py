@@ -111,15 +111,6 @@ class DAZNetwork(nn.Module):
 class DAZAgentParams(TrainableAgentParams):
     register_for_reuse: bool = False
 
-    # After how many self play games we train the network
-    train_every: int = 1
-
-    # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
-    temperature: float = 0
-
-    # Batch size for training
-    batch_size: int = 2
-
     # Number of MCTS selections
     n: int = 1000
 
@@ -133,39 +124,15 @@ class DAZAgentParams(TrainableAgentParams):
     use_opponents_actions: bool = True
     target_as_source_for_opponent: bool = True
 
+    use_node_cache = False
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
         Returns a set of parameters that are used only during training.
         These parameters should not be used during playing.
         """
-        return super().training_only_params() | {"use_opponents_actions", "register_for_reuse", "nick"}
-
-
-def is_loop(starting_node, child_node: str) -> bool:
-    ancestors = set()
-    current = starting_node
-    while current is not None:
-        ancestors.add(current)
-        current = current.parent
-
-    if child_node in ancestors:
-        return True
-
-    # DFS to check if any successor of child_node is in ancestors
-    stack = [child_node] + starting_node.children
-    visited = set()
-    while stack:
-        node = stack.pop()
-        if node in ancestors:
-            # print(
-            #     f"Adding child_node {child_node.node_key} as child of {self.node_key} would create a loop via successor {node.node_key}"
-            # )
-            return True
-        if node in visited:
-            continue
-        visited.add(node)
-        stack.extend([c for c in node.children if c is not None])
+        return super().training_only_params() | {"use_opponents_actions", "register_for_reuse", "use_node_cache"}
 
 
 class CacheNode:
@@ -189,26 +156,24 @@ class QuoridorKey:
 
     def __hash__(self):
         if self.hash is None:
-            self.hash = self.game.get_state_hash()
+            self.hash = self.game.get_fast_hash()
         return self.hash
 
     def __eq__(self, other):
-        return isinstance(other, QuoridorKey) and self.__hash__() == other.__hash__() and self.game == other.game
+        return self.__hash__() == other.__hash__() and self.game == other.game
 
 
 class AzNode:
-    node_cache: dict[QuoridorKey, "AzNode"] = {}
-
     def __init__(
         self,
+        parent: "AzNode",
+        action: Action,
+        prior: float,
         game: Optional["Quoridor"] = None,
-        parent: Optional["AzNode"] = None,
-        action_taken: Optional[Action] = None,
-        ucb_c: float = 1.0,
-        prior: float = 0.0,
     ):
+        self.root: RootNode = parent.root if parent is not None else self
         self.game = game
-        self.action_taken = action_taken
+        self.action = action
         self.parent = parent
 
         self.children = []
@@ -217,41 +182,43 @@ class AzNode:
         self.total_wins = 0
         self.total_losses = 0
 
-        self.ucb_c = ucb_c
         self.prior = prior
-        # self.node_key = QuoridorKey(game)
-        self.action_encoder = game.action_encoder if game is not None else parent.game.action_encoder
-        # AzNode.node_cache[self.node_key] = self
+        self.action_encoder = self.root.game.action_encoder
+        if self.root.params.use_node_cache:
+            self.node_key = QuoridorKey(game)
+            self.root.node_cache[self.node_key] = self
 
     def is_expanded(self):
         return len(self.children) > 0
 
-    def step(self):
+    def ensure_game_exists(self):
         if self.game is None:
             self.game = self.parent.game.create_new()
-            self.game.step(self.action_taken)
+            self.game.step(self.action)
 
     def expand(self, policy_probs: np.ndarray, node_path: list["AzNode"]):
         """
         Create all the children of the current node.
         """
-        self.expanded = True
         for action_index, prob in enumerate(policy_probs):
             if prob == 0.0:
                 continue
 
             action = self.action_encoder.index_to_action(action_index)
-            # game = self.game.create_new()
-            # game.step(action)
 
             child = None
-            # Fix node stepping before enabling this
-            # if False and QuoridorKey(game) in AzNode.node_cache:
-            #     # If the game state already exists in the cache, use that node
-            #     child = CacheNode(AzNode.node_cache[QuoridorKey(game)])
-            #     self.backpropagate_child(node_path, child, -1)
-            # else:
-            child = AzNode(parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
+            if self.root.params.use_node_cache:
+                game = self.game.create_new()
+                game.step(action)
+                key = QuoridorKey(game)
+                if key in self.root.node_cache:
+                    # If the game state already exists in the cache, use that node
+                    child = CacheNode(self.root.node_cache[key])
+                    self.backpropagate_child(node_path, child, -1)
+                else:
+                    child = AzNode(parent=self, game=game, action=action, prior=prob)
+            else:
+                child = AzNode(parent=self, action=action, prior=prob)
             self.children.append(child)
 
     def select_child_by_ucb(self, node_path: list["AzNode"]) -> "AzNode":
@@ -259,34 +226,34 @@ class AzNode:
         Return the child of the current node with the highest ucb
         """
         if not self.children:
-            # self.parent.children.remove(self)
-            # print("No children, returning parent")
-            # return self.parent
             print(
                 f"Unexpected for node {self.game.board}, previous node: {self.parent.game.board if self.parent else None}"
             )
 
-        def penalized_ucb(child):
-            # If the child is already in the path, penalize its UCB score heavily
-            if child in node_path:
-                # Penalize by multiplying UCB by a factor (e.g., 0.2 ** count) where count is the number of times child appears in node_path
-                count = node_path.count(child)
-                # print(f"{len(node_path)}-{count}")
-                return self.get_ucb(child) * (0.2**count)
-            return self.get_ucb(child)
+        def penalized_prior(child):
+            # for penalizing prior and using choice with probabilities I need to make sure the sum equals to 1
+            # count = node_path.count(child)
+            return child.prior  # * (0.2**count)
 
-        probabilities = [c.prior for c in self.children]
-        return np.random.choice(self.children, p=probabilities)
+        def penalized_ucb(child):
+            # Penalize by multiplying UCB by a factor (e.g., 0.2 ** count) where count is the number of times child appears in node_path
+            count = node_path.count(child)
+            return self.get_ucb(child) * (0.2**count)
+
+        if self.root.params.softmax_exploration:
+            probabilities = [penalized_prior(c) for c in self.children]
+            return np.random.choice(self.children, p=probabilities)
         return max(self.children, key=penalized_ucb)
 
     def get_ucb(self, child):
+        ucb_c = self.root.params.c
         if child.visit_count == 0:
-            return self.ucb_c * child.prior * math.sqrt(self.visit_count)
+            return ucb_c * child.prior * math.sqrt(self.visit_count)
 
         # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
         q_value = ((child.value_sum / child.visit_count) + 1) / 2
 
-        return q_value + self.ucb_c * child.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
+        return q_value + ucb_c * child.prior * math.sqrt(self.visit_count) / (child.visit_count + 1)
 
     def backpropagate(self, node_path, value: float):
         """
@@ -311,22 +278,20 @@ class AzNode:
             node_path[-1].backpropagate_child(node_path[:-1], child, -sign)
 
 
-class DAZAgent(AbstractTrainableAgent):
-    def check_congiguration(self):
-        """
-        Check the configuration of the agent.
-        This is used to check if the agent is configured correctly.
-        """
-        if self.params.assign_negative_reward:
-            raise ValueError("use_opponents_actions and assign_negative_reward cannot be used together. ")
+class RootNode(AzNode):
+    def __init__(self, game: Quoridor, params: DAZAgentParams):
+        self.params = params
+        self.node_cache: dict[QuoridorKey, "AzNode"] = {}
+        super().__init__(parent=None, action=None, prior=0, game=game)
 
+
+class DAZAgent(AbstractTrainableAgent):
     def __init__(
         self,
         params=DAZAgentParams(),
         **kwargs,
     ):
         super().__init__(params=params, **kwargs)
-        self.check_congiguration()
         DAZAgent._instance_being_trained = None
         if params.register_for_reuse and self.is_training():
             print("Registering DAZAgent for reuse")
@@ -338,6 +303,7 @@ class DAZAgent(AbstractTrainableAgent):
         return "daz"
 
     def model_name(self):
+        # Model is the same than DExp and can be use interchangeably
         return "dexp"
 
     @classmethod
@@ -410,6 +376,7 @@ class DAZAgent(AbstractTrainableAgent):
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
 
     def score(self, child, total_visits=None, total_wins=None, total_losses=None):
+        ## TODO add a cleaner way to test and keep track of past scoring attempts
         if False:
             if child.visit_count == 0:
                 return -np.inf if child.prior == 0.0 else child.prior
@@ -484,7 +451,7 @@ class DAZAgent(AbstractTrainableAgent):
     def scores(self, child_nodes):
         """
         Compute scores for all child nodes.
-        Returns a dictionary: action_taken -> score
+        Returns a dictionary: Node -> score
         """
         total_visits = 0
         total_wins = 0
@@ -501,8 +468,8 @@ class DAZAgent(AbstractTrainableAgent):
 
         self.action_log.clear()
 
-        # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
-        action_scores = {child.action_taken: score for child, score in list(children_scores.items())[:5]}
+        # Build a dictionary: action -> average value (for children with visit_count > 0)
+        action_scores = {child.action: score for child, score in list(children_scores.items())[:5]}
         self.action_log.action_score_ranking(action_scores)
 
     def _get_best_action(self, observation, mask) -> int:
@@ -512,10 +479,10 @@ class DAZAgent(AbstractTrainableAgent):
         root_children = self.search(game)
         visit_counts = np.zeros(self.action_size, dtype=np.float32)
         for child in root_children:
-            action_index = self.action_encoder.action_to_index(child.action_taken)
+            action_index = self.action_encoder.action_to_index(child.action)
             visit_counts[action_index] = child.visit_count
 
-        # Build a dictionary: action_taken -> average value (for children with visit_count > 0)
+        # Build a dictionary: action -> average value (for children with visit_count > 0)
         action_scores = self.scores(root_children)
         action_scores = dict(
             sorted(action_scores.items(), key=lambda item: (item[1], item[0].visit_count), reverse=True)
@@ -524,7 +491,7 @@ class DAZAgent(AbstractTrainableAgent):
         # print(f"Action visit counts: {visit_counts}")
         # for child, score in action_scores.items():
         #     print(
-        #         f"Action: {str(child.action_taken):<25} "
+        #         f"Action: {str(child.action):<25} "
         #         f"Score: {score:>10.8f} "
         #         f"Visit count: {child.visit_count:>5} "
         #         f"Value sum: {child.value_sum:>7} "
@@ -534,7 +501,7 @@ class DAZAgent(AbstractTrainableAgent):
         #         f"Losses: {child.total_losses:>3} "
         #     )
         best_child = list(action_scores.items())[0][0]
-        action = self.action_encoder.action_to_index(best_child.action_taken)
+        action = self.action_encoder.action_to_index(best_child.action)
 
         return int(action)
 
@@ -561,11 +528,6 @@ class DAZAgent(AbstractTrainableAgent):
         return p
 
     def select_for_expansion(self, node: AzNode) -> list["AzNode"]:
-        """
-        Select a node to expand, starting from the given node.
-        As long as the passed node has leaves to expand, that one will be selected.
-        Otherwise, if the node is fully expanded, then its best child will be selected.
-        """
         node_path = []
         while node.is_expanded():
             node_path.append(node)
@@ -574,16 +536,14 @@ class DAZAgent(AbstractTrainableAgent):
         return node_path
 
     def search(self, initial_game: Quoridor):
-        AzNode.node_cache.clear()
-
-        root = AzNode(game=initial_game, ucb_c=self.params.c)
+        root = RootNode(game=initial_game, params=self.params)
         for _ in range(self.params.n):
             # Traverse down the tree guided by maximum UCB until we find a node to expand or a leaf node
             node_path = self.select_for_expansion(root)
 
             node = node_path[-1]
             path_till_node = node_path[:-1]
-            node.step()
+            node.ensure_game_exists()
             if node.game.is_game_over():
                 # If the node is a leaf, we can assign a value based on the game outcome
                 # Since the end state belongs to the winner, we give a value of 1
@@ -601,7 +561,7 @@ class DAZAgent(AbstractTrainableAgent):
                 )
                 policy = self._compute_qvalues_softmax(observation, action_mask, agent_id)
                 node.expand(policy, path_till_node)
-                non_zero_policy = policy[policy > 0]
+                # non_zero_policy = policy[policy > 0]
                 # value = float(np.mean(non_zero_policy)) if non_zero_policy.size > 0 else 0.0
                 value = 0
 

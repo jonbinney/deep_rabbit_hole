@@ -84,21 +84,6 @@ class DExpAgentParams(TrainableAgentParams):
 
     register_for_reuse: bool = False
 
-    # After how many self play games we train the network
-    train_every: int = 1
-
-    # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
-    temperature: float = 0
-
-    # Batch size for training
-    batch_size: int = 2
-
-    # Number of MCTS selections
-    n: int = 1000
-
-    # A higher number favors exploration over exploitation
-    c: float = 1.8
-
     # Parameters used for training which are required to be used with the same set of values during training
     #  and playing are used to generate a 'key' to identify the model.
     def __str__(self):
@@ -256,23 +241,6 @@ class DExpAgent(AbstractTrainableAgent):
         if action_player_id == "player_0" or not self.params.rotate:
             return super()._convert_to_tensor_index_from_action(action, action_player_id)
         return rotation.convert_original_action_index_to_rotated(self.board_size, action)
-
-    def evaluate_qvalues_for_state(self, grid, player_positions, walls_remaining, goal_rows, current_player):
-        """
-        Given a game state (arrays), return Q-values for all actions.
-        """
-        # Construct observation dict as expected by _observation_to_tensor
-        # This assumes you have a function to convert arrays to observation dicts.
-        # You may need to adapt this to your actual observation structure.
-        from quoridor import construct_observation_from_arrays
-
-        observation = construct_observation_from_arrays(
-            grid, player_positions, walls_remaining, goal_rows, current_player, self.board_size
-        )
-        obs_tensor = self._observation_to_tensor(observation, f"player_{current_player}")
-        with torch.no_grad():
-            qvalues = self.online_network(obs_tensor)
-        return qvalues.cpu().numpy()
 
     @classmethod
     def create_from_trained_instance(_cls, **kwargs):
