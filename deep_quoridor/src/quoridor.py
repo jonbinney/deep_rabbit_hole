@@ -298,7 +298,7 @@ class Board:
 
     def __eq__(self, other: "Board") -> bool:
         return (
-            (self._player_positions == other.player_positions).all()
+            (self._player_positions == other._player_positions).all()
             and (self._walls_remaining == other._walls_remaining).all()
             and (self.get_grid() == other.get_grid()).all()
         )
@@ -349,7 +349,7 @@ class Quoridor:
         """
         self.board.rotate_board()
         self._goal_rows = self._goal_rows[::-1]
-        self._rotated = not self.rotated
+        self._rotated = not self._rotated
 
     def step(self, action: Action, validate: bool = True):
         """
