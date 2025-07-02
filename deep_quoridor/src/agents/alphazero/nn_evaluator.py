@@ -107,13 +107,13 @@ class NNEvaluator:
             target_values = []
 
             for data in batch_data:
-                inputs.append(torch.from_numpy(self.game_to_input_array(data["game"])[0]).to(self.device))
-                target_policies.append(torch.FloatTensor(data["mcts_policy"]).to(self.device))
-                target_values.append(torch.FloatTensor([data["value"]]).to(self.device))
+                inputs.append(torch.from_numpy(self.game_to_input_array(data["game"])[0]))
+                target_policies.append(torch.FloatTensor(data["mcts_policy"]))
+                target_values.append(torch.FloatTensor([data["value"]]))
 
-            inputs = torch.stack(inputs)
-            target_policies = torch.stack(target_policies)
-            target_values = torch.stack(target_values)
+            inputs = torch.stack(inputs).to(self.device)
+            target_policies = torch.stack(target_policies).to(self.device)
+            target_values = torch.stack(target_values).to(self.device)
 
             if inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any():
                 raise ValueError("NaN in training data")
