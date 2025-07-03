@@ -46,21 +46,18 @@ class NNEvaluator:
         # Mask the policy to ignore invalid actions
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        # We mask by setting all the values which are masked to minus infinity. This is because the softmax
-        # function will then assign a probability of zero to those values.
-        # Taken from the OpenSpiel implementation: https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/alpha_zero/model.py#L277
         policy_masked = np.zeros_like(unmasked_policy)
         policy_masked[valid_action_indices] = unmasked_policy[valid_action_indices]
 
         if np.all(policy_masked == 0):
-            # If the policy ends up as all zeros after masking, turn it into a uniform distribution amongh
+            # If the policy ends up as all zeros after masking, turn it into a uniform distribution among
             # the valid actions.
             policy_masked[valid_action_indices] = 1 / len(valid_action_indices)
         else:
             # Otherwise, just renormalize after masking
             policy_masked = policy_masked / policy_masked.sum()
 
-        # Validity checks
+        # Sanity checks
         assert np.all(policy_masked >= 0), "Policy contains negative probabilities"
         assert np.all(policy_masked <= 1), "Policy contains probabilities greater than 1"
         assert np.any(policy_masked > 0), "Policy is all zeros"
