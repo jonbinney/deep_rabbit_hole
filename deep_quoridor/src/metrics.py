@@ -2,10 +2,9 @@ from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
-from quoridor import Player
 from quoridor_env import env
 from renderers.match_results import MatchResultsRenderer
-from utils.misc import compute_elo
+from utils.misc import compute_elo, get_opponent_player_id
 
 
 class Metrics:
@@ -106,67 +105,69 @@ class Metrics:
             print("Moved:")
             print(current)
 
-        N = self.board_size
-        quoridor = env(board_size=N, max_walls=self.max_walls)
-        dumb_score = 0
-        count = 0
-
-        for player in [Player.ONE, Player.TWO]:
-            agent_id = quoridor.player_to_agent[player]
-            opponent = Player.ONE if player == Player.TWO else Player.TWO
-
+        def dumb_score_before_goal(quoridor, agent: Agent, agent_id: str, verbose: bool = False) -> tuple[int, int]:
             # The agent is right before the goal (no walls blocking), and the opponent in the goal row in the middle column.
             # Moving forward (or forward and left or right in the middle) will lead it to winning.
             # E.g., the agent is player 2 and moving up:
             # . 1 .    . 1 .   . 1 .
             # 2 . .    . 2 .   . . 2
-            for i in range(N):
-                count += 1
-                agent.start_game(quoridor.game, agent_id)
+            dumb_score = 0
+
+            for i in range(quoridor.board_size):
+                agent.start_game(quoridor, agent_id)
                 quoridor.reset()
-                row = quoridor.game.get_goal_row(player)
+                row = quoridor.get_goal_row(agent_id)
                 row = 1 if row == 0 else row - 1  # Move 1 away from the goal
-                quoridor.game.board.move_player(player, (row, i))
+                quoridor.set_player_position(agent_id, (row, i))
                 quoridor.set_current_player(agent_id)
                 initial_pos = str(quoridor.game)
 
                 action = agent.get_action(quoridor.observe(agent_id))
                 quoridor.step(action)
 
-                if not quoridor.game.check_win(player):
+                if quoridor.winner() != quoridor.agent_order.index(agent_id):
                     dumb_score += 1
                     if verbose:
                         print("Agent was expected to win but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
 
+            return quoridor.board_size, dumb_score
+
+        def dumb_score_before_goal_with_jump(
+            quoridor, agent: Agent, agent_id: str, opponent_id: str, verbose: bool = False
+        ) -> tuple[int, int]:
             # The agent needs to jump over the opponent and win
             # E.g., the agent is player 2 and moving up:
             # . . .    . . .   . . .
             # 1 . .    . 1 .   . . 1
             # 2 . .    . 2 .   . . 2
-            for i in range(N):
-                count += 1
-                agent.start_game(quoridor.game, agent_id)
+            dumb_score = 0
+            for i in range(quoridor.board_size):
+                agent.start_game(quoridor, agent_id)
                 quoridor.reset()
-                goal_row = quoridor.game.get_goal_row(player)
+                goal_row = quoridor.get_goal_row(agent_id)
                 agent_row = 2 if goal_row == 0 else goal_row - 2  # Our agent is 2 away from the goal
                 opp_row = 1 if goal_row == 0 else goal_row - 1  # The opponent is 1 away from the goal
 
-                quoridor.game.board.move_player(opponent, (opp_row, i))
-
-                quoridor.game.board.move_player(player, (agent_row, i))
+                quoridor.set_player_position(opponent_id, (opp_row, i))
+                quoridor.set_player_position(agent_id, (agent_row, i))
                 quoridor.set_current_player(agent_id)
                 initial_pos = str(quoridor.game)
 
                 action = agent.get_action(quoridor.observe(agent_id))
                 quoridor.step(action)
 
-                if not quoridor.game.check_win(player):
+                if quoridor.winner() != quoridor.agent_order.index(agent_id):
                     dumb_score += 1
                     if verbose:
                         print("Agent was expected to win but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
 
+            return quoridor.board_size, dumb_score
+
+        def dumb_score_block_opponent(
+            quoridor, agent: Agent, agent_id: str, opponent_id: str, verbose: bool = False
+        ) -> tuple[int, int]:
             # The opponent is about to win and we're 2 away, so the agent should place a wall to block it.
             # This will be run only if the board is 5 or plus and we're playing with walls.
             # E.g., the agent is player 2 and moving up:
@@ -175,23 +176,21 @@ class Metrics:
             # . . 2 . .
             # . . 1 . .
             # . . . . .
-            for i in range(N):
-                if N < 5 or self.max_walls == 0:
-                    # We could put an if before the for above but I don't like indenting everything more
-                    continue
+            if quoridor.board_size < 5 or quoridor.max_walls == 0:
+                return 0, 0
 
-                count += 1
-                agent.start_game(quoridor.game, agent_id)
+            dumb_score = 0
+            for i in range(quoridor.board_size):
+                agent.start_game(quoridor, agent_id)
                 quoridor.reset()
-                goal_row = quoridor.game.get_goal_row(player)
+                goal_row = quoridor.get_goal_row(agent_id)
                 agent_row = 2 if goal_row == 0 else goal_row - 2  # Our agent is 2 away from the goal
 
-                opp_goal_row = quoridor.game.get_goal_row(opponent)
+                opp_goal_row = quoridor.get_goal_row(opponent_id)
                 opp_row = 1 if opp_goal_row == 0 else opp_goal_row - 1  # The opponent is 1 away from the goal
 
-                quoridor.game.board.move_player(opponent, (opp_row, i))
-
-                quoridor.game.board.move_player(player, (agent_row, i))
+                quoridor.set_player_position(opponent_id, (opp_row, i))
+                quoridor.set_player_position(agent_id, (agent_row, i))
                 quoridor.set_current_player(agent_id)
                 initial_pos = str(quoridor.game)
 
@@ -203,5 +202,25 @@ class Metrics:
                     if verbose:
                         print("Agent was expected to block the opponent but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
+
+            return quoridor.board_size, dumb_score
+
+        quoridor = env(board_size=self.board_size, max_walls=self.max_walls)
+        dumb_score = 0
+        count = 0
+
+        for agent_id in quoridor.agents:
+            opponent_id = get_opponent_player_id(agent_id)
+            c, ds = dumb_score_before_goal(quoridor, agent, agent_id, verbose)
+            count += c
+            dumb_score += ds
+
+            c, ds = dumb_score_before_goal_with_jump(quoridor, agent, agent_id, opponent_id, verbose)
+            count += c
+            dumb_score += ds
+
+            c, ds = dumb_score_block_opponent(quoridor, agent, agent_id, opponent_id, verbose)
+            count += c
+            dumb_score += ds
 
         return int((100.0 * dumb_score) / count)
