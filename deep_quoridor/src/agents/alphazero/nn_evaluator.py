@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 import torch.nn.functional as F
-from quoridor import ActionEncoder, Board, Quoridor
+from quoridor import ActionEncoder, Board, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
 
@@ -70,10 +70,10 @@ class NNEvaluator:
         player = game.get_current_player()
         opponent = int(1 - player)
 
-        rotate = True if (player == "player_2") else False
+        rotate = True if (player == Player.TWO) else False
         if rotate:
             game = copy.deepcopy(game)
-            game.rotate()
+            game.rotate_board()
 
         player_position = game.board.get_player_position(player)
         opponent_position = game.board.get_player_position(opponent)
