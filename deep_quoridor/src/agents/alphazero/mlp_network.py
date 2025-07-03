@@ -23,8 +23,7 @@ class MLPNetwork(nn.Module):
         # Policy head - outputs action probabilities
         # TODO: Is it correct to include the Softmax at the end? Some implementations of alphazero
         # appear to leave it out, or apply it outside the network.
-        # self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax(dim=0))
-        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size))
+        self.policy_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, action_size), nn.Softmax(dim=0))
 
         # value head - outputs position evaluation (-1 to 1)
         self.value_head = nn.Sequential(nn.Linear(256, 128), nn.ReLU(), nn.Linear(128, 1), nn.Tanh())

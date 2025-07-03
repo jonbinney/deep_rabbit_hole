@@ -41,25 +41,32 @@ class NNEvaluator:
 
         if is_board_rotated:
             unmasked_policy = unmasked_policy[self.rotated_action_mapping]
+            # TODO: Also rotate the action mask!
 
         # Mask the policy to ignore invalid actions
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        policy_masked = np.full_like(unmasked_policy, -1e32)
+        # We mask by setting all the values which are masked to minus infinity. This is because the softmax
+        # function will then assign a probability of zero to those values.
+        # Taken from the OpenSpiel implementation: https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/alpha_zero/model.py#L277
+        policy_masked = np.zeros_like(unmasked_policy)
         policy_masked[valid_action_indices] = unmasked_policy[valid_action_indices]
 
         if np.all(policy_masked == 0):
-            print("Policy is all zeros")
-            print(policy_masked)
-            print(game)
+            # If the policy ends up as all zeros after masking, turn it into a uniform distribution amongh
+            # the valid actions.
+            policy_masked[valid_action_indices] = 1 / len(valid_action_indices)
+        else:
+            # Otherwise, just renormalize after masking
+            policy_masked = policy_masked / policy_masked.sum()
 
-        # Apply softmax to convert to probabilities
-        policy_probs = F.softmax(torch.from_numpy(policy_masked), dim=0).numpy()
+        # Validity checks
+        assert np.all(policy_masked >= 0), "Policy contains negative probabilities"
+        assert np.all(policy_masked <= 1), "Policy contains probabilities greater than 1"
+        assert np.any(policy_masked > 0), "Policy is all zeros"
+        assert np.isfinite(policy_masked).all() and np.isfinite(value), "Policy or value is non-finite"
 
-        if not (np.isfinite(policy_probs).all() and np.isfinite(value)):
-            raise ValueError("Non-finite number in policy")
-
-        return value, policy_probs
+        return value, policy_masked
 
     def game_to_input_array(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
         """Convert Quoridor game state to tensor format for neural network."""
