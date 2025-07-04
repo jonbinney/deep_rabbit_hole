@@ -20,7 +20,7 @@ class NNEvaluator:
 
         # Create a temporary game just to see how  big the input tensors are.
         temp_game = Quoridor(Board(self.action_encoder.board_size))
-        temp_input, _ = self.game_to_input_array(temp_game)
+        temp_input = self.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
         self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
@@ -33,17 +33,16 @@ class NNEvaluator:
             self.rotated_action_mapping[rotated_action_i] = action_i
 
     def evaluate(self, game: Quoridor):
+        # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
+        game, is_board_rotated = self.rotate_game_for_player_two(game)
+
         with torch.no_grad():
-            input_array, is_board_rotated = self.game_to_input_array(game)
+            input_array = self.game_to_input_array(game)
             unmasked_policy, value = self.network(torch.from_numpy(input_array).float().to(self.device))
             unmasked_policy = unmasked_policy.cpu().numpy()
             value = value.item()
 
-        if is_board_rotated:
-            unmasked_policy = unmasked_policy[self.rotated_action_mapping]
-            # TODO: Also rotate the action mask!
-
-        # Mask the policy to ignore invalid actions
+        # Mask the policy to ignore invalid actions. NOTE: Game is already rotated so the valid actions will be rotated too
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
         policy_masked = np.zeros_like(unmasked_policy)
@@ -53,6 +52,7 @@ class NNEvaluator:
             # If the policy ends up as all zeros after masking, turn it into a uniform distribution among
             # the valid actions.
             policy_masked[valid_action_indices] = 1 / len(valid_action_indices)
+            print("Policy is all zeros after masking, turning it into a uniform distribution")
         else:
             # Otherwise, just renormalize after masking
             policy_masked = policy_masked / policy_masked.sum()
@@ -63,17 +63,26 @@ class NNEvaluator:
         assert np.any(policy_masked > 0), "Policy is all zeros"
         assert np.isfinite(policy_masked).all() and np.isfinite(value), "Policy or value is non-finite"
 
+        # If the game was originally rotated, rotate the resulting back to player 2's perspective
+        if is_board_rotated:
+            policy_masked = policy_masked[self.rotated_action_mapping]
+
         return value, policy_masked
+
+    def rotate_game_for_player_two(self, game: Quoridor):
+        player = game.get_current_player()
+
+        is_rotated = True if (player == Player.TWO) else False
+        if is_rotated:
+            game = copy.deepcopy(game)
+            game.rotate_board()
+
+        return game, is_rotated
 
     def game_to_input_array(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
         opponent = int(1 - player)
-
-        rotate = True if (player == Player.TWO) else False
-        if rotate:
-            game = copy.deepcopy(game)
-            game.rotate_board()
 
         player_position = game.board.get_player_position(player)
         opponent_position = game.board.get_player_position(opponent)
@@ -95,7 +104,7 @@ class NNEvaluator:
             dtype=np.float32,
         )
 
-        return input_array, rotate
+        return input_array
 
     def train_network(self, replay_buffer, learning_rate, batch_size, optimizer_iterations):
         optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
@@ -115,8 +124,13 @@ class NNEvaluator:
             target_values = []
 
             for data in batch_data:
-                inputs.append(torch.from_numpy(self.game_to_input_array(data["game"])[0]))
-                target_policies.append(torch.FloatTensor(data["mcts_policy"]))
+                game, is_rotated = self.rotate_game_for_player_two(data["game"])
+                inputs.append(torch.from_numpy(self.game_to_input_array(game)))
+                if is_rotated:
+                    mcts_policy = data["mcts_policy"][self.rotated_action_mapping]
+                else:
+                    mcts_policy = data["mcts_policy"]
+                target_policies.append(torch.FloatTensor(mcts_policy))
                 target_values.append(torch.FloatTensor([data["value"]]))
 
             inputs = torch.stack(inputs).to(self.device)
