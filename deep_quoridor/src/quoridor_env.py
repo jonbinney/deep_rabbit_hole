@@ -256,10 +256,17 @@ class QuoridorEnv(AECEnv):
         idx = self.agent_order.index(self.agent_selection)
         self.agent_selection = self.agent_order[(idx + 1) % len(self.agent_order)]
 
+    def get_goal_row(self, agent: str):
+        return self.game.get_goal_row(self.agent_to_player[agent])
+
     def set_current_player(self, agent: str):
         """Shouldn't be called during regular play, just for setting up scenarios for testing or metrics"""
         self.agent_selection = agent
         self.game.set_current_player(self.agent_to_player[agent])
+
+    def set_player_position(self, agent: str, position: tuple[int, int]):
+        """Shouldn't be called during regular play, just for setting up scenarios for testing or metrics"""
+        self.game.board.move_player(self.agent_to_player[agent], position)
 
 
 # Wrapping the environment for PettingZoo compatibility
