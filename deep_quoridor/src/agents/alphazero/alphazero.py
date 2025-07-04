@@ -1,5 +1,6 @@
 import copy
 import os
+import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,10 +101,14 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Metrics tracking
         self.recent_losses = []
-        self.recent_rewards = []
 
         # Just to make the training status plugin happy
         self.epsilon = 0.0
+
+        # Avoid circular imports
+        from metrics import Metrics
+
+        self.metrics = Metrics(board_size, max_walls)
 
     def version(self):
         return "1.0"
@@ -146,27 +151,17 @@ class AlphaZeroAgent(TrainableAgent):
     def load_model(self, path):
         self.evaluator.network.load_state_dict(torch.load(path, map_location=my_device()))
 
-    def start_game(self, game, player_id):
-        self.player_id = player_id
-
     def end_game(self, env):
         if not self.params.training_mode:
             return
-
-        # Track current episode reward for metrics
-        reward = env.rewards[self.player_id]
-
-        # Store reward for metrics
-        self.recent_rewards.append(reward)
-        if len(self.recent_rewards) > 100:  # Keep only recent rewards
-            self.recent_rewards = self.recent_rewards[-100:]
 
         # Assign the final game outcome to all positions in this episode
         # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
         episode_positions = []
         while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
             position = self.replay_buffer.pop()
-            position["value"] = reward
+            player = env.player_to_agent[position["player"]]
+            position["value"] = env.rewards[player]
             episode_positions.append(position)
 
         # Add back the positions with assigned values
@@ -178,17 +173,6 @@ class AlphaZeroAgent(TrainableAgent):
         if self.episode_count % self.params.train_every == 0:
             self.train_network()
 
-        wins, losses, ties = 0, 0, 0
-        for reward in self.recent_rewards:
-            if reward == -1:
-                losses += 1
-            elif reward == 0:
-                ties += 1
-            elif reward == 1:
-                wins += 1
-            else:
-                raise ValueError(f"Invalid reward: {reward}")
-
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         # Return some basic metrics if available
         if hasattr(self, "recent_losses") and self.recent_losses:
@@ -196,16 +180,15 @@ class AlphaZeroAgent(TrainableAgent):
         else:
             avg_loss = 0.0
 
-        # For AlphaZero, reward is based on win/loss, not cumulative
-        avg_reward = 0.0
-        if hasattr(self, "recent_rewards") and self.recent_rewards:
-            avg_reward = np.mean(self.recent_rewards[-length:])
-
-        return float(avg_loss), float(avg_reward)
+        return float(avg_loss), 0.0
 
     def train_network(self):
         """Train the neural network on collected data."""
-
+        t0 = time.time()
+        print(
+            f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
+            end="",
+        )
         if len(self.replay_buffer) < self.params.batch_size:
             return
 
@@ -217,6 +200,10 @@ class AlphaZeroAgent(TrainableAgent):
         self.recent_losses.append(metrics["total_loss"])
         if len(self.recent_losses) > 100:  # Keep only recent losses
             self.recent_losses = self.recent_losses[-100:]
+
+        print(f"done in {time.time() - t0:.2f}s")
+        dumb_score = self.metrics.dumb_score(self)
+        print(f"Dumb score: {dumb_score}")
 
     def _log_action(
         self,
@@ -234,7 +221,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
 
     def get_action(self, observation) -> int:
-        game, _, _ = construct_game_from_observation(observation["observation"])
+        game, player, _ = construct_game_from_observation(observation["observation"])
 
         # Run MCTS to get action visit counts
         root_children = self.mcts.search(game)
@@ -259,18 +246,19 @@ class AlphaZeroAgent(TrainableAgent):
             for child in root_children:
                 action_index = self.action_encoder.action_to_index(child.action_taken)
                 policy_target[action_index] = child.visit_count / visit_counts_sum
-            self.store_training_data(game, policy_target)
+            self.store_training_data(game, policy_target, player)
 
         self._log_action(visit_probs, root_children)
 
         return self.action_encoder.action_to_index(action)
 
-    def store_training_data(self, game, mcts_policy):
+    def store_training_data(self, game, mcts_policy, player):
         """Store training data for later use in training."""
         self.replay_buffer.append(
             {
                 "game": copy.deepcopy(game),
                 "mcts_policy": mcts_policy.copy(),
                 "value": None,  # Will be filled in at end of episode
+                "player": player,
             }
         )

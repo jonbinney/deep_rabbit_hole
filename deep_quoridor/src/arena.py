@@ -46,7 +46,14 @@ class Arena:
             "player_0": agent1,
             "player_1": agent2,
         }
-        for p, a in agents.items():
+        # If it's self play, we only have one agent, and we use this to make sure that some calls like
+        # start_game and end_game are called only once.
+        if agent1 == agent2:
+            unique_agents = {"both_players": agent1}
+        else:
+            unique_agents = agents
+
+        for p, a in unique_agents.items():
             a.start_game(self.game, p)
         self.plugins.start_game(self.game, agent1, agent2)
         start_time = time.time()
@@ -132,7 +139,7 @@ class Arena:
             game_id=game_id,
             moves=moves,
         )
-        for p, a in agents.items():
+        for p, a in unique_agents.items():
             a.end_game(self.game)
         self.plugins.end_game(self.game, result)
 
