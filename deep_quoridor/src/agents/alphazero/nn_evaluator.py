@@ -34,7 +34,7 @@ class NNEvaluator:
 
     def evaluate(self, game: Quoridor):
         # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
-        game, is_board_rotated = self.rotate_game_for_player_two(game)
+        game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
 
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
@@ -69,7 +69,17 @@ class NNEvaluator:
 
         return value, policy_masked
 
-    def rotate_game_for_player_two(self, game: Quoridor):
+    def rotate_if_needed_to_point_downwards(self, game: Quoridor):
+        """
+        Rotates the game so that the current player's goal is the row with the largest index.
+
+        This makes it easier for the neural network to learn, since it doesn't need to
+        understand that one player wants to move up the board and the other wants to move down it.
+        If the current player is Player.ONE, this is a no-op since the board
+        is already rotated correctly for it, and the same game instance is returned. If
+        the current player is Player.TWO, the returned game is a copy of the original game
+        which has beeen rotated appropriately.
+        """
         player = game.get_current_player()
 
         is_rotated = True if (player == Player.TWO) else False
@@ -124,7 +134,7 @@ class NNEvaluator:
             target_values = []
 
             for data in batch_data:
-                game, is_rotated = self.rotate_game_for_player_two(data["game"])
+                game, is_rotated = self.rotate_if_needed_to_point_downwards(data["game"])
                 inputs.append(torch.from_numpy(self.game_to_input_array(game)))
                 if is_rotated:
                     mcts_policy = data["mcts_policy"][self.rotated_action_mapping]
