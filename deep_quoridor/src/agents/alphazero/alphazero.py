@@ -160,8 +160,8 @@ class AlphaZeroAgent(TrainableAgent):
         episode_positions = []
         while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
             position = self.replay_buffer.pop()
-            player = env.player_to_agent[position["player"]]
-            position["value"] = env.rewards[player]
+            agent = env.player_to_agent[position["player"]]
+            position["value"] = env.rewards[agent]
             episode_positions.append(position)
 
         # Add back the positions with assigned values
