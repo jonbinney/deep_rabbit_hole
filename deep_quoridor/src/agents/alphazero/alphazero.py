@@ -218,6 +218,21 @@ class AlphaZeroAgent(TrainableAgent):
         if len(self.recent_losses) > 100:  # Keep only recent losses
             self.recent_losses = self.recent_losses[-100:]
 
+    def _log_action(
+        self,
+        visit_probs,
+        root_children,
+    ):
+        if not self.action_log.is_enabled():
+            return
+
+        self.action_log.clear()
+
+        _, top_indices = torch.topk(torch.tensor(visit_probs), min(5, len(visit_probs)))
+
+        scores = {root_children[i].action_taken: visit_probs[i] for i in top_indices}
+        self.action_log.action_score_ranking(scores)
+
     def get_action(self, observation) -> int:
         game, _, _ = construct_game_from_observation(observation["observation"])
 
@@ -225,27 +240,28 @@ class AlphaZeroAgent(TrainableAgent):
         root_children = self.mcts.search(game)
         visit_counts = np.array([child.visit_count for child in root_children])
         visit_counts_sum = np.sum(visit_counts)
-
         if visit_counts_sum == 0:
             raise RuntimeError("No nodes visited during MCTS")
-        else:
-            visit_probs = visit_counts / visit_counts_sum
-            if self.temperature != 0.0:
-                visit_probs = visit_probs ** (1.0 / self.temperature)
-                visit_probs = visit_probs / np.sum(visit_probs)
 
-            # Sample from probability distribution
-            best_child = np.random.choice(root_children, p=visit_probs)
-            action = best_child.action_taken
+        visit_probs = visit_counts / visit_counts_sum
+        if self.temperature != 0.0:
+            visit_probs = visit_probs ** (1.0 / self.temperature)
+            visit_probs = visit_probs / np.sum(visit_probs)
 
-            # Store training data if in training mode
-            if self.params.training_mode:
-                # Convert visit counts to policy target (normalized)
-                policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
-                for child in root_children:
-                    action_index = self.action_encoder.action_to_index(child.action_taken)
-                    policy_target[action_index] = child.visit_count / visit_counts_sum
-                self.store_training_data(game, policy_target)
+        # Sample from probability distribution
+        best_child = np.random.choice(root_children, p=visit_probs)
+        action = best_child.action_taken
+
+        # Store training data if in training mode
+        if self.params.training_mode:
+            # Convert visit counts to policy target (normalized)
+            policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+            for child in root_children:
+                action_index = self.action_encoder.action_to_index(child.action_taken)
+                policy_target[action_index] = child.visit_count / visit_counts_sum
+            self.store_training_data(game, policy_target)
+
+        self._log_action(visit_probs, root_children)
 
         return self.action_encoder.action_to_index(action)
 
