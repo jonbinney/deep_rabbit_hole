@@ -77,7 +77,7 @@ class Node:
         # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
         q_values = (np.divide(value_sums, visit_counts, where=visit_counts != 0) + 1) / 2
 
-        return q_values + self.ucb_c * priors * np.sqrt(visit_counts) / (visit_counts + 1)
+        return q_values + self.ucb_c * priors * np.sqrt(self.visit_count) / (visit_counts + 1)
 
     def backpropagate(self, value: float):
         """

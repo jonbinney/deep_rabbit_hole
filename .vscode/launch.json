@@ -2,6 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Train AlphaZero",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "program": "deep_quoridor/src/train.py",
+            "args": [
+                "-N", "3", "-W", "0", "-e", "1000", "-i", "43", "-p",
+                "alphazero:training_mode=true",
+                "-r", "arenaresults2", "computationtimes",
+            ],
+            "justMyCode": false
+        },
+        {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
