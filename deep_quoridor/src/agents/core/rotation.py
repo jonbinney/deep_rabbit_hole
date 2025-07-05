@@ -1,6 +1,26 @@
 import numpy as np
 
 
+def create_rotation_mapping(board_size):
+    """
+    Returns two action mapping arrays, one for converting from original to rotated and one for the other way around.
+    These arrays can then be used to convert policies by indexing into them.
+    """
+    num_actions = board_size * board_size + (board_size - 1) ** 2 * 2
+    action_mapping_original_to_rotated = np.zeros(num_actions, dtype=int)
+    action_mapping_rotated_to_original = np.zeros(num_actions, dtype=int)
+
+    for action_index in range(num_actions):
+        action_mapping_original_to_rotated[action_index] = convert_original_action_index_to_rotated(
+            board_size, action_index
+        )
+        action_mapping_rotated_to_original[action_index] = convert_rotated_action_index_to_original(
+            board_size, action_index
+        )
+
+    return action_mapping_original_to_rotated, action_mapping_rotated_to_original
+
+
 def rotate_action_vector(board_size, orig_vector):
     total_actions = board_size * board_size  # Movement actions
     wall_actions = (board_size - 1) ** 2  # Actions for each wall type

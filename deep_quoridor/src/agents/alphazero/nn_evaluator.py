@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from quoridor import ActionEncoder, Board, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
+from agents.core.rotation import create_rotation_mapping
 
 
 class NNEvaluator:
@@ -25,12 +26,9 @@ class NNEvaluator:
 
         self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
 
-        self.rotated_action_mapping = np.zeros(action_encoder.num_actions, dtype=int)
-        for action_i in range(len(self.rotated_action_mapping)):
-            action = action_encoder.index_to_action(action_i)
-            rotated_action = temp_game.rotate_action(action)
-            rotated_action_i = action_encoder.action_to_index(rotated_action)
-            self.rotated_action_mapping[rotated_action_i] = action_i
+        [self.action_mapping_original_to_rotated, self.action_mapping_rotated_to_original] = create_rotation_mapping(
+            self.action_encoder.board_size
+        )
 
     def evaluate(self, game: Quoridor):
         # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
@@ -65,7 +63,7 @@ class NNEvaluator:
 
         # If the game was originally rotated, rotate the resulting back to player 2's perspective
         if is_board_rotated:
-            policy_masked = policy_masked[self.rotated_action_mapping]
+            policy_masked = policy_masked[self.action_mapping_rotated_to_original]
 
         return value, policy_masked
 
@@ -137,7 +135,7 @@ class NNEvaluator:
                 game, is_rotated = self.rotate_if_needed_to_point_downwards(data["game"])
                 inputs.append(torch.from_numpy(self.game_to_input_array(game)))
                 if is_rotated:
-                    mcts_policy = data["mcts_policy"][self.rotated_action_mapping]
+                    mcts_policy = data["mcts_policy"][self.action_mapping_original_to_rotated]
                 else:
                     mcts_policy = data["mcts_policy"]
                 target_policies.append(torch.FloatTensor(mcts_policy))
