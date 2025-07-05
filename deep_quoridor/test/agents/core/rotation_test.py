@@ -215,7 +215,7 @@ def test_convert_policy_and_back():
     action_mapping_original_to_rotated, action_mapping_rotated_to_original = create_rotation_mapping(board_size)
 
     # Test a random policy
-    policy = np.random.random(0, 2, num_actions)
+    policy = np.random.random(num_actions)
     rotated_policy = policy[action_mapping_original_to_rotated]
     final_policy = rotated_policy[action_mapping_rotated_to_original]
     np.testing.assert_array_equal(final_policy, policy)
