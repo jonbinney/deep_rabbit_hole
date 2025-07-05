@@ -2,6 +2,7 @@ import numpy as np
 from agents.core.rotation import (
     convert_original_action_index_to_rotated,
     convert_rotated_action_index_to_original,
+    create_rotation_mapping,
     rotate_action_vector,
     rotate_board,
     rotate_walls,
@@ -204,3 +205,17 @@ def test_convert_action_index_and_back():
         rotated_index = convert_original_action_index_to_rotated(board_size, original_index)
         final_index = convert_rotated_action_index_to_original(board_size, rotated_index)
         assert final_index == original_index
+
+
+def test_convert_policy_and_back():
+    """Test converting a policy to rotated and back to original."""
+    board_size = 4
+    num_actions = board_size * board_size + (board_size - 1) ** 2 * 2
+
+    action_mapping_original_to_rotated, action_mapping_rotated_to_original = create_rotation_mapping(board_size)
+
+    # Test a random policy
+    policy = np.random.random(num_actions)
+    rotated_policy = policy[action_mapping_original_to_rotated]
+    final_policy = rotated_policy[action_mapping_rotated_to_original]
+    np.testing.assert_array_equal(final_policy, policy)
