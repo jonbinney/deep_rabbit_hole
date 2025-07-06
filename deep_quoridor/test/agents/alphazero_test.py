@@ -65,3 +65,29 @@ def test_evaluator_rotation_with_players_and_walls_in_symmetrical_positions():
     value_2, policy_2 = evaluator.evaluate(game_2)
     assert value_1 == value_2
     _assert_policy_and_rotated_policy_equivalent(action_encoder, policy_1, policy_2)
+
+
+def test_evaluator_training_with_fake_data():
+    board_size = 3
+    max_walls = 0
+    learning_rate = 0.001
+    batch_size = 10
+    optimizer_iterations = 20
+    desired_action = MoveAction((0, 0))
+
+    action_encoder = ActionEncoder(board_size)
+    evaluator = NNEvaluator(action_encoder, my_device())
+
+    game = Quoridor(Board(board_size, max_walls))
+
+    target_policy = np.zeros(action_encoder.num_actions, dtype=np.float32)
+    desired_action_index = action_encoder.action_to_index(desired_action)
+    target_policy[desired_action_index] = 1.0
+
+    replay_buffer = []
+    for _ in range(100):
+        replay_buffer.append({"game": game, "mcts_policy": target_policy, "value": 1.0})
+
+    evaluator.train_network(replay_buffer, learning_rate, batch_size, optimizer_iterations)
+
+    evaluator.evaluate(game)
