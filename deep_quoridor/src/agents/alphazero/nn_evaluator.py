@@ -34,6 +34,8 @@ class NNEvaluator:
         # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
         game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
 
+        self.network.eval()  # Disables dropout
+
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
             unmasked_policy, value = self.network(torch.from_numpy(input_array).float().to(self.device))
@@ -115,6 +117,8 @@ class NNEvaluator:
         return input_array
 
     def train_network(self, replay_buffer, learning_rate, batch_size, optimizer_iterations):
+        self.network.train()  # Make sure we aren't in eval mode, which disables dropout
+
         optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
 
         for _ in range(optimizer_iterations):
