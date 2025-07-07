@@ -20,6 +20,7 @@ def train_dqn(
     step_rewards: bool = True,
     wandb_params: Optional[WandbParams] = None,
     players: list = [],
+    benchmarks: list = [],
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
     trigger_metrics: Optional[tuple[int, int]] = None,
@@ -29,7 +30,9 @@ def train_dqn(
 
     after_save_method = None
     if wandb_params is not None:
-        wandb_plugin = WandbTrainPlugin(wandb_params, total_episodes=total_episodes, agent_encoded_name=players[0])
+        wandb_plugin = WandbTrainPlugin(
+            wandb_params, total_episodes=total_episodes, agent_encoded_name=players[0], benchmarks=benchmarks
+        )
         plugins.append(wandb_plugin)
         after_save_method = wandb_plugin.compute_tournament_metrics
 
@@ -113,6 +116,16 @@ if __name__ == "__main__":
         metavar=("wins", "last_episodes"),
         help="Trigger tournament metrics computation and save the model if there were 'wins' wins in the last 'last_episodes'",
     )
+
+    parser.add_argument(
+        "-b",
+        "--benchmarks",
+        nargs="+",
+        type=player_with_params,
+        default=["random", "simple"],
+        help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
+    )
+
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
@@ -144,6 +157,7 @@ if __name__ == "__main__":
             save_frequency=args.save_frequency,
             step_rewards=args.step_rewards,
             players=args.players,
+            benchmarks=args.benchmarks,
             renderers=renderers,
             wandb_params=wandb_params,
             trigger_metrics=args.trigger_metrics,
