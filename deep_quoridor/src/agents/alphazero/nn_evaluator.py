@@ -115,7 +115,7 @@ class NNEvaluator:
         return input_array
 
     def train_prepare(self, learning_rate, batch_size, optimizer_iterations):
-        assert not hasattr(self, "optimizer") or self.optimizer is None, "prepare_training should be called only once"
+        assert not hasattr(self, "optimizer") or self.optimizer is None, "train_prepare should be called only once"
 
         self.batch_size = batch_size
         self.optimizer_iterations = optimizer_iterations
