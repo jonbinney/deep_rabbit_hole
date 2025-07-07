@@ -123,23 +123,7 @@ class AgentRegistryEntry:
 
 
 class AgentRegistry:
-    agents = {
-        "alphazero": AgentRegistryEntry("AlphaZeroAgent", "agents.alphazero"),
-        "alphazero_os": AgentRegistryEntry("AlphaZeroOSAgent", "agents.alphazero_os"),
-        "cnn": AgentRegistryEntry("CnnAgent", "agents.adapter_based_agents"),
-        "cnn3c": AgentRegistryEntry("Cnn3CAgent", "agents.adapter_based_agents"),
-        "daz": AgentRegistryEntry("DAZAgent", "agents.alphazero_dexp"),
-        "daz_mimic": AgentRegistryEntry("DAZAgent.create_from_trained_instance", ""),
-        "dexp": AgentRegistryEntry("DExpAgent", "agents.dexp"),
-        "dexp_mimic": AgentRegistryEntry("DExpAgent.create_from_trained_instance", ""),
-        "greedy": AgentRegistryEntry("GreedyAgent", "agents.greedy"),
-        "human": AgentRegistryEntry("HumanAgent", "agents.human"),
-        "mcts": AgentRegistryEntry("MCTSAgent", "agents.mcts"),
-        "ndexp": AgentRegistryEntry("NDexpAgent", "agents.adapter_based_agents"),
-        "random": AgentRegistryEntry("RandomAgent", "agents.random"),
-        "simple": AgentRegistryEntry("SimpleAgent", "agents.simple"),
-        "sb3ppo": AgentRegistryEntry("SB3PPOAgent", "agents.sb3_ppo"),
-    }
+    agents = {}
 
     @staticmethod
     def get_agent_class(agent_type: str) -> Type[Agent]:
@@ -191,3 +175,7 @@ class AgentRegistry:
     @staticmethod
     def names():
         return list(AgentRegistry.agents.keys())
+
+    @staticmethod
+    def register(name: str, class_name: str, module_name: str):
+        AgentRegistry.agents[name] = AgentRegistryEntry(class_name, module_name)
