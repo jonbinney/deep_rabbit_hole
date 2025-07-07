@@ -1,5 +1,7 @@
+import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Type
 
 from quoridor import Action
 from utils import parse_subargs
@@ -113,8 +115,41 @@ class Agent(ABC):
         pass
 
 
+@dataclass
+class AgentRegistryEntry:
+    class_name: str
+    module_name: str
+    agent_class: Type[Agent] = None
+
+
 class AgentRegistry:
-    agents = {}
+    agents = {
+        "alphazero": AgentRegistryEntry("AlphaZeroAgent", "agents.alphazero"),
+        "alphazero_os": AgentRegistryEntry("AlphaZeroOSAgent", "agents.alphazero_os"),
+        "cnn": AgentRegistryEntry("CnnAgent", "agents.adapter_based_agents"),
+        "cnn3c": AgentRegistryEntry("Cnn3CAgent", "agents.adapter_based_agents"),
+        "daz": AgentRegistryEntry("DAZAgent", "agents.alphazero_dexp"),
+        "daz_mimic": AgentRegistryEntry("DAZAgent.create_from_trained_instance", ""),
+        "dexp": AgentRegistryEntry("DExpAgent", "agents.dexp"),
+        "dexp_mimic": AgentRegistryEntry("DExpAgent.create_from_trained_instance", ""),
+        "greedy": AgentRegistryEntry("GreedyAgent", "agents.greedy"),
+        "human": AgentRegistryEntry("HumanAgent", "agents.human"),
+        "mcts": AgentRegistryEntry("MCTSAgent", "agents.mcts"),
+        "ndexp": AgentRegistryEntry("NDexpAgent", "agents.adapter_based_agents"),
+        "random": AgentRegistryEntry("RandomAgent", "agents.random"),
+        "simple": AgentRegistryEntry("SimpleAgent", "agents.simple"),
+        "sb3ppo": AgentRegistryEntry("SB3PPOAgent", "agents.sb3_ppo"),
+    }
+
+    @staticmethod
+    def get_agent_class(agent_type: str) -> Type[Agent]:
+        registry_entry = AgentRegistry.agents[agent_type]
+
+        if registry_entry.agent_class is None:
+            agent_module = importlib.import_module(registry_entry.module_name)
+            registry_entry.agent_class = getattr(agent_module, registry_entry.class_name)
+
+        return registry_entry.agent_class
 
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
@@ -126,8 +161,9 @@ class AgentRegistry:
     ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
+        agent_class = AgentRegistry.get_agent_class(agent_type)
         if len(parts) == 2:
-            subargs_class = AgentRegistry.agents[agent_type].params_class()
+            subargs_class = agent_class.params_class()
             if subargs_class is None:
                 raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
@@ -138,7 +174,7 @@ class AgentRegistry:
                 subargs = parse_subargs(parts[1], subargs_class)
             kwargs["params"] = subargs
 
-        return AgentRegistry.agents[agent_type](
+        return agent_class(
             board_size=env.board_size,
             max_walls=env.max_walls,
             observation_space=env.observation_space(None),
@@ -155,7 +191,3 @@ class AgentRegistry:
     @staticmethod
     def names():
         return list(AgentRegistry.agents.keys())
-
-    @staticmethod
-    def register(name: str, agent_class):
-        AgentRegistry.agents[name] = agent_class
