@@ -114,12 +114,19 @@ class NNEvaluator:
 
         return input_array
 
-    def train_network(self, replay_buffer, learning_rate, batch_size, optimizer_iterations):
-        optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
+    def train_prepare(self, learning_rate, batch_size, optimizer_iterations):
+        assert not hasattr(self, "optimizer") or self.optimizer is None, "prepare_training should be called only once"
 
-        for _ in range(optimizer_iterations):
+        self.batch_size = batch_size
+        self.optimizer_iterations = optimizer_iterations
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
+
+    def train_iteration(self, replay_buffer):
+        assert self.optimizer is not None, "Call train_prepare before training"
+
+        for _ in range(self.optimizer_iterations):
             # Sample random batch from replay buffer
-            batch_data = random.sample(list(replay_buffer), batch_size)
+            batch_data = random.sample(list(replay_buffer), self.batch_size)
 
             # Prepare batch tensors
             inputs = []
@@ -158,8 +165,8 @@ class NNEvaluator:
             # print(f"{total_loss.item():3.3f} {policy_loss.item():3.3f} {value_loss.item():3.3f}")
 
             # Backward pass
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             total_loss.backward()
-            optimizer.step()
+            self.optimizer.step()
 
         return {"total_loss": total_loss.item(), "policy_loss": policy_loss.item(), "value_loss": value_loss.item()}

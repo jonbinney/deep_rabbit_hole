@@ -91,6 +91,8 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
         self.mcts = MCTS(params.mcts_n, params.mcts_ucb_c, self.evaluator)
+        if params.training_mode:
+            self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
 
         self.episode_count = 0
 
@@ -171,7 +173,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Train network if we have enough episodes
         if self.episode_count % self.params.train_every == 0:
-            self.train_network()
+            self.train_iteration()
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
         # Return some basic metrics if available
@@ -182,7 +184,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_network(self):
+    def train_iteration(self):
         """Train the neural network on collected data."""
         t0 = time.time()
         print(
@@ -192,9 +194,7 @@ class AlphaZeroAgent(TrainableAgent):
         if len(self.replay_buffer) < self.params.batch_size:
             return
 
-        metrics = self.evaluator.train_network(
-            self.replay_buffer, self.params.learning_rate, self.params.batch_size, self.params.optimizer_iterations
-        )
+        metrics = self.evaluator.train_iteration(self.replay_buffer)
 
         # Store loss for metrics
         self.recent_losses.append(metrics["total_loss"])
