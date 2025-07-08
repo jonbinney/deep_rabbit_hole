@@ -2,7 +2,9 @@ import datetime
 import getpass
 import os
 from dataclasses import asdict, dataclass
+from typing import List
 
+from agents import Agent
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
@@ -37,7 +39,9 @@ class WandbParams(SubargsBase):
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, params: WandbParams, total_episodes: int, agent_encoded_name: str):
+    def __init__(
+        self, params: WandbParams, total_episodes: int, agent_encoded_name: str, benchmarks: List[str | Agent] = []
+    ):
         self.params = params
         self.total_episodes = total_episodes
         self.episode_count = 0
@@ -46,6 +50,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.best_model_filename = None
         # Notice that the best model won't be uploaded if it's not better than the initialization.
         self.best_model_relative_elo = -800
+        self.benchmarks = benchmarks
 
     def _initialize(self, game):
         assert self.agent
@@ -57,7 +62,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
-        self.metrics = Metrics(game.board_size, game.max_walls)
+        self.metrics = Metrics(game.board_size, game.max_walls, self.benchmarks)
 
         self.run = wandb.init(
             project=self.params.project,

@@ -12,10 +12,11 @@ class Metrics:
     Computes metrics for an agent by making it play against other agents.
     """
 
-    def __init__(self, board_size: int, max_walls: int):
+    def __init__(self, board_size: int, max_walls: int, benchmarks: list[str | Agent] = []):
         self.board_size = board_size
         self.max_walls = max_walls
         self.stored_elos = {}
+        self.benchmarks = benchmarks
 
     def _win_perc(self, results: list[GameResult], agent_name: str):
         played = 0
@@ -62,15 +63,19 @@ class Metrics:
         VERSION = 1
         times = 10
 
-        players: list[str | Agent] = [
-            "greedy",
-            "greedy:p_random=0.1,nick=greedy-01",
-            "greedy:p_random=0.3,nick=greedy-03",
-            "greedy:p_random=0.5,nick=greedy-05",
-            "cnn3c:wandb_alias=best,nick=cnn3c",
-            "dexp:wandb_alias=best,nick=dexp",
-            "simple",
-        ]
+        players: list[str | Agent] = (
+            [
+                "greedy",
+                "greedy:p_random=0.1,nick=greedy-01",
+                "greedy:p_random=0.3,nick=greedy-03",
+                "greedy:p_random=0.5,nick=greedy-05",
+                "cnn3c:wandb_alias=best,nick=cnn3c",
+                "dexp:wandb_alias=best,nick=dexp",
+                "simple",
+            ]
+            if self.benchmarks is None
+            else self.benchmarks
+        )
         arena = Arena(self.board_size, self.max_walls, max_steps=200, renderers=[MatchResultsRenderer()])
 
         agent = AgentRegistry.create_from_encoded_name(
