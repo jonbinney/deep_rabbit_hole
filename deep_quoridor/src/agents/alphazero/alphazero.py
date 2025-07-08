@@ -231,7 +231,13 @@ class AlphaZeroAgent(TrainableAgent):
             raise RuntimeError("No nodes visited during MCTS")
 
         visit_probs = visit_counts / visit_counts_sum
-        if self.temperature != 0.0:
+        self._log_action(visit_probs, root_children)
+
+        if self.temperature == 0.0:
+            max_value = np.max(visit_probs)
+            visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
+            visit_probs /= np.sum(visit_probs)
+        else:
             visit_probs = visit_probs ** (1.0 / self.temperature)
             visit_probs = visit_probs / np.sum(visit_probs)
 
@@ -247,8 +253,6 @@ class AlphaZeroAgent(TrainableAgent):
                 action_index = self.action_encoder.action_to_index(child.action_taken)
                 policy_target[action_index] = child.visit_count / visit_counts_sum
             self.store_training_data(game, policy_target, player)
-
-        self._log_action(visit_probs, root_children)
 
         return self.action_encoder.action_to_index(action)
 
