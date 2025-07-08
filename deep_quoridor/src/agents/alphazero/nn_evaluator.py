@@ -119,14 +119,13 @@ class NNEvaluator:
     def train_prepare(self, learning_rate, batch_size, batches_per_iteration, weight_decay: float = 0):
         assert not hasattr(self, "optimizer") or self.optimizer is None, "train_prepare should be called only once"
 
-        self.network.train()  # Make sure we aren't in eval mode, which disables dropout
-
         self.batch_size = batch_size
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     def train_iteration(self, replay_buffer):
         assert self.optimizer is not None, "Call train_prepare before training"
+        self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
         for _ in range(self.batches_per_iteration):
             # Sample random batch from replay buffer
