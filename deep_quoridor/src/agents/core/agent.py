@@ -132,27 +132,16 @@ class AgentRegistry:
 
         if registry_entry.agent_class is None:
             agent_module = importlib.import_module(registry_entry.module_name)
-            fields = registry_entry.class_name.split(".")
+            element_names = registry_entry.class_name.split(".")
 
-            if len(fields) == 1:
-                registry_entry.agent_class = getattr(agent_module, registry_entry.class_name)
+            # If the class_name is heirarchical, e.g. "foo.bar.Baz", then we need to gettatr
+            # the first element, then the second, etc. until we get to Baz.
+            registry_entry.agent_class = getattr(agent_module, element_names[0])
+            for element_name in element_names[1:]:
+                registry_entry.agent_class = getattr(registry_entry.agent_class, element_name)
 
-                if hasattr(registry_entry.agent_class, "params_class"):
-                    registry_entry.params_class = registry_entry.agent_class.params_class()
-
-            elif len(fields) == 2:
-                # Some agents register a static creation member function instead of the class  itself.
-                # Something like FooAgent.create_a_foo which returns a FooAgent when called. We pretend this
-                # creation function is the class, and use it as RegistryEntry.agent_class.
-                class_name = fields[0]
-                creation_function = fields[1]
-                actual_agent_class = getattr(agent_module, class_name)
-                registry_entry.agent_class = registry_entry.agent_class = getattr(actual_agent_class, creation_function)
-
-                if hasattr(actual_agent_class, "params_class"):
-                    registry_entry.params_class = actual_agent_class.params_class()
-            else:
-                raise ValueError(f"Invalid class name for agent: {registry_entry.class_name}")
+            if hasattr(registry_entry.agent_class, "params_class"):
+                registry_entry.params_class = registry_entry.agent_class.params_class()
 
         return registry_entry
 
@@ -176,6 +165,7 @@ class AgentRegistry:
                 subargs = parse_subargs(parts[1], registry_entry.params_class, ignore_fields=args_to_remove)
             else:
                 subargs = parse_subargs(parts[1], registry_entry.params_class)
+
             kwargs["params"] = subargs
 
         return registry_entry.agent_class(
