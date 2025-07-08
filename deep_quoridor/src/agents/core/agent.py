@@ -1,10 +1,10 @@
 import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Type
+from typing import Optional, Type
 
 from quoridor import Action
-from utils import parse_subargs
+from utils import SubargsBase, parse_subargs
 
 
 class ActionLog:
@@ -119,21 +119,42 @@ class Agent(ABC):
 class AgentRegistryEntry:
     class_name: str
     module_name: str
-    agent_class: Type[Agent] = None
+    agent_class: Optional[Type[Agent]] = None
+    params_class: Optional[Type[SubargsBase]] = None
 
 
 class AgentRegistry:
     agents = {}
 
     @staticmethod
-    def get_agent_class(agent_type: str) -> Type[Agent]:
+    def get_registry_entry(agent_type: str) -> AgentRegistryEntry:
         registry_entry = AgentRegistry.agents[agent_type]
 
         if registry_entry.agent_class is None:
             agent_module = importlib.import_module(registry_entry.module_name)
-            registry_entry.agent_class = getattr(agent_module, registry_entry.class_name)
+            fields = registry_entry.class_name.split(".")
 
-        return registry_entry.agent_class
+            if len(fields) == 1:
+                registry_entry.agent_class = getattr(agent_module, registry_entry.class_name)
+
+                if hasattr(registry_entry.agent_class, "params_class"):
+                    registry_entry.params_class = registry_entry.agent_class.params_class()
+
+            elif len(fields) == 2:
+                # Some agents register a static creation member function instead of the class  itself.
+                # Something like FooAgent.create_a_foo which returns a FooAgent when called. We pretend this
+                # creation function is the class, and use it as RegistryEntry.agent_class.
+                class_name = fields[0]
+                creation_function = fields[1]
+                actual_agent_class = getattr(agent_module, class_name)
+                registry_entry.agent_class = registry_entry.agent_class = getattr(actual_agent_class, creation_function)
+
+                if hasattr(actual_agent_class, "params_class"):
+                    registry_entry.params_class = actual_agent_class.params_class()
+            else:
+                raise ValueError(f"Invalid class name for agent: {registry_entry.class_name}")
+
+        return registry_entry
 
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
@@ -145,20 +166,19 @@ class AgentRegistry:
     ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
-        agent_class = AgentRegistry.get_agent_class(agent_type)
+        registry_entry = AgentRegistry.get_registry_entry(agent_type)
         if len(parts) == 2:
-            subargs_class = agent_class.params_class()
-            if subargs_class is None:
+            if registry_entry.params_class is None:
                 raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
             if remove_training_args:
-                args_to_remove = subargs_class.training_only_params().difference(keep_args)
-                subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
+                args_to_remove = registry_entry.agent_class.training_only_params().difference(keep_args)
+                subargs = parse_subargs(parts[1], registry_entry.params_class, ignore_fields=args_to_remove)
             else:
-                subargs = parse_subargs(parts[1], subargs_class)
+                subargs = parse_subargs(parts[1], registry_entry.params_class)
             kwargs["params"] = subargs
 
-        return agent_class(
+        return registry_entry.agent_class(
             board_size=env.board_size,
             max_walls=env.max_walls,
             observation_space=env.observation_space(None),
