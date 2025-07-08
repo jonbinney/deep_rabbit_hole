@@ -292,7 +292,3 @@ class DictFlattenExtractor(FlattenExtractor):
         for v in obs.values():
             thobs = torch.cat((thobs, torch.tensor(v).flatten(start_dim=1)), dim=1)
         return thobs
-
-
-# Register the agent with the registry
-AgentRegistry.register(Agent._friendly_name(SB3PPOAgent.__name__), SB3PPOAgent)

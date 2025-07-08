@@ -62,6 +62,11 @@ class P1024DropoutNetwork(BaseNN):
         for key, value in observation.items():
             if isinstance(value, np.ndarray):
                 flat_obs.extend(value.flatten())
+            elif key == "player_turn":
+                if value == "player_0":
+                    value = 0
+                else:
+                    value = 1
             else:
                 flat_obs.append(value)
         return torch.FloatTensor(flat_obs).to(my_device())

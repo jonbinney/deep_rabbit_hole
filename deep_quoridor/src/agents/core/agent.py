@@ -1,8 +1,10 @@
+import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Optional, Type
 
 from quoridor import Action
-from utils import parse_subargs
+from utils import SubargsBase, parse_subargs
 
 
 class ActionLog:
@@ -113,8 +115,35 @@ class Agent(ABC):
         pass
 
 
+@dataclass
+class AgentRegistryEntry:
+    class_name: str
+    module_name: str
+    agent_class: Optional[Type[Agent]] = None
+    params_class: Optional[Type[SubargsBase]] = None
+
+
 class AgentRegistry:
     agents = {}
+
+    @staticmethod
+    def get_registry_entry(agent_type: str) -> AgentRegistryEntry:
+        registry_entry = AgentRegistry.agents[agent_type]
+
+        if registry_entry.agent_class is None:
+            agent_module = importlib.import_module(registry_entry.module_name)
+            element_names = registry_entry.class_name.split(".")
+
+            # If the class_name is heirarchical, e.g. "foo.bar.Baz", then we need to gettatr
+            # the first element, then the second, etc. until we get to Baz.
+            registry_entry.agent_class = getattr(agent_module, element_names[0])
+            for element_name in element_names[1:]:
+                registry_entry.agent_class = getattr(registry_entry.agent_class, element_name)
+
+            if hasattr(registry_entry.agent_class, "params_class"):
+                registry_entry.params_class = registry_entry.agent_class.params_class()
+
+        return registry_entry
 
     @staticmethod
     def create(friendly_name: str, **kwargs) -> Agent:
@@ -126,19 +155,20 @@ class AgentRegistry:
     ) -> Agent:
         parts = encoded_name.split(":")
         agent_type = parts[0]
+        registry_entry = AgentRegistry.get_registry_entry(agent_type)
         if len(parts) == 2:
-            subargs_class = AgentRegistry.agents[agent_type].params_class()
-            if subargs_class is None:
+            if registry_entry.params_class is None:
                 raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
             if remove_training_args:
-                args_to_remove = subargs_class.training_only_params().difference(keep_args)
-                subargs = parse_subargs(parts[1], subargs_class, ignore_fields=args_to_remove)
+                args_to_remove = registry_entry.agent_class.training_only_params().difference(keep_args)
+                subargs = parse_subargs(parts[1], registry_entry.params_class, ignore_fields=args_to_remove)
             else:
-                subargs = parse_subargs(parts[1], subargs_class)
+                subargs = parse_subargs(parts[1], registry_entry.params_class)
+
             kwargs["params"] = subargs
 
-        return AgentRegistry.agents[agent_type](
+        return registry_entry.agent_class(
             board_size=env.board_size,
             max_walls=env.max_walls,
             observation_space=env.observation_space(None),
@@ -157,5 +187,5 @@ class AgentRegistry:
         return list(AgentRegistry.agents.keys())
 
     @staticmethod
-    def register(name: str, agent_class):
-        AgentRegistry.agents[name] = agent_class
+    def register(name: str, class_name: str, module_name: str):
+        AgentRegistry.agents[name] = AgentRegistryEntry(class_name, module_name)
