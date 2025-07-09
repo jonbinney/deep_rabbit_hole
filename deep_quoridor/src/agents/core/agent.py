@@ -161,7 +161,7 @@ class AgentRegistry:
                 raise ValueError(f"The agent {agent_type} doesn't support subarguments, but '{parts[1]}' was passed")
 
             if remove_training_args:
-                args_to_remove = registry_entry.agent_class.training_only_params().difference(keep_args)
+                args_to_remove = registry_entry.params_class.training_only_params().difference(keep_args)
                 subargs = parse_subargs(parts[1], registry_entry.params_class, ignore_fields=args_to_remove)
             else:
                 subargs = parse_subargs(parts[1], registry_entry.params_class)
