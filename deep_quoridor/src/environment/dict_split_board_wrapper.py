@@ -18,6 +18,7 @@ class DictSplitBoardWrapper(BaseWrapper):
         """Transform the observation for the given agent."""
         obs = self.env.observe(agent)
         observation = obs["observation"].copy()
+        observation.pop("player_turn")
         board = observation.pop("board")
 
         # Create one-hot representations for player and opponent

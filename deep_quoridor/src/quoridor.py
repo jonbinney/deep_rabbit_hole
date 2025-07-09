@@ -341,6 +341,9 @@ class Quoridor:
     def create_new(self):
         return Quoridor(self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows)
 
+    def copy(self):
+        return copy.deepcopy(self)
+
     def rotate_board(self):
         """
         Rotates the board, but leaves the current player the same.
