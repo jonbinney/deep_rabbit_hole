@@ -67,7 +67,14 @@ class AlphaZeroParams(SubargsBase):
         Returns a set of parameters that are used only during training.
         These parameters should not be used during playing.
         """
-        return {"train_every", "learning_rate", "optimizer_iterations", "batch_size", "replay_buffer_size"}
+        return {
+            "training_mode",
+            "train_every",
+            "learning_rate",
+            "optimizer_iterations",
+            "batch_size",
+            "replay_buffer_size",
+        }
 
 
 class AlphaZeroAgent(TrainableAgent):
@@ -202,8 +209,6 @@ class AlphaZeroAgent(TrainableAgent):
             self.recent_losses = self.recent_losses[-100:]
 
         print(f"done in {time.time() - t0:.2f}s")
-        dumb_score = self.metrics.dumb_score(self)
-        print(f"Dumb score: {dumb_score}")
 
     def _log_action(
         self,
