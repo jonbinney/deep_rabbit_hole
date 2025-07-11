@@ -38,7 +38,8 @@ class NNEvaluator:
 
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
-            unmasked_policy, value = self.network(torch.from_numpy(input_array).float().to(self.device))
+            unmasked_policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
+            unmasked_policy = F.softmax(unmasked_policy_logits, dim=-1)
             unmasked_policy = unmasked_policy.cpu().numpy()
             value = value.item()
 
@@ -159,10 +160,10 @@ class NNEvaluator:
                 raise ValueError("NaN in training data")
 
             # Forward pass
-            pred_policies, pred_values = self.network(inputs)
+            pred_logits, pred_values = self.network(inputs)
 
             # Compute losses
-            policy_loss = F.cross_entropy(pred_policies, target_policies, reduction="mean")
+            policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
             value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
             total_loss = policy_loss + value_loss
             # print(f"{total_loss.item():3.3f} {policy_loss.item():3.3f} {value_loss.item():3.3f}")
