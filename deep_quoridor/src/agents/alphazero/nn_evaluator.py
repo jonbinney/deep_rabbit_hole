@@ -36,27 +36,21 @@ class NNEvaluator:
 
         self.network.eval()  # Disables dropout
 
+        valid_actions = game.get_valid_actions()
+        valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
+
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
             unmasked_policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
-            unmasked_policy = F.softmax(unmasked_policy_logits, dim=-1)
-            unmasked_policy = unmasked_policy.cpu().numpy()
+            unmasked_policy_logits = unmasked_policy_logits.cpu().numpy()
+
+            # Set logits of invalid actions to negative infinity to ensure they are never chosen
+            # TODO: Mask entirely in Torch to avoid going to Numpy and back
+            masked_logits = np.full_like(unmasked_policy_logits, -np.inf)
+            masked_logits[valid_action_indices] = unmasked_policy_logits[valid_action_indices]
+
+            policy_masked = F.softmax(torch.from_numpy(masked_logits), dim=-1).cpu().numpy()
             value = value.item()
-
-        # Mask the policy to ignore invalid actions. NOTE: Game is already rotated so the valid actions will be rotated too
-        valid_actions = game.get_valid_actions()
-        valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        policy_masked = np.zeros_like(unmasked_policy)
-        policy_masked[valid_action_indices] = unmasked_policy[valid_action_indices]
-
-        if np.all(policy_masked == 0):
-            # If the policy ends up as all zeros after masking, turn it into a uniform distribution among
-            # the valid actions.
-            policy_masked[valid_action_indices] = 1 / len(valid_action_indices)
-            print("Policy is all zeros after masking, turning it into a uniform distribution")
-        else:
-            # Otherwise, just renormalize after masking
-            policy_masked = policy_masked / policy_masked.sum()
 
         # Sanity checks
         assert np.all(policy_masked >= 0), "Policy contains negative probabilities"
@@ -161,6 +155,7 @@ class NNEvaluator:
 
             # Forward pass
             pred_logits, pred_values = self.network(inputs)
+            # TODO: Should we apply masking before calculating cross-entropy here?
 
             # Compute losses
             policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
