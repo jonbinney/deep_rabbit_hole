@@ -9,6 +9,8 @@ from quoridor import ActionEncoder, Board, Player, Quoridor
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.core.rotation import create_rotation_mapping
 
+INVALID_ACTION_VALUE = -1e32
+
 
 class NNEvaluator:
     def __init__(
@@ -47,7 +49,8 @@ class NNEvaluator:
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
             policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
-            policy_logits[invalid_mask] = -1e32
+            assert torch.isfinite(policy_logits).all(), "Policy logits contains non-finite values"
+            policy_logits[invalid_mask] = INVALID_ACTION_VALUE
             policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
             value = value.item()
 
