@@ -36,20 +36,19 @@ class NNEvaluator:
 
         self.network.eval()  # Disables dropout
 
+        # Prepare a tensor with True only on INVALID action positions so that we can set those values to
+        # a large negative number below, to discourage choosing them.
         valid_actions = game.get_valid_actions()
         valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
+        valid_indices_tensor = torch.tensor(valid_action_indices, device=self.device)
+        invalid_mask = torch.ones(self.action_encoder.num_actions, dtype=torch.bool, device=self.device)
+        invalid_mask[valid_indices_tensor] = False
 
         with torch.no_grad():
             input_array = self.game_to_input_array(game)
-            unmasked_policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
-            unmasked_policy_logits = unmasked_policy_logits.cpu().numpy()
-
-            # Set logits of invalid actions to negative infinity to ensure they are never chosen
-            # TODO: Mask entirely in Torch to avoid going to Numpy and back
-            masked_logits = np.full_like(unmasked_policy_logits, -np.inf)
-            masked_logits[valid_action_indices] = unmasked_policy_logits[valid_action_indices]
-
-            policy_masked = F.softmax(torch.from_numpy(masked_logits), dim=-1).cpu().numpy()
+            policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
+            policy_logits[invalid_mask] = -1e32
+            policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
             value = value.item()
 
         # Sanity checks
@@ -137,7 +136,8 @@ class NNEvaluator:
             target_values = []
 
             for data in batch_data:
-                game, is_rotated = self.rotate_if_needed_to_point_downwards(data["game"])
+                game = data["game"]
+                game, is_rotated = self.rotate_if_needed_to_point_downwards(game)
                 inputs.append(torch.from_numpy(self.game_to_input_array(game)))
                 if is_rotated:
                     mcts_policy = data["mcts_policy"][self.action_mapping_original_to_rotated]
