@@ -73,7 +73,8 @@ def test_evaluator_training_with_fake_data():
     learning_rate = 0.001
     batch_size = 10
     optimizer_iterations = 20
-    desired_action = MoveAction((0, 0))
+    target_action = MoveAction((0, 0))
+    target_value = 1.0
 
     action_encoder = ActionEncoder(board_size)
     evaluator = NNEvaluator(action_encoder, my_device())
@@ -81,13 +82,17 @@ def test_evaluator_training_with_fake_data():
     game = Quoridor(Board(board_size, max_walls))
 
     target_policy = np.zeros(action_encoder.num_actions, dtype=np.float32)
-    desired_action_index = action_encoder.action_to_index(desired_action)
+    desired_action_index = action_encoder.action_to_index(target_action)
     target_policy[desired_action_index] = 1.0
 
     replay_buffer = []
     for _ in range(100):
         replay_buffer.append({"game": game, "mcts_policy": target_policy, "value": 1.0})
 
-    evaluator.train_network(replay_buffer, learning_rate, batch_size, optimizer_iterations)
+    evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations)
+    training_stats = evaluator.train_iteration(replay_buffer)
 
-    evaluator.evaluate(game)
+    value, policy = evaluator.evaluate(game)
+    assert np.abs(value - target_value) < 1e-3
+    assert (np.abs(policy - target_policy) < 1e-3).all()
+    assert training_stats["total_loss"] < 1e-3
