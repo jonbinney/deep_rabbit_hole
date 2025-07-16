@@ -265,8 +265,8 @@ class AlphaZeroAgent(TrainableAgent):
         """Store training data for later use in training."""
         self.replay_buffer.append(
             {
-                "game": copy.deepcopy(game),
-                "mcts_policy": mcts_policy.copy(),
+                "game": game,
+                "mcts_policy": mcts_policy,
                 "value": None,  # Will be filled in at end of episode
                 "player": player,
             }
