@@ -1,4 +1,3 @@
-import copy
 import random
 
 import numpy as np
@@ -81,7 +80,7 @@ class NNEvaluator:
 
         is_rotated = True if (player == Player.TWO) else False
         if is_rotated:
-            game = copy.deepcopy(game)
+            game = game.create_new()
             game.rotate_board()
 
         return game, is_rotated

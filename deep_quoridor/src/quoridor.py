@@ -339,7 +339,9 @@ class Quoridor:
         self._rotated = rotated
 
     def create_new(self):
-        return Quoridor(self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows)
+        return Quoridor(
+            self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows, self._rotated
+        )
 
     def copy(self):
         return copy.deepcopy(self)

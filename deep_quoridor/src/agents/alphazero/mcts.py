@@ -39,7 +39,7 @@ class Node:
         if self._game is None:
             assert self.parent is not None, "The root node should have a non-None game attribute"
             assert self.action_taken is not None, "The root node should have a non-None action_taken attribute"
-            self._game = copy.deepcopy(self.parent.game)
+            self._game = self.parent.game.create_new()
             self._game.step(self.action_taken)
 
         return self._game
