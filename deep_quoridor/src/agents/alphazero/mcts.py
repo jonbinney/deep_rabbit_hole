@@ -1,8 +1,7 @@
-import copy
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, ActionEncoder, Quoridor
+from quoridor import Action, Quoridor
 
 
 class Node:
@@ -68,6 +67,15 @@ class Node:
         child_ucbs = self.get_child_ucbs()
         child_i = np.argmax(child_ucbs)
         return self.children[child_i]
+
+    def get_child_ucb(self, child: "Node") -> float:
+        """
+        Calculate the UCB value for a child node.
+        """
+        if child.visit_count == 0:
+            return float("inf")
+        q_value = (child.value_sum / child.visit_count + 1) / 2
+        return q_value + self.ucb_c * child.prior * np.sqrt(self.visit_count) / (child.visit_count + 1)
 
     def get_child_ucbs(self):
         visit_counts = np.array([child.visit_count for child in self.children])
