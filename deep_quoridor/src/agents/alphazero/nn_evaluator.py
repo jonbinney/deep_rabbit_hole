@@ -38,7 +38,8 @@ class NNEvaluator:
         return self.evaluate_tensors(input_array, is_board_rotated, action_mask)
 
     def evaluate_tensors(self, input_array: np.ndarray, is_board_rotated: bool, action_mask: np.ndarray):
-        self.network.eval()  # Disables dropout
+        if self.network.training:
+            self.network.eval()  # Disables dropout
 
         with torch.no_grad():
             policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
@@ -121,7 +122,8 @@ class NNEvaluator:
 
     def train_iteration(self, replay_buffer):
         assert self.optimizer is not None, "Call train_prepare before training"
-        self.network.train()  # Make sure we aren't in eval mode, which disables dropout
+        if not self.network.training:
+            self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
         for _ in range(self.batches_per_iteration):
             # Sample random batch from replay buffer
