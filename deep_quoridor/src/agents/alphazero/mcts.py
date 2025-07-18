@@ -75,13 +75,6 @@ class Node:
         if child.visit_count != 0:
             q_value = (child.value_sum / child.visit_count + 1) / 2
         return q_value + child.prior * precomputed / (child.visit_count + 1)
-        """
-        Calculate the UCB value for a child node.
-        """
-        q_value = 0.5
-        if child.visit_count != 0:
-            q_value = (child.value_sum / child.visit_count + 1) / 2
-        return q_value + self.ucb_c * child.prior * np.sqrt(self.visit_count) / (child.visit_count + 1)
 
     def backpropagate(self, value: float):
         """
