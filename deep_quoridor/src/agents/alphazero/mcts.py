@@ -51,12 +51,9 @@ class Node:
         Create all the children of the current node.
         """
         for action_index, prob in enumerate(priors):
-            if prob < 0.0 or prob > 1.0:
-                raise ValueError("Invalid action probability in policy")
-
-            action = self.game.action_encoder.index_to_action(action_index)
-
+            assert 0.0 <= prob <= 1.0, "Invalid action probability in policy"
             if prob > 0.0:
+                action = self.game.action_encoder.index_to_action(action_index)
                 child = Node(game=None, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
                 self.children.append(child)
 
