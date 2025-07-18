@@ -355,7 +355,6 @@ class Quoridor:
         self.board.rotate_board()
         self._goal_rows = self._goal_rows[::-1]
         self._rotated = not self._rotated
-        return self
 
     def step(self, action: Action, validate: bool = True):
         """
