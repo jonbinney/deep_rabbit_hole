@@ -1,8 +1,7 @@
-import copy
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, ActionEncoder, Quoridor
+from quoridor import Action, Quoridor
 
 
 class Node:
@@ -65,19 +64,16 @@ class Node:
         """
         Return the child of the current node with the highest ucb
         """
-        child_ucbs = self.get_child_ucbs()
-        child_i = np.argmax(child_ucbs)
-        return self.children[child_i]
+        return max(self.children, key=self.get_child_ucb)
 
-    def get_child_ucbs(self):
-        visit_counts = np.array([child.visit_count for child in self.children])
-        value_sums = np.array([child.value_sum for child in self.children])
-        priors = np.array([child.prior for child in self.children])
-
-        # value_sum is in between -1 and 1, so doing (avg + 1) / 2 would make it in the range [0, 1]
-        q_values = (np.divide(value_sums, visit_counts, where=visit_counts != 0) + 1) / 2
-
-        return q_values + self.ucb_c * priors * np.sqrt(self.visit_count) / (visit_counts + 1)
+    def get_child_ucb(self, child: "Node") -> float:
+        """
+        Calculate the UCB value for a child node.
+        """
+        q_value = 0.5
+        if child.visit_count != 0:
+            q_value = (child.value_sum / child.visit_count + 1) / 2
+        return q_value + self.ucb_c * child.prior * np.sqrt(self.visit_count) / (child.visit_count + 1)
 
     def backpropagate(self, value: float):
         """
