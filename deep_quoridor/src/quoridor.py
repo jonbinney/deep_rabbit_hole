@@ -409,7 +409,23 @@ class Quoridor:
 
         return is_valid
 
+    def get_action_mask(self, player: Optional[Player] = None):
+        """
+        Get a mask of valid actions for the current player.
+        """
+        action_mask = np.zeros(self.action_encoder.num_actions, dtype=bool)
+        move_actions = self.get_valid_move_actions_vector(player)
+        wall_actions = self.get_valid_wall_actions_vector(player)
+        action_mask[: self.action_encoder.board_size**2] = move_actions
+        action_mask[self.action_encoder.board_size**2 :] = wall_actions
+        return action_mask
+
     def get_valid_move_actions(self, player: Optional[Player] = None) -> list[MoveAction]:
+        action_mask = self.get_valid_move_actions_vector(player)
+        actions = [self.action_encoder.index_to_action(action_i) for action_i in np.flatnonzero(action_mask)]
+        return actions
+
+    def get_valid_move_actions_vector(self, player: Optional[Player] = None) -> list[MoveAction]:
         if player is None:
             player = self.get_current_player()
 
@@ -420,10 +436,17 @@ class Quoridor:
             int(player),
             action_mask,
         )
-        actions = [self.action_encoder.index_to_action(action_i) for action_i in np.flatnonzero(action_mask)]
-        return actions
+        return action_mask
 
     def get_valid_wall_actions(self, player: Optional[Player] = None) -> list[WallAction]:
+        action_mask = self.get_valid_wall_actions_vector(player)
+        actions = [
+            self.action_encoder.index_to_action(self.action_encoder.board_size**2 + action_i)
+            for action_i in np.flatnonzero(action_mask)
+        ]
+        return actions
+
+    def get_valid_wall_actions_vector(self, player: Optional[Player] = None) -> list[WallAction]:
         if player is None:
             player = self.get_current_player()
 
@@ -436,11 +459,7 @@ class Quoridor:
             int(player),
             action_mask,
         )
-        actions = [
-            self.action_encoder.index_to_action(self.action_encoder.board_size**2 + action_i)
-            for action_i in np.flatnonzero(action_mask)
-        ]
-        return actions
+        return action_mask
 
     def get_valid_actions(self, player: Optional[Player] = None) -> Sequence[Action]:
         return self.get_valid_move_actions(player) + self.get_valid_wall_actions(player)
