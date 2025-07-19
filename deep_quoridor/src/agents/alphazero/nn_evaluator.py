@@ -32,24 +32,17 @@ class NNEvaluator:
         )
 
     def evaluate(self, game: Quoridor):
-        # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
         game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
+        input_array = self.game_to_input_array(game)
+        action_mask = torch.from_numpy(game.get_action_mask()).to(torch.float32).to(self.device)
 
-        self.network.eval()  # Disables dropout
-
-        # Prepare a tensor with True only on INVALID action positions so that we can set those values to
-        # a large negative number below, to discourage choosing them.
-        valid_actions = game.get_valid_actions()
-        valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-        valid_indices_tensor = torch.tensor(valid_action_indices, device=self.device)
-        invalid_mask = torch.ones(self.action_encoder.num_actions, dtype=torch.bool, device=self.device)
-        invalid_mask[valid_indices_tensor] = False
+        if self.network.training:
+            self.network.eval()  # Disables dropout
 
         with torch.no_grad():
-            input_array = self.game_to_input_array(game)
             policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
             assert torch.isfinite(policy_logits).all(), "Policy logits contains non-finite values"
-            policy_logits[invalid_mask] = INVALID_ACTION_VALUE
+            policy_logits = policy_logits * action_mask + INVALID_ACTION_VALUE * (1 - action_mask)
             policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
             value = value.item()
 
@@ -64,6 +57,12 @@ class NNEvaluator:
             policy_masked = policy_masked[self.action_mapping_rotated_to_original]
 
         return value, policy_masked
+
+    def rotate_policy_from_original(self, policy: np.ndarray):
+        """
+        Rotate the policy vector to match the current player's perspective.
+        """
+        return policy[self.action_mapping_original_to_rotated]
 
     def rotate_if_needed_to_point_downwards(self, game: Quoridor):
         """
@@ -121,7 +120,8 @@ class NNEvaluator:
 
     def train_iteration(self, replay_buffer):
         assert self.optimizer is not None, "Call train_prepare before training"
-        self.network.train()  # Make sure we aren't in eval mode, which disables dropout
+        if not self.network.training:
+            self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
         for _ in range(self.batches_per_iteration):
             # Sample random batch from replay buffer
@@ -138,22 +138,17 @@ class NNEvaluator:
             target_values = []
 
             for data in batch_data:
-                game = data["game"]
-                game, is_rotated = self.rotate_if_needed_to_point_downwards(game)
-                inputs.append(torch.from_numpy(self.game_to_input_array(game)))
-                if is_rotated:
-                    mcts_policy = data["mcts_policy"][self.action_mapping_original_to_rotated]
-                else:
-                    mcts_policy = data["mcts_policy"]
-                target_policies.append(torch.FloatTensor(mcts_policy))
+                inputs.append(torch.from_numpy(data["input_array"]))
+                target_policies.append(torch.FloatTensor(data["mcts_policy"]))
                 target_values.append(torch.FloatTensor([data["value"]]))
 
             inputs = torch.stack(inputs).to(self.device)
             target_policies = torch.stack(target_policies).to(self.device)
             target_values = torch.stack(target_values).to(self.device)
 
-            if inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any():
-                raise ValueError("NaN in training data")
+            assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
+                "NaN in training data"
+            )
 
             # Forward pass
             pred_logits, pred_values = self.network(inputs)

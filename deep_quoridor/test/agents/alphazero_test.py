@@ -84,7 +84,9 @@ def test_evaluator_training_with_deterministic_policy():
 
     replay_buffer = []
     for _ in range(100):
-        replay_buffer.append({"game": game, "mcts_policy": target_policy, "value": 1.0})
+        replay_buffer.append(
+            {"input_array": evaluator.game_to_input_array(game), "mcts_policy": target_policy, "value": 1.0}
+        )
 
     evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations)
     training_stats = evaluator.train_iteration(replay_buffer)
@@ -113,7 +115,9 @@ def test_evaluator_training_with_probabilistic_policy():
 
     replay_buffer = []
     for _ in range(100):
-        replay_buffer.append({"game": game, "mcts_policy": target_policy, "value": 1.0})
+        replay_buffer.append(
+            {"input_array": evaluator.game_to_input_array(game), "mcts_policy": target_policy, "value": 1.0}
+        )
 
     evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations)
     training_stats = evaluator.train_iteration(replay_buffer)

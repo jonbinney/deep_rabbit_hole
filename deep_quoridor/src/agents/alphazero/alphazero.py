@@ -1,4 +1,3 @@
-import copy
 import os
 import time
 from collections import deque
@@ -8,11 +7,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
+import wandb
 from quoridor import ActionEncoder, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
-import wandb
 from agents.alphazero.mcts import MCTS
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core import TrainableAgent
@@ -263,9 +262,13 @@ class AlphaZeroAgent(TrainableAgent):
 
     def store_training_data(self, game, mcts_policy, player):
         """Store training data for later use in training."""
+        game, is_rotated = self.evaluator.rotate_if_needed_to_point_downwards(game)
+        input_array = self.evaluator.game_to_input_array(game)
+        if is_rotated:
+            mcts_policy = self.evaluator.rotate_policy_from_original(mcts_policy)
         self.replay_buffer.append(
             {
-                "game": game,
+                "input_array": input_array,
                 "mcts_policy": mcts_policy,
                 "value": None,  # Will be filled in at end of episode
                 "player": player,

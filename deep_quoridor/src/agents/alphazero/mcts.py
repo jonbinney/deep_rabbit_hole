@@ -51,12 +51,9 @@ class Node:
         Create all the children of the current node.
         """
         for action_index, prob in enumerate(priors):
-            if prob < 0.0 or prob > 1.0:
-                raise ValueError("Invalid action probability in policy")
-
-            action = self.game.action_encoder.index_to_action(action_index)
-
+            assert 0.0 <= prob <= 1.0, "Invalid action probability in policy"
             if prob > 0.0:
+                action = self.game.action_encoder.index_to_action(action_index)
                 child = Node(game=None, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
                 self.children.append(child)
 
@@ -64,16 +61,18 @@ class Node:
         """
         Return the child of the current node with the highest ucb
         """
-        return max(self.children, key=self.get_child_ucb)
+        ucbc_visitcount = self.ucb_c * np.sqrt(self.visit_count)
 
-    def get_child_ucb(self, child: "Node") -> float:
-        """
-        Calculate the UCB value for a child node.
-        """
-        q_value = 0.5
-        if child.visit_count != 0:
-            q_value = (child.value_sum / child.visit_count + 1) / 2
-        return q_value + self.ucb_c * child.prior * np.sqrt(self.visit_count) / (child.visit_count + 1)
+        def get_child_ucb(child: "Node") -> float:
+            """
+            Calculate the UCB value for a child node.
+            """
+            q_value = 0.5
+            if child.visit_count != 0:
+                q_value = (child.value_sum / child.visit_count + 1) / 2
+            return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1)
+
+        return max(self.children, key=get_child_ucb)
 
     def backpropagate(self, value: float):
         """
