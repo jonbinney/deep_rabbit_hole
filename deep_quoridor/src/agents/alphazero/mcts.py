@@ -61,17 +61,18 @@ class Node:
         """
         Return the child of the current node with the highest ucb
         """
-        precomputed = self.ucb_c * np.sqrt(self.visit_count)
-        return max(self.children, key=lambda child: self.get_child_ucb(child, precomputed))
+        ucbc_visitcount = self.ucb_c * np.sqrt(self.visit_count)
 
-    def get_child_ucb(self, child: "Node", precomputed: float) -> float:
-        """
-        Calculate the UCB value for a child node.
-        """
-        q_value = 0.5
-        if child.visit_count != 0:
-            q_value = (child.value_sum / child.visit_count + 1) / 2
-        return q_value + child.prior * precomputed / (child.visit_count + 1)
+        def get_child_ucb(child: "Node") -> float:
+            """
+            Calculate the UCB value for a child node.
+            """
+            q_value = 0.5
+            if child.visit_count != 0:
+                q_value = (child.value_sum / child.visit_count + 1) / 2
+            return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1)
+
+        return max(self.children, key=get_child_ucb)
 
     def backpropagate(self, value: float):
         """

@@ -34,10 +34,8 @@ class NNEvaluator:
     def evaluate(self, game: Quoridor):
         game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
         input_array = self.game_to_input_array(game)
-        action_mask = torch.from_numpy(game.get_action_mask()).float().to(self.device)
-        return self.evaluate_tensors(input_array, is_board_rotated, action_mask)
+        action_mask = torch.from_numpy(game.get_action_mask()).to(torch.float32).to(self.device)
 
-    def evaluate_tensors(self, input_array: np.ndarray, is_board_rotated: bool, action_mask: np.ndarray):
         if self.network.training:
             self.network.eval()  # Disables dropout
 
