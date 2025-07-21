@@ -67,6 +67,7 @@ class ActionEncoder:
     def __deepcopy__(self, memo):
         return self
 
+    @cache
     def action_to_index(self, action) -> int:
         """
         Converts an action object to an action index
@@ -356,7 +357,7 @@ class Quoridor:
         self._goal_rows = self._goal_rows[::-1]
         self._rotated = not self._rotated
 
-    def step(self, action: Action, validate: bool = True):
+    def step(self, action: Action, validate: bool = False):
         """
         Execute the given action and update the game state.
 
@@ -413,7 +414,7 @@ class Quoridor:
         """
         Get a mask of valid actions for the current player.
         """
-        action_mask = np.zeros(self.action_encoder.num_actions, dtype=bool)
+        action_mask = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
         move_actions = self.get_valid_move_actions_vector(player)
         wall_actions = self.get_valid_wall_actions_vector(player)
         action_mask[: self.action_encoder.board_size**2] = move_actions

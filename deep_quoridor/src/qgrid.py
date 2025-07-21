@@ -401,14 +401,16 @@ def compute_move_action_mask(
 
     assert action_mask.shape == (board_size**2,)
 
-    for k in range(len(action_mask)):
-        action_mask[k] = 0
+    # for k in range(len(action_mask)):
+    #    action_mask[k] = 0
 
+    max_row = min(player_positions[current_player][0] + 3, board_size)
+    col_range = range(
+        max(player_positions[current_player][1] - 2, 0), min(player_positions[current_player][1] + 3, board_size)
+    )
     # Check all possible moves
-    for delta_row in np.arange(-2, 3):
-        for delta_col in np.arange(-2, 3):
-            destination_row = player_positions[current_player][0] + delta_row
-            destination_col = player_positions[current_player][1] + delta_col
+    for destination_row in range(max(player_positions[current_player][0] - 2, 0), max_row):
+        for destination_col in col_range:
             if is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col):
                 action_mask[destination_row * board_size + destination_col] = 1
 
@@ -430,9 +432,11 @@ def compute_wall_action_mask(
 
     assert action_mask.shape == (2 * wall_size**2,)
 
-    for k in range(len(action_mask)):
-        action_mask[k] = 0
+    # for k in range(len(action_mask)):
+    #    action_mask[k] = 0
 
+    if walls_remaining[current_player] <= 0:
+        return action_mask
     for wall_row in range(wall_size):
         for wall_col in range(wall_size):
             if is_wall_action_valid(

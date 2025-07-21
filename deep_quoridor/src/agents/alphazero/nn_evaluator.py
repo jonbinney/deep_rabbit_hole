@@ -33,18 +33,16 @@ class NNEvaluator:
 
     def evaluate(self, game: Quoridor):
         game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
-        input_array = self.game_to_input_array(game)
-        action_mask = torch.from_numpy(game.get_action_mask()).to(torch.float32).to(self.device)
 
         if self.network.training:
             self.network.eval()  # Disables dropout
 
         with torch.no_grad():
-            policy_logits, value = self.network(torch.from_numpy(input_array).float().to(self.device))
+            action_mask = torch.from_numpy(game.get_action_mask()).to(device=self.device)
+            policy_logits, value = self.network(torch.from_numpy(self.game_to_input_array(game)).to(device=self.device))
             assert torch.isfinite(policy_logits).all(), "Policy logits contains non-finite values"
             policy_logits = policy_logits * action_mask + INVALID_ACTION_VALUE * (1 - action_mask)
             policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
-            value = value.item()
 
         # Sanity checks
         assert np.all(policy_masked >= 0), "Policy contains negative probabilities"
@@ -56,7 +54,7 @@ class NNEvaluator:
         if is_board_rotated:
             policy_masked = policy_masked[self.action_mapping_rotated_to_original]
 
-        return value, policy_masked
+        return value.item(), policy_masked
 
     def rotate_policy_from_original(self, policy: np.ndarray):
         """

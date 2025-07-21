@@ -22,7 +22,7 @@ class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
     # After how many self play games we train the network
-    train_every: int = 10
+    train_every: int = 1
 
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
@@ -162,18 +162,22 @@ class AlphaZeroAgent(TrainableAgent):
     def end_game(self, env):
         if not self.params.training_mode:
             return
+        if env.winner() is None:
+            # if the game ended in a draw, we drop the match
+            while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
+                self.replay_buffer.pop()
+        else:
+            # Assign the final game outcome to all positions in this episode
+            # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
+            episode_positions = []
+            while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
+                position = self.replay_buffer.pop()
+                agent = env.player_to_agent[position["player"]]
+                position["value"] = env.rewards[agent]
+                episode_positions.append(position)
 
-        # Assign the final game outcome to all positions in this episode
-        # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
-        episode_positions = []
-        while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
-            position = self.replay_buffer.pop()
-            agent = env.player_to_agent[position["player"]]
-            position["value"] = env.rewards[agent]
-            episode_positions.append(position)
-
-        # Add back the positions with assigned values
-        self.replay_buffer.extend(reversed(episode_positions))
+            # Add back the positions with assigned values
+            self.replay_buffer.extend(reversed(episode_positions))
 
         self.episode_count += 1
 
@@ -192,13 +196,13 @@ class AlphaZeroAgent(TrainableAgent):
 
     def train_iteration(self):
         """Train the neural network on collected data."""
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
             end="",
         )
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
 
         metrics = self.evaluator.train_iteration(self.replay_buffer)
 
