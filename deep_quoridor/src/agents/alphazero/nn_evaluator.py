@@ -48,7 +48,8 @@ class NNEvaluator:
         )
 
     def evaluate_batch(self, games: list[Quoridor]):
-        self.network.eval()  # Disables dropout
+        if self.network.training:
+            self.network.eval()  # Disables dropout
 
         inputs = []
         rotation_flags = []
@@ -58,36 +59,41 @@ class NNEvaluator:
             game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
             inputs.append(self.game_to_input_array(game))
             rotation_flags.append(is_board_rotated)
-
-            valid_actions = game.get_valid_actions()
-            valid_action_indices = [self.action_encoder.action_to_index(action) for action in valid_actions]
-            valid_indices_tensor = torch.tensor(valid_action_indices, device=self.device)
-            invalid_mask = torch.ones(self.action_encoder.num_actions, dtype=torch.bool, device=self.device)
-            invalid_mask[valid_indices_tensor] = False
-            action_masks.append(invalid_mask)
+            action_masks.append(game.get_action_mask())
         inputs_tensor = torch.Tensor(np.stack(inputs)).to(self.device).float()
-        action_masks_tensor = torch.Tensor(np.stack[action_masks]).to(torch.float32).to(self.device)
+        action_masks_tensor = torch.Tensor(np.stack(action_masks)).to(torch.float32).to(self.device)
 
         # Run the network on the entire batch
         with torch.no_grad():
             policy_logits_tensor, values_tensor = self.network(inputs_tensor)
 
-        # Leave the policy tensors on the device while we mask and softmax
         assert torch.isfinite(policy_logits_tensor).all(), "Policy logits contains non-finite values"
-        policy_logits_tensor[action_masks_tensor] = INVALID_ACTION_VALUE
-        normalized_policy_tensor = F.softmax(policy_logits_tensor, dim=-1)
+
+        # Leave the policy tensors on the device while we mask and softmax
+        masked_policy_logits_tensor = policy_logits_tensor * action_masks_tensor + INVALID_ACTION_VALUE * (
+            1 - action_masks_tensor
+        )
+        policies_tensor = F.softmax(masked_policy_logits_tensor, dim=-1)
 
         # Transfer policies and values back to CPU and turn them into arrays
-        policy_logits_array = policy_logits_tensor.cpu().numpy()
-        values_array = values_tensor.cpu().numpy()
+        policies_array = policies_tensor.cpu().numpy()
+        values_array = values_tensor.cpu().flatten().numpy()
 
-        # Prepare a tensor with True only on INVALID action positions so that we can set those values to
-        # a large negative number below, to discourage choosing them.
+        assert np.all(policies_array >= 0), "Policy contains negative probabilities"
+        assert np.all(policies_array <= 1), "Policy contains probabilities greater than 1"
+        assert np.any(policies_array > 0), "Policy is all zeros"
+
+        # Convert array of policies into list of policies, and rotate them back
+        # if the board was rotated.
+        policies = []
         for game_i in range(len(games)):
-            policy_logit = policy_
-
             is_board_rotated = rotation_flags[game_i]
-            if is_board_rotated
+            policy = policies_array[game_i]
+            if is_board_rotated:
+                policy = self.rotate_policy_from_original(policy)
+            policies.append(policy)
+
+        return values_array, policies
 
     def evaluate(self, game: Quoridor):
         game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
