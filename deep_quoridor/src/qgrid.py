@@ -401,15 +401,13 @@ def compute_move_action_mask(
 
     assert action_mask.shape == (board_size**2,)
 
-    # for k in range(len(action_mask)):
-    #    action_mask[k] = 0
-
-    max_row = min(player_positions[current_player][0] + 3, board_size)
     col_range = range(
         max(player_positions[current_player][1] - 2, 0), min(player_positions[current_player][1] + 3, board_size)
     )
     # Check all possible moves
-    for destination_row in range(max(player_positions[current_player][0] - 2, 0), max_row):
+    for destination_row in range(
+        max(player_positions[current_player][0] - 2, 0), min(player_positions[current_player][0] + 3, board_size)
+    ):
         for destination_col in col_range:
             if is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col):
                 action_mask[destination_row * board_size + destination_col] = 1

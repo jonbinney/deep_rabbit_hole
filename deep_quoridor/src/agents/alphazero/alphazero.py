@@ -22,7 +22,7 @@ class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
     # After how many self play games we train the network
-    train_every: int = 1
+    train_every: int = 10
 
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001

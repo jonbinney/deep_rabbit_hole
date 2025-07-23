@@ -67,7 +67,6 @@ class ActionEncoder:
     def __deepcopy__(self, memo):
         return self
 
-    @cache
     def action_to_index(self, action) -> int:
         """
         Converts an action object to an action index
