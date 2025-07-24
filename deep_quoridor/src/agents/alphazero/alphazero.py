@@ -172,8 +172,8 @@ class AlphaZeroAgent(TrainableAgent):
             position["value"] = env.rewards[agent]
             episode_positions.append(position)
 
-            # Add back the positions with assigned values
-            self.replay_buffer.extend(reversed(episode_positions))
+        # Add back the positions with assigned values
+        self.replay_buffer.extend(reversed(episode_positions))
 
         self.episode_count += 1
 
