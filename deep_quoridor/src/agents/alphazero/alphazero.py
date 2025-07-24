@@ -192,13 +192,13 @@ class AlphaZeroAgent(TrainableAgent):
 
     def train_iteration(self):
         """Train the neural network on collected data."""
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
             end="",
         )
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
 
         metrics = self.evaluator.train_iteration(self.replay_buffer)
 

@@ -1,7 +1,6 @@
 import copy
 
 import numpy as np
-import pytest
 from quoridor import (
     Action,
     ActionEncoder,
@@ -194,12 +193,12 @@ class TestQuoridor:
         applying the rotated version of the action, and rotating the board back.
         """
         g1 = copy.deepcopy(game)
-        g1.step(action, validate=False)
+        g1.step(action)
 
         g2 = copy.deepcopy(game)
         rotated_action = g2.rotate_action(action)
         g2.rotate_board()
-        g2.step(rotated_action, validate=False)
+        g2.step(rotated_action)
         g2.rotate_board()
 
         assert g2 == g1
@@ -449,8 +448,8 @@ class TestQuoridor:
     def test_move_action_rotation(self):
         game = Quoridor(Board(board_size=5, max_walls=10))
 
-        m1 = MoveAction((1, 3))
-        m1_rotated = MoveAction((3, 1))
+        m1 = MoveAction((1, 2))
+        m1_rotated = MoveAction((3, 2))
         assert game.rotate_action(m1) == m1_rotated
         self._test_board_and_action_rotation(game, m1)
 

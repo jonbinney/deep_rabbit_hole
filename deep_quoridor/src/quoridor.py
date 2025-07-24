@@ -363,8 +363,9 @@ class Quoridor:
         Turning off validation can save some computation if you're sure the action is valid,
         and also makes it easier to teleport players around the board for testing purposes.
         """
-        if validate and not self.is_action_valid(action):
-            raise ValueError(f"Invalid action: {action} for player {self.current_player}, in board {self.board}")
+        assert not validate or self.is_action_valid(action), (
+            f"Invalid action: {action} for player {self.current_player}, in board {self.board}"
+        )
 
         if isinstance(action, MoveAction):
             self.board.move_player(self.current_player, action.destination)
@@ -413,7 +414,7 @@ class Quoridor:
         """
         Get a mask of valid actions for the current player.
         """
-        action_mask = np.zeros(self.action_encoder.num_actions, dtype=bool)
+        action_mask = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
         move_actions = self.get_valid_move_actions_vector(player)
         wall_actions = self.get_valid_wall_actions_vector(player)
         action_mask[: self.action_encoder.board_size**2] = move_actions
