@@ -356,14 +356,14 @@ class Quoridor:
         self._goal_rows = self._goal_rows[::-1]
         self._rotated = not self._rotated
 
-    def step(self, action: Action):
+    def step(self, action: Action, validate: bool = True):
         """
         Execute the given action and update the game state.
 
         Turning off validation can save some computation if you're sure the action is valid,
         and also makes it easier to teleport players around the board for testing purposes.
         """
-        assert self.is_action_valid(action), (
+        assert not validate or self.is_action_valid(action), (
             f"Invalid action: {action} for player {self.current_player}, in board {self.board}"
         )
 
