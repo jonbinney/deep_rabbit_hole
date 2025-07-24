@@ -430,9 +430,6 @@ def compute_wall_action_mask(
 
     assert action_mask.shape == (2 * wall_size**2,)
 
-    # for k in range(len(action_mask)):
-    #    action_mask[k] = 0
-
     if walls_remaining[current_player] <= 0:
         return action_mask
     for wall_row in range(wall_size):
