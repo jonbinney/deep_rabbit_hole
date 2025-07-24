@@ -162,19 +162,15 @@ class AlphaZeroAgent(TrainableAgent):
     def end_game(self, env):
         if not self.params.training_mode:
             return
-        if env.winner() is None:
-            # if the game ended in a draw, we drop the match
-            while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
-                self.replay_buffer.pop()
-        else:
-            # Assign the final game outcome to all positions in this episode
-            # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
-            episode_positions = []
-            while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
-                position = self.replay_buffer.pop()
-                agent = env.player_to_agent[position["player"]]
-                position["value"] = env.rewards[agent]
-                episode_positions.append(position)
+
+        # Assign the final game outcome to all positions in this episode
+        # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
+        episode_positions = []
+        while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
+            position = self.replay_buffer.pop()
+            agent = env.player_to_agent[position["player"]]
+            position["value"] = env.rewards[agent]
+            episode_positions.append(position)
 
             # Add back the positions with assigned values
             self.replay_buffer.extend(reversed(episode_positions))
