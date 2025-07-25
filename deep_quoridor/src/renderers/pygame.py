@@ -1,17 +1,28 @@
 import time
+import warnings
+
+# Suppress pygame setuptools warning
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import Event
 from typing import List, Optional, Tuple
 
 import numpy as np
-import pygame
 from agents import ActionLog, Agent
 from agents.human import HumanAgent
 from arena import GameResult
 from quoridor import Action, MoveAction, Player, WallAction, WallOrientation
 
 from renderers import Renderer
+
+# Pygame import creates an annoying warning because of a deprecated use of pkgtools, so we
+# suppress the warning for now.
+#
+#   See https://github.com/pygame/pygame/issues/4313
+warnings.filterwarnings("ignore", category=UserWarning)
+import pygame  # noqa: E402
+
+warnings.filterwarnings("default", category=UserWarning)
 
 WALL_TO_CELL_RATIO = 5
 
