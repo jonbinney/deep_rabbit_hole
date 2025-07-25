@@ -38,7 +38,7 @@ class NNEvaluator:
 
         # Create a temporary game just to see how  big the input tensors are.
         temp_game = Quoridor(Board(self.action_encoder.board_size))
-        temp_input = self.game_to_input_array(temp_game)
+        temp_input = NNEvaluator.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
         self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
@@ -47,21 +47,12 @@ class NNEvaluator:
             self.action_encoder.board_size
         )
 
-    def evaluate_batch(self, games: list[Quoridor]):
+    def batch_evaluate(self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor):
+        """
+        Caller is responsible for converting from games to a stack of input tensors, as well as rotating results
+        """
         if self.network.training:
             self.network.eval()  # Disables dropout
-
-        inputs = []
-        rotation_flags = []
-        action_masks = []
-        for game in games:
-            # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
-            game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
-            inputs.append(self.game_to_input_array(game))
-            rotation_flags.append(is_board_rotated)
-            action_masks.append(game.get_action_mask())
-        inputs_tensor = torch.Tensor(np.stack(inputs)).to(self.device).float()
-        action_masks_tensor = torch.Tensor(np.stack(action_masks)).to(torch.float32).to(self.device)
 
         # Run the network on the entire batch
         with torch.no_grad():
@@ -83,21 +74,11 @@ class NNEvaluator:
         assert np.all(policies_array <= 1), "Policy contains probabilities greater than 1"
         assert np.any(policies_array > 0), "Policy is all zeros"
 
-        # Convert array of policies into list of policies, and rotate them back
-        # if the board was rotated.
-        policies = []
-        for game_i in range(len(games)):
-            is_board_rotated = rotation_flags[game_i]
-            policy = policies_array[game_i]
-            if is_board_rotated:
-                policy = self.rotate_policy_from_original(policy)
-            policies.append(policy)
-
-        return values_array, policies
+        return values_array, policies_array
 
     def evaluate(self, game: Quoridor):
-        game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
-        input_array = self.game_to_input_array(game)
+        game, is_board_rotated = NNEvaluator.rotate_if_needed_to_point_downwards(game)
+        input_array = NNEvaluator.game_to_input_array(game)
         action_mask = torch.from_numpy(game.get_action_mask()).to(torch.float32).to(self.device)
 
         if self.network.training:
@@ -128,7 +109,8 @@ class NNEvaluator:
         """
         return policy[self.action_mapping_original_to_rotated]
 
-    def rotate_if_needed_to_point_downwards(self, game: Quoridor):
+    @staticmethod
+    def rotate_if_needed_to_point_downwards(game: Quoridor):
         """
         Rotates the game so that the current player's goal is the row with the largest index.
 
@@ -148,7 +130,8 @@ class NNEvaluator:
 
         return game, is_rotated
 
-    def game_to_input_array(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
+    @staticmethod
+    def game_to_input_array(game: Quoridor) -> tuple[torch.FloatTensor, bool]:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
         opponent = int(1 - player)
