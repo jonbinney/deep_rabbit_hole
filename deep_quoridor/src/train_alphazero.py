@@ -1,12 +1,14 @@
 import argparse
+import copy
 import multiprocessing as mp
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
-import quoridor as q
 import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
+from utils import parse_subargs
 
 
 @dataclass
@@ -20,7 +22,8 @@ class Worker:
 @dataclass
 class RunGamesJob:
     num_games: int  # If -1, worker shuts itself down.
-    model_state: dict
+    alphazero_params: Optional[AlphaZeroParams]
+    model_state: Optional[dict]
 
 
 @dataclass
@@ -36,21 +39,15 @@ def self_play_worker(
     job_queue: mp.SimpleQueue,
     result_queue: mp.SimpleQueue,
 ):
-    alphazero_params = AlphaZeroParams()
-    alphazero_params.training_mode = True
-    alphazero_params.train_every = None  # Never actually train
-    alphazero_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
-    alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=alphazero_params)
-
     environment = quoridor_env.env(board_size=board_size, max_walls=max_walls, step_rewards=False)
 
-    print(f"Worker {worker_id} ready for jobs")
     while True:
         job = job_queue.get()
         if job.num_games == -1:
             break
 
-        # Use the updated model
+        # Use the updated model and parameters
+        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params)
         alphazero_agent.set_model_state(job.model_state)
 
         for _ in range(job.num_games):
@@ -85,28 +82,51 @@ def self_play_worker(
 def train_alphazero(args, workers: list[Worker]):
     # Create an agent that we'll use to do training. The self play games will happen with agents
     # created in each worker process.
-    alphazero_params = AlphaZeroParams()
-    alphazero_params.training_mode = True
-    alphazero_params.train_every = None
-    training_agent = AlphaZeroAgent(args.board_size, args.max_walls, params=alphazero_params)
+    training_params = parse_subargs(args.params, AlphaZeroParams)
+    training_params.training_mode = True  # We always want training mode, don't make the user specify it
+    training_params.train_every = None  # We manually run training at the end of each epoch
+    training_agent = AlphaZeroAgent(args.board_size, args.max_walls, params=training_params)
 
-    model_state = training_agent.get_model_state()
+    # Create parameters used by the workers during self play
+    self_play_params = copy.deepcopy(training_params)
+    self_play_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
 
-    # Start games on the workers
-    games_per_worker = int(np.ceil(args.episodes / len(workers)))
-    games_remaining_to_allocate = args.episodes
-    for worker in workers:
-        this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-        worker.job_queue.put(RunGamesJob(this_worker_num_games, model_state))
+    # Prep the evaluator for training. The training_agent doesn't do this itself since we set
+    # the train_every parameter to None
+    training_agent.evaluator.train_prepare(
+        training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
+    )
 
-    # Collect results from the workers
-    for worker in workers:
-        result = worker.result_queue.get()
-        # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
-        # the replay buffer results from all agents each epoch or else we'll end up discarding
-        # some results and we'll have wasted computation by playing those games.
-        training_agent.replay_buffer.extend(result.replay_buffer)
-    print(f"Replay buffer now has {len(training_agent.replay_buffer)} items")
+    for epoch in range(args.epochs):
+        print(f"Starting epoch {epoch}")
+        # Get the model state from our training agent so that it can be sent to all the worker
+        # processes and used for the self play games in each epoch.
+        model_state = training_agent.get_model_state()
+
+        # Tell workers to run self play games for this epoch
+        games_per_worker = int(np.ceil(args.games_per_epoch / len(workers)))
+        games_remaining_to_allocate = args.games_per_epoch
+        for worker in workers:
+            this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
+            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params, model_state))
+
+        # Collect results from the workers
+        for worker in workers:
+            result = worker.result_queue.get()
+            # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
+            # the replay buffer results from all agents each epoch or else we'll end up discarding
+            # some results and we'll have wasted computation by playing those games.
+            training_agent.replay_buffer.extend(result.replay_buffer)
+
+        if len(training_agent.replay_buffer) > training_params.batch_size:
+            print(f"Training with {len(training_agent.replay_buffer)} turns in replay buffer")
+            metrics = training_agent.evaluator.train_iteration(training_agent.replay_buffer)
+            print(f"Training done: f{metrics}")
+        else:
+            print(
+                f"Not training; batch_size={training_params.batch_size} is less than"
+                + f"replay buffer size ({len(training_agent.replay_buffer)})"
+            )
 
 
 def create_workers(board_size: int, max_walls: int, max_game_length: int, num_workers: int) -> list[Worker]:
@@ -136,7 +156,7 @@ def create_workers(board_size: int, max_walls: int, max_game_length: int, num_wo
 def stop_workers(workers: list[Worker]):
     # Tell workers to stop
     for worker in workers:
-        worker.job_queue.put(RunGamesJob(-1, ""))
+        worker.job_queue.put(RunGamesJob(-1, None, None))
 
     for worker in workers:
         worker.process.join()
@@ -153,21 +173,30 @@ def main(args):
     t1 = time.time()
 
     train_alphazero(args, workers=workers)
+
     stop_workers(workers)
 
     t2 = time.time()
 
     print(f"Worker startup time: {t1 - t0}")
     print(f"Total processing time {t2 - t0}")
-    print(f"Time per game: {(t2 - t0) / args.episodes}")
-    print(f"Throughput = {args.episodes / (t2 - t0)}")
+    print(f"Time per game: {(t2 - t0) / args.games_per_epoch}")
+    print(f"Throughput = {args.games_per_epoch / (t2 - t0)}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a DQN agent for Quoridor")
+    parser.add_argument("-p", "--params", type=str, default="", help="Alphazero agent params in subargs form")
     parser.add_argument("-N", "--board-size", type=int, default=5, help="Board Size")
     parser.add_argument("-W", "--max-walls", type=int, default=3, help="Max walls per player")
-    parser.add_argument("-e", "--episodes", type=int, default=1000, help="Number of episodes to train for")
+    parser.add_argument(
+        "-g",
+        "--games-per-epoch",
+        type=int,
+        default=100,
+        help="Number of self play games to do between each model training",
+    )
+    parser.add_argument("-e", "--epochs", type=int, default=2, help="Number of training epochs")
     parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes")
     parser.add_argument(
         "--max-game-length", type=int, default=200, help="Max number of turns before game is called a tie"
