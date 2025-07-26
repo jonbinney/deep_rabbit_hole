@@ -1,3 +1,4 @@
+import re
 import time
 import warnings
 
@@ -19,10 +20,8 @@ from renderers import Renderer
 # suppress the warning for now.
 #
 #   See https://github.com/pygame/pygame/issues/4313
-warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
 import pygame  # noqa: E402
-
-warnings.filterwarnings("default", category=UserWarning)
 
 WALL_TO_CELL_RATIO = 5
 
