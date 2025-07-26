@@ -1,4 +1,3 @@
-import re
 import time
 import warnings
 
@@ -423,7 +422,6 @@ class PygameQuoridor:
             # if the user wants a verticar or horizontal wall
             return
 
-        type_action = 0
         if v_wall:
             action = WallAction((row, col), WallOrientation.VERTICAL)
         elif h_wall:
