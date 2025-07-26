@@ -34,7 +34,8 @@ class AlphaZeroParams(SubargsBase):
     temperature: float = 1.0
 
     # How many moves to remember. The training batches are sampled from this replay buffer.
-    replay_buffer_size: int = 1000
+    # If set to none, the buffer grows without bound.
+    replay_buffer_size: Optional[int] = 1000
 
     # Batch size for training
     batch_size: int = 100
@@ -142,10 +143,7 @@ class AlphaZeroAgent(TrainableAgent):
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
         return f"{self.model_id()}_{artifact.digest[:5]}.pt"
 
-    def save_model(self, path):
-        # Create directory for saving models if it doesn't exist
-        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
-
+    def get_model_state(self) -> dict:
         # Save the neural network state dict
         nn = self.evaluator.network
         model_state = {
@@ -155,11 +153,21 @@ class AlphaZeroAgent(TrainableAgent):
             "max_walls": self.max_walls,
             "params": self.params.__dict__,
         }
+        return model_state
+
+    def save_model(self, path):
+        # Create directory for saving models if it doesn't exist
+        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
+        model_state = self.get_model_state()
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
 
+    def set_model_state(self, model_state: dict):
+        self.evaluator.network.load_state_dict(model_state["network_state_dict"])
+
     def load_model(self, path):
-        self.evaluator.network.load_state_dict(torch.load(path, map_location=my_device()))
+        model_state = torch.load(path, map_location=my_device())
+        self.set_model_state(model_state)
 
     def end_game(self, env):
         if not self.params.training_mode:
