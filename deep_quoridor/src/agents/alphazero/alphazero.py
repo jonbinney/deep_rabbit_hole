@@ -7,11 +7,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
-import wandb
 from quoridor import ActionEncoder, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
+import wandb
 from agents.alphazero.mcts import MCTS
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core import TrainableAgent
@@ -21,8 +21,11 @@ from agents.core import TrainableAgent
 class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
-    # After how many self play games we train the network
-    train_every: int = 10
+    # After how many self play games we train the network If set to None, agent will not run the
+    # NN training itself even if traning_mode == True. This is useful if we want the agent to
+    # use params as if it is training, but have the actual NN training run by an higher level
+    # function.
+    train_every: Optional[int] = 10
 
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
@@ -81,8 +84,8 @@ class AlphaZeroAgent(TrainableAgent):
         self,
         board_size,
         max_walls,
-        observation_space,
-        action_space,
+        observation_space=None,
+        action_space=None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -91,13 +94,12 @@ class AlphaZeroAgent(TrainableAgent):
         self.params = params
         self.board_size = board_size
         self.max_walls = max_walls
-        self.action_space = action_space
         self.device = my_device()
 
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
         self.mcts = MCTS(params.mcts_n, params.mcts_ucb_c, self.evaluator)
-        if params.training_mode:
+        if params.training_mode and params.train_every is not None:
             self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
 
         self.episode_count = 0
@@ -178,7 +180,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.episode_count += 1
 
         # Train network if we have enough episodes
-        if self.episode_count % self.params.train_every == 0:
+        if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:
             self.train_iteration()
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -192,13 +194,13 @@ class AlphaZeroAgent(TrainableAgent):
 
     def train_iteration(self):
         """Train the neural network on collected data."""
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
             end="",
         )
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
 
         metrics = self.evaluator.train_iteration(self.replay_buffer)
 
