@@ -179,3 +179,6 @@ wandbmodels
 runs
 deep_quoridor/td.sh
 deep_quoridor/tn.sh
+
+# Claude code cache directory
+.claude
