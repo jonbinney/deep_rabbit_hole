@@ -180,8 +180,8 @@ def main(args):
 
     print(f"Worker startup time: {t1 - t0}")
     print(f"Total processing time {t2 - t0}")
-    print(f"Time per game: {(t2 - t0) / args.games_per_epoch}")
-    print(f"Throughput = {args.games_per_epoch / (t2 - t0)}")
+    print(f"Time per game: {(t2 - t0) / (args.games_per_epoch * args.epochs)}")
+    print(f"Throughput = {(args.games_per_epoch * args.epochs) / (t2 - t0)}")
 
 
 if __name__ == "__main__":
