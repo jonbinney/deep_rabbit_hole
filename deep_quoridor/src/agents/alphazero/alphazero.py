@@ -7,11 +7,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
-import wandb
 from quoridor import ActionEncoder, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
+import wandb
 from agents.alphazero.mcts import MCTS
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core import TrainableAgent
@@ -41,6 +41,10 @@ class AlphaZeroParams(SubargsBase):
 
     # Number of MCTS selections
     mcts_n: int = 100
+
+    # If set, the number of MCTS selections is going to be mcts_k * n_actions, where n_actions
+    # is the number of actions available.
+    mcts_k: Optional[int] = None
 
     # A higher number favors exploration over exploitation
     mcts_ucb_c: float = 1.4
@@ -96,7 +100,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
-        self.mcts = MCTS(params.mcts_n, params.mcts_ucb_c, self.evaluator)
+        self.mcts = MCTS(params.mcts_n, params.mcts_k, params.mcts_ucb_c, self.evaluator)
         if params.training_mode:
             self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
 
