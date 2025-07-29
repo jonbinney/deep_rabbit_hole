@@ -8,7 +8,10 @@ from typing import Optional
 import numpy as np
 import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from utils import parse_subargs
+from agents.alphazero.multiprocess_evaluator import EvaluatorClient, EvaluatorServer
+from agents.alphazero.nn_evaluator import NNEvaluator
+from quoridor import ActionEncoder
+from utils import my_device, parse_subargs
 
 
 @dataclass
@@ -23,7 +26,6 @@ class Worker:
 class RunGamesJob:
     num_games: int  # If -1, worker shuts itself down.
     alphazero_params: Optional[AlphaZeroParams]
-    model_state: Optional[dict]
 
 
 @dataclass
@@ -35,6 +37,7 @@ def self_play_worker(
     board_size: int,
     max_walls: int,
     max_game_length: int,
+    evaluator: EvaluatorClient,
     worker_id: int,
     job_queue: mp.SimpleQueue,
     result_queue: mp.SimpleQueue,
@@ -47,8 +50,7 @@ def self_play_worker(
             break
 
         # Use the updated model and parameters
-        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params)
-        alphazero_agent.set_model_state(job.model_state)
+        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params, evaluator=evaluator)
 
         for _ in range(job.num_games):
             environment.reset()
@@ -79,7 +81,7 @@ def self_play_worker(
     print(f"Worker {worker_id} exiting")
 
 
-def train_alphazero(args, workers: list[Worker]):
+def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worker]):
     # Create an agent that we'll use to do training. The self play games will happen with agents
     # created in each worker process.
     training_params = parse_subargs(args.params, AlphaZeroParams)
@@ -99,16 +101,13 @@ def train_alphazero(args, workers: list[Worker]):
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
-        # Get the model state from our training agent so that it can be sent to all the worker
-        # processes and used for the self play games in each epoch.
-        model_state = training_agent.get_model_state()
 
         # Tell workers to run self play games for this epoch
         games_per_worker = int(np.ceil(args.games_per_epoch / len(workers)))
         games_remaining_to_allocate = args.games_per_epoch
         for worker in workers:
             this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params, model_state))
+            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params))
 
         # Collect results from the workers
         for worker in workers:
@@ -124,14 +123,39 @@ def train_alphazero(args, workers: list[Worker]):
             print(f"Training done: f{metrics}")
         else:
             print(
-                f"Not training; batch_size={training_params.batch_size} is less than"
+                f"Not training; batch_size={training_params.batch_size} is less than "
                 + f"replay buffer size ({len(training_agent.replay_buffer)})"
             )
 
+    print(evaluator_server.get_statistics())
 
-def create_workers(board_size: int, max_walls: int, max_game_length: int, num_workers: int) -> list[Worker]:
+
+def setup(
+    board_size: int, max_walls: int, max_game_length: int, num_workers: int
+) -> tuple[EvaluatorServer, list[Worker]]:
+    # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
+    # to send the resulting (value, policy) back.
+    evaluator_request_queue = mp.SimpleQueue()
+    evaluator_result_queues = [mp.SimpleQueue() for _ in range(num_workers)]
+
+    # Create the evaluator server and start its processing thread.
+    action_encoder = ActionEncoder(board_size)
+    nn_evaluator = NNEvaluator(action_encoder, my_device())
+    evaluator_server = EvaluatorServer(
+        nn_evaluator,
+        batch_size=10,
+        max_interbatch_time=0.0001,
+        input_queue=evaluator_request_queue,
+        output_queues=evaluator_result_queues,
+    )
+    evaluator_server.start()
+
+    # Create the worker processes
     workers = []
     for worker_id in range(num_workers):
+        evaluator_client = EvaluatorClient(
+            worker_id, evaluator_request_queue, evaluator_result_queues[worker_id], board_size
+        )
         job_queue = mp.SimpleQueue()
         result_queue = mp.SimpleQueue()
         process = mp.Process(
@@ -140,6 +164,7 @@ def create_workers(board_size: int, max_walls: int, max_game_length: int, num_wo
                 board_size,
                 max_walls,
                 max_game_length,
+                evaluator_client,
                 worker_id,
                 job_queue,
                 result_queue,
@@ -147,19 +172,24 @@ def create_workers(board_size: int, max_walls: int, max_game_length: int, num_wo
         )
         workers.append(Worker(worker_id, process, job_queue, result_queue))
 
+    # Start the worker processes
     for worker in workers:
         worker.process.start()
 
-    return workers
+    return evaluator_server, workers
 
 
-def stop_workers(workers: list[Worker]):
-    # Tell workers to stop
+def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
+    # Stop the worker processes
     for worker in workers:
-        worker.job_queue.put(RunGamesJob(-1, None, None))
+        worker.job_queue.put(RunGamesJob(-1, None))
 
     for worker in workers:
         worker.process.join()
+
+    # Stop the evaluator server
+    evaluator_server.shutdown()
+    evaluator_server.join()
 
 
 def main(args):
@@ -168,13 +198,14 @@ def main(args):
 
     t0 = time.time()
 
-    workers = create_workers(args.board_size, args.max_walls, args.max_game_length, args.num_workers)
+    evaluator_server, workers = setup(args.board_size, args.max_walls, args.max_game_length, args.num_workers)
 
     t1 = time.time()
 
-    train_alphazero(args, workers=workers)
-
-    stop_workers(workers)
+    try:
+        train_alphazero(args, evaluator_server, workers=workers)
+    finally:
+        shutdown(evaluator_server, workers)
 
     t2 = time.time()
 
