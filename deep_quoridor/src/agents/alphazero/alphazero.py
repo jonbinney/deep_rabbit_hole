@@ -21,8 +21,11 @@ from agents.core import TrainableAgent
 class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
-    # After how many self play games we train the network
-    train_every: int = 10
+    # After how many self play games we train the network If set to None, agent will not run the
+    # NN training itself even if traning_mode == True. This is useful if we want the agent to
+    # use params as if it is training, but have the actual NN training run by an higher level
+    # function.
+    train_every: Optional[int] = 10
 
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
@@ -31,7 +34,8 @@ class AlphaZeroParams(SubargsBase):
     temperature: float = 1.0
 
     # How many moves to remember. The training batches are sampled from this replay buffer.
-    replay_buffer_size: int = 1000
+    # If set to none, the buffer grows without bound.
+    replay_buffer_size: Optional[int] = 1000
 
     # Batch size for training
     batch_size: int = 100
@@ -85,8 +89,8 @@ class AlphaZeroAgent(TrainableAgent):
         self,
         board_size,
         max_walls,
-        observation_space,
-        action_space,
+        observation_space=None,
+        action_space=None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -95,13 +99,12 @@ class AlphaZeroAgent(TrainableAgent):
         self.params = params
         self.board_size = board_size
         self.max_walls = max_walls
-        self.action_space = action_space
         self.device = my_device()
 
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
         self.mcts = MCTS(params.mcts_n, params.mcts_ucb_c, self.evaluator, params.mcts_pre_evaluate_nodes_total)
-        if params.training_mode:
+        if params.training_mode and params.train_every is not None:
             self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
 
         self.episode_count = 0
@@ -144,10 +147,7 @@ class AlphaZeroAgent(TrainableAgent):
     def wandb_local_filename(self, artifact: wandb.Artifact) -> str:
         return f"{self.model_id()}_{artifact.digest[:5]}.pt"
 
-    def save_model(self, path):
-        # Create directory for saving models if it doesn't exist
-        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
-
+    def get_model_state(self) -> dict:
         # Save the neural network state dict
         nn = self.evaluator.network
         model_state = {
@@ -157,11 +157,21 @@ class AlphaZeroAgent(TrainableAgent):
             "max_walls": self.max_walls,
             "params": self.params.__dict__,
         }
+        return model_state
+
+    def save_model(self, path):
+        # Create directory for saving models if it doesn't exist
+        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
+        model_state = self.get_model_state()
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
 
+    def set_model_state(self, model_state: dict):
+        self.evaluator.network.load_state_dict(model_state["network_state_dict"])
+
     def load_model(self, path):
-        self.evaluator.network.load_state_dict(torch.load(path, map_location=my_device()))
+        model_state = torch.load(path, map_location=my_device())
+        self.set_model_state(model_state)
 
     def end_game(self, env):
         if not self.params.training_mode:
@@ -182,7 +192,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.episode_count += 1
 
         # Train network if we have enough episodes
-        if self.episode_count % self.params.train_every == 0:
+        if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:
             self.train_iteration()
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -196,13 +206,13 @@ class AlphaZeroAgent(TrainableAgent):
 
     def train_iteration(self):
         """Train the neural network on collected data."""
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
             end="",
         )
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
 
         metrics = self.evaluator.train_iteration(self.replay_buffer)
 

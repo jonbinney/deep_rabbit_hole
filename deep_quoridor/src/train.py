@@ -16,6 +16,7 @@ def train_dqn(
     episodes: int,
     board_size: int,
     max_walls: int,
+    max_steps: int,
     save_frequency: int,
     step_rewards: bool = True,
     wandb_params: Optional[WandbParams] = None,
@@ -56,7 +57,7 @@ def train_dqn(
         renderers=[print_plugin] + renderers,
         plugins=plugins,
         swap_players=True,
-        max_steps=1000,
+        max_steps=max_steps,
     )
 
     # Self play
@@ -72,6 +73,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a DQN agent for Quoridor")
     parser.add_argument("-N", "--board_size", type=int, default=9, help="Board Size")
     parser.add_argument("-W", "--max_walls", type=int, default=10, help="Max walls per player")
+    parser.add_argument("--max_steps", type=int, default=200, help="Max number of turns before game is called a tie")
     parser.add_argument("-e", "--episodes", type=int, default=1000, help="Number of episodes to train for")
     parser.add_argument("-s", "--step_rewards", action="store_true", default=False, help="Enable step rewards")
     parser.add_argument("-sp", "--save_path", type=str, default="models", help="Directory to save models")
@@ -154,6 +156,7 @@ if __name__ == "__main__":
             episodes=args.episodes,
             board_size=args.board_size,
             max_walls=args.max_walls,
+            max_steps=args.max_steps,
             save_frequency=args.save_frequency,
             step_rewards=args.step_rewards,
             players=args.players,
