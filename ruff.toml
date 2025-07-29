@@ -50,6 +50,12 @@ unfixable = []
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+[lint.isort]
+# Ruff sometimes mistakenly thinks the wandb python module is "first-party"
+# and puts it in that section  of the imports if the wandb cache directory
+# exists. See https://github.com/astral-sh/ruff/issues/10519
+known-third-party = ["wandb"]
+
 [format]
 # Like Black, use double quotes for strings.
 quote-style = "double"
