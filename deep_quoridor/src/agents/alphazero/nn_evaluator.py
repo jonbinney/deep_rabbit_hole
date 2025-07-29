@@ -22,7 +22,7 @@ class NNEvaluator:
 
         # Create a temporary game just to see how  big the input tensors are.
         temp_game = Quoridor(Board(self.action_encoder.board_size))
-        temp_input = self.game_to_input_array(temp_game)
+        temp_input = NNEvaluator.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
         self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
@@ -32,6 +32,35 @@ class NNEvaluator:
         )
         # fast hash -> (value, policy)
         self.cache = {}
+
+    def batch_evaluate(self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor):
+        """
+        Caller is responsible for converting from games to a stack of input tensors, as well as rotating results
+        """
+        if self.network.training:
+            self.network.eval()  # Disables dropout
+
+        # Run the network on the entire batch
+        with torch.no_grad():
+            policy_logits_tensor, values_tensor = self.network(inputs_tensor)
+
+        assert torch.isfinite(policy_logits_tensor).all(), "Policy logits contains non-finite values"
+
+        # Leave the policy tensors on the device while we mask and softmax
+        masked_policy_logits_tensor = policy_logits_tensor * action_masks_tensor + INVALID_ACTION_VALUE * (
+            1 - action_masks_tensor
+        )
+        policies_tensor = F.softmax(masked_policy_logits_tensor, dim=-1)
+
+        # Transfer policies and values back to CPU and turn them into arrays
+        policies_array = policies_tensor.cpu().numpy()
+        values_array = values_tensor.cpu().flatten().numpy()
+
+        assert np.all(policies_array >= 0), "Policy contains negative probabilities"
+        assert np.all(policies_array <= 1), "Policy contains probabilities greater than 1"
+        assert np.any(policies_array > 0), "Policy is all zeros"
+
+        return values_array, policies_array
 
     def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
         if game.get_fast_hash() in self.cache:
@@ -75,7 +104,8 @@ class NNEvaluator:
         """
         return policy[self.action_mapping_original_to_rotated]
 
-    def rotate_if_needed_to_point_downwards(self, game: Quoridor):
+    @staticmethod
+    def rotate_if_needed_to_point_downwards(game: Quoridor):
         """
         Rotates the game so that the current player's goal is the row with the largest index.
 
