@@ -86,10 +86,12 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, n: int, ucb_c: float, evaluator):
+    def __init__(self, n: int, ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
         self.n = n
         self.ucb_c = ucb_c
         self.evaluator = evaluator
+        self.new_nodes = []
+        self.extra_eval = pre_evaluate_nodes_total - 1
 
     def select(self, node: Node) -> Node:
         """
@@ -113,8 +115,11 @@ class MCTS:
                 value = 1
             # TODO: Handle ties (these happen when arena decides game is taking too long)
             else:
-                value, priors = self.evaluator.evaluate(node.game)
+                games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
+                self.new_nodes = self.new_nodes[self.extra_eval :]
+                value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
                 node.expand(priors)
+                self.new_nodes.extend(node.children)
 
             node.backpropagate(value)
 

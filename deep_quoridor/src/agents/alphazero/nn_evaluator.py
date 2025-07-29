@@ -30,32 +30,44 @@ class NNEvaluator:
         [self.action_mapping_original_to_rotated, self.action_mapping_rotated_to_original] = create_rotation_mapping(
             self.action_encoder.board_size
         )
+        # fast hash -> (value, policy)
+        self.cache = {}
 
-    def evaluate(self, game: Quoridor):
-        game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
+    def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
+        if game.get_fast_hash() in self.cache:
+            return self.cache[game.get_fast_hash()]
+
+        all_games = [game] + extra_games_to_evaluate
+        all_hashes = [g.get_fast_hash() for g in all_games]
+        all_games = [self.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
+        all_games_input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in all_games]
+        all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
 
         if self.network.training:
             self.network.eval()  # Disables dropout
 
         with torch.no_grad():
-            action_mask = torch.from_numpy(game.get_action_mask()).to(device=self.device)
-            policy_logits, value = self.network(torch.from_numpy(self.game_to_input_array(game)).to(device=self.device))
-            assert torch.isfinite(policy_logits).all(), "Policy logits contains non-finite values"
-            policy_logits = policy_logits * action_mask + INVALID_ACTION_VALUE * (1 - action_mask)
+            action_masks = torch.stack([torch.from_numpy(g.get_action_mask()) for g in all_games]).to(
+                device=self.device
+            )
+            policy_logits, values = self.network(all_games_tensors)
+            policy_logits = policy_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
             policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
-            value = value.item()
+            values = values.cpu().numpy()
 
-        # Sanity checks
-        assert np.all(policy_masked >= 0), "Policy contains negative probabilities"
-        assert np.all(policy_masked <= 1), "Policy contains probabilities greater than 1"
-        assert np.any(policy_masked > 0), "Policy is all zeros"
-        assert np.isfinite(policy_masked).all() and np.isfinite(value), "Policy or value is non-finite"
+        for i, g in enumerate(all_games):
+            pm = policy_masked[i]
+            # Sanity checks
+            assert np.all(pm >= 0), "Policy contains negative probabilities"
+            assert np.abs(np.sum(pm) - 1) < 1e-6, "Policy does not sum to 1"
+            assert np.isfinite(values[i]), "Policy or value is non-finite"
 
-        # If the game was originally rotated, rotate the resulting back to player 2's perspective
-        if is_board_rotated:
-            policy_masked = policy_masked[self.action_mapping_rotated_to_original]
+            # If the game was originally rotated, rotate the resulting back to player 2's perspective
+            if g.get_current_player() == Player.TWO:
+                policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
+            self.cache[all_hashes[i]] = (values[i], policy_masked[i])
 
-        return value, policy_masked
+        return values[0], policy_masked[0]
 
     def rotate_policy_from_original(self, policy: np.ndarray):
         """
@@ -83,10 +95,10 @@ class NNEvaluator:
 
         return game, is_rotated
 
-    def game_to_input_array(self, game: Quoridor) -> tuple[torch.FloatTensor, bool]:
+    def game_to_input_array(self, game: Quoridor) -> np.ndarray:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
-        opponent = int(1 - player)
+        opponent = Player(1 - player)
 
         player_position = game.board.get_player_position(player)
         opponent_position = game.board.get_player_position(opponent)
@@ -119,6 +131,7 @@ class NNEvaluator:
 
     def train_iteration(self, replay_buffer):
         assert self.optimizer is not None, "Call train_prepare before training"
+        self.cache = {}
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
