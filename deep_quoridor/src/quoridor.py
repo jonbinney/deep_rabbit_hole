@@ -525,16 +525,19 @@ class Quoridor:
     def __str__(self):
         return str(self.board)
 
-    def get_fast_hash(self):
-        # Use a fast, unique hash based on the board, player positions, walls, and current player.
-        # We'll use numpy's .tobytes() for fast serialization and hash().
+    def get_byte_repr(self):
         board_bytes = self.board._grid.tobytes()
         walls_remaining_bytes = self.board._walls_remaining.tobytes()
         player_byte = bytes([self.current_player])
         rotated_byte = bytes([1] if self._rotated else [])
+        return board_bytes + walls_remaining_bytes + player_byte + rotated_byte
+
+    def get_fast_hash(self):
+        # Use a fast, unique hash based on the board, player positions, walls, and current player.
+        # We'll use numpy's .tobytes() for fast serialization and hash().
 
         # Combine all bytes and hash
-        return hash(board_bytes + walls_remaining_bytes + player_byte + rotated_byte)
+        return hash(self.get_byte_repr())
 
 
 def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:

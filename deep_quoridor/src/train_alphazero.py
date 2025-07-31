@@ -2,6 +2,7 @@ import argparse
 import copy
 import multiprocessing as mp
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
@@ -57,7 +58,6 @@ def self_play_worker(
             num_turns = 0
 
             for _ in environment.agent_iter():
-                # TODO: Use environment class to properly set the agent_id arg to make_observation
                 observation, _, termination, truncation, _ = environment.last()
                 if termination or truncation:
                     break
@@ -66,7 +66,7 @@ def self_play_worker(
                 environment.step(action_index)
                 num_turns += 1
 
-                # TODO: Move max steps with proper truncation to the environment
+                # TODO: Move max steps with proper truncation to the environment and agent
                 if num_turns >= max_game_length:
                     print("Truncating game")
                     print(environment.render())
@@ -87,15 +87,13 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
     training_params = parse_subargs(args.params, AlphaZeroParams)
     training_params.training_mode = True  # We always want training mode, don't make the user specify it
     training_params.train_every = None  # We manually run training at the end of each epoch
-    training_agent = AlphaZeroAgent(args.board_size, args.max_walls, params=training_params)
+    replay_buffer = deque(maxlen=training_params.replay_buffer_size)
 
     # Create parameters used by the workers during self play
     self_play_params = copy.deepcopy(training_params)
     self_play_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
 
-    # Prep the evaluator for training. The training_agent doesn't do this itself since we set
-    # the train_every parameter to None
-    training_agent.evaluator.train_prepare(
+    evaluator_server.train_prepare(
         training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
     )
 
@@ -115,16 +113,16 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
             # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
             # the replay buffer results from all agents each epoch or else we'll end up discarding
             # some results and we'll have wasted computation by playing those games.
-            training_agent.replay_buffer.extend(result.replay_buffer)
+            replay_buffer.extend(result.replay_buffer)
 
-        if len(training_agent.replay_buffer) > training_params.batch_size:
-            print(f"Training with {len(training_agent.replay_buffer)} turns in replay buffer")
-            metrics = training_agent.evaluator.train_iteration(training_agent.replay_buffer)
-            print(f"Training done: f{metrics}")
+        if len(replay_buffer) > training_params.batch_size:
+            print(f"Training with {len(replay_buffer)} turns in replay buffer")
+            metrics = evaluator_server.train_iteration(replay_buffer)
+            print(f"Training done: {metrics}")
         else:
             print(
                 f"Not training; batch_size={training_params.batch_size} is less than "
-                + f"replay buffer size ({len(training_agent.replay_buffer)})"
+                + f"replay buffer size ({len(replay_buffer)})"
             )
 
     print(evaluator_server.get_statistics())
@@ -138,13 +136,16 @@ def setup(
     evaluator_request_queue = mp.SimpleQueue()
     evaluator_result_queues = [mp.SimpleQueue() for _ in range(num_workers)]
 
+    # Create the cache which is shared by all the evaluator clients.
+    sync_manager = mp.Manager()
+    evaluator_cache = sync_manager.dict()
+
     # Create the evaluator server and start its processing thread.
     action_encoder = ActionEncoder(board_size)
     nn_evaluator = NNEvaluator(action_encoder, my_device())
     evaluator_server = EvaluatorServer(
         nn_evaluator,
-        batch_size=10,
-        max_interbatch_time=0.0001,
+        evaluator_cache,
         input_queue=evaluator_request_queue,
         output_queues=evaluator_result_queues,
     )
@@ -154,7 +155,11 @@ def setup(
     workers = []
     for worker_id in range(num_workers):
         evaluator_client = EvaluatorClient(
-            worker_id, evaluator_request_queue, evaluator_result_queues[worker_id], board_size
+            board_size,
+            worker_id,
+            evaluator_cache,
+            evaluator_request_queue,
+            evaluator_result_queues[worker_id],
         )
         job_queue = mp.SimpleQueue()
         result_queue = mp.SimpleQueue()
@@ -176,7 +181,7 @@ def setup(
     for worker in workers:
         worker.process.start()
 
-    return evaluator_server, workers
+    return evaluator_server, workers, sync_manager
 
 
 def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
@@ -198,7 +203,12 @@ def main(args):
 
     t0 = time.time()
 
-    evaluator_server, workers = setup(args.board_size, args.max_walls, args.max_game_length, args.num_workers)
+    # NOTE: Even though we dont use the SyncManager here, we need to keep a handle to it so
+    # that it won't get garbage collected, since the evaluators used by the workers share
+    # a cache that it manages.
+    evaluator_server, workers, sync_manager = setup(
+        args.board_size, args.max_walls, args.max_game_length, args.num_workers
+    )
 
     t1 = time.time()
 

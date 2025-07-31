@@ -68,8 +68,8 @@ class NNEvaluator:
 
         all_games = [game] + extra_games_to_evaluate
         all_hashes = [g.get_fast_hash() for g in all_games]
-        all_games = [self.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
-        all_games_input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in all_games]
+        all_games = [NNEvaluator.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
+        all_games_input_arrays = [torch.from_numpy(NNEvaluator.game_to_input_array(g)) for g in all_games]
         all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
 
         if self.network.training:
@@ -125,7 +125,8 @@ class NNEvaluator:
 
         return game, is_rotated
 
-    def game_to_input_array(self, game: Quoridor) -> np.ndarray:
+    @staticmethod
+    def game_to_input_array(game: Quoridor) -> np.ndarray:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
         opponent = Player(1 - player)

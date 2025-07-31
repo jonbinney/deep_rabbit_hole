@@ -9,7 +9,7 @@ from collections import deque
 import numpy as np
 import torch
 import torch.multiprocessing as mp
-from quoridor import Quoridor
+from quoridor import Player, Quoridor
 from utils import my_device
 
 from agents.alphazero.nn_evaluator import NNEvaluator
@@ -17,29 +17,51 @@ from agents.core.rotation import create_rotation_mapping
 
 
 class EvaluatorClient:
-    def __init__(self, client_id: int, request_queue: mp.SimpleQueue, result_queue: mp.SimpleQueue, board_size: int):
+    def __init__(
+        self,
+        board_size: int,
+        client_id: int,
+        cache: dict,
+        request_queue: mp.SimpleQueue,
+        result_queue: mp.SimpleQueue,
+    ):
         self._client_id = client_id
         self._request_queue = request_queue
         self._result_queue = result_queue
         (self._action_mapping_original_to_rotated, self._action_mapping_rotated_to_original) = create_rotation_mapping(
             board_size
         )
+        # byte_representation_of_game_state -> (, value, policy)
+        self._cache = cache
 
-    def evaluate(self, game: Quoridor):
-        # Rotate the board if player 2 is playing so that we always work with player 1's perspective.
-        game, is_board_rotated = self.rotate_if_needed_to_point_downwards(game)
-        input_array = self.game_to_input_array(game)
-        action_mask_array = game.get_action_mask()
+    def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
+        if game.get_byte_repr() in self._cache:
+            return self._cache[game.get_byte_repr()]
 
-        value, policy = self.evaluate_array(input_array, action_mask_array)
+        all_games = [game] + extra_games_to_evaluate
+        all_hashes = np.stack([g.get_byte_repr() for g in all_games])
+        all_games = [NNEvaluator.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
+        all_games_inputs_array = np.stack([NNEvaluator.game_to_input_array(g) for g in all_games])
+        all_games_action_masks = np.stack([g.get_action_mask() for g in all_games])
 
-        if is_board_rotated:
-            policy = self.rotate_policy_from_original(policy)
+        values, policies = self.evaluate_array(all_games_inputs_array, all_games_action_masks)
 
-        return value, policy
+        for game_i, game in enumerate(all_games):
+            # Sanity checks
+            assert np.all(policies[game_i] >= 0), "Policy contains negative probabilities"
+            assert np.abs(np.sum(policies[game_i]) - 1) < 1e-6, "Policy does not sum to 1"
+            assert np.isfinite(values[game_i]), "Policy or value is non-finite"
 
-    def evaluate_array(self, input_array: np.ndarray, action_mask_array: np.ndarray):
-        self._request_queue.put((input_array, action_mask_array, self._client_id))
+            # If the game was originally rotated, rotate the resulting back
+            if game.get_current_player() == Player.TWO:
+                policies[game_i] = policies[game_i][self._action_mapping_rotated_to_original]
+
+            self._cache[all_hashes[game_i]] = (values[game_i], policies[game_i])
+
+        return values[0], policies[0]
+
+    def evaluate_array(self, input_arrays: np.ndarray, action_mask_arrays: np.ndarray):
+        self._request_queue.put((input_arrays, action_mask_arrays, self._client_id))
         value, policy = self._result_queue.get()
         return value, policy
 
@@ -57,16 +79,14 @@ class EvaluatorServer(threading.Thread):
     def __init__(
         self,
         evaluator: NNEvaluator,
-        batch_size: int,
-        max_interbatch_time: float,
+        cache: dict,
         input_queue: mp.SimpleQueue,
         output_queues: list[mp.SimpleQueue],
         statistics_window_size=10000,
     ):
         super().__init__()
         self._evaluator = evaluator
-        self._batch_size = batch_size
-        self._max_interbatch_time = max_interbatch_time
+        self._cache = cache
         self._input_queue = input_queue
         self._output_queues = output_queues
         self._statistics_window_size = statistics_window_size
@@ -74,65 +94,56 @@ class EvaluatorServer(threading.Thread):
         self._shutdown = False
 
     def run(self):
-        batch = []
-        last_batch_end_time = time.time()
-
         while not self._shutdown:
-            while len(batch) == 0:
+            # If we used Queue instead of SimpleQueue, we could use a timeout in get(),
+            # but that seems to cause deadlocks. Until we debug that, sticking to a
+            # busy wait here.
+            while self._input_queue.empty():
                 if self._shutdown:
-                    break
+                    return
+                time.sleep(0.00001)
 
-                # If we used Queue instead of SimpleQueue, we could use a timeout in get(),
-                # but that seems to cause deadlocks. Until we debug that, sticking to a
-                # busy wait here.
-                wait_until_time = last_batch_end_time + self._max_interbatch_time
-                while time.time() < wait_until_time and self._input_queue.empty():
-                    time.sleep(0.00001)
+            inputs_array, action_masks_array, client_id = self._input_queue.get()
 
-                if self._input_queue.empty():
-                    break
+            inputs_tensor = torch.from_numpy(inputs_array).to(my_device())
+            action_masks_tensor = torch.from_numpy(action_masks_array).to(my_device())
 
-                # Grab any more available inputs up to batch size
-                while not self._input_queue.empty() and len(batch) < self._batch_size:
-                    input_array, action_mask_array, client_id = self._input_queue.get()
-                    batch.append((input_array, action_mask_array, client_id))
+            evaluation_start_time = time.time()
+            values, policies = self._evaluator.batch_evaluate(inputs_tensor, action_masks_tensor)
+            evaluation_end_time = time.time()
 
-            if len(batch) > 0:
-                stacked_input_tensor = torch.from_numpy(np.stack([x[0] for x in batch])).to(my_device())
-                stacked_action_masks_tensor = torch.from_numpy(np.stack([x[1] for x in batch])).to(my_device())
-                client_ids = [x[2] for x in batch]
+            self._output_queues[client_id].put((values, policies))
 
-                # Run the evaluator on all the inputs at once
-                evaluation_start_time = time.time()
-                stacked_values, stacked_policies = self._evaluator.batch_evaluate(
-                    stacked_input_tensor, stacked_action_masks_tensor
-                )
-                evaluation_end_time = time.time()
+            self._statistics.append((evaluation_start_time, evaluation_end_time))
 
-                # Send the results back to the clients
-                for row, client_id in enumerate(client_ids):
-                    self._output_queues[client_id].put((stacked_values[row], stacked_policies[row]))
+    def train_prepare(self, *args, **kwargs):
+        return self._evaluator.train_prepare(*args, **kwargs)
 
-                # Keep some statistics for tuning and debugging
-                self._statistics.append((len(batch), evaluation_start_time, evaluation_end_time))
-
-                # Clear out everything we just computed
-                batch = []
-
-            last_batch_end_time = time.time()
+    def train_iteration(self, *args, **kwargs):
+        self._cache.clear()
+        return self._evaluator.train_iteration(*args, **kwargs)
 
     def get_statistics(self):
-        batch_size_sum = 0
         evaluation_time_sum = 0
-        num_batches = 0
-        for batch_size, evaluation_start_time, evaluation_end_time in self._statistics:
-            batch_size_sum += batch_size
+        num_evaluations = 0
+        first_evaluation_time = None
+        last_evaluation_time = None
+        for evaluation_start_time, evaluation_end_time in self._statistics:
+            if first_evaluation_time is None:
+                first_evaluation_time = evaluation_start_time
+            last_evaluation_time = evaluation_end_time
             evaluation_time_sum += evaluation_end_time - evaluation_start_time
-            num_batches += 1
-        if num_batches > 0:
+            num_evaluations += 1
+
+        if num_evaluations > 0:
+            if first_evaluation_time is None or last_evaluation_time is None:
+                duty_cycle = None
+            else:
+                duty_cycle = evaluation_time_sum / (last_evaluation_time - first_evaluation_time)
+
             return {
-                "average_batch_size": batch_size_sum / num_batches,
-                "average_evaluation_time": evaluation_time_sum / num_batches,
+                "duty_cycle": duty_cycle,
+                "average_evaluation_time": evaluation_time_sum / num_evaluations,
             }
         else:
             return {}
