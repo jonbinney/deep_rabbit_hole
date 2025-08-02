@@ -26,6 +26,8 @@ class Node:
         self.children = []
         self.visit_count = 0
         self.value_sum = 0.0
+        self.wins = 0
+        self.losses = 0
 
         self.ucb_c = ucb_c
         self.prior = prior
@@ -80,6 +82,8 @@ class Node:
         """
         self.value_sum += value
         self.visit_count += 1
+        self.wins = self.wins + 1 if value == 1 else 0
+        self.losses = self.losses + 1 if value == -1 else 0
 
         if self.parent is not None:
             self.parent.backpropagate(-value)
