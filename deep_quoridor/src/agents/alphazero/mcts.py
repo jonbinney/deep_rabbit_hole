@@ -82,11 +82,21 @@ class Node:
         """
         self.value_sum += value
         self.visit_count += 1
+        if self.parent is not None:
+            self.parent.backpropagate(-value)
+
+    def backpropagate_result(self, value: float):
+        """
+        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
+        It also tracks actual game results (wins and losses)
+        """
+        self.value_sum += value
+        self.visit_count += 1
         self.wins = self.wins + 1 if value == 1 else 0
         self.losses = self.losses + 1 if value == -1 else 0
 
         if self.parent is not None:
-            self.parent.backpropagate(-value)
+            self.parent.backpropagate_result(-value)
 
 
 class MCTS:
@@ -125,7 +135,7 @@ class MCTS:
 
             if node.game.is_game_over():
                 # The player who just made a move must have won.
-                value = 1
+                node.backpropagate_result(1)
             # TODO: Handle ties (these happen when arena decides game is taking too long)
             else:
                 games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
@@ -133,7 +143,6 @@ class MCTS:
                 value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
                 node.expand(priors)
                 self.new_nodes.extend(node.children)
-
-            node.backpropagate(value)
+                node.backpropagate(value)
 
         return root.children
