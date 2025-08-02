@@ -90,8 +90,10 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, n: int, ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
+    def __init__(self, n: Optional[int], k: Optional[int], ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
+        assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
+        self.k = k
         self.ucb_c = ucb_c
         self.evaluator = evaluator
         self.new_nodes = []
@@ -110,7 +112,14 @@ class MCTS:
     def search(self, initial_game: Quoridor):
         root = Node(initial_game, ucb_c=self.ucb_c)
 
-        for _ in range(self.n):
+        if self.k is not None:
+            num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
+            num_iterations = self.k * num_actions
+        else:
+            assert self.n is not None, "n must be specified if k is not"
+            num_iterations = self.n
+
+        for _ in range(num_iterations):
             # Traverse down the tree guided by maximum UCB until we find a node to expand
             node = self.select(root)
 
