@@ -1,6 +1,7 @@
 import argparse
 import copy
 import multiprocessing as mp
+import os
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ class Worker:
 class RunGamesJob:
     num_games: int  # If -1, worker shuts itself down.
     alphazero_params: Optional[AlphaZeroParams]
+    clear_evaluator_cache: bool
 
 
 @dataclass
@@ -49,6 +51,9 @@ def self_play_worker(
         job = job_queue.get()
         if job.num_games == -1:
             break
+
+        if job.clear_evaluator_cache:
+            evaluator.clear_cache()
 
         # Use the updated model and parameters
         alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params, evaluator=evaluator)
@@ -105,7 +110,7 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
         games_remaining_to_allocate = args.games_per_epoch
         for worker in workers:
             this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params))
+            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params, clear_evaluator_cache=True))
 
         # Collect results from the workers
         for worker in workers:
@@ -136,28 +141,26 @@ def setup(
     evaluator_request_queue = mp.SimpleQueue()
     evaluator_result_queues = [mp.SimpleQueue() for _ in range(num_workers)]
 
-    # Create the cache which is shared by all the evaluator clients.
-    sync_manager = mp.Manager()
-    evaluator_cache = sync_manager.dict()
-
     # Create the evaluator server and start its processing thread.
     action_encoder = ActionEncoder(board_size)
     nn_evaluator = NNEvaluator(action_encoder, my_device())
     evaluator_server = EvaluatorServer(
         nn_evaluator,
-        evaluator_cache,
         input_queue=evaluator_request_queue,
         output_queues=evaluator_result_queues,
     )
     evaluator_server.start()
 
-    # Create the worker processes
+    # Create the worker processes. We hide the CUDA devices
+    # in the worker processes since they're only doing CPU work,
+    # and we don't want pytorch to waste GPU memory with the allocations
+    # it automatically does on startup
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
     workers = []
     for worker_id in range(num_workers):
         evaluator_client = EvaluatorClient(
             board_size,
             worker_id,
-            evaluator_cache,
             evaluator_request_queue,
             evaluator_result_queues[worker_id],
         )
@@ -181,13 +184,13 @@ def setup(
     for worker in workers:
         worker.process.start()
 
-    return evaluator_server, workers, sync_manager
+    return evaluator_server, workers
 
 
 def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
     # Stop the worker processes
     for worker in workers:
-        worker.job_queue.put(RunGamesJob(-1, None))
+        worker.job_queue.put(RunGamesJob(-1, None, False))
 
     for worker in workers:
         worker.process.join()
@@ -203,12 +206,7 @@ def main(args):
 
     t0 = time.time()
 
-    # NOTE: Even though we dont use the SyncManager here, we need to keep a handle to it so
-    # that it won't get garbage collected, since the evaluators used by the workers share
-    # a cache that it manages.
-    evaluator_server, workers, sync_manager = setup(
-        args.board_size, args.max_walls, args.max_game_length, args.num_workers
-    )
+    evaluator_server, workers = setup(args.board_size, args.max_walls, args.max_game_length, args.num_workers)
 
     t1 = time.time()
 

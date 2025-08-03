@@ -21,7 +21,6 @@ class EvaluatorClient:
         self,
         board_size: int,
         client_id: int,
-        cache: dict,
         request_queue: mp.SimpleQueue,
         result_queue: mp.SimpleQueue,
     ):
@@ -32,7 +31,7 @@ class EvaluatorClient:
             board_size
         )
         # byte_representation_of_game_state -> (, value, policy)
-        self._cache = cache
+        self._cache = {}
 
     def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
         if game.get_byte_repr() in self._cache:
@@ -74,19 +73,21 @@ class EvaluatorClient:
     def game_to_input_array(self, game):
         return NNEvaluator.game_to_input_array(game)
 
+    def clear_cache(self):
+        self._cache.clear()
+
 
 class EvaluatorServer(threading.Thread):
     def __init__(
         self,
         evaluator: NNEvaluator,
-        cache: dict,
         input_queue: mp.SimpleQueue,
         output_queues: list[mp.SimpleQueue],
         statistics_window_size=10000,
     ):
         super().__init__()
         self._evaluator = evaluator
-        self._cache = cache
+        self._cache = {}
         self._input_queue = input_queue
         self._output_queues = output_queues
         self._statistics_window_size = statistics_window_size
