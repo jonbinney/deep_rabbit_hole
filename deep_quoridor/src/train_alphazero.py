@@ -138,8 +138,8 @@ def setup(
 ) -> tuple[EvaluatorServer, list[Worker]]:
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
-    evaluator_request_queue = mp.SimpleQueue()
-    evaluator_result_queues = [mp.SimpleQueue() for _ in range(num_workers)]
+    evaluator_request_queue = mp.Queue()
+    evaluator_result_queues = [mp.Queue() for _ in range(num_workers)]
 
     # Create the evaluator server and start its processing thread.
     action_encoder = ActionEncoder(board_size)
@@ -224,7 +224,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a DQN agent for Quoridor")
+    parser = argparse.ArgumentParser(description="Train an alphazero agent for Quoridor")
     parser.add_argument("-p", "--params", type=str, default="", help="Alphazero agent params in subargs form")
     parser.add_argument("-N", "--board-size", type=int, default=5, help="Board Size")
     parser.add_argument("-W", "--max-walls", type=int, default=3, help="Max walls per player")

@@ -33,7 +33,9 @@ class NNEvaluator:
         # fast hash -> (value, policy)
         self.cache = {}
 
-    def batch_evaluate(self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor):
+    def evaluate_tensors(
+        self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Caller is responsible for converting from games to a stack of input tensors, as well as rotating results
         """
@@ -44,23 +46,19 @@ class NNEvaluator:
         with torch.no_grad():
             policy_logits_tensor, values_tensor = self.network(inputs_tensor)
 
-        assert torch.isfinite(policy_logits_tensor).all(), "Policy logits contains non-finite values"
+            assert torch.isfinite(policy_logits_tensor).all(), "Policy logits contains non-finite values"
 
-        # Leave the policy tensors on the device while we mask and softmax
-        masked_policy_logits_tensor = policy_logits_tensor * action_masks_tensor + INVALID_ACTION_VALUE * (
-            1 - action_masks_tensor
-        )
-        policies_tensor = F.softmax(masked_policy_logits_tensor, dim=-1)
+            # Leave the policy tensors on the device while we mask and softmax
+            masked_policy_logits_tensor = policy_logits_tensor * action_masks_tensor + INVALID_ACTION_VALUE * (
+                1 - action_masks_tensor
+            )
+            policies_tensor = F.softmax(masked_policy_logits_tensor, dim=-1)
 
-        # Transfer policies and values back to CPU and turn them into arrays
-        policies_array = policies_tensor.cpu().numpy()
-        values_array = values_tensor.cpu().flatten().numpy()
+            assert torch.all(policies_tensor >= 0), "Policy contains negative probabilities"
+            assert torch.all(torch.sum(policies_tensor, dim=-1) - 1 < 1e-6), "Policy does not sum to 1"
+            assert torch.all(torch.isfinite(values_tensor)), "Value is non-finite"
 
-        assert np.all(policies_array >= 0), "Policy contains negative probabilities"
-        assert np.all(policies_array <= 1), "Policy contains probabilities greater than 1"
-        assert np.any(policies_array > 0), "Policy is all zeros"
-
-        return values_array, policies_array
+        return values_tensor, policies_tensor
 
     def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
         if game.get_fast_hash() in self.cache:

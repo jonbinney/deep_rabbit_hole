@@ -2,6 +2,7 @@
 Wraps an evaluator for use by multiple client processes via Queues.
 """
 
+import queue
 import threading
 import time
 from collections import deque
@@ -21,8 +22,8 @@ class EvaluatorClient:
         self,
         board_size: int,
         client_id: int,
-        request_queue: mp.SimpleQueue,
-        result_queue: mp.SimpleQueue,
+        request_queue: mp.Queue,
+        result_queue: mp.Queue,
     ):
         self._client_id = client_id
         self._request_queue = request_queue
@@ -61,7 +62,7 @@ class EvaluatorClient:
 
     def evaluate_array(self, input_arrays: np.ndarray, action_mask_arrays: np.ndarray):
         self._request_queue.put((input_arrays, action_mask_arrays, self._client_id))
-        value, policy = self._result_queue.get()
+        value, policy = self._result_queue.get(timeout=10)
         return value, policy
 
     def rotate_policy_from_original(self, policy: np.ndarray):
@@ -81,9 +82,9 @@ class EvaluatorServer(threading.Thread):
     def __init__(
         self,
         evaluator: NNEvaluator,
-        input_queue: mp.SimpleQueue,
-        output_queues: list[mp.SimpleQueue],
-        statistics_window_size=10000,
+        input_queue: mp.Queue,
+        output_queues: list[mp.Queue],
+        statistics_window_size=1000000000,
     ):
         super().__init__()
         self._evaluator = evaluator
@@ -96,24 +97,23 @@ class EvaluatorServer(threading.Thread):
 
     def run(self):
         while not self._shutdown:
-            # If we used Queue instead of SimpleQueue, we could use a timeout in get(),
-            # but that seems to cause deadlocks. Until we debug that, sticking to a
-            # busy wait here.
-            while self._input_queue.empty():
-                if self._shutdown:
-                    return
-                time.sleep(0.00001)
-
-            inputs_array, action_masks_array, client_id = self._input_queue.get()
+            try:
+                inputs_array, action_masks_array, client_id = self._input_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
             inputs_tensor = torch.from_numpy(inputs_array).to(my_device())
             action_masks_tensor = torch.from_numpy(action_masks_array).to(my_device())
 
             evaluation_start_time = time.time()
-            values, policies = self._evaluator.batch_evaluate(inputs_tensor, action_masks_tensor)
+            values_tensor, policies_tensor = self._evaluator.evaluate_tensors(inputs_tensor, action_masks_tensor)
             evaluation_end_time = time.time()
 
-            self._output_queues[client_id].put((values, policies))
+            # Transfer policies and values back to CPU and turn them into arrays
+            policies_array = policies_tensor.cpu().numpy()
+            values_array = values_tensor.cpu().flatten().numpy()
+
+            self._output_queues[client_id].put((values_array, policies_array))
 
             self._statistics.append((evaluation_start_time, evaluation_end_time))
 
@@ -126,7 +126,7 @@ class EvaluatorServer(threading.Thread):
 
     def get_statistics(self):
         evaluation_time_sum = 0
-        num_evaluations = 0
+        num_evaluations = len(self._statistics)
         first_evaluation_time = None
         last_evaluation_time = None
         for evaluation_start_time, evaluation_end_time in self._statistics:
@@ -134,7 +134,6 @@ class EvaluatorServer(threading.Thread):
                 first_evaluation_time = evaluation_start_time
             last_evaluation_time = evaluation_end_time
             evaluation_time_sum += evaluation_end_time - evaluation_start_time
-            num_evaluations += 1
 
         if num_evaluations > 0:
             if first_evaluation_time is None or last_evaluation_time is None:
@@ -145,6 +144,7 @@ class EvaluatorServer(threading.Thread):
             return {
                 "duty_cycle": duty_cycle,
                 "average_evaluation_time": evaluation_time_sum / num_evaluations,
+                "num_evaluations": num_evaluations,
             }
         else:
             return {}
