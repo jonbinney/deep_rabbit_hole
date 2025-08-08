@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 import wandb
-from quoridor import ActionEncoder, construct_game_from_observation
+from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
@@ -233,6 +233,8 @@ class AlphaZeroAgent(TrainableAgent):
         self,
         visit_probs,
         root_children,
+        root_value,
+        root_action,
     ):
         if not self.action_log.is_enabled():
             return
@@ -243,19 +245,21 @@ class AlphaZeroAgent(TrainableAgent):
 
         scores = {root_children[i].action_taken: visit_probs[i] for i in top_indices}
         self.action_log.action_score_ranking(scores)
+        self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
     def get_action(self, observation) -> int:
         game, player, _ = construct_game_from_observation(observation["observation"])
-
         # Run MCTS to get action visit counts
-        root_children = self.mcts.search(game)
+        root_children, root_value = self.mcts.search(game)
         visit_counts = np.array([child.visit_count for child in root_children])
         visit_counts_sum = np.sum(visit_counts)
         if visit_counts_sum == 0:
             raise RuntimeError("No nodes visited during MCTS")
 
         visit_probs = visit_counts / visit_counts_sum
-        self._log_action(visit_probs, root_children)
+        self._log_action(
+            visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
+        )
 
         if self.temperature == 0.0:
             max_value = np.max(visit_probs)
