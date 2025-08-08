@@ -7,14 +7,14 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
-from agents.alphazero.mcts import MCTS
-from agents.alphazero.nn_evaluator import NNEvaluator
-from agents.core import TrainableAgent
+import wandb
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
-import wandb
+from agents.alphazero.mcts import MCTS
+from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.core import TrainableAgent
 
 
 @dataclass
