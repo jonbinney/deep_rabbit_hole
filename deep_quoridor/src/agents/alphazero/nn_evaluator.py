@@ -70,17 +70,13 @@ class NNEvaluator:
         all_games_input_arrays = [torch.from_numpy(NNEvaluator.game_to_input_array(g)) for g in all_games]
         all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
 
-        if self.network.training:
-            self.network.eval()  # Disables dropout
-
         with torch.no_grad():
             action_masks = torch.stack([torch.from_numpy(g.get_action_mask()) for g in all_games]).to(
                 device=self.device
             )
-            policy_logits, values = self.network(all_games_tensors)
-            policy_logits = policy_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
-            policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
+            values, policy_masked = self.evaluate_tensors(all_games_tensors, action_masks)
             values = values.cpu().numpy()
+            policy_masked = policy_masked.cpu().numpy()
 
         for i, g in enumerate(all_games):
             pm = policy_masked[i]
