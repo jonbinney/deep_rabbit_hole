@@ -65,9 +65,9 @@ class NNEvaluator:
             # If the game was originally rotated, rotate the resulting back to player 2's perspective
             if g.get_current_player() == Player.TWO:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
-            self.cache[all_hashes[i]] = (values[i], policy_masked[i])
+            self.cache[all_hashes[i]] = (values[i][0], policy_masked[i])
 
-        return values[0], policy_masked[0]
+        return values[0][0], policy_masked[0]
 
     def rotate_policy_from_original(self, policy: np.ndarray):
         """

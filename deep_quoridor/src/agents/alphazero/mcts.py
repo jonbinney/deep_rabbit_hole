@@ -1,7 +1,7 @@
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, Quoridor
+from quoridor import Action, Player, Quoridor
 
 
 class Node:
@@ -131,5 +131,7 @@ class MCTS:
                 self.new_nodes.extend(node.children)
 
             node.backpropagate(value)
-
-        return root.children
+        # Negate the value because the value is actually the value that the opponent
+        # got for getting to that state.
+        root_value = -(root.value_sum / root.visit_count)
+        return root.children, root_value
