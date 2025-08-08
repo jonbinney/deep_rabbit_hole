@@ -539,6 +539,9 @@ class Quoridor:
         # Combine all bytes and hash
         return hash(self.get_byte_repr())
 
+    def is_rotated(self) -> bool:
+        return self._rotated
+
 
 def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
     player_id = observation["player_turn"]
