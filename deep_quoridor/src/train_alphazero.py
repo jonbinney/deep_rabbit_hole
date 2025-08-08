@@ -17,11 +17,18 @@ from utils import my_device, parse_subargs, set_deterministic
 
 
 @dataclass
-class Worker:
+class WorkerParams:
     worker_id: int
-    process: mp.Process
+    random_seed: int
     job_queue: mp.Queue
     result_queue: mp.Queue
+    evaluator: EvaluatorClient
+
+
+@dataclass
+class Worker:
+    params: WorkerParams
+    process: mp.Process
 
 
 @dataclass
@@ -42,23 +49,24 @@ def self_play_worker(
     board_size: int,
     max_walls: int,
     max_game_length: int,
-    evaluator: EvaluatorClient,
-    worker_id: int,
-    job_queue: mp.Queue,
-    result_queue: mp.Queue,
+    params: WorkerParams,
 ):
+    # Each worker process uses its own random seed to make sure they don't make the exact same moves during
+    # their self-play moves.
+    set_deterministic(params.random_seed)
+
     environment = quoridor_env.env(board_size=board_size, max_walls=max_walls, step_rewards=False)
 
     while True:
-        job = job_queue.get()
+        job = params.job_queue.get()
         if job.num_games == -1:
             break
 
         if job.clear_evaluator_cache:
-            evaluator.clear_cache()
+            params.evaluator.clear_cache()
 
         # Use the updated model and parameters
-        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params, evaluator=evaluator)
+        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params, evaluator=params.evaluator)
 
         for game_i in range(job.num_games):
             environment.reset()
@@ -79,13 +87,15 @@ def self_play_worker(
                     print(environment.render())
                     break
 
-            print(f"Worker {worker_id}: Game {game_i + 1}/{job.num_games} ended after {num_turns} turns")
+            print(f"Worker {params.worker_id}: Game {game_i + 1}/{job.num_games} ended after {num_turns} turns")
             alphazero_agent.end_game(environment)
 
-        result_queue.put(RunGamesResult(worker_id, alphazero_agent.replay_buffer, evaluator.get_statistics()))
+        params.result_queue.put(
+            RunGamesResult(params.worker_id, alphazero_agent.replay_buffer, params.evaluator.get_statistics())
+        )
         alphazero_agent.replay_buffer = []
 
-    print(f"Worker {worker_id} exiting")
+    print(f"Worker {params.worker_id} exiting")
 
 
 def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worker]):
@@ -112,12 +122,14 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
         games_remaining_to_allocate = args.games_per_epoch
         for worker in workers:
             this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-            worker.job_queue.put(RunGamesJob(this_worker_num_games, self_play_params, clear_evaluator_cache=True))
+            worker.params.job_queue.put(
+                RunGamesJob(this_worker_num_games, self_play_params, clear_evaluator_cache=True)
+            )
 
         # Collect results from the workers
         results = []
         for worker in workers:
-            results.append(worker.result_queue.get())
+            results.append(worker.params.result_queue.get())
 
         # Merge results into the primary replay buffer. We sort them to try and
         # make the results more deterministic across multiple runs.
@@ -144,8 +156,11 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
 
 
 def setup(
-    board_size: int, max_walls: int, max_game_length: int, num_workers: int
+    board_size: int, max_walls: int, max_game_length: int, num_workers: int, random_seed: int
 ) -> tuple[EvaluatorServer, list[Worker]]:
+    set_deterministic(random_seed)
+
+    set_deterministic(args.seed)
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
     evaluator_request_queue = mp.Queue()
@@ -176,19 +191,17 @@ def setup(
         )
         job_queue = mp.Queue()
         result_queue = mp.Queue()
-        process = mp.Process(
+        worker_params = WorkerParams(worker_id, random_seed + worker_id, job_queue, result_queue, evaluator_client)
+        worker_process = mp.Process(
             target=self_play_worker,
             args=(
                 board_size,
                 max_walls,
                 max_game_length,
-                evaluator_client,
-                worker_id,
-                job_queue,
-                result_queue,
+                worker_params,
             ),
         )
-        workers.append(Worker(worker_id, process, job_queue, result_queue))
+        workers.append(Worker(worker_params, worker_process))
 
     # Start the worker processes
     for worker in workers:
@@ -200,7 +213,7 @@ def setup(
 def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
     # Stop the worker processes
     for worker in workers:
-        worker.job_queue.put(RunGamesJob(-1, None, False))
+        worker.params.job_queue.put(RunGamesJob(-1, None, False))
 
     for worker in workers:
         worker.process.join()
@@ -214,11 +227,11 @@ def main(args):
     # Set multiprocessing start method to avoid tensor sharing issues and Mac bugs
     mp.set_start_method("spawn", force=True)
 
-    set_deterministic(args.seed)
-
     t0 = time.time()
 
-    evaluator_server, workers = setup(args.board_size, args.max_walls, args.max_game_length, args.num_workers)
+    evaluator_server, workers = setup(
+        args.board_size, args.max_walls, args.max_game_length, args.num_workers, args.seed
+    )
 
     t1 = time.time()
 

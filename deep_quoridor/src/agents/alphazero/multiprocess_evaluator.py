@@ -12,7 +12,7 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.multiprocessing as mp
-from quoridor import Player, Quoridor
+from quoridor import Quoridor
 from utils import my_device
 
 from agents.alphazero.nn_evaluator import NNEvaluator
