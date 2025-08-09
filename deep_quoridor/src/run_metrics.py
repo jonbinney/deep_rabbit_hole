@@ -30,7 +30,9 @@ if __name__ == "__main__":
 
     for player in args.players:
         print(f"Computing metrics for {player}")
-        _, _, relative_elo, win_perc, absolute_elo, dumb_score = m.compute(player)
+        _, _, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = m.compute(
+            player
+        )
         table.add_row([player, absolute_elo, relative_elo, win_perc, dumb_score])
 
     print(table)

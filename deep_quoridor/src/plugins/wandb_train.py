@@ -139,8 +139,8 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb.finish()
 
     def compute_tournament_metrics(self, model_filename: str) -> int:
-        _, elo_table, relative_elo, win_perc, absolute_elo, dumb_score = self.metrics.compute(
-            self.agent_encoded_name + f",model_filename={model_filename}"
+        _, elo_table, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = (
+            self.metrics.compute(self.agent_encoded_name + f",model_filename={model_filename}")
         )
 
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
@@ -152,14 +152,19 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb_elo_table = wandb.Table(
             columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
         )
+        metrics = {
+            "elo": wandb_elo_table,
+            "relative_elo": relative_elo,
+            "win_perc": win_perc,
+            "absolute_elo": absolute_elo,
+            "dumb_score": dumb_score,
+        }
+        for opponent in p1_win_percentages:
+            metrics[f"p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
+        for opponent in p2_win_percentages:
+            metrics[f"p2_win_perc_vs_{opponent}"] = p2_win_percentages[opponent]
         self.run.log(
-            {
-                "elo": wandb_elo_table,
-                "relative_elo": relative_elo,
-                "win_perc": win_perc,
-                "absolute_elo": absolute_elo,
-                "dumb_score": dumb_score,
-            },
+            metrics,
             step=self.episode_count,
         )
 
