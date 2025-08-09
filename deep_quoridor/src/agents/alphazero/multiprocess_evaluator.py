@@ -156,7 +156,7 @@ class EvaluatorServer(threading.Thread):
         max_log_len=int(1e8),
     ):
         super().__init__()
-        self._evaluator = evaluator
+        self.evaluator = evaluator
         self._cache = {}
         self._input_queue = input_queue
         self._output_queues = output_queues
@@ -195,7 +195,7 @@ class EvaluatorServer(threading.Thread):
             action_masks_tensor = torch.from_numpy(action_masks_array).to(my_device())
 
             # Do the actual evalution
-            values_tensor, policies_tensor = self._evaluator.evaluate_tensors(inputs_tensor, action_masks_tensor)
+            values_tensor, policies_tensor = self.evaluator.evaluate_tensors(inputs_tensor, action_masks_tensor)
 
             values_array = values_tensor.cpu().flatten().numpy()
             policies_array = policies_tensor.cpu().numpy()
@@ -210,11 +210,11 @@ class EvaluatorServer(threading.Thread):
         self._output_queues[client_id].put((values_array, policies_array))
 
     def train_prepare(self, *args, **kwargs):
-        return self._evaluator.train_prepare(*args, **kwargs)
+        return self.evaluator.train_prepare(*args, **kwargs)
 
     def train_iteration(self, *args, **kwargs):
         self._cache.clear()
-        return self._evaluator.train_iteration(*args, **kwargs)
+        return self.evaluator.train_iteration(*args, **kwargs)
 
     def get_statistics(self):
         return compute_statistics(self._evaluation_log)
