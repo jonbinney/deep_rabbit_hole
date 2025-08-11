@@ -15,6 +15,7 @@ import torch.multiprocessing as mp
 from quoridor import Quoridor
 from utils import my_device
 
+from agents.alphazero.evaluator_cache import EvaluatorCache
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core.rotation import create_rotation_mapping
 
@@ -83,7 +84,7 @@ class EvaluatorClient:
         (self._action_mapping_original_to_rotated, self._action_mapping_rotated_to_original) = create_rotation_mapping(
             board_size
         )
-        self._cache = {}
+        self._cache = EvaluatorCache()
         self._evaluation_log = deque(maxlen=max_log_len)
 
     def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
@@ -91,9 +92,9 @@ class EvaluatorClient:
 
         game, _ = self.rotate_if_needed_to_point_downwards(game)
         input_array = self.game_to_input_array(game)
-        cache_key = input_array.tobytes()
-        if cache_key in self._cache:
-            cached_value, cached_policy, _ = self._cache[cache_key]
+        cached_result = self._cache.get(input_array)
+        if cached_result is not None:
+            cached_value, cached_policy = cached_result
             if game.is_rotated():
                 cached_policy = cached_policy[self._action_mapping_rotated_to_original]
             evaluation_end_time = time.time()
@@ -113,11 +114,10 @@ class EvaluatorClient:
             assert np.isfinite(values_array[row_i]), "Policy or value is non-finite"
 
             # Update our local cache
-            cache_key = all_games_inputs_array[row_i].tobytes()
-            self._cache[cache_key] = (values_array[row_i], policies_array[row_i], game.copy())
+            self._cache[all_games_inputs_array[row_i]] = (values_array[row_i], policies_array[row_i])
 
         evaluation_end_time = time.time()
-        self._evaluation_log.append(EvaluationInfo(evaluation_start_time, evaluation_end_time, 1, False))
+        self._evaluation_log.append(EvaluationInfo(evaluation_start_time, evaluation_end_time, len(all_games), False))
 
         value = values_array[0]
         policy = policies_array[0]
@@ -157,7 +157,7 @@ class EvaluatorServer(threading.Thread):
     ):
         super().__init__()
         self.evaluator = evaluator
-        self._cache = {}
+        self._cache = EvaluatorCache()
         self._input_queue = input_queue
         self._output_queues = output_queues
         self._max_l = max_log_len
@@ -174,31 +174,31 @@ class EvaluatorServer(threading.Thread):
             values_array, policies_array = self._evaluate_arrays(inputs_array, action_masks_array)
             self._send_result_to_client(client_id, values_array, policies_array)
 
-            # Update the cache
-            for row_i in range(len(values_array)):
-                self._cache[inputs_array[row_i].tobytes()] = (values_array[row_i], policies_array[row_i])
-
     def _evaluate_arrays(self, inputs_array, action_masks_array):
         evaluation_start_time = time.time()
         used_cache = False
 
         # If the first input array is in our cache, we return the cached value, policy for that
         # one and don't evaluate the others.
-        cache_key = inputs_array[0].tobytes()
-        if cache_key in self._cache:
-            value, policy = self._cache.get(cache_key)
-            values_array = np.expand_dims(value, 0)
-            policies_array = np.expand_dims(policy, 0)
-            used_cache = True
-        else:
+        cached_result = self._cache.get(inputs_array[0])
+        if cached_result is None:
             inputs_tensor = torch.from_numpy(inputs_array).to(my_device())
             action_masks_tensor = torch.from_numpy(action_masks_array).to(my_device())
 
             # Do the actual evalution
             values_tensor, policies_tensor = self.evaluator.evaluate_tensors(inputs_tensor, action_masks_tensor)
-
             values_array = values_tensor.cpu().flatten().numpy()
             policies_array = policies_tensor.cpu().numpy()
+
+            # Update the cache
+            for row_i in range(len(values_array)):
+                self._cache[inputs_array[row_i]] = (values_array[row_i], policies_array[row_i])
+        else:
+            # Return the value for the first input array from the cache, and don't evaluate
+            # the other ones (they were just optional extras to evaluate anyway)
+            values_array = np.expand_dims(cached_result[0], 0)
+            policies_array = np.expand_dims(cached_result[1], 0)
+            used_cache = True
 
         evaluation_end_time = time.time()
         self._evaluation_log.append(
