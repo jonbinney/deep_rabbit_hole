@@ -18,17 +18,43 @@ class Metrics:
         self.stored_elos = {}
         self.benchmarks = benchmarks
 
-    def _win_perc(self, results: list[GameResult], agent_name: str):
+    def _compute_win_percentages(self, results: list[GameResult], agent_name: str):
         played = 0
         won = 0
+
+        all_player_names = set()
         for result in results:
-            if result.player1 == agent_name or result.player2 == agent_name:
+            all_player_names.update([result.player1, result.player2])
+
+        # First find out how many times the agent played each other player, and how
+        # many times they won.
+        p1_stats = {}
+        p2_stats = {}
+        for result in results:
+            if result.player1 == agent_name:
                 played += 1
+                if result.player2 not in p1_stats:
+                    p1_stats[result.player2] = [0, 0]
+                p1_stats[result.player2][0] += 1
+                if result.winner == agent_name:
+                    p1_stats[result.player2][1] += 1
+                    won += 1
 
-            if result.winner == agent_name:
-                won += 1
+            if result.player2 == agent_name:
+                played += 1
+                if result.player1 not in p2_stats:
+                    p2_stats[result.player1] = [0, 0]
+                p2_stats[result.player1][0] += 1
+                if result.winner == agent_name:
+                    p2_stats[result.player1][1] += 1
+                    won += 1
 
-        return 100.0 * won / played if played > 1 else 0.0
+        # Now compute win percentages versus each opponent.
+        p1_win_percentages = {opponent: 100 * s[1] / s[0] for opponent, s in p1_stats.items()}
+        p2_win_percentages = {opponent: 100 * s[1] / s[0] for opponent, s in p2_stats.items()}
+        overall_win_percentage = 100.0 * won / played if played > 1 else 0.0
+
+        return overall_win_percentage, p1_win_percentages, p2_win_percentages
 
     def _compute_relative_elo(self, elo_table: dict[str, float], agent_name: str) -> int:
         agent_rating = elo_table[agent_name]
@@ -52,6 +78,8 @@ class Metrics:
                 - elo_table (dict[str, float]): A dictionary mapping agent names to their computed Elo ratings.
                 - relative_elo (int): The evaluated agent's Elo rating minus the elo for the best opponent.
                 - win_perc (float): The win percentage of the evaluated agent against the opponents.
+                - p1_win_percentages (dict[str, float]): Win percentage as player one against each oponnent.
+                - p2_win_percentages (dict[str, float]): Win percentage as player two against each oponnent.
                 - dumb_score (int): A score between 0 (perfect) and 100 (always wrong) on how the agent performs in certain basic situations
 
         Notes:
@@ -96,12 +124,23 @@ class Metrics:
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())
 
-        win_perc = self._win_perc(results, agent.name())
+        overall_win_percentage, p1_win_percentages, p2_win_percentages = self._compute_win_percentages(
+            results, agent.name()
+        )
         absolute_elo = elo_table[agent.name()]
 
         dumb_score = self.dumb_score(agent)
 
-        return VERSION, elo_table, relative_elo, win_perc, int(absolute_elo), dumb_score
+        return (
+            VERSION,
+            elo_table,
+            relative_elo,
+            overall_win_percentage,
+            p1_win_percentages,
+            p2_win_percentages,
+            int(absolute_elo),
+            dumb_score,
+        )
 
     def dumb_score(self, agent: Agent, verbose: bool = False):
         def print_fail(initial: str, current: str):

@@ -1,7 +1,7 @@
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, Quoridor
+from quoridor import Action, Player, Quoridor
 
 
 class Node:
@@ -26,6 +26,8 @@ class Node:
         self.children = []
         self.visit_count = 0
         self.value_sum = 0.0
+        self.wins = 0
+        self.losses = 0
 
         self.ucb_c = ucb_c
         self.prior = prior
@@ -80,14 +82,28 @@ class Node:
         """
         self.value_sum += value
         self.visit_count += 1
-
         if self.parent is not None:
             self.parent.backpropagate(-value)
 
+    def backpropagate_result(self, value: float):
+        """
+        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
+        It also tracks actual game results (wins and losses)
+        """
+        self.value_sum += value
+        self.visit_count += 1
+        self.wins = self.wins + 1 if value == 1 else 0
+        self.losses = self.losses + 1 if value == -1 else 0
+
+        if self.parent is not None:
+            self.parent.backpropagate_result(-value)
+
 
 class MCTS:
-    def __init__(self, n: int, ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
+    def __init__(self, n: Optional[int], k: Optional[int], ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
+        assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
+        self.k = k
         self.ucb_c = ucb_c
         self.evaluator = evaluator
         self.new_nodes = []
@@ -106,13 +122,20 @@ class MCTS:
     def search(self, initial_game: Quoridor):
         root = Node(initial_game, ucb_c=self.ucb_c)
 
-        for _ in range(self.n):
+        if self.k is not None:
+            num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
+            num_iterations = self.k * num_actions
+        else:
+            assert self.n is not None, "n must be specified if k is not"
+            num_iterations = self.n
+
+        for _ in range(num_iterations):
             # Traverse down the tree guided by maximum UCB until we find a node to expand
             node = self.select(root)
 
             if node.game.is_game_over():
                 # The player who just made a move must have won.
-                value = 1
+                node.backpropagate_result(1)
             # TODO: Handle ties (these happen when arena decides game is taking too long)
             else:
                 games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
@@ -121,6 +144,9 @@ class MCTS:
                 node.expand(priors)
                 self.new_nodes.extend(node.children)
 
-            node.backpropagate(value)
-
-        return root.children
+                node.backpropagate(value)
+                
+        # Negate the value because the value is actually the value that the opponent
+        # got for getting to that state.
+        root_value = -(root.value_sum / root.visit_count)
+        return root.children, root_value
