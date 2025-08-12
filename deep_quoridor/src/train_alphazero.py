@@ -160,7 +160,6 @@ def setup(
 ) -> tuple[EvaluatorServer, list[Worker]]:
     set_deterministic(random_seed)
 
-    set_deterministic(args.seed)
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
     evaluator_request_queue = mp.Queue()
