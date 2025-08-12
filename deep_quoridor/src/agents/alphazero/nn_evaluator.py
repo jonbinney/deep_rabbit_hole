@@ -22,7 +22,7 @@ class NNEvaluator:
 
         # Create a temporary game just to see how  big the input tensors are.
         temp_game = Quoridor(Board(self.action_encoder.board_size))
-        temp_input = self.game_to_input_array(temp_game)
+        temp_input = NNEvaluator.game_to_input_array(temp_game)
         self.input_size = len(temp_input)
 
         self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
@@ -33,27 +33,50 @@ class NNEvaluator:
         # fast hash -> (value, policy)
         self.cache = {}
 
+    def evaluate_tensors(
+        self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Caller is responsible for converting from games to a stack of input tensors, as well as rotating results
+        """
+        if self.network.training:
+            self.network.eval()  # Disables dropout
+
+        # Run the network on the entire batch
+        with torch.no_grad():
+            policy_logits_tensor, values_tensor = self.network(inputs_tensor)
+
+            assert torch.isfinite(policy_logits_tensor).all(), "Policy logits contains non-finite values"
+
+            # Leave the policy tensors on the device while we mask and softmax
+            masked_policy_logits_tensor = policy_logits_tensor * action_masks_tensor + INVALID_ACTION_VALUE * (
+                1 - action_masks_tensor
+            )
+            policies_tensor = F.softmax(masked_policy_logits_tensor, dim=-1)
+
+            assert torch.all(policies_tensor >= 0), "Policy contains negative probabilities"
+            assert torch.all(torch.sum(policies_tensor, dim=-1) - 1 < 1e-6), "Policy does not sum to 1"
+            assert torch.all(torch.isfinite(values_tensor)), "Value is non-finite"
+
+        return values_tensor, policies_tensor
+
     def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
         if game.get_fast_hash() in self.cache:
             return self.cache[game.get_fast_hash()]
 
         all_games = [game] + extra_games_to_evaluate
         all_hashes = [g.get_fast_hash() for g in all_games]
-        all_games = [self.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
-        all_games_input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in all_games]
+        all_games = [NNEvaluator.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
+        all_games_input_arrays = [torch.from_numpy(NNEvaluator.game_to_input_array(g)) for g in all_games]
         all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
-
-        if self.network.training:
-            self.network.eval()  # Disables dropout
 
         with torch.no_grad():
             action_masks = torch.stack([torch.from_numpy(g.get_action_mask()) for g in all_games]).to(
                 device=self.device
             )
-            policy_logits, values = self.network(all_games_tensors)
-            policy_logits = policy_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
-            policy_masked = F.softmax(policy_logits, dim=-1).cpu().numpy()
+            values, policy_masked = self.evaluate_tensors(all_games_tensors, action_masks)
             values = values.cpu().numpy()
+            policy_masked = policy_masked.cpu().numpy()
 
         for i, g in enumerate(all_games):
             pm = policy_masked[i]
@@ -75,7 +98,8 @@ class NNEvaluator:
         """
         return policy[self.action_mapping_original_to_rotated]
 
-    def rotate_if_needed_to_point_downwards(self, game: Quoridor):
+    @staticmethod
+    def rotate_if_needed_to_point_downwards(game: Quoridor):
         """
         Rotates the game so that the current player's goal is the row with the largest index.
 
@@ -95,7 +119,8 @@ class NNEvaluator:
 
         return game, is_rotated
 
-    def game_to_input_array(self, game: Quoridor) -> np.ndarray:
+    @staticmethod
+    def game_to_input_array(game: Quoridor) -> np.ndarray:
         """Convert Quoridor game state to tensor format for neural network."""
         player = game.get_current_player()
         opponent = Player(1 - player)

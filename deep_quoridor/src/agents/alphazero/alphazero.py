@@ -95,6 +95,7 @@ class AlphaZeroAgent(TrainableAgent):
         max_walls,
         observation_space=None,
         action_space=None,
+        evaluator=None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -107,9 +108,15 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
+        if evaluator is None:
+            self.evaluator = NNEvaluator(self.action_encoder, self.device)
+        else:
+            self.evaluator = evaluator
+
         self.mcts = MCTS(
             params.mcts_n, params.mcts_k, params.mcts_ucb_c, self.evaluator, params.mcts_pre_evaluate_nodes_total
         )
+
         if params.training_mode and params.train_every is not None:
             self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
 
