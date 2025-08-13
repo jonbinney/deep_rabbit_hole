@@ -556,9 +556,7 @@ class DAZAgent(AbstractTrainableAgent):
                     node.game.current_player,
                     True,
                 )
-                action_mask = make_action_mask(
-                    self.action_size, node.game.get_valid_actions(node.game.current_player), self.action_encoder
-                )
+                action_mask = node.game.get_action_mask(node.game.current_player)
                 policy = self._compute_qvalues_softmax(observation, action_mask, agent_id)
                 node.expand(policy, path_till_node)
                 # non_zero_policy = policy[policy > 0]
