@@ -96,7 +96,7 @@ class EvaluatorClient:
         if cached_result is not None:
             cached_value, cached_policy = cached_result
             if game.is_rotated():
-                cached_policy = cached_policy[self._action_mapping_rotated_to_original]
+                cached_policy = self.rotate_policy_from_original(cached_policy)
             evaluation_end_time = time.time()
             self._evaluation_log.append(EvaluationInfo(evaluation_start_time, evaluation_end_time, 1, True))
             return cached_value, cached_policy
@@ -116,13 +116,13 @@ class EvaluatorClient:
             # Update our local cache
             self._cache[all_games_inputs_array[row_i]] = (values_array[row_i], policies_array[row_i])
 
-        evaluation_end_time = time.time()
-        self._evaluation_log.append(EvaluationInfo(evaluation_start_time, evaluation_end_time, len(all_games), False))
-
         value = values_array[0]
         policy = policies_array[0]
         if game.is_rotated():
-            policy = policy[self._action_mapping_rotated_to_original]
+            policy = self.rotate_policy_from_original(policy)
+
+        evaluation_end_time = time.time()
+        self._evaluation_log.append(EvaluationInfo(evaluation_start_time, evaluation_end_time, len(all_games), False))
 
         return value, policy
 
@@ -160,7 +160,6 @@ class EvaluatorServer(threading.Thread):
         self._cache = EvaluatorCache()
         self._input_queue = input_queue
         self._output_queues = output_queues
-        self._max_l = max_log_len
         self._evaluation_log = deque(maxlen=max_log_len)
         self._shutdown = False
 

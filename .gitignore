@@ -160,7 +160,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Training data 
+# Training data
 /datasets/*/
 /raw_data/*/
 
@@ -182,3 +182,6 @@ deep_quoridor/tn.sh
 
 # Claude code cache directory
 .claude
+
+# Videos of the game play
+videos
