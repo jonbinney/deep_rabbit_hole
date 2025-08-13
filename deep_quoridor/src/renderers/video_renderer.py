@@ -101,8 +101,6 @@ class VideoRenderer(Renderer):
             print("No game states recorded, skipping video creation")
             return
 
-        print(f"Creating video with {len(self.game_states)} frames...")
-
         try:
             # Generate filename
             video_filename = self._generate_filename(result)
@@ -181,7 +179,6 @@ class VideoRenderer(Renderer):
 
             frame_paths.append(frame_path)
 
-        print(f"Generated {len(frame_paths)} frame images")
         return frame_paths
 
     def _create_video_ffmpeg(self, frame_paths, output_path):
@@ -236,3 +233,6 @@ class VideoRenderer(Renderer):
         # Remove other problematic characters
         clean = "".join(c for c in clean if c.isalnum() or c in "_-")
         return clean[:20]  # Limit length
+
+    def end_arena(self, game, results: list[GameResult]):
+        print(f"Videos of the games saved to {self.output_dir.absolute()}")

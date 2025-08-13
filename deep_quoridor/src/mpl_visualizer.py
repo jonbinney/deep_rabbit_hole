@@ -51,13 +51,8 @@ def visualize_board(
 
     # Draw grid lines
     for i in range(board_size + 1):
-        ax.axhline(y=i - 0.5, color="lightgray", linewidth=0.5, alpha=0.7)
-        ax.axvline(x=i - 0.5, color="lightgray", linewidth=0.5, alpha=0.7)
-
-    # Draw cell centers as light dots
-    for row in range(board_size):
-        for col in range(board_size):
-            ax.plot(col, row, "o", color="lightgray", markersize=3, alpha=0.3)
+        ax.axhline(y=i - 0.5, color="lightgray", linewidth=8, alpha=0.7)
+        ax.axvline(x=i - 0.5, color="lightgray", linewidth=8, alpha=0.7)
 
     # Get player positions and draw pawns
     p1_pos = game.board.get_player_position(Player.ONE)
@@ -87,7 +82,7 @@ def visualize_board(
     walls = game.board.get_old_style_walls()
     # Calculate wall thickness as 1/5th of cell width
     # Use a more direct approach: scale based on figure size and board size
-    wall_thickness = max(20, (figsize[0] * 72) / board_size / 5)  # Minimum 20 points, or 1/5th of cell
+    wall_thickness = max(10, (figsize[0] * 72) / board_size / 10)  # Minimum 10 points, or 1/10th of cell
 
     for row in range(board_size - 1):
         for col in range(board_size - 1):
@@ -95,16 +90,16 @@ def visualize_board(
             if walls[row, col, WallOrientation.VERTICAL]:
                 # Wall between columns col and col+1, spanning exactly 2 cells
                 wall_x = col + 0.5
-                wall_y_start = row - 0.25
-                wall_y_end = row + 1.25
+                wall_y_start = row - 0.35
+                wall_y_end = row + 1.35
                 ax.plot([wall_x, wall_x], [wall_y_start, wall_y_end], color="gray", linewidth=wall_thickness)
 
             # Horizontal walls
             if walls[row, col, WallOrientation.HORIZONTAL]:
                 # Wall between rows row and row+1, spanning exactly 2 cells
                 wall_y = row + 0.5
-                wall_x_start = col - 0.25
-                wall_x_end = col + 1.25
+                wall_x_start = col - 0.35
+                wall_x_end = col + 1.35
                 ax.plot([wall_x_start, wall_x_end], [wall_y, wall_y], color="gray", linewidth=wall_thickness)
 
     # Add current player indicator
