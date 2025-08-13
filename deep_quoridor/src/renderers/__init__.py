@@ -34,6 +34,7 @@ __all__ = [
     "Renderer",
     "TextBoardRenderer",
     "TrainingStatusRenderer",
+    "VideoRenderer",
 ]
 
 
@@ -48,3 +49,4 @@ from renderers.progress_bar import ProgressBarRenderer  # noqa: E402, F401
 from renderers.pygame import PygameRenderer  # noqa: E402, F401
 from renderers.text_board import TextBoardRenderer  # noqa: E402, F401
 from renderers.training_status import TrainingStatusRenderer  # noqa: E402, F401
+from renderers.video_renderer import VideoRenderer  # noqa: E402, F401
