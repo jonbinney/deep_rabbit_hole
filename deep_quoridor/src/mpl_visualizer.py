@@ -9,11 +9,149 @@ from typing import Optional
 
 import matplotlib.figure
 import matplotlib.pyplot as plt
+from agents import ActionLog
 from quoridor import Board, MoveAction, Player, Quoridor, WallAction, WallOrientation
 
 # Configure matplotlib to avoid memory warnings
 plt.rcParams["figure.max_open_warning"] = 0  # Disable warning
 plt.rcParams["figure.figsize"] = (8, 8)  # Set default figure size
+
+# Color palettes converted from pygame RGB values (normalized to 0-1)
+PALETTE_TEAL = [
+    (8 / 255, 127 / 255, 91 / 255),
+    (9 / 255, 146 / 255, 104 / 255),
+    (12 / 255, 166 / 255, 120 / 255),
+    (18 / 255, 184 / 255, 134 / 255),
+    (32 / 255, 201 / 255, 151 / 255),
+    (56 / 255, 217 / 255, 169 / 255),
+    (99 / 255, 230 / 255, 190 / 255),
+    (150 / 255, 242 / 255, 215 / 255),
+    (195 / 255, 250 / 255, 232 / 255),
+    (230 / 255, 252 / 255, 245 / 255),
+]
+PALETTE_RED = [
+    (201 / 255, 42 / 255, 42 / 255),
+    (224 / 255, 49 / 255, 49 / 255),
+    (240 / 255, 62 / 255, 62 / 255),
+    (250 / 255, 82 / 255, 82 / 255),
+    (255 / 255, 107 / 255, 107 / 255),
+    (255 / 255, 135 / 255, 135 / 255),
+    (255 / 255, 168 / 255, 168 / 255),
+    (255 / 255, 201 / 255, 201 / 255),
+    (255 / 255, 227 / 255, 227 / 255),
+    (255 / 255, 245 / 255, 245 / 255),
+]
+PALETTE_ORANGE = [
+    (217 / 255, 72 / 255, 15 / 255),
+    (232 / 255, 89 / 255, 12 / 255),
+    (247 / 255, 103 / 255, 7 / 255),
+    (253 / 255, 126 / 255, 20 / 255),
+    (255 / 255, 146 / 255, 43 / 255),
+    (255 / 255, 169 / 255, 77 / 255),
+    (255 / 255, 192 / 255, 120 / 255),
+    (255 / 255, 216 / 255, 168 / 255),
+    (255 / 255, 232 / 255, 204 / 255),
+    (255 / 255, 244 / 255, 230 / 255),
+]
+PALETTE_BLUE = [
+    (24 / 255, 100 / 255, 171 / 255),
+    (25 / 255, 113 / 255, 194 / 255),
+    (28 / 255, 126 / 255, 214 / 255),
+    (34 / 255, 139 / 255, 230 / 255),
+    (51 / 255, 154 / 255, 240 / 255),
+    (77 / 255, 171 / 255, 247 / 255),
+    (116 / 255, 192 / 255, 252 / 255),
+    (165 / 255, 216 / 255, 255 / 255),
+    (208 / 255, 235 / 255, 255 / 255),
+    (231 / 255, 245 / 255, 255 / 255),
+]
+PALETTE_GRAY = [
+    (33 / 255, 37 / 255, 41 / 255),
+    (52 / 255, 58 / 255, 64 / 255),
+    (73 / 255, 80 / 255, 87 / 255),
+    (134 / 255, 142 / 255, 150 / 255),
+    (173 / 255, 181 / 255, 189 / 255),
+    (206 / 255, 212 / 255, 218 / 255),
+    (222 / 255, 226 / 255, 230 / 255),
+    (233 / 255, 236 / 255, 239 / 255),
+    (241 / 255, 243 / 255, 245 / 255),
+    (248 / 255, 249 / 255, 250 / 255),
+]
+
+PALETTES = [PALETTE_TEAL, PALETTE_RED, PALETTE_ORANGE, PALETTE_BLUE]
+
+
+def _draw_log_action(ax, action, text, color):
+    """Draw an action with text label on the matplotlib plot."""
+    if isinstance(action, MoveAction):
+        row, col = action.destination
+        # Draw a circle at the destination position
+        # ax.plot(col, row, "o", color=color, markersize=20, alpha=0.7)
+        # Add text label
+        ax.text(
+            col,
+            row,
+            text,
+            ha="center",
+            va="center",
+            fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.8),
+        )
+
+    elif isinstance(action, WallAction):
+        row, col = action.position
+        if action.orientation == WallOrientation.VERTICAL:
+            # Vertical wall - draw line between columns
+            x = col + 0.5
+            y_start = row - 0.35
+            y_end = row + 1.35
+            ax.plot([x, x], [y_start, y_end], color=color, linewidth=8, alpha=0.7)
+            ax.text(
+                x,
+                y_start + 0.3,
+                text,
+                ha="center",
+                va="center",
+                fontsize=10,
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.8),
+            )
+        else:
+            # Horizontal wall - draw line between rows
+            y = row + 0.5
+            x_start = col - 0.35
+            x_end = col + 1.35
+            ax.plot([x_start, x_end], [y, y], color=color, linewidth=8, alpha=0.7)
+            # Add text at center
+            ax.text(
+                x_start + 0.3,
+                y,
+                text,
+                ha="center",
+                va="center",
+                fontsize=10,
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.8),
+            )
+
+
+def _draw_log_action_score_ranking(ax, entry, palette_id):
+    """Draw ActionScoreRanking with color-coded scores."""
+    palette = PALETTES[palette_id % len(PALETTES)]
+    palette_size = len(palette)
+
+    # Calculate color coefficient like pygame implementation
+    max_rank = max([r for r, _, _ in entry.ranking])
+    coeff = palette_size / max_rank
+
+    for ranking, action, score in entry.ranking:
+        # Format score text
+        text = f"{score:0.2f}" if score < 10 else f"{int(score)}"
+        # Get color from palette based on ranking
+        color_idx = int((ranking - 1) * coeff)
+        color_idx = min(color_idx, palette_size - 1)  # Ensure within bounds
+        color = palette[color_idx]
+        _draw_log_action(ax, action, text, color)
+
+    return (palette_id + 1) % len(PALETTES)
 
 
 def visualize_board(
@@ -22,6 +160,7 @@ def visualize_board(
     save_path: Optional[str] = None,
     figsize: tuple = (8, 8),
     title: Optional[str] = None,
+    action_log: Optional[ActionLog] = None,
 ) -> matplotlib.figure.Figure:
     """
     Visualize a Quoridor game board with players and walls.
@@ -32,6 +171,7 @@ def visualize_board(
         save_path: Optional path to save the figure
         figsize: Figure size as (width, height)
         title: Optional title for the plot
+        action_log: Optional ActionLog to visualize action records
 
     Returns:
         matplotlib Figure object
@@ -117,6 +257,15 @@ def visualize_board(
     ax.set_xticks(range(board_size))
     ax.set_yticks(range(board_size))
 
+    # Draw ActionLog if provided
+    if action_log is not None:
+        palette_id = 0
+        for record in action_log.records:
+            if isinstance(record, ActionLog.ActionScoreRanking):
+                palette_id = _draw_log_action_score_ranking(ax, record, palette_id)
+            elif isinstance(record, ActionLog.ActionText):
+                _draw_log_action(ax, record.action, record.text, PALETTE_GRAY[4])
+
     plt.tight_layout()
 
     # Save if requested
@@ -140,4 +289,15 @@ if __name__ == "__main__":
     game.step(WallAction((0, 3), WallOrientation.HORIZONTAL))
     game.step(WallAction((0, 2), WallOrientation.VERTICAL))
 
-    visualize_board(game)
+    action_log = ActionLog()
+    action_log.set_enabled(True)
+    action_log.action_text(MoveAction((1, 2)), "0.42")
+    action_log.action_text(MoveAction((4, 2)), "0.1")
+    action_log.action_score_ranking(
+        {
+            WallAction((1, 1), WallOrientation.HORIZONTAL): 0.1,
+            WallAction((1, 3), WallOrientation.HORIZONTAL): 0.3,
+            WallAction((1, 2), WallOrientation.VERTICAL): 0.6,
+        }
+    )
+    visualize_board(game, action_log=action_log)
