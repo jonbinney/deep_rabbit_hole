@@ -86,7 +86,7 @@ def _draw_log_action(ax, action, text, color):
     if isinstance(action, MoveAction):
         row, col = action.destination
         # Draw a circle at the destination position
-        # ax.plot(col, row, "o", color=color, markersize=20, alpha=0.7)
+        ax.plot(col, row, "o", color=color, markersize=40, alpha=0.7)
         # Add text label
         ax.text(
             col,
@@ -133,53 +133,82 @@ def _draw_log_action(ax, action, text, color):
             )
 
 
-def _draw_log_action_score_ranking(ax, entry, palette_id):
-    """Draw ActionScoreRanking with color-coded scores."""
-    palette = PALETTES[palette_id % len(PALETTES)]
-    palette_size = len(palette)
+def _interpolate_color(color1, color2, t):
+    """Linear interpolation between two colors."""
+    return (
+        color1[0] + t * (color2[0] - color1[0]),
+        color1[1] + t * (color2[1] - color1[1]),
+        color1[2] + t * (color2[2] - color1[2]),
+    )
 
-    # Calculate color coefficient like pygame implementation
-    max_rank = max([r for r, _, _ in entry.ranking])
-    coeff = palette_size / max_rank
+
+def _get_color_from_score(score, min_score, max_score, palette):
+    """Get interpolated color based on score using linear interpolation."""
+    if min_score == max_score:
+        # All scores are the same, use middle of palette
+        return palette[len(palette) // 2]
+
+    # Normalize score to [0, 1] range
+    normalized_score = (score - min_score) / (max_score - min_score)
+
+    # Invert the mapping: higher scores -> lower indices (darker colors)
+    # Map to palette range [palette_size - 1, 0]
+    palette_position = (1 - normalized_score) * (len(palette) - 1)
+
+    # Get indices for interpolation
+    lower_idx = int(palette_position)
+    upper_idx = min(lower_idx + 1, len(palette) - 1)
+
+    # Calculate interpolation factor
+    t = palette_position - lower_idx
+
+    # Interpolate between the two colors
+    if lower_idx == upper_idx:
+        return palette[lower_idx]
+    else:
+        return _interpolate_color(palette[lower_idx], palette[upper_idx], t)
+
+
+def _draw_log_action_score_ranking(ax, entry, palette_id):
+    """Draw ActionScoreRanking with score-based color interpolation."""
+    palette = PALETTES[palette_id % len(PALETTES)]
+
+    # Get min and max scores for normalization
+    scores = [score for _, _, score in entry.ranking]
+    min_score = min(scores)
+    max_score = max(scores)
 
     for ranking, action, score in entry.ranking:
         # Format score text
-        text = f"{score:0.2f}" if score < 10 else f"{int(score)}"
-        # Get color from palette based on ranking
-        color_idx = int((ranking - 1) * coeff)
-        color_idx = min(color_idx, palette_size - 1)  # Ensure within bounds
-        color = palette[color_idx]
+        if ranking <= 5:
+            text = f"#{ranking}: {score:0.2f}" if score < 10 else f"#{ranking}: {int(score)}"
+        else:
+            text = ""
+
+        # Get interpolated color based on score
+        color = _get_color_from_score(score, min_score, max_score, palette)
+
         _draw_log_action(ax, action, text, color)
 
     return (palette_id + 1) % len(PALETTES)
 
 
-def visualize_board(
+def _draw_board_base(
+    ax,
     game: Quoridor,
-    show: bool = True,
-    save_path: Optional[str] = None,
     figsize: tuple = (8, 8),
-    title: Optional[str] = None,
-    action_log: Optional[ActionLog] = None,
-) -> matplotlib.figure.Figure:
+    selected_player: Optional[Player] = None,
+) -> None:
     """
-    Visualize a Quoridor game board with players and walls.
+    Draw the base board elements (grid, walls, players) on the given axis.
 
     Args:
+        ax: matplotlib axis to draw on
         game: Quoridor game instance
-        show: Whether to display the plot interactively
-        save_path: Optional path to save the figure
-        figsize: Figure size as (width, height)
-        title: Optional title for the plot
-        action_log: Optional ActionLog to visualize action records
-
-    Returns:
-        matplotlib Figure object
+        figsize: Figure size for wall thickness calculation
+        selected_player: Optional player to highlight with selection indicator
     """
     board_size = game.board.board_size
-
-    # Create figure and axis
-    fig, ax = plt.subplots(figsize=figsize)
 
     # Set up the grid
     ax.set_xlim(-0.5, board_size - 0.5)
@@ -218,6 +247,24 @@ def visualize_board(
         markersize=50,
     )
 
+    # Draw selection indicator if specified
+    if selected_player is not None:
+        if selected_player == Player.ONE:
+            selected_pos = p1_pos
+        else:
+            selected_pos = p2_pos
+
+        # Draw bright colored circle around selected player
+        ax.plot(
+            selected_pos[1],
+            selected_pos[0],
+            "o",
+            color="none",
+            markersize=70,
+            markeredgecolor="lime",
+            markeredgewidth=5,
+        )
+
     # Draw walls
     walls = game.board.get_old_style_walls()
     # Calculate wall thickness as 1/5th of cell width
@@ -242,6 +289,56 @@ def visualize_board(
                 wall_x_end = col + 1.35
                 ax.plot([wall_x_start, wall_x_end], [wall_y, wall_y], color="gray", linewidth=wall_thickness)
 
+
+def _draw_action_log(ax, action_log: Optional[ActionLog]) -> None:
+    """
+    Draw ActionLog visualizations on the given axis.
+
+    Args:
+        ax: matplotlib axis to draw on
+        action_log: ActionLog instance to visualize
+    """
+    if action_log is None:
+        return
+
+    palette_id = 0
+    for record in action_log.records:
+        if isinstance(record, ActionLog.ActionScoreRanking):
+            palette_id = _draw_log_action_score_ranking(ax, record, palette_id)
+        elif isinstance(record, ActionLog.ActionText):
+            _draw_log_action(ax, record.action, record.text, PALETTE_GRAY[4])
+
+
+def visualize_board(
+    game: Quoridor,
+    show: bool = True,
+    save_path: Optional[str] = None,
+    figsize: tuple = (8, 8),
+    title: Optional[str] = None,
+    action_log: Optional[ActionLog] = None,
+) -> matplotlib.figure.Figure:
+    """
+    Visualize a Quoridor game board with players and walls.
+
+    Args:
+        game: Quoridor game instance
+        show: Whether to display the plot interactively
+        save_path: Optional path to save the figure
+        figsize: Figure size as (width, height)
+        title: Optional title for the plot
+        action_log: Optional ActionLog to visualize action records
+
+    Returns:
+        matplotlib Figure object
+    """
+    board_size = game.board.board_size
+
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Draw base board elements
+    _draw_board_base(ax, game, figsize)
+
     # Add current player indicator
     current_player_name = "Player 1" if game.current_player == Player.ONE else "Player 2"
 
@@ -258,13 +355,7 @@ def visualize_board(
     ax.set_yticks(range(board_size))
 
     # Draw ActionLog if provided
-    if action_log is not None:
-        palette_id = 0
-        for record in action_log.records:
-            if isinstance(record, ActionLog.ActionScoreRanking):
-                palette_id = _draw_log_action_score_ranking(ax, record, palette_id)
-            elif isinstance(record, ActionLog.ActionText):
-                _draw_log_action(ax, record.action, record.text, PALETTE_GRAY[4])
+    _draw_action_log(ax, action_log)
 
     plt.tight_layout()
 

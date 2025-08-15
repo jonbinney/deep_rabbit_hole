@@ -181,6 +181,9 @@ class VideoRenderer(Renderer):
         """Generate PNG frames for each game state."""
         frame_paths = []
 
+        # We don't have an action log after the last move (once the game is won)
+        self.agent_action_logs.append(None)
+
         for i, (game_state, move_desc, action_log) in enumerate(
             zip(self.game_states, self.move_descriptions, self.agent_action_logs)
         ):
