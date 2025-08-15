@@ -204,29 +204,3 @@ class NNEvaluator:
             self.optimizer.step()
 
         return {"total_loss": total_loss.item(), "policy_loss": policy_loss.item(), "value_loss": value_loss.item()}
-
-    def action_log_for_game(self, game: Quoridor) -> ActionLog:
-        """Generate ActionLog showing neural network evaluation for the current game state."""
-        al = ActionLog()
-        al.set_enabled(True)
-
-        # Get neural network evaluation
-        value, policy = self.evaluate(game)
-        # Get valid actions and their scores
-        valid_actions = game.get_valid_actions()
-        action_scores = {}
-
-        for action in valid_actions:
-            action_index = game.action_encoder.action_to_index(action)
-            score = policy[action_index]
-            action_scores[action] = float(score)
-
-        if action_scores:
-            al.action_score_ranking(action_scores)
-
-        # Add game value as text on current player position
-        current_pos = game.board.get_player_position(game.current_player)
-        move_to_current = MoveAction(current_pos)
-        al.action_text(move_to_current, f"V:{value:.2f}")
-
-        return al

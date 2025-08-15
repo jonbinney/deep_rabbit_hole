@@ -11,8 +11,9 @@ from typing import Any, Optional
 import matplotlib.pyplot as plt
 import torch
 from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.core.agent import ActionLog
 from mpl_visualizer import _draw_action_log, _draw_board_base
-from quoridor import ActionEncoder, Board, Player, Quoridor, WallOrientation
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallOrientation
 from utils.misc import my_device
 
 
@@ -39,13 +40,10 @@ class InteractiveEvaluatorVisualizer:
 
         Args:
             initial_game: Initial Quoridor game state
-            evaluator: Object with action_log_for_game(game) -> ActionLog method
+            evaluator: The evaluate method will be called on it to evaluate the game
             figsize: Figure size as (width, height)
             title: Optional title for the plot
         """
-        if not hasattr(evaluator, "action_log_for_game"):
-            raise ValueError("Evaluator must have an 'action_log_for_game' method")
-
         self.game = initial_game.create_new()  # Create a copy to avoid modifying original
         self.evaluator = evaluator
         self.figsize = figsize
@@ -70,11 +68,8 @@ class InteractiveEvaluatorVisualizer:
         _draw_board_base(self.ax, self.game, self.figsize, self.selected_player)
 
         # Get ActionLog from evaluator
-        try:
-            action_log = self.evaluator.action_log_for_game(self.game)
-            _draw_action_log(self.ax, action_log)
-        except Exception as e:
-            print(f"Warning: Failed to get ActionLog from evaluator: {e}")
+        action_log = self.action_log_for_game(self.game)
+        _draw_action_log(self.ax, action_log)
 
         # Set labels and title
         self._update_labels_and_title()
@@ -257,6 +252,32 @@ class InteractiveEvaluatorVisualizer:
         self.selected_player = self.game.current_player
         self._update_visualization()
 
+    def action_log_for_game(self, game: Quoridor) -> ActionLog:
+        """Generate ActionLog showing neural network evaluation for the current game state."""
+        al = ActionLog()
+        al.set_enabled(True)
+
+        # Get neural network evaluation
+        value, policy = self.evaluator.evaluate(game)
+        # Get valid actions and their scores
+        valid_actions = game.get_valid_actions()
+        action_scores = {}
+
+        for action in valid_actions:
+            action_index = game.action_encoder.action_to_index(action)
+            score = policy[action_index]
+            action_scores[action] = float(score)
+
+        if action_scores:
+            al.action_score_ranking(action_scores)
+
+        # Add game value as text on current player position
+        current_pos = game.board.get_player_position(game.current_player)
+        move_to_current = MoveAction(current_pos)
+        al.action_text(move_to_current, f"V:{value:.2f}")
+
+        return al
+
 
 def create_interactive_visualizer(
     initial_game: Quoridor,
@@ -269,7 +290,7 @@ def create_interactive_visualizer(
 
     Args:
         initial_game: Initial Quoridor game state
-        evaluator: Object with action_log_for_game(game) -> ActionLog method
+        evaluator: The evaluate method will be called on it to evaluate the game
         figsize: Figure size as (width, height)
         title: Optional title for the plot
 
