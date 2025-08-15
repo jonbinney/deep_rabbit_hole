@@ -72,6 +72,9 @@ class AlphaZeroParams(SubargsBase):
     # Directory where local models are stored
     model_dir = "models"
 
+    # If True, the agent will penalize visited states in MCTS to avoid cycling
+    penalized_visited_states: bool = False
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -290,7 +293,8 @@ class AlphaZeroAgent(TrainableAgent):
         best_child = np.random.choice(root_children, p=visit_probs)
         action = best_child.action_taken
 
-        self.visited_states.add(QuoridorKey(best_child.game))
+        if self.params.penalized_visited_states:
+            self.visited_states.add(QuoridorKey(best_child.game))
         # Store training data if in training mode
         if self.params.training_mode:
             # Convert visit counts to policy target (normalized)

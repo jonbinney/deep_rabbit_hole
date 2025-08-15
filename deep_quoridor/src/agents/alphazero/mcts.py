@@ -81,7 +81,7 @@ class Node:
             """
             Calculate the UCB value for a child node.
             """
-            penalized = -1 if QuoridorKey(child.game) in visited_states else 0
+            penalized = -1 if visited_states and QuoridorKey(child.game) in visited_states else 0
             q_value = 0.5
             if child.visit_count != 0:
                 q_value = (child.value_sum / child.visit_count + 1) / 2
