@@ -55,6 +55,7 @@ class VideoRenderer(Renderer):
         self.game_info = None
         self.move_descriptions = []
         self.temp_dir = None
+        self.agent_action_logs = []
 
         # Ensure figsize has even dimensions for ffmpeg compatibility
         self.figsize = (
@@ -73,14 +74,19 @@ class VideoRenderer(Renderer):
         # Clear previous game data
         self.game_states = []
         self.move_descriptions = []
+        self.agent_action_logs = []
 
-        # Store game info for filename
+        # Store game info for filename and agent references
         self.game_info = {"agent1": agent1.name(), "agent2": agent2.name()}
+        self.agents = {"player_0": agent1, "player_1": agent2}
 
         # Store initial game state
         initial_state = self._extract_game_state(env)
         self.game_states.append(initial_state)
         self.move_descriptions.append("Initial position")
+
+        agent1.action_log.set_enabled(True)
+        agent2.action_log.set_enabled(True)
 
     def after_action(self, env, step, agent_id, action):
         """After each action - store the current game state."""
@@ -94,6 +100,20 @@ class VideoRenderer(Renderer):
         else:
             move_desc = f"Move {step + 1}: {agent_id} - {action}"
         self.move_descriptions.append(move_desc)
+
+        # Store a copy of the agent's action log for this frame
+        if hasattr(self, "agents") and agent_id in self.agents:
+            agent = self.agents[agent_id]
+            if hasattr(agent, "action_log"):
+                # Create a copy of the action log to preserve its state at this moment
+                import copy
+
+                action_log_copy = copy.deepcopy(agent.action_log)
+                self.agent_action_logs.append(action_log_copy)
+            else:
+                self.agent_action_logs.append(None)
+        else:
+            self.agent_action_logs.append(None)
 
     def end_game(self, env, result: GameResult):
         """End of game - create frames and compile video."""
@@ -161,16 +181,23 @@ class VideoRenderer(Renderer):
         """Generate PNG frames for each game state."""
         frame_paths = []
 
-        for i, (game_state, move_desc) in enumerate(zip(self.game_states, self.move_descriptions)):
+        for i, (game_state, move_desc, action_log) in enumerate(
+            zip(self.game_states, self.move_descriptions, self.agent_action_logs)
+        ):
             frame_filename = f"frame_{i:04d}.png"
             if self.temp_dir:
                 frame_path = self.temp_dir / frame_filename
             else:
                 frame_path = self.output_dir / frame_filename
 
-            # Generate the frame using visualize_board
+            # Generate the frame using visualize_board, passing the action log if available
             fig = visualize_board(
-                game_state, show=False, save_path=str(frame_path), figsize=self.figsize, title=move_desc
+                game_state,
+                show=False,
+                save_path=str(frame_path),
+                figsize=self.figsize,
+                title=move_desc,
+                action_log=action_log,
             )
             # Explicitly close the figure to free memory
             import matplotlib.pyplot as plt
