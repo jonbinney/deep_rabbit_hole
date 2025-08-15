@@ -167,7 +167,7 @@ class MCTS:
                 self.new_nodes.extend(node.children)
 
                 node.backpropagate(value)
-                
+
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
         root_value = -(root.value_sum / root.visit_count)

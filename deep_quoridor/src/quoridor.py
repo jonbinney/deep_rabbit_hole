@@ -434,7 +434,7 @@ class Quoridor:
         if player is None:
             player = self.get_current_player()
 
-        action_mask = self.action_encoder.get_action_mask_template()
+        action_mask = np.zeros(self.action_encoder.board_size**2, dtype=bool)
         qgrid.compute_move_action_mask(
             self.board._grid,
             self.board._player_positions,
@@ -455,7 +455,7 @@ class Quoridor:
         if player is None:
             player = self.get_current_player()
 
-        action_mask = self.action_encoder.get_action_mask_template()
+        action_mask = np.zeros(2 * self.action_encoder.wall_size**2, dtype=bool)
         qgrid.compute_wall_action_mask(
             self.board._grid,
             self.board._player_positions,
