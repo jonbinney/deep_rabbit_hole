@@ -1,7 +1,19 @@
 from typing import Optional
 
 import numpy as np
-from quoridor import Action, Player, Quoridor
+from quoridor import Action, Quoridor
+
+
+class QuoridorKey:
+    def __init__(self, game: Quoridor):
+        self.game = game
+        self.hash = game.get_fast_hash()
+
+    def __hash__(self):
+        return self.hash
+
+    def __eq__(self, other: "QuoridorKey"):
+        return self.hash == other.hash and self.game == other.game
 
 
 class Node:
@@ -59,7 +71,7 @@ class Node:
                 child = Node(game=None, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
                 self.children.append(child)
 
-    def select(self) -> "Node":
+    def select(self, visited_states) -> "Node":
         """
         Return the child of the current node with the highest ucb
         """
@@ -69,10 +81,11 @@ class Node:
             """
             Calculate the UCB value for a child node.
             """
+            penalized = -1 if visited_states and QuoridorKey(child.game) in visited_states else 0
             q_value = 0.5
             if child.visit_count != 0:
                 q_value = (child.value_sum / child.visit_count + 1) / 2
-            return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1)
+            return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1) + penalized
 
         return max(self.children, key=get_child_ucb)
 
@@ -100,7 +113,15 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, n: Optional[int], k: Optional[int], ucb_c: float, evaluator, pre_evaluate_nodes_total: int = 64):
+    def __init__(
+        self,
+        n: Optional[int],
+        k: Optional[int],
+        ucb_c: float,
+        evaluator,
+        visited_states: set,
+        pre_evaluate_nodes_total: int = 64,
+    ):
         assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
         self.k = k
@@ -108,6 +129,7 @@ class MCTS:
         self.evaluator = evaluator
         self.new_nodes = []
         self.extra_eval = pre_evaluate_nodes_total - 1
+        self.visited_states = visited_states
 
     def select(self, node: Node) -> Node:
         """
@@ -116,7 +138,7 @@ class MCTS:
         Otherwise, if the node is fully expanded, then its best child will be selected.
         """
         while not node.should_expand():
-            node = node.select()
+            node = node.select(self.visited_states)
         return node
 
     def search(self, initial_game: Quoridor):
@@ -145,7 +167,7 @@ class MCTS:
                 self.new_nodes.extend(node.children)
 
                 node.backpropagate(value)
-                
+
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
         root_value = -(root.value_sum / root.visit_count)

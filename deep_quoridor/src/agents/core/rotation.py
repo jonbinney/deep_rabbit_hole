@@ -40,7 +40,7 @@ def rotate_action_vector(board_size, orig_vector):
     walls_h = np.rot90(walls_h, k=2).flatten()
 
     # Combine rotated masks back together
-    rotated_vector = np.concatenate([board_mask, walls_v, walls_h])
+    rotated_vector = np.concatenate((board_mask, walls_v, walls_h))
 
     return rotated_vector
 

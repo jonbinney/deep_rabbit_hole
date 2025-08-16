@@ -205,8 +205,7 @@ class QuoridorEnv(AECEnv):
 
     def _get_action_mask(self, agent_id):
         player = self.agent_to_player[agent_id]
-        size = (self.board_size**2 + (self.wall_size**2) * 2,)
-        action_mask = make_action_mask(size, self.game.get_valid_actions(player), self._action_encoder)
+        action_mask = self.game.get_action_mask(player=player)
         self.last_action_mask[agent_id] = action_mask
         return action_mask
 

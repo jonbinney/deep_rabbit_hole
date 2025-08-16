@@ -174,6 +174,7 @@ class Metrics:
                     if verbose:
                         print("Agent was expected to win but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
+                agent.end_game(quoridor)
 
             return quoridor.board_size, dumb_score
 
@@ -206,6 +207,7 @@ class Metrics:
                     if verbose:
                         print("Agent was expected to win but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
+                agent.end_game(quoridor)
 
             return quoridor.board_size, dumb_score
 
@@ -246,6 +248,7 @@ class Metrics:
                     if verbose:
                         print("Agent was expected to block the opponent but did something else.")
                         print_fail(initial_pos, str(quoridor.game))
+                agent.end_game(quoridor)
 
             return quoridor.board_size, dumb_score
 
