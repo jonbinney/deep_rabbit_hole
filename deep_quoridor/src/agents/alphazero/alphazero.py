@@ -79,6 +79,9 @@ class AlphaZeroParams(SubargsBase):
     # If True, save replay buffer contents before training
     save_replay_buffer: bool = False
 
+    # If specified, load replay buffer from this file path to bootstrap training
+    bootstrap_replay_buffer: Optional[str] = None
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -93,6 +96,7 @@ class AlphaZeroParams(SubargsBase):
             "batch_size",
             "replay_buffer_size",
             "save_replay_buffer",
+            "bootstrap_replay_buffer",
         }
 
 
@@ -151,6 +155,21 @@ class AlphaZeroAgent(TrainableAgent):
         from metrics import Metrics
 
         self.metrics = Metrics(board_size, max_walls)
+
+        # Load bootstrap replay buffer if specified (after all initialization)
+        if params.bootstrap_replay_buffer is not None:
+            if os.path.exists(params.bootstrap_replay_buffer):
+                with open(params.bootstrap_replay_buffer, 'rb') as f:
+                    bootstrap_data = pickle.load(f)
+                self.replay_buffer.extend(bootstrap_data)
+                print(f"Loaded {len(bootstrap_data)} samples from {params.bootstrap_replay_buffer}")
+
+                # Run initial training if we have enough data
+                if len(self.replay_buffer) >= self.params.batch_size:
+                    print("Running bootstrap training iteration...")
+                    self.train_iteration()
+            else:
+                print(f"Warning: Bootstrap replay buffer file not found: {params.bootstrap_replay_buffer}")
 
     def version(self):
         return "1.0"
