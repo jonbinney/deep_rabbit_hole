@@ -1,4 +1,5 @@
 import os
+import pickle
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -75,6 +76,9 @@ class AlphaZeroParams(SubargsBase):
     # If True, the agent will penalize visited states in MCTS to avoid cycling
     penalized_visited_states: bool = False
 
+    # If True, save replay buffer contents before training
+    save_replay_buffer: bool = False
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -88,6 +92,7 @@ class AlphaZeroParams(SubargsBase):
             "optimizer_iterations",
             "batch_size",
             "replay_buffer_size",
+            "save_replay_buffer",
         }
 
 
@@ -233,6 +238,16 @@ class AlphaZeroAgent(TrainableAgent):
         """Train the neural network on collected data."""
         if len(self.replay_buffer) < self.params.batch_size:
             return
+
+        # Save replay buffer if requested
+        if self.params.save_replay_buffer:
+            replay_buffer_dir = "replay_buffers"
+            os.makedirs(replay_buffer_dir, exist_ok=True)
+            filename = f"replay_buffer_episode_{self.episode_count}.pkl"
+            filepath = os.path.join(replay_buffer_dir, filename)
+            with open(filepath, 'wb') as f:
+                pickle.dump(list(self.replay_buffer), f)
+            print(f"Saved replay buffer to {filepath}")
 
         t0 = time.time()
         print(
