@@ -158,18 +158,11 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Load bootstrap replay buffer if specified (after all initialization)
         if params.bootstrap_replay_buffer is not None:
-            if os.path.exists(params.bootstrap_replay_buffer):
-                with open(params.bootstrap_replay_buffer, 'rb') as f:
-                    bootstrap_data = pickle.load(f)
-                self.replay_buffer.extend(bootstrap_data)
-                print(f"Loaded {len(bootstrap_data)} samples from {params.bootstrap_replay_buffer}")
-
+            if self.load_replay_buffer_from_file(params.bootstrap_replay_buffer):
                 # Run initial training if we have enough data
                 if len(self.replay_buffer) >= self.params.batch_size:
                     print("Running bootstrap training iteration...")
                     self.train_iteration()
-            else:
-                print(f"Warning: Bootstrap replay buffer file not found: {params.bootstrap_replay_buffer}")
 
     def version(self):
         return "1.0"
@@ -260,13 +253,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Save replay buffer if requested
         if self.params.save_replay_buffer:
-            replay_buffer_dir = "replay_buffers"
-            os.makedirs(replay_buffer_dir, exist_ok=True)
-            filename = f"replay_buffer_episode_{self.episode_count}.pkl"
-            filepath = os.path.join(replay_buffer_dir, filename)
-            with open(filepath, 'wb') as f:
-                pickle.dump(list(self.replay_buffer), f)
-            print(f"Saved replay buffer to {filepath}")
+            self.save_replay_buffer_to_file(self.episode_count)
 
         t0 = time.time()
         print(
@@ -282,6 +269,28 @@ class AlphaZeroAgent(TrainableAgent):
             self.recent_losses = self.recent_losses[-100:]
 
         print(f"done in {time.time() - t0:.2f}s")
+
+    def save_replay_buffer_to_file(self, episode_number: int):
+        """Save replay buffer contents to a file."""
+        replay_buffer_dir = "replay_buffers"
+        os.makedirs(replay_buffer_dir, exist_ok=True)
+        filename = f"replay_buffer_episode_{episode_number}.pkl"
+        filepath = os.path.join(replay_buffer_dir, filename)
+        with open(filepath, 'wb') as f:
+            pickle.dump(list(self.replay_buffer), f)
+        print(f"Saved replay buffer to {filepath}")
+
+    def load_replay_buffer_from_file(self, filepath: str) -> bool:
+        """Load replay buffer from file. Returns True if successful."""
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                bootstrap_data = pickle.load(f)
+            self.replay_buffer.extend(bootstrap_data)
+            print(f"Loaded {len(bootstrap_data)} samples from {filepath}")
+            return True
+        else:
+            print(f"Warning: Bootstrap replay buffer file not found: {filepath}")
+            return False
 
     def _log_action(
         self,
