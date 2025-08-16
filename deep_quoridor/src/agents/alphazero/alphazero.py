@@ -1,4 +1,5 @@
 import os
+import pickle
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -75,6 +76,12 @@ class AlphaZeroParams(SubargsBase):
     # If True, the agent will penalize visited states in MCTS to avoid cycling
     penalized_visited_states: bool = False
 
+    # If True, save replay buffer contents before training
+    save_replay_buffer: bool = False
+
+    # If specified, load replay buffer from this file path to bootstrap training
+    bootstrap_replay_buffer: Optional[str] = None
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -88,6 +95,8 @@ class AlphaZeroParams(SubargsBase):
             "optimizer_iterations",
             "batch_size",
             "replay_buffer_size",
+            "save_replay_buffer",
+            "bootstrap_replay_buffer",
         }
 
 
@@ -146,6 +155,14 @@ class AlphaZeroAgent(TrainableAgent):
         from metrics import Metrics
 
         self.metrics = Metrics(board_size, max_walls)
+
+        # Load bootstrap replay buffer if specified (after all initialization)
+        if params.bootstrap_replay_buffer is not None:
+            if self.load_replay_buffer_from_file(params.bootstrap_replay_buffer):
+                # Run initial training if we have enough data
+                if len(self.replay_buffer) >= self.params.batch_size:
+                    print("Running bootstrap training iteration...")
+                    self.train_iteration()
 
     def version(self):
         return "1.0"
@@ -234,6 +251,10 @@ class AlphaZeroAgent(TrainableAgent):
         if len(self.replay_buffer) < self.params.batch_size:
             return
 
+        # Save replay buffer if requested
+        if self.params.save_replay_buffer:
+            self.save_replay_buffer_to_file(self.episode_count)
+
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
@@ -248,6 +269,28 @@ class AlphaZeroAgent(TrainableAgent):
             self.recent_losses = self.recent_losses[-100:]
 
         print(f"done in {time.time() - t0:.2f}s")
+
+    def save_replay_buffer_to_file(self, episode_number: int):
+        """Save replay buffer contents to a file."""
+        replay_buffer_dir = "replay_buffers"
+        os.makedirs(replay_buffer_dir, exist_ok=True)
+        filename = f"replay_buffer_episode_{episode_number}.pkl"
+        filepath = os.path.join(replay_buffer_dir, filename)
+        with open(filepath, 'wb') as f:
+            pickle.dump(list(self.replay_buffer), f)
+        print(f"Saved replay buffer to {filepath}")
+
+    def load_replay_buffer_from_file(self, filepath: str) -> bool:
+        """Load replay buffer from file. Returns True if successful."""
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                bootstrap_data = pickle.load(f)
+            self.replay_buffer.extend(bootstrap_data)
+            print(f"Loaded {len(bootstrap_data)} samples from {filepath}")
+            return True
+        else:
+            print(f"Warning: Bootstrap replay buffer file not found: {filepath}")
+            return False
 
     def _log_action(
         self,
