@@ -12,7 +12,7 @@ from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import my_device
 from utils.subargs import SubargsBase
 
-from agents.alphazero.mcts import MCTS
+from agents.alphazero.mcts import MCTS, QuoridorKey
 from agents.alphazero.nn_evaluator import NNEvaluator
 from agents.core import TrainableAgent
 
@@ -72,6 +72,9 @@ class AlphaZeroParams(SubargsBase):
     # Directory where local models are stored
     model_dir = "models"
 
+    # If True, the agent will penalize visited states in MCTS to avoid cycling
+    penalized_visited_states: bool = False
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -105,6 +108,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.board_size = board_size
         self.max_walls = max_walls
         self.device = my_device()
+        self.visited_states = set()
 
         self.action_encoder = ActionEncoder(board_size)
         self.evaluator = NNEvaluator(self.action_encoder, self.device)
@@ -114,7 +118,12 @@ class AlphaZeroAgent(TrainableAgent):
             self.evaluator = evaluator
 
         self.mcts = MCTS(
-            params.mcts_n, params.mcts_k, params.mcts_ucb_c, self.evaluator, params.mcts_pre_evaluate_nodes_total
+            params.mcts_n,
+            params.mcts_k,
+            params.mcts_ucb_c,
+            self.evaluator,
+            self.visited_states,
+            params.mcts_pre_evaluate_nodes_total,
         )
 
         if params.training_mode and params.train_every is not None:
@@ -186,6 +195,9 @@ class AlphaZeroAgent(TrainableAgent):
         model_state = torch.load(path, map_location=my_device())
         self.set_model_state(model_state)
 
+    def start_game(self, game, player_id):
+        self.visited_states.clear()
+
     def end_game(self, env):
         if not self.params.training_mode:
             return
@@ -219,13 +231,14 @@ class AlphaZeroAgent(TrainableAgent):
 
     def train_iteration(self):
         """Train the neural network on collected data."""
+        if len(self.replay_buffer) < self.params.batch_size:
+            return
+
         t0 = time.time()
         print(
             f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
             end="",
         )
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
 
         metrics = self.evaluator.train_iteration(self.replay_buffer)
 
@@ -280,10 +293,12 @@ class AlphaZeroAgent(TrainableAgent):
         best_child = np.random.choice(root_children, p=visit_probs)
         action = best_child.action_taken
 
+        if self.params.penalized_visited_states:
+            self.visited_states.add(QuoridorKey(best_child.game))
         # Store training data if in training mode
         if self.params.training_mode:
             # Convert visit counts to policy target (normalized)
-            policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+            policy_target = self.action_encoder.get_action_mask_template()
             for child in root_children:
                 action_index = self.action_encoder.action_to_index(child.action_taken)
                 policy_target[action_index] = child.visit_count / visit_counts_sum

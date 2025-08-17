@@ -60,6 +60,10 @@ class ActionEncoder:
         self.board_size = board_size
         self.wall_size = board_size - 1
         self.num_actions = self.board_size**2 + self.wall_size**2 * 2
+        self.constant_action_mask_template = np.zeros(self.num_actions, dtype=np.float32)
+
+    def get_action_mask_template(self):
+        return np.copy(self.constant_action_mask_template)
 
     def __copy__(self):
         return self
@@ -410,11 +414,11 @@ class Quoridor:
 
         return is_valid
 
-    def get_action_mask(self, player: Optional[Player] = None):
+    def get_action_mask(self, player: Optional[Player] = None) -> np.ndarray:
         """
         Get a mask of valid actions for the current player.
         """
-        action_mask = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+        action_mask = self.action_encoder.get_action_mask_template()
         move_actions = self.get_valid_move_actions_vector(player)
         wall_actions = self.get_valid_wall_actions_vector(player)
         action_mask[: self.action_encoder.board_size**2] = move_actions
@@ -426,7 +430,7 @@ class Quoridor:
         actions = [self.action_encoder.index_to_action(action_i) for action_i in np.flatnonzero(action_mask)]
         return actions
 
-    def get_valid_move_actions_vector(self, player: Optional[Player] = None) -> list[MoveAction]:
+    def get_valid_move_actions_vector(self, player: Optional[Player] = None) -> np.ndarray:
         if player is None:
             player = self.get_current_player()
 
@@ -447,7 +451,7 @@ class Quoridor:
         ]
         return actions
 
-    def get_valid_wall_actions_vector(self, player: Optional[Player] = None) -> list[WallAction]:
+    def get_valid_wall_actions_vector(self, player: Optional[Player] = None) -> np.ndarray:
         if player is None:
             player = self.get_current_player()
 
@@ -540,16 +544,17 @@ class Quoridor:
         return self._rotated
 
 
-def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
+def get_player_and_opponent_from_observation(observation):
     player_id = observation["player_turn"]
     if player_id == "player_0":
-        player = Player.ONE
-        opponent = Player.TWO
+        return Player.ONE, Player.TWO
     elif player_id == "player_1":
-        player = Player.TWO
-        opponent = Player.ONE
+        return Player.TWO, Player.ONE
     else:
         raise ValueError(f"Invalid player ID: {player_id}")
+
+def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
+    player, opponent = get_player_and_opponent_from_observation(observation)
 
     if observation["my_turn"]:
         current_player = player

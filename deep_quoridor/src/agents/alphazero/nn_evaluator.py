@@ -3,9 +3,10 @@ import random
 import numpy as np
 import torch
 import torch.nn.functional as F
-from quoridor import ActionEncoder, Board, Player, Quoridor
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
+from agents.core.agent import ActionLog
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
