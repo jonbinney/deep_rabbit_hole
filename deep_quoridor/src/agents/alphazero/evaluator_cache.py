@@ -18,7 +18,7 @@ class EvaluatorCache:
     used items are removed.
     """
 
-    def __init__(self, max_size: int = 1e5):
+    def __init__(self, max_size: int = 1e6):
         """
         Initialize the LRU cache.
 
