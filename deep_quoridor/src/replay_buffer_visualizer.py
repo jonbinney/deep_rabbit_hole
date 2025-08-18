@@ -50,7 +50,14 @@ class ReplayBufferVisualizer:
         # Sort by input array frequency (descending)
         print("Sorting entries by input array frequency...")
         self.sorted_entries = self._sort_entries_by_frequency()
-        print(f"Found {len(self.sorted_entries)} unique game states")
+
+        # Count unique game states for reporting
+        unique_inputs = set()
+        for entry, _ in self.sorted_entries:
+            hashable_array = tuple(entry["input_array"].flatten())
+            unique_inputs.add(hashable_array)
+
+        print(f"Sorted {len(self.sorted_entries)} total entries representing {len(unique_inputs)} unique game states")
 
         # Load model if provided
         self.model = None
@@ -90,12 +97,13 @@ class ReplayBufferVisualizer:
                     entries_by_input[hashable_array] = []
                 entries_by_input[hashable_array].append(entry)
 
-        # Sort by frequency (descending) and return entries with their counts
+        # Sort by frequency (descending) and return ALL entries with their frequency counts
         sorted_entries = []
         for hashable_array, count in input_array_counts.most_common():
             entries = entries_by_input[hashable_array]
-            # Take the first entry for each unique input array
-            sorted_entries.append((entries[0], count))
+            # Include ALL entries for each input array, each tagged with the frequency count
+            for entry in entries:
+                sorted_entries.append((entry, count))
 
         return sorted_entries
 
