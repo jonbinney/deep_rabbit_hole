@@ -185,3 +185,6 @@ deep_quoridor/tn.sh
 
 # Videos of the game play
 videos
+
+# Contents of the replay buffer for debugging
+replay_buffers

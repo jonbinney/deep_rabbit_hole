@@ -9,6 +9,8 @@ import numpy as np
 import torch
 import yaml
 
+initial_random_seed = None
+
 
 def resolve_path(dir: str, filename: Optional[str] = None) -> Path:
     path = Path(dir)
@@ -28,6 +30,14 @@ def set_deterministic(seed=42):
     gymnasium.utils.seeding.np_random(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+    global initial_random_seed
+    initial_random_seed = seed
+
+
+def get_initial_random_seed():
+    global initial_random_seed
+    return initial_random_seed
 
 
 def my_device():
