@@ -15,15 +15,14 @@ import pickle
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from agents import ActionLog
 from agents.alphazero.nn_evaluator import NNEvaluator
-from mpl_visualizer import visualize_board
-from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor
+from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallOrientation
 from utils.misc import my_device
 
 
@@ -190,19 +189,19 @@ class ReplayBufferVisualizer:
                 board._walls_remaining[Player.ONE] = opponent_walls
                 board._walls_remaining[Player.TWO] = my_walls
 
-        # Set walls
+        # Set walls using proper board method
         for row in range(wall_size):
             for col in range(wall_size):
                 if walls[row, col, 0] > 0.5:  # Vertical wall
                     try:
-                        board._walls[row, col, 0] = True
-                    except:
-                        pass
+                        board.add_wall(Player.ONE, (row, col), WallOrientation.VERTICAL, check_if_valid=False)
+                    except Exception as e:
+                        print(f"Warning: Could not add vertical wall at ({row}, {col}): {e}")
                 if walls[row, col, 1] > 0.5:  # Horizontal wall
                     try:
-                        board._walls[row, col, 1] = True
-                    except:
-                        pass
+                        board.add_wall(Player.ONE, (row, col), WallOrientation.HORIZONTAL, check_if_valid=False)
+                    except Exception as e:
+                        print(f"Warning: Could not add horizontal wall at ({row}, {col}): {e}")
 
         # Set current player
         game.set_current_player(player)
@@ -408,7 +407,7 @@ def main():
 
     try:
         # Create and run visualizer
-        visualizer = ReplayBufferVisualizer(args.replay_buffer, args.model)
+        ReplayBufferVisualizer(args.replay_buffer, args.model)
 
         # Print usage instructions
         print("\nNavigation Controls:")
