@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import wandb
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
-from utils import my_device
+from utils import get_initial_random_seed, my_device
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
@@ -76,11 +76,10 @@ class AlphaZeroParams(SubargsBase):
     # If True, the agent will penalize visited states in MCTS to avoid cycling
     penalized_visited_states: bool = False
 
-    # If True, save replay buffer contents before training
-    save_replay_buffer: bool = False
-
-    # If specified, load replay buffer from this file path to bootstrap training
-    bootstrap_replay_buffer: Optional[str] = None
+    # Whether to save the replay buffer to a file.  This can be used to fast-forward the first batch of games
+    # (in which case you can only use the first replay buffer) or to use a tool to visualize any of the replay buffers.
+    # The options are: "never" | "first" | "always"
+    save_replay_buffer: str = "never"
 
     @classmethod
     def training_only_params(cls) -> set[str]:
@@ -96,7 +95,6 @@ class AlphaZeroParams(SubargsBase):
             "batch_size",
             "replay_buffer_size",
             "save_replay_buffer",
-            "bootstrap_replay_buffer",
         }
 
 
@@ -156,13 +154,15 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.metrics = Metrics(board_size, max_walls)
 
-        # Load bootstrap replay buffer if specified (after all initialization)
-        if params.bootstrap_replay_buffer is not None:
-            if self.load_replay_buffer_from_file(params.bootstrap_replay_buffer):
-                # Run initial training if we have enough data
-                if len(self.replay_buffer) >= self.params.batch_size:
-                    print("Running bootstrap training iteration...")
-                    self.train_iteration()
+        self.first_replay_buffer_saved = False
+        self.first_replay_buffer_loaded = False
+
+        if self.load_replay_buffer_from_file():
+            # Run initial training if we have the saved file
+            if len(self.replay_buffer) >= self.params.batch_size:
+                print("Running bootstrap training iteration...")
+                self.train_iteration(is_replay_buffer_bootstrap=True)
+                self.first_replay_buffer_loaded = True
 
     def version(self):
         return "1.0"
@@ -246,14 +246,20 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_iteration(self):
+    def train_iteration(self, is_replay_buffer_bootstrap=False):
         """Train the neural network on collected data."""
         if len(self.replay_buffer) < self.params.batch_size:
             return
 
         # Save replay buffer if requested
-        if self.params.save_replay_buffer:
-            self.save_replay_buffer_to_file(self.episode_count)
+        if not is_replay_buffer_bootstrap:
+            if self.params.save_replay_buffer == "always" or (
+                self.params.save_replay_buffer == "first"
+                and not self.first_replay_buffer_saved
+                and not self.first_replay_buffer_loaded
+            ):
+                self.save_replay_buffer_to_file(self.episode_count)
+                self.first_replay_buffer_saved = True
 
         t0 = time.time()
         print(
@@ -270,27 +276,55 @@ class AlphaZeroAgent(TrainableAgent):
 
         print(f"done in {time.time() - t0:.2f}s")
 
+    def _replay_buffer_filename(self, episode_number: int):
+        params = {
+            "ep": episode_number,
+            "i": get_initial_random_seed(),
+            "t": int(self.params.temperature * 100),
+            "rbs": self.params.replay_buffer_size,
+            "n": self.params.mcts_n,
+            "k": self.params.mcts_k,
+            "ucbc": int(self.params.mcts_ucb_c * 100),
+            "pvs": "" if self.params.penalized_visited_states else None,
+            "frbl": "" if self.first_replay_buffer_loaded else None,
+        }
+
+        if self.first_replay_buffer_saved:
+            # If we already saved the first replay buffer, it means that we already run a training batch,
+            # in which case we want to include the training parameters so we don't override a file with
+            # different parameters (those files are useful for visualization).
+            # On the other hand, if it's for the first replay buffer, we don't want to include the parameters
+            # below because the replay buffer doesn't depend on them, and if we did, we wouldn't be able to load it
+            # when training with different parameters.
+            params = params | {
+                "lr": int(self.params.learning_rate * 1000000),
+                "bs": self.params.batch_size,
+                "oi": self.params.optimizer_iterations,
+            }
+        filtered = filter(lambda x: x[1] is not None, params.items())
+        str_params = "_".join(f"{x[0]}{x[1]}" for x in filtered)
+        return f"alphazero_B{self.board_size}W{self.max_walls}_{str_params}.pkl"
+
     def save_replay_buffer_to_file(self, episode_number: int):
         """Save replay buffer contents to a file."""
         replay_buffer_dir = "replay_buffers"
         os.makedirs(replay_buffer_dir, exist_ok=True)
-        filename = f"replay_buffer_episode_{episode_number}.pkl"
-        filepath = os.path.join(replay_buffer_dir, filename)
-        with open(filepath, 'wb') as f:
+        filepath = os.path.join(replay_buffer_dir, self._replay_buffer_filename(episode_number))
+        with open(filepath, "wb") as f:
             pickle.dump(list(self.replay_buffer), f)
         print(f"Saved replay buffer to {filepath}")
 
-    def load_replay_buffer_from_file(self, filepath: str) -> bool:
-        """Load replay buffer from file. Returns True if successful."""
-        if os.path.exists(filepath):
-            with open(filepath, 'rb') as f:
-                bootstrap_data = pickle.load(f)
-            self.replay_buffer.extend(bootstrap_data)
-            print(f"Loaded {len(bootstrap_data)} samples from {filepath}")
-            return True
-        else:
-            print(f"Warning: Bootstrap replay buffer file not found: {filepath}")
+    def load_replay_buffer_from_file(self) -> bool:
+        """Load replay buffer from file if it exists. Returns True if the file exists."""
+        filepath = os.path.join("replay_buffers", self._replay_buffer_filename(self.params.train_every))
+        if not os.path.exists(filepath):
             return False
+
+        with open(filepath, "rb") as f:
+            bootstrap_data = pickle.load(f)
+        self.replay_buffer.extend(bootstrap_data)
+        print(f"Loaded {len(bootstrap_data)} samples from {filepath}")
+        return True
 
     def _log_action(
         self,
