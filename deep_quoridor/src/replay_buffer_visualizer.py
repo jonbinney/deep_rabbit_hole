@@ -176,8 +176,11 @@ class ReplayBufferVisualizer:
         player_pos = tuple(np.unravel_index(np.argmax(player_board), player_board.shape))
         opponent_pos = tuple(np.unravel_index(np.argmax(opponent_board), opponent_board.shape))
 
-        # Create game
-        max_walls_per_player = my_walls + opponent_walls  # Rough estimate
+        # Create game with exact max_walls_per_player calculation
+        # Count walls already placed on the board
+        walls_placed = int(walls.sum())  # Each wall contributes 1, so sum gives total count
+
+        max_walls_per_player = (my_walls + opponent_walls + walls_placed) // 2
         board = Board(board_size=board_size, max_walls=max_walls_per_player)
         game = Quoridor(board)
 
@@ -185,35 +188,26 @@ class ReplayBufferVisualizer:
         if player == Player.ONE:
             board.move_player(Player.ONE, player_pos)
             board.move_player(Player.TWO, opponent_pos)
-            # Set wall counts (approximate) - access the private attribute carefully
-            if hasattr(board, "_walls_remaining"):
-                board._walls_remaining[Player.ONE] = my_walls
-                board._walls_remaining[Player.TWO] = opponent_walls
         else:
             board.move_player(Player.ONE, opponent_pos)
             board.move_player(Player.TWO, player_pos)
-            # Set wall counts (approximate) - access the private attribute carefully
-            if hasattr(board, "_walls_remaining"):
-                board._walls_remaining[Player.ONE] = opponent_walls
-                board._walls_remaining[Player.TWO] = my_walls
 
+        current_player = player
+        my_walls_remaining_to_place = max_walls_per_player - my_walls
         # Set walls using proper board method
         for row in range(wall_size):
             for col in range(wall_size):
-                if walls[row, col, 0] > 0.5:  # Vertical wall
-                    try:
-                        board.add_wall(Player.ONE, (row, col), WallOrientation.VERTICAL, check_if_valid=False)
-                    except Exception as e:
-                        print(f"Warning: Could not add vertical wall at ({row}, {col}): {e}")
-                if walls[row, col, 1] > 0.5:  # Horizontal wall
-                    try:
-                        board.add_wall(Player.ONE, (row, col), WallOrientation.HORIZONTAL, check_if_valid=False)
-                    except Exception as e:
-                        print(f"Warning: Could not add horizontal wall at ({row}, {col}): {e}")
+                if my_walls_remaining_to_place == 0 and current_player == player:
+                    current_player = Player(1 - current_player)
+                if walls[row, col, 0] == 1:  # Vertical wall
+                    board.add_wall(current_player, (row, col), WallOrientation.VERTICAL, check_if_valid=False)
+                    my_walls_remaining_to_place -= 1
+                if walls[row, col, 1] == 1:  # Horizontal wall
+                    board.add_wall(current_player, (row, col), WallOrientation.HORIZONTAL, check_if_valid=False)
+                    my_walls_remaining_to_place -= 1
 
         # Set current player
         game.set_current_player(player)
-
         return game
 
     def _create_replay_buffer_action_log(self, entry: dict, game: Quoridor) -> ActionLog:
