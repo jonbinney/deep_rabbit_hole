@@ -5,6 +5,7 @@ import os
 import time
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -12,6 +13,8 @@ import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from agents.alphazero.multiprocess_evaluator import EvaluatorClient, EvaluatorServer, EvaluatorStatistics
 from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.core.agent import AgentRegistry
+from plugins.wandb_train import WandbParams, WandbTrainPlugin
 from quoridor import ActionEncoder
 from utils import my_device, parse_subargs, set_deterministic
 
@@ -104,6 +107,9 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
     training_params = parse_subargs(args.params, AlphaZeroParams)
     training_params.training_mode = True  # We always want training mode, don't make the user specify it
     training_params.train_every = None  # We manually run training at the end of each epoch
+    training_agent = AlphaZeroAgent(
+        args.board_size, args.max_walls, params=training_params, evaluator=evaluator_server.evaluator
+    )
     replay_buffer = deque(maxlen=training_params.replay_buffer_size)
 
     # Create parameters used by the workers during self play
@@ -113,6 +119,18 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
     evaluator_server.train_prepare(
         training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
     )
+
+    # Setup the plugin that tests checkpoint models against opponents and uploads
+    # models to weights and biases.
+    agent_encoded_name = "alphazero:" + args.params
+    wandb_train_params = WandbParams()
+    wandb_train_plugin = WandbTrainPlugin(
+        wandb_train_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
+    )
+    # HACK: the start_game method only cares that "game" has board_size and max_walls
+    # members, so we pass in our arguments object. We need to call this method though,
+    # because it calls the plugin's internal _intialize method which sets up metrics.
+    wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
@@ -150,9 +168,31 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
                 + f"replay buffer size ({len(replay_buffer)})"
             )
 
+        # A bit of a hack.... the wandb plugin uses episode_count as the X axis for
+        # graphs, but that isn't automatically set since we aren't calling the end_game
+        # method after games in self-play (since those are run in other processes).
+        wandb_train_plugin.episode_count = epoch * args.games_per_epoch
+        save_and_test_model(training_agent, f"_epoch_{epoch}", wandb_train_plugin)
+
         print(evaluator_server.get_statistics())
         for r in results:
             print(r.evaluator_statistics)
+
+
+def save_and_test_model(agent: AlphaZeroAgent, model_suffix: str, wandb_train_plugin: WandbTrainPlugin, upload=False):
+    if upload:
+        model_dir = Path(agent.params.wandb_dir)
+    else:
+        model_dir = Path(agent.params.model_dir)
+
+    # Save the model
+    Path(model_dir).mkdir(parents=True, exist_ok=True)
+    model_path = model_dir / agent.resolve_filename(model_suffix)
+    print(f"Saving checkpoint model to {model_path}")
+    agent.save_model(model_path)
+
+    # Create directory for saving models if it doesn't exist
+    wandb_train_plugin.compute_tournament_metrics(model_path)
 
 
 def setup(
@@ -270,6 +310,14 @@ if __name__ == "__main__":
         type=int,
         default=42,
         help="Initializes the random seed for the training. Default is 42",
+    )
+    parser.add_argument(
+        "-b",
+        "--benchmarks",
+        nargs="+",
+        type=str,
+        default=["random", "simple"],
+        help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
     args = parser.parse_args()
 

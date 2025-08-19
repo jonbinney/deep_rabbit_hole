@@ -4,14 +4,13 @@ import os
 from dataclasses import asdict, dataclass
 from typing import List
 
+import wandb
 from agents import Agent
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
 from utils import resolve_path
 from utils.subargs import SubargsBase
-
-import wandb
 
 
 @dataclass
