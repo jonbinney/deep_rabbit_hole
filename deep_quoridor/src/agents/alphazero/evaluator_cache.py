@@ -29,7 +29,7 @@ class EvaluatorCache:
         self._cache = OrderedDict()
 
     def _to_key(self, array: np.ndarray) -> bytes:
-        """Convert numpy array or bytes to bytes, which are hashable and can be used as a dictioanry key."""
+        """Convert numpy array to bytes, which are hashable and can be used as a dictionary key."""
         return array.tobytes()
 
     def get(self, key: np.ndarray, default=None) -> tuple[np.ndarray, np.ndarray]:
@@ -37,7 +37,7 @@ class EvaluatorCache:
         Get an item from the cache. Moves the item to the end (most recently used).
 
         Args:
-            key: The cache key (numpy array or bytes)
+            key: The cache key (numpy array)
             default: Default value to return if key is not found
 
         Returns:
@@ -56,7 +56,7 @@ class EvaluatorCache:
         Set an item in the cache. Handles LRU eviction if cache is full.
 
         Args:
-            key: The cache key (numpy array or bytes)
+            key: The cache key (numpy array)
             value: Tuple of two numpy arrays (value, policy)
         """
         key = self._to_key(key)
@@ -74,7 +74,7 @@ class EvaluatorCache:
         Get an item from the cache with dictionary-style access.
 
         Args:
-            key: The cache key
+            key: The cache key (numpy array)
 
         Returns:
             The cached value
@@ -82,13 +82,9 @@ class EvaluatorCache:
         Raises:
             KeyError: If key is not in cache
         """
-        key = self._to_key(key)
-        if key in self._cache:
-            # Move to end (mark as recently used)
-            value = self._cache.pop(key)
-            self._cache[key] = value
-            return value
-        raise KeyError(key)
+        value = self.get(key, default=None)
+        if value is None:
+            raise KeyError(key)
 
     def __contains__(self, key: Union[np.ndarray, bytes]) -> bool:
         """
