@@ -75,6 +75,7 @@ class QuoridorEnv(AECEnv):
         self,
         board_size: int = 9,
         max_walls: int = 10,
+        max_steps: int = 1000,
         step_rewards: bool = False,
         render_mode: str = "human",
         game_start_state: Optional[Quoridor] = None,
@@ -97,6 +98,7 @@ class QuoridorEnv(AECEnv):
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
         self.max_walls = max_walls  # Each player gets 10 walls
+        self.max_steps = max_steps  # Games longer than this are terminated and treated as a tie
 
         self._action_encoder = ActionEncoder(board_size)
 
@@ -136,6 +138,11 @@ class QuoridorEnv(AECEnv):
         self._cumulative_rewards = self.rewards.copy()
         self.infos = {agent: {} for agent in self.agents}
 
+        # How many turns have been taken so far. Iterated during step() and if it
+        # reaches self.max_steps with no player winning, then the game is
+        # terminated as a tie.
+        self.completed_steps = 0
+
         return None
 
     def step(self, action_index):
@@ -164,11 +171,16 @@ class QuoridorEnv(AECEnv):
 
         action = self._action_encoder.index_to_action(action_index)
         self.game.step(action)
+        self.completed_steps += 1
 
         if self.game.check_win(player):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             self.rewards[get_opponent_player_id(agent)] = -1
+        elif self.completed_steps >= self.max_steps:
+            self.truncations = {a: True for a in self.agents}
+            self.rewards[agent] = 0
+            self.rewards[get_opponent_player_id(agent)] = 0
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.

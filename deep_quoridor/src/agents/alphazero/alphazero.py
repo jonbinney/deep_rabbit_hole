@@ -58,6 +58,10 @@ class AlphaZeroParams(SubargsBase):
     # being efficient in batching.
     mcts_pre_evaluate_nodes_total: int = 64
 
+    # Games longer than this are considered a tie by MCTS. They are treated as terminal nodes
+    # and assigned a value of 0.0.
+    max_game_length: Optional[int] = 200
+
     # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
     wandb_alias: Optional[str] = None
 
