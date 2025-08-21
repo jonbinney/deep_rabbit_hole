@@ -101,7 +101,12 @@ def self_play_worker(
     print(f"Worker {params.worker_id} exiting")
 
 
-def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worker]):
+def train_alphazero(
+    args: argparse.Namespace,
+    evaluator_server: EvaluatorServer,
+    workers: list[Worker],
+    wandb_train_plugin: WandbTrainPlugin,
+):
     # Create an agent that we'll use to do training. The self play games will happen with agents
     # created in each worker process.
     training_params = parse_subargs(args.params, AlphaZeroParams)
@@ -120,17 +125,11 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
         training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
     )
 
-    # Setup the plugin that tests checkpoint models against opponents and uploads
-    # models to weights and biases.
-    agent_encoded_name = "alphazero:" + args.params
-    wandb_train_params = WandbParams()
-    wandb_train_plugin = WandbTrainPlugin(
-        wandb_train_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
-    )
-    # HACK: the start_game method only cares that "game" has board_size and max_walls
-    # members, so we pass in our arguments object. We need to call this method though,
-    # because it calls the plugin's internal _intialize method which sets up metrics.
-    wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
+    if wandb_train_plugin is not None:
+        # HACK: the start_game method only cares that "game" has board_size and max_walls
+        # members, so we pass in our arguments object. We need to call this method though,
+        # because it calls the plugin's internal _intialize method which sets up metrics.
+        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
@@ -168,19 +167,15 @@ def train_alphazero(args, evaluator_server: EvaluatorServer, workers: list[Worke
                 + f"replay buffer size ({len(replay_buffer)})"
             )
 
-        # A bit of a hack.... the wandb plugin uses episode_count as the X axis for
-        # graphs, but that isn't automatically set since we aren't calling the end_game
-        # method after games in self-play (since those are run in other processes).
-        wandb_train_plugin.episode_count = epoch * args.games_per_epoch
-        save_and_test_model(training_agent, f"_epoch_{epoch}", wandb_train_plugin)
+        save_and_test_model(training_agent, f"_epoch_{epoch}", wandb_train_plugin, epoch * args.games_per_epoch)
 
         print(evaluator_server.get_statistics())
         for r in results:
             print(r.evaluator_statistics)
 
 
-def save_and_test_model(agent: AlphaZeroAgent, model_suffix: str, wandb_train_plugin: WandbTrainPlugin, upload=False):
-    if upload:
+def save_and_test_model(agent: AlphaZeroAgent, model_suffix: str, wandb_train_plugin: WandbTrainPlugin, game_num: int):
+    if wandb_train_plugin is not None and wandb_train_plugin.params.upload_model:
         model_dir = Path(agent.params.wandb_dir)
     else:
         model_dir = Path(agent.params.model_dir)
@@ -191,22 +186,39 @@ def save_and_test_model(agent: AlphaZeroAgent, model_suffix: str, wandb_train_pl
     print(f"Saving checkpoint model to {model_path}")
     agent.save_model(model_path)
 
-    # Create directory for saving models if it doesn't exist
-    wandb_train_plugin.compute_tournament_metrics(model_path)
+    if wandb_train_plugin is not None:
+        # A bit of a hack.... the wandb plugin uses episode_count as the X axis for
+        # graphs, but that isn't automatically set since we aren't calling the end_game
+        # method after games in self-play (since those are run in other processes).
+        wandb_train_plugin.episode_count = game_num
+        wandb_train_plugin.compute_tournament_metrics(model_path)
 
 
-def setup(
-    board_size: int, max_walls: int, max_game_length: int, num_workers: int, random_seed: int
-) -> tuple[EvaluatorServer, list[Worker]]:
-    set_deterministic(random_seed)
+def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
+    set_deterministic(args.seed)
+
+    if args.wandb is None:
+        wandb_train_plugin = None
+    else:
+        if args.wandb == "":
+            wandb_params = WandbParams()
+        else:
+            wandb_params = parse_subargs(args.wandb, WandbParams)
+            assert isinstance(wandb_params, WandbParams)
+
+        agent_encoded_name = "alphazero:" + args.params
+        wandb_train_params = WandbParams()
+        wandb_train_plugin = WandbTrainPlugin(
+            wandb_train_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
+        )
 
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
     evaluator_request_queue = mp.Queue()
-    evaluator_result_queues = [mp.Queue() for _ in range(num_workers)]
+    evaluator_result_queues = [mp.Queue() for _ in range(args.num_workers)]
 
     # Create the evaluator server and start its processing thread.
-    action_encoder = ActionEncoder(board_size)
+    action_encoder = ActionEncoder(args.board_size)
     nn_evaluator = NNEvaluator(action_encoder, my_device())
     evaluator_server = EvaluatorServer(
         nn_evaluator,
@@ -221,22 +233,22 @@ def setup(
     # it automatically does on startup
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     workers = []
-    for worker_id in range(num_workers):
+    for worker_id in range(args.num_workers):
         evaluator_client = EvaluatorClient(
-            board_size,
+            args.board_size,
             worker_id,
             evaluator_request_queue,
             evaluator_result_queues[worker_id],
         )
         job_queue = mp.Queue()
         result_queue = mp.Queue()
-        worker_params = WorkerParams(worker_id, random_seed + worker_id, job_queue, result_queue, evaluator_client)
+        worker_params = WorkerParams(worker_id, args.seed + worker_id, job_queue, result_queue, evaluator_client)
         worker_process = mp.Process(
             target=self_play_worker,
             args=(
-                board_size,
-                max_walls,
-                max_game_length,
+                args.board_size,
+                args.max_walls,
+                args.max_steps,
                 worker_params,
             ),
         )
@@ -246,7 +258,7 @@ def setup(
     for worker in workers:
         worker.process.start()
 
-    return evaluator_server, workers
+    return evaluator_server, workers, wandb_train_plugin
 
 
 def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
@@ -268,14 +280,12 @@ def main(args):
 
     t0 = time.time()
 
-    evaluator_server, workers = setup(
-        args.board_size, args.max_walls, args.max_game_length, args.num_workers, args.seed
-    )
+    evaluator_server, workers, wandb_train_plugin = setup(args)
 
     t1 = time.time()
 
     try:
-        train_alphazero(args, evaluator_server, workers=workers)
+        train_alphazero(args, evaluator_server, workers=workers, wandb_train_plugin=wandb_train_plugin)
     finally:
         shutdown(evaluator_server, workers)
 
@@ -301,9 +311,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("-e", "--epochs", type=int, default=2, help="Number of training epochs")
     parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes")
-    parser.add_argument(
-        "--max-game-length", type=int, default=200, help="Max number of turns before game is called a tie"
-    )
+    parser.add_argument("--max-game-length", type=int, help="Deprecated; use --max-steps instead")
+    parser.add_argument("--max-steps", type=int, default=1000, help="Max number of turns before game is called a tie")
     parser.add_argument(
         "-i",
         "--seed",
@@ -319,6 +328,15 @@ if __name__ == "__main__":
         default=["random", "simple"],
         help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
+    parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     args = parser.parse_args()
+
+    # Handle deprecated --max-game-length argument
+    if args.max_game_length is not None:
+        if args.max_steps != parser.get_default("max-steps"):  # Check if --max-steps was also provided (not default)
+            print("Warning: Both --max-game-length and --max-steps provided. Using --max-steps value.")
+        else:
+            print("Warning: --max-game-length is deprecated. Please use --max-steps instead.")
+            args.max_steps = args.max_game_length
 
     main(args)
