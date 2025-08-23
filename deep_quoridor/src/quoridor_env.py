@@ -54,6 +54,7 @@ def make_observation(game, agent_id, player, is_player_turns):
         "walls": walls,
         "my_walls_remaining": game.board.get_walls_remaining(player),
         "opponent_walls_remaining": game.board.get_walls_remaining(opponent),
+        "completed_steps": game.completed_steps,
     }
 
 

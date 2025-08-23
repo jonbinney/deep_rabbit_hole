@@ -23,6 +23,9 @@ from utils import my_device, parse_subargs, set_deterministic
 class WorkerParams:
     worker_id: int
     random_seed: int
+    board_size: int
+    max_walls: int
+    max_steps: int
     job_queue: mp.Queue
     result_queue: mp.Queue
     evaluator: EvaluatorClient
@@ -49,16 +52,15 @@ class RunGamesResult:
 
 
 def self_play_worker(
-    board_size: int,
-    max_walls: int,
-    max_game_length: int,
     params: WorkerParams,
 ):
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
     # their self-play moves.
     set_deterministic(params.random_seed)
 
-    environment = quoridor_env.env(board_size=board_size, max_walls=max_walls, step_rewards=False)
+    environment = quoridor_env.env(
+        board_size=params.board_size, max_walls=params.max_walls, max_steps=params.max_steps, step_rewards=False
+    )
 
     while True:
         job = params.job_queue.get()
@@ -69,7 +71,13 @@ def self_play_worker(
             params.evaluator.clear_cache()
 
         # Use the updated model and parameters
-        alphazero_agent = AlphaZeroAgent(board_size, max_walls, params=job.alphazero_params, evaluator=params.evaluator)
+        alphazero_agent = AlphaZeroAgent(
+            params.board_size,
+            params.max_walls,
+            params.max_steps,
+            params=job.alphazero_params,
+            evaluator=params.evaluator,
+        )
 
         for game_i in range(job.num_games):
             environment.reset()
@@ -77,18 +85,16 @@ def self_play_worker(
 
             for _ in environment.agent_iter():
                 observation, _, termination, truncation, _ = environment.last()
-                if termination or truncation:
+                if termination:
+                    break
+                elif truncation:
+                    print("Game was truncated")
+                    print(environment.render())
                     break
 
                 action_index = alphazero_agent.get_action(observation)
                 environment.step(action_index)
                 num_turns += 1
-
-                # TODO: Move max steps with proper truncation to the environment and agent
-                if num_turns >= max_game_length:
-                    print("Truncating game")
-                    print(environment.render())
-                    break
 
             print(f"Worker {params.worker_id}: Game {game_i + 1}/{job.num_games} ended after {num_turns} turns")
             alphazero_agent.end_game(environment)
@@ -125,11 +131,10 @@ def train_alphazero(
         training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
     )
 
-    if wandb_train_plugin is not None:
-        # HACK: the start_game method only cares that "game" has board_size and max_walls
-        # members, so we pass in our arguments object. We need to call this method though,
-        # because it calls the plugin's internal _intialize method which sets up metrics.
-        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
+    # HACK: the start_game method only cares that "game" has board_size and max_walls
+    # members, so we pass in our arguments object. We need to call this method though,
+    # because it calls the plugin's internal _intialize method which sets up metrics.
+    wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
@@ -167,50 +172,33 @@ def train_alphazero(
                 + f"replay buffer size ({len(replay_buffer)})"
             )
 
-        save_and_test_model(training_agent, f"_epoch_{epoch}", wandb_train_plugin, epoch * args.games_per_epoch)
+            game_num = epoch * args.games_per_epoch
+            model_suffix = (f"_epoch_{epoch}",)
+            model_path = Path(training_agent.params.wandb_dir).mkdir(parents=True, exist_ok=True)
+            training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
+            if wandb_train_plugin.params.upload_model:
+                # Save the model where the plugin wants it and use the plugin to compute metrics.
+                wandb_train_plugin.episode_count = game_num
+                wandb_train_plugin.compute_tournament_metrics(model_path)
 
         print(evaluator_server.get_statistics())
         for r in results:
             print(r.evaluator_statistics)
 
 
-def save_and_test_model(agent: AlphaZeroAgent, model_suffix: str, wandb_train_plugin: WandbTrainPlugin, game_num: int):
-    if wandb_train_plugin is not None and wandb_train_plugin.params.upload_model:
-        model_dir = Path(agent.params.wandb_dir)
-    else:
-        model_dir = Path(agent.params.model_dir)
-
-    # Save the model
-    Path(model_dir).mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / agent.resolve_filename(model_suffix)
-    print(f"Saving checkpoint model to {model_path}")
-    agent.save_model(model_path)
-
-    if wandb_train_plugin is not None:
-        # A bit of a hack.... the wandb plugin uses episode_count as the X axis for
-        # graphs, but that isn't automatically set since we aren't calling the end_game
-        # method after games in self-play (since those are run in other processes).
-        wandb_train_plugin.episode_count = game_num
-        wandb_train_plugin.compute_tournament_metrics(model_path)
-
-
 def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
     set_deterministic(args.seed)
 
-    if args.wandb is None:
-        wandb_train_plugin = None
+    if args.wandb == "":
+        wandb_params = WandbParams()
     else:
-        if args.wandb == "":
-            wandb_params = WandbParams()
-        else:
-            wandb_params = parse_subargs(args.wandb, WandbParams)
-            assert isinstance(wandb_params, WandbParams)
+        wandb_params = parse_subargs(args.wandb, WandbParams)
+        assert isinstance(wandb_params, WandbParams)
 
-        agent_encoded_name = "alphazero:" + args.params
-        wandb_train_params = WandbParams()
-        wandb_train_plugin = WandbTrainPlugin(
-            wandb_train_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
-        )
+    agent_encoded_name = "alphazero:" + args.params
+    wandb_train_plugin = WandbTrainPlugin(
+        wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
+    )
 
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
@@ -242,15 +230,19 @@ def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
         )
         job_queue = mp.Queue()
         result_queue = mp.Queue()
-        worker_params = WorkerParams(worker_id, args.seed + worker_id, job_queue, result_queue, evaluator_client)
+        worker_params = WorkerParams(
+            worker_id,
+            args.seed + worker_id,
+            args.board_size,
+            args.max_walls,
+            args.max_steps,
+            job_queue,
+            result_queue,
+            evaluator_client,
+        )
         worker_process = mp.Process(
             target=self_play_worker,
-            args=(
-                args.board_size,
-                args.max_walls,
-                args.max_steps,
-                worker_params,
-            ),
+            args=(worker_params,),
         )
         workers.append(Worker(worker_params, worker_process))
 
