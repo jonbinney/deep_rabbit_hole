@@ -28,14 +28,14 @@ class Arena:
         saver: Optional[ArenaPlugin] = None,
         plugins: list[ArenaPlugin] = [],
         swap_players: bool = True,
-        max_steps: int = 10000,
+        max_steps: int = 1000,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
         self.step_rewards = step_rewards
         self.max_steps = max_steps
         self.swap_players = swap_players
-        self.game = env(board_size=board_size, max_walls=max_walls, step_rewards=step_rewards)
+        self.game = env(board_size=board_size, max_walls=max_walls, max_steps=max_steps, step_rewards=step_rewards)
 
         self.renderers = renderers
         self.plugins = CompositeArenaPlugin([p for p in plugins + renderers + [saver] if p is not None])
@@ -76,6 +76,12 @@ class Arena:
                         action=None,
                         done=True,
                     )
+
+                if truncation:
+                    # Print the game state to help debug.
+                    print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
+                    print(self.game.render())
+
                 break
 
             # opponent_agent = agents["player_0" if player_id == "player_1" else "player_1"]
@@ -113,11 +119,6 @@ class Arena:
 
             self.plugins.after_action(self.game, step, agent_id, action)
             step += 1
-            # TODO: Move max steps with proper truncation to the environment
-            if step >= self.max_steps:
-                print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
-                print(self.game.render())
-                break
 
         end_time = time.time()
         # print(self.game.render())

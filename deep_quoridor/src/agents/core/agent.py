@@ -171,6 +171,7 @@ class AgentRegistry:
         return registry_entry.agent_class(
             board_size=env.board_size,
             max_walls=env.max_walls,
+            max_steps=env.max_steps,
             observation_space=env.observation_space(None),
             action_space=env.action_space(None),
             **kwargs,

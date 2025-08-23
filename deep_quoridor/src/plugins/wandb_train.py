@@ -33,8 +33,24 @@ class WandbParams(SubargsBase):
     # How often to log training metrics
     log_every: int = 10
 
+    # If true, don't actually connect to wandb - don't upload logs or models. Overrides upload_model. This is
+    # useful for when you don't have internet but you still want to see the result of benchmarks.
+    local_only: bool = False
+
     def run_id(self):
         return f"{self.prefix}-{self.suffix}"
+
+
+class LocalOnlyWandbMock:
+    """
+    If we want to run with actually connecting to WandB, we replace the WandB client class with this one.
+    """
+
+    def __init__(self):
+        print("Using local-only mock for WandB")
+
+    def log(self, log_dict: dict):
+        pass
 
 
 class WandbTrainPlugin(ArenaPlugin):
@@ -63,15 +79,18 @@ class WandbTrainPlugin(ArenaPlugin):
         config.update(self.agent.model_hyperparameters())
         self.metrics = Metrics(game.board_size, game.max_walls, self.benchmarks)
 
-        self.run = wandb.init(
-            project=self.params.project,
-            job_type="train",
-            config=config,
-            tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
-            id=self.params.run_id(),
-            name=f"{self.params.run_id()}",
-            notes=self.params.notes,
-        )
+        if self.params.local_only:
+            self.run = LocalOnlyWandbMock()
+        else:
+            self.run = wandb.init(
+                project=self.params.project,
+                job_type="train",
+                config=config,
+                tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
+                id=self.params.run_id(),
+                name=f"{self.params.run_id()}",
+                notes=self.params.notes,
+            )
 
     def start_game(self, game, agent1, agent2):
         if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
@@ -117,7 +136,10 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def end_arena(self, game, results):
         assert self.agent
-        if not self.params.upload_model:
+        if isinstance(self.run, LocalOnlyWandbMock):
+            print("Final model NOT uploaded to wandb because we are in local_only mode")
+            return
+        elif not self.params.upload_model:
             print("Model NOT uploaded to wandb since using `upload_model=False`")
             wandb.finish()
             return
