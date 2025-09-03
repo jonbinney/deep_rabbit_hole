@@ -101,8 +101,9 @@ class AlphaZeroParams(SubargsBase):
 class AlphaZeroAgent(TrainableAgent):
     def __init__(
         self,
-        board_size,
-        max_walls,
+        board_size: int,
+        max_walls: int,
+        max_steps: int = -1,  # -1 means games are never truncated.
         observation_space=None,
         action_space=None,
         evaluator=None,
@@ -114,6 +115,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.params = params
         self.board_size = board_size
         self.max_walls = max_walls
+        self.max_steps = max_steps
         self.device = my_device()
         self.visited_states = set()
 
@@ -128,6 +130,7 @@ class AlphaZeroAgent(TrainableAgent):
             params.mcts_n,
             params.mcts_k,
             params.mcts_ucb_c,
+            self.max_steps,
             self.evaluator,
             self.visited_states,
             params.mcts_pre_evaluate_nodes_total,

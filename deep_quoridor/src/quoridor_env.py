@@ -54,6 +54,7 @@ def make_observation(game, agent_id, player, is_player_turns):
         "walls": walls,
         "my_walls_remaining": game.board.get_walls_remaining(player),
         "opponent_walls_remaining": game.board.get_walls_remaining(opponent),
+        "completed_steps": game.completed_steps,
     }
 
 
@@ -75,6 +76,7 @@ class QuoridorEnv(AECEnv):
         self,
         board_size: int = 9,
         max_walls: int = 10,
+        max_steps: int = 200,
         step_rewards: bool = False,
         render_mode: str = "human",
         game_start_state: Optional[Quoridor] = None,
@@ -86,6 +88,8 @@ class QuoridorEnv(AECEnv):
         Args:
             board_size (int): Size of the square board (e.g., 9 for a 9x9 board).
             max_walls (int): Maximum number of walls each player can place (e.g., 10).
+            max_steps (int): Maximum number of steps (turns) before game is terminated as a tie.
+                -1 means no limit.
             step_rewards (bool): Whether to provide (heuristic) incremental rewards.
             game_start_state (Optional[Quoridor]): An optional starting state of the game to initialize the environment. (mainly for testing)
         """
@@ -97,6 +101,7 @@ class QuoridorEnv(AECEnv):
         self.board_size = board_size  # assumed square grid
         self.wall_size = self.board_size - 1  # grid for walls
         self.max_walls = max_walls  # Each player gets 10 walls
+        self.max_steps = max_steps  # Games longer than this are terminated and treated as a tie
 
         self._action_encoder = ActionEncoder(board_size)
 
@@ -169,6 +174,10 @@ class QuoridorEnv(AECEnv):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             self.rewards[get_opponent_player_id(agent)] = -1
+        elif self.max_steps >= 0 and self.game.completed_steps >= self.max_steps:
+            self.truncations = {a: True for a in self.agents}
+            self.rewards[agent] = 0
+            self.rewards[get_opponent_player_id(agent)] = 0
         elif self.step_rewards:
             # Assign rewards as the difference in distance to the goal divided by
             # three times the board size.

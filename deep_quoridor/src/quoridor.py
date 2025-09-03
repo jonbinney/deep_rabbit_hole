@@ -331,6 +331,7 @@ class Quoridor:
         action_encoder: Optional[ActionEncoder] = None,
         goal_rows: Optional[np.ndarray] = None,
         rotated=False,
+        completed_steps=0,
     ):
         """
         If you want to start from the initial game state, pass in board=Board(board_size, max_walls).
@@ -338,13 +339,19 @@ class Quoridor:
         self.board = board
         self.current_player = current_player
         self.action_encoder = action_encoder if action_encoder is not None else ActionEncoder(board.board_size)
+        self.completed_steps = completed_steps
 
         self._goal_rows = goal_rows if goal_rows is not None else np.array([self.board.board_size - 1, 0])
         self._rotated = rotated
 
     def create_new(self):
         return Quoridor(
-            self.board.create_new(), self.current_player, self.action_encoder, self._goal_rows, self._rotated
+            self.board.create_new(),
+            self.current_player,
+            self.action_encoder,
+            self._goal_rows,
+            self._rotated,
+            self.completed_steps,
         )
 
     def copy(self):
@@ -375,9 +382,10 @@ class Quoridor:
             self.board.move_player(self.current_player, action.destination)
         elif isinstance(action, WallAction):
             self.board.add_wall(self.current_player, action.position, action.orientation)
-            # TODO: Check that the wall doesn't block any player from reaching their goal.
         else:
             raise ValueError(f"Invalid action type {action} for player {self.current_player}, in board {self.board}")
+
+        self.completed_steps += 1
 
         self.go_to_next_player()
 
@@ -553,6 +561,7 @@ def get_player_and_opponent_from_observation(observation):
     else:
         raise ValueError(f"Invalid player ID: {player_id}")
 
+
 def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player, Player]:
     player, opponent = get_player_and_opponent_from_observation(observation)
 
@@ -590,7 +599,9 @@ def construct_game_from_observation(observation: dict) -> tuple[Quoridor, Player
     board.set_walls_remaining(player, observation["my_walls_remaining"])
     board.set_walls_remaining(opponent, observation["opponent_walls_remaining"])
 
-    return Quoridor(board=board, current_player=current_player), player, opponent
+    game = Quoridor(board=board, current_player=current_player, completed_steps=observation["completed_steps"])
+
+    return game, player, opponent
 
 
 if __name__ == "__main__":

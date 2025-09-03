@@ -118,6 +118,7 @@ class MCTS:
         n: Optional[int],
         k: Optional[int],
         ucb_c: float,
+        max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
         pre_evaluate_nodes_total: int = 64,
@@ -126,6 +127,7 @@ class MCTS:
         self.n = n
         self.k = k
         self.ucb_c = ucb_c
+        self.max_steps = max_steps
         self.evaluator = evaluator
         self.new_nodes = []
         self.extra_eval = pre_evaluate_nodes_total - 1
@@ -158,7 +160,8 @@ class MCTS:
             if node.game.is_game_over():
                 # The player who just made a move must have won.
                 node.backpropagate_result(1)
-            # TODO: Handle ties (these happen when arena decides game is taking too long)
+            elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
+                node.backpropagate_result(0)
             else:
                 games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
                 self.new_nodes = self.new_nodes[self.extra_eval :]
