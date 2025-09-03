@@ -111,7 +111,7 @@ def train_alphazero(
     args: argparse.Namespace,
     evaluator_server: EvaluatorServer,
     workers: list[Worker],
-    wandb_train_plugin: WandbTrainPlugin,
+    wandb_train_plugin: Optional[WandbTrainPlugin],
 ):
     # Create an agent that we'll use to do training. The self play games will happen with agents
     # created in each worker process.
@@ -131,10 +131,11 @@ def train_alphazero(
         training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
     )
 
-    # HACK: the start_game method only cares that "game" has board_size and max_walls
-    # members, so we pass in our arguments object. We need to call this method though,
-    # because it calls the plugin's internal _intialize method which sets up metrics.
-    wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
+    if wandb_train_plugin is not None:
+        # HACK: the start_game method only cares that "game" has board_size and max_walls
+        # members, so we pass in our arguments object. We need to call this method though,
+        # because it calls the plugin's internal _intialize method which sets up metrics.
+        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
@@ -174,9 +175,10 @@ def train_alphazero(
 
             game_num = epoch * args.games_per_epoch
             model_suffix = (f"_epoch_{epoch}",)
-            model_path = Path(training_agent.params.wandb_dir).mkdir(parents=True, exist_ok=True)
+            model_path = Path(training_agent.params.wandb_dir)
+            model_path.mkdir(parents=True, exist_ok=True)
             training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
-            if wandb_train_plugin.params.upload_model:
+            if wandb_train_plugin is not None and wandb_train_plugin.params.upload_model:
                 # Save the model where the plugin wants it and use the plugin to compute metrics.
                 wandb_train_plugin.episode_count = game_num
                 wandb_train_plugin.compute_tournament_metrics(model_path)
@@ -189,16 +191,19 @@ def train_alphazero(
 def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
     set_deterministic(args.seed)
 
-    if args.wandb == "":
-        wandb_params = WandbParams()
+    if args.wandb is None:
+        wandb_train_plugin = None
     else:
-        wandb_params = parse_subargs(args.wandb, WandbParams)
-        assert isinstance(wandb_params, WandbParams)
+        if args.wandb == "":
+            wandb_params = WandbParams()
+        else:
+            wandb_params = parse_subargs(args.wandb, WandbParams)
+            assert isinstance(wandb_params, WandbParams)
 
-    agent_encoded_name = "alphazero:" + args.params
-    wandb_train_plugin = WandbTrainPlugin(
-        wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
-    )
+        agent_encoded_name = "alphazero:" + args.params
+        wandb_train_plugin = WandbTrainPlugin(
+            wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
+        )
 
     # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
     # to send the resulting (value, policy) back.
@@ -304,7 +309,12 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--epochs", type=int, default=2, help="Number of training epochs")
     parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes")
     parser.add_argument("--max-game-length", type=int, help="Deprecated; use --max-steps instead")
-    parser.add_argument("--max-steps", type=int, default=1000, help="Max number of turns before game is called a tie")
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=200,
+        help="Max number of turns before game is called a tie (pass -1 for no limit)",
+    )
     parser.add_argument(
         "-i",
         "--seed",

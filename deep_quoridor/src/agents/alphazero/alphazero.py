@@ -103,7 +103,7 @@ class AlphaZeroAgent(TrainableAgent):
         self,
         board_size: int,
         max_walls: int,
-        max_steps: Optional[int] = None,  # None means games are never truncated.
+        max_steps: int = -1,  # -1 means games are never truncated.
         observation_space=None,
         action_space=None,
         evaluator=None,

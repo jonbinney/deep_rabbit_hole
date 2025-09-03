@@ -118,7 +118,7 @@ class MCTS:
         n: Optional[int],
         k: Optional[int],
         ucb_c: float,
-        max_steps: int,
+        max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
         pre_evaluate_nodes_total: int = 64,
@@ -160,7 +160,7 @@ class MCTS:
             if node.game.is_game_over():
                 # The player who just made a move must have won.
                 node.backpropagate_result(1)
-            elif node.game.completed_steps >= self.max_steps:
+            elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
                 node.backpropagate_result(0)
             else:
                 games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]

@@ -76,7 +76,7 @@ class QuoridorEnv(AECEnv):
         self,
         board_size: int = 9,
         max_walls: int = 10,
-        max_steps: int = 1000,
+        max_steps: int = 200,
         step_rewards: bool = False,
         render_mode: str = "human",
         game_start_state: Optional[Quoridor] = None,
@@ -88,6 +88,8 @@ class QuoridorEnv(AECEnv):
         Args:
             board_size (int): Size of the square board (e.g., 9 for a 9x9 board).
             max_walls (int): Maximum number of walls each player can place (e.g., 10).
+            max_steps (int): Maximum number of steps (turns) before game is terminated as a tie.
+                -1 means no limit.
             step_rewards (bool): Whether to provide (heuristic) incremental rewards.
             game_start_state (Optional[Quoridor]): An optional starting state of the game to initialize the environment. (mainly for testing)
         """
@@ -139,11 +141,6 @@ class QuoridorEnv(AECEnv):
         self._cumulative_rewards = self.rewards.copy()
         self.infos = {agent: {} for agent in self.agents}
 
-        # How many turns have been taken so far. Iterated during step() and if it
-        # reaches self.max_steps with no player winning, then the game is
-        # terminated as a tie.
-        self.completed_steps = 0
-
         return None
 
     def step(self, action_index):
@@ -172,13 +169,12 @@ class QuoridorEnv(AECEnv):
 
         action = self._action_encoder.index_to_action(action_index)
         self.game.step(action)
-        self.completed_steps += 1
 
         if self.game.check_win(player):
             self.terminations = {a: True for a in self.agents}
             self.rewards[agent] = 1
             self.rewards[get_opponent_player_id(agent)] = -1
-        elif self.completed_steps >= self.max_steps:
+        elif self.max_steps >= 0 and self.game.completed_steps >= self.max_steps:
             self.truncations = {a: True for a in self.agents}
             self.rewards[agent] = 0
             self.rewards[get_opponent_player_id(agent)] = 0
