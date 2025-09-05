@@ -217,6 +217,9 @@ class ReplayBufferVisualizer:
 
         # Get MCTS policy and create action scores
         mcts_policy = entry["mcts_policy"]
+        if game.is_rotated():
+            mcts_policy = self.model.rotate_policy_from_original(mcts_policy)
+
         valid_actions = game.get_valid_actions()
         action_scores = {}
 
@@ -295,6 +298,7 @@ class ReplayBufferVisualizer:
         # Reconstruct game from input array
         player = entry["player"]
         game = self._input_array_to_game(entry["input_array"], player)
+        game, _ = self.model.rotate_if_needed_to_point_downwards(game)
 
         # Clear axes
         self.ax_rb.clear()
