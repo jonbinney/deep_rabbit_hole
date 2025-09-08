@@ -80,6 +80,7 @@ def self_play_worker(
         )
 
         for game_i in range(job.num_games):
+            alphazero_agent.start_game(None, None)
             environment.reset()
             num_turns = 0
 
@@ -173,8 +174,9 @@ def train_alphazero(
                 + f"replay buffer size ({len(replay_buffer)})"
             )
 
-            game_num = epoch * args.games_per_epoch
-            model_suffix = (f"_epoch_{epoch}",)
+        game_num = epoch * args.games_per_epoch
+        if epoch % 2 == 1:
+            model_suffix = f"_epoch_{epoch}"
             model_path = Path(training_agent.params.wandb_dir)
             model_path.mkdir(parents=True, exist_ok=True)
             training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
