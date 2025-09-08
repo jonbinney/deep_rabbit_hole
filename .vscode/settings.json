@@ -1,7 +1,16 @@
 {
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.useLibraryCodeForTypes": true,
     "[python]": {
+        // Type checking with Pylance (choose: "off", "basic", or "strict")
+
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        },
     },
     "python.testing.unittestArgs": [
         "-v",
@@ -16,15 +25,8 @@
     "python.testing.pytestArgs": [
         "."
     ],
-    "remote.SSH.defaultExtensions": [
-        "ms-python.python",
-        "ms-python.debugpy",
-        "ms-python.black-formatter",
-        "github.copilot",
-        "github.copilot-chat"
-    ],
+    "ruff.enable": true,
     "ruff.trace.server": "messages",
-    "python.sortImports.args": ["--profile", "black"],
     "editor.codeActionsOnSave": {
         "source.organizeImports": "explicit"
     }
