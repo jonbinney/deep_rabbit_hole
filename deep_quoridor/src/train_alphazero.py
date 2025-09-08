@@ -173,15 +173,15 @@ def train_alphazero(
                 + f"replay buffer size ({len(replay_buffer)})"
             )
 
-            game_num = epoch * args.games_per_epoch
-            model_suffix = (f"_epoch_{epoch}",)
-            model_path = Path(training_agent.params.wandb_dir)
-            model_path.mkdir(parents=True, exist_ok=True)
-            training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
-            if wandb_train_plugin is not None and wandb_train_plugin.params.upload_model:
-                # Save the model where the plugin wants it and use the plugin to compute metrics.
-                wandb_train_plugin.episode_count = game_num
-                wandb_train_plugin.compute_tournament_metrics(model_path)
+        game_num = epoch * args.games_per_epoch
+        model_suffix = (f"_epoch_{epoch}",)
+        model_path = Path(training_agent.params.wandb_dir)
+        model_path.mkdir(parents=True, exist_ok=True)
+        training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
+        if wandb_train_plugin is not None:
+            # Save the model where the plugin wants it and use the plugin to compute metrics.
+            wandb_train_plugin.episode_count = game_num
+            wandb_train_plugin.compute_tournament_metrics(model_path)
 
         print(evaluator_server.get_statistics())
         for r in results:
