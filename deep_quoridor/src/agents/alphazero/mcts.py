@@ -1,6 +1,7 @@
 from typing import Optional
 
 import numpy as np
+from numpy.random import dirichlet
 from quoridor import Action, Quoridor
 
 
@@ -118,6 +119,8 @@ class MCTS:
         n: Optional[int],
         k: Optional[int],
         ucb_c: float,
+        noise_epsilon: float,
+        noise_alpha: float,
         max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
@@ -127,6 +130,8 @@ class MCTS:
         self.n = n
         self.k = k
         self.ucb_c = ucb_c
+        self.noise_epsilon = noise_epsilon
+        self.noise_alpha = noise_alpha
         self.max_steps = max_steps
         self.evaluator = evaluator
         self.new_nodes = []
@@ -166,6 +171,19 @@ class MCTS:
                 games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
                 self.new_nodes = self.new_nodes[self.extra_eval :]
                 value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
+
+                if node is root and self.noise_epsilon > 0.0:
+                    # To encourage exploration we add noise to the priors at the root node.
+                    # NOTE: It isn't clear from the paper whether we should apply the dirichlet noise
+                    # only to the valid actions, or whether we should apply it to all actions and then
+                    # re-mask and re-normalize. These might work out to be equivalent, but I'm not sure of
+                    # that either. For now we apply the noise _only_ to the valid actions. That seems to
+                    # match what the Openspiel python implementation does.
+                    (valid_action_indices,) = np.nonzero(priors > 0.0)
+                    dirichlet_noise = dirichlet([self.noise_alpha] * len(valid_action_indices))
+                    priors[valid_action_indices] *= 1.0 - self.noise_epsilon
+                    priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
+
                 node.expand(priors)
                 self.new_nodes.extend(node.children)
 
