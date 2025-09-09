@@ -128,7 +128,10 @@ def train_alphazero(
     self_play_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
 
     evaluator_server.train_prepare(
-        training_params.learning_rate, training_params.batch_size, training_params.optimizer_iterations
+        training_params.learning_rate,
+        training_params.batch_size,
+        training_params.optimizer_iterations,
+        training_params.weight_decay,
     )
 
     if wandb_train_plugin is not None:

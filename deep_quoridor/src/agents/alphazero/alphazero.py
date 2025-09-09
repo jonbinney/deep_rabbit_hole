@@ -31,6 +31,19 @@ class AlphaZeroParams(SubargsBase):
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
 
+    # L2 regularization weight decay coefficient. Weight decay and L2 regularization are the
+    # same thing for simple NN optimizers like SGD. For Adam, they are subtly different
+    # because of the adaptive learning rates. It seems that the common (best?) practice is to
+    # use weight decay with "decoupled weights" to achieve the same effect as L2 regularization.
+    # We use the AdamW otimizer which does this by default. 1e-4 here is the same value uesd in
+    # the AlphaZero paper.
+    #
+    # For more explanation weight decay vs L2 regularization, see:
+    #
+    #     https://www.johntrimble.com/posts/weight-decay-is-not-l2-regularization/
+    #
+    weight_decay: float = 0.0001
+
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
     temperature: float = 1.0
 
@@ -131,6 +144,7 @@ class AlphaZeroParams(SubargsBase):
             "training_mode",
             "train_every",
             "learning_rate",
+            "weight_decay",
             "optimizer_iterations",
             "batch_size",
             "replay_buffer_size",
@@ -190,7 +204,9 @@ class AlphaZeroAgent(TrainableAgent):
         )
 
         if params.training_mode and params.train_every is not None:
-            self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
+            self.evaluator.train_prepare(
+                params.learning_rate, params.batch_size, params.optimizer_iterations, params.weight_decay
+            )
 
         self.episode_count = 0
 

@@ -74,6 +74,7 @@ def test_evaluator_training_with_deterministic_policy():
     learning_rate = 0.001
     batch_size = 10
     optimizer_iterations = 20
+    weight_decay = 1e-4
     target_action = MoveAction((0, 0))
     target_value = 1.0
     required_precision = 1e-3
@@ -88,7 +89,7 @@ def test_evaluator_training_with_deterministic_policy():
             {"input_array": evaluator.game_to_input_array(game), "mcts_policy": target_policy, "value": 1.0}
         )
 
-    evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations)
+    evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations, weight_decay)
     training_stats = evaluator.train_iteration(replay_buffer)
 
     value, policy = evaluator.evaluate(game)
@@ -105,6 +106,7 @@ def test_evaluator_training_with_probabilistic_policy():
     # large because it takes quite a while for the current MLP model to converge to the right
     # policy in this case. Hopefully we can find a better NN that trains more efficiently.
     optimizer_iterations = 500
+    weight_decay = 1e-4
     required_precision = 1e-2
     target_value = 1.0
 
@@ -119,7 +121,7 @@ def test_evaluator_training_with_probabilistic_policy():
             {"input_array": evaluator.game_to_input_array(game), "mcts_policy": target_policy, "value": 1.0}
         )
 
-    evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations)
+    evaluator.train_prepare(learning_rate, batch_size, optimizer_iterations, weight_decay)
     training_stats = evaluator.train_iteration(replay_buffer)
 
     value, policy = evaluator.evaluate(game)
