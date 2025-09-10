@@ -148,12 +148,12 @@ class NNEvaluator:
 
         return input_array
 
-    def train_prepare(self, learning_rate, batch_size, batches_per_iteration, weight_decay: float = 0):
+    def train_prepare(self, learning_rate, batch_size, batches_per_iteration, weight_decay: float):
         assert not hasattr(self, "optimizer") or self.optimizer is None, "train_prepare should be called only once"
 
         self.batch_size = batch_size
         self.batches_per_iteration = batches_per_iteration
-        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     def train_iteration(self, replay_buffer):
         assert self.optimizer is not None, "Call train_prepare before training"
