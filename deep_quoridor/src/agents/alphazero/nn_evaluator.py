@@ -229,7 +229,7 @@ class NNEvaluator:
 
         training_set, validation_set = self.split_data(replay_buffer, validation_ratio)
 
-        if validation_ratio > 0.0:
+        if len(validation_set) > 0:
             print("==== Training & Validation Loss ====")
             print("  Epoch       Total   Val Total   Policy  Val Policy  Value   Val Value")
         else:
@@ -245,17 +245,15 @@ class NNEvaluator:
 
             policy_loss, value_loss, total_loss = self.compute_losses(batch_data)
 
-            if validation_ratio > 0.0:
-                with torch.no_grad():
-                    val_policy_loss, val_value_loss, val_total_loss = self.compute_losses(validation_set)
+            if i % show_loss_every == 0:
+                t, p, v = total_loss.item(), policy_loss.item(), value_loss.item()
+                if len(validation_set) > 0:
+                    with torch.no_grad():
+                        val_policy_loss, val_value_loss, val_total_loss = self.compute_losses(validation_set)
 
-                if i % show_loss_every == 0:
-                    t, p, v = total_loss.item(), policy_loss.item(), value_loss.item()
-                    vt, vp, vv = val_total_loss.item(), val_policy_loss.item(), val_value_loss.item()
-                    print(f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}")
-            else:
-                if i % show_loss_every == 0:
-                    t, p, v = total_loss.item(), policy_loss.item(), value_loss.item()
+                        vt, vp, vv = val_total_loss.item(), val_policy_loss.item(), val_value_loss.item()
+                        print(f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}")
+                else:
                     print(f"{i:>7} {t:>7.3f} {p:>7.3f} {v:>7.3f}")
 
             # Backward pass
