@@ -237,7 +237,7 @@ class NNEvaluator:
             print("  Epoch   Total   Policy  Value")
 
         # Show a fixed number of losses
-        show_loss_every = self.batches_per_iteration // 25
+        show_loss_every = min(1, self.batches_per_iteration // 25)
 
         for i in range(self.batches_per_iteration):
             # Sample random batch from replay buffer
