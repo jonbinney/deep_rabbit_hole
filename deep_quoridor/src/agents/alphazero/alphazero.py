@@ -134,6 +134,9 @@ class AlphaZeroParams(SubargsBase):
     # The options are: "never" | "first" | "always"
     save_replay_buffer: str = "never"
 
+    # What fraction of the total moves will be used for validation during training, or 0.0 to not use a validation set
+    validation_ratio: float = 0.0
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -149,6 +152,7 @@ class AlphaZeroParams(SubargsBase):
             "batch_size",
             "replay_buffer_size",
             "save_replay_buffer",
+            "validation_ratio",
         }
 
 
@@ -334,19 +338,16 @@ class AlphaZeroAgent(TrainableAgent):
                 self.first_replay_buffer_saved = True
 
         t0 = time.time()
-        print(
-            f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
-            end="",
-        )
+        print(f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...")
 
-        metrics = self.evaluator.train_iteration(self.replay_buffer)
+        metrics = self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio)
 
         # Store loss for metrics
         self.recent_losses.append(metrics["total_loss"])
         if len(self.recent_losses) > 100:  # Keep only recent losses
             self.recent_losses = self.recent_losses[-100:]
 
-        print(f"done in {time.time() - t0:.2f}s")
+        print(f"Finished training in {time.time() - t0:.2f}s")
 
     def _replay_buffer_filename(self, episode_number: int):
         params = {

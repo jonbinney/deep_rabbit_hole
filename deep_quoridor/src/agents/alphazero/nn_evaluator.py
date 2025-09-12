@@ -3,10 +3,9 @@ import random
 import numpy as np
 import torch
 import torch.nn.functional as F
-from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor
+from quoridor import ActionEncoder, Board, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
-from agents.core.agent import ActionLog
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -155,48 +154,107 @@ class NNEvaluator:
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    def train_iteration(self, replay_buffer):
+    def split_data(self, replay_buffer, validation_ratio: float) -> tuple[list, list]:
+        """
+        Splits the replay buffer into a training set and a validation set.
+        There are usually multiple entries with the same input (e.g. the initial state is always repeated in each game),
+        so this function makes sure that all entries with the same input are either in the training set or in the validation set.
+        """
+        if validation_ratio == 0.0:
+            return list(replay_buffer), []
+
+        by_hash = {}
+
+        for entry in replay_buffer:
+            input_hash = hash(entry["input_array"].tobytes())
+            if input_hash in by_hash:
+                by_hash[input_hash].append(entry)
+            else:
+                by_hash[input_hash] = [entry]
+
+        validation_size = int(len(replay_buffer) * validation_ratio)
+        validation_set = []
+
+        while len(validation_set) < validation_size:
+            key = random.choice(list(by_hash.keys()))
+            validation_set.extend(by_hash[key])
+            del by_hash[key]
+
+        training_set = []
+        for entries in by_hash.values():
+            training_set.extend(entries)
+
+        return training_set, validation_set
+
+    def compute_losses(self, batch_data):
+        # Prepare batch tensors
+        inputs = []
+
+        # The network predicts the natural log of the probability of each next action. When we use
+        # it to make predictions, we take the softmax of its output which un-logifies it and also
+        # normalizes it to a valid probability distribution.
+        target_policies = []
+
+        target_values = []
+
+        for data in batch_data:
+            inputs.append(torch.from_numpy(data["input_array"]))
+            target_policies.append(torch.FloatTensor(data["mcts_policy"]))
+            target_values.append(torch.FloatTensor([data["value"]]))
+
+        inputs = torch.stack(inputs).to(self.device)
+        target_policies = torch.stack(target_policies).to(self.device)
+        target_values = torch.stack(target_values).to(self.device)
+
+        assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
+            "NaN in training data"
+        )
+
+        # Forward pass
+        pred_logits, pred_values = self.network(inputs)
+        # TODO: Should we apply masking before calculating cross-entropy here?
+
+        # Compute losses
+        policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
+        value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
+        total_loss = policy_loss + value_loss
+
+        return policy_loss, value_loss, total_loss
+
+    def train_iteration(self, replay_buffer, validation_ratio: float = 0.0):
         assert self.optimizer is not None, "Call train_prepare before training"
         self.cache = {}
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
-        for _ in range(self.batches_per_iteration):
+        training_set, validation_set = self.split_data(replay_buffer, validation_ratio)
+
+        if len(validation_set) > 0:
+            print("==== Training & Validation Loss ====")
+            print("  Epoch       Total   Val Total   Policy  Val Policy  Value   Val Value")
+        else:
+            print("==== Training Loss ====")
+            print("  Epoch   Total   Policy  Value")
+
+        # Show a fixed number of losses
+        show_loss_every = max(1, self.batches_per_iteration // 25)
+
+        for i in range(self.batches_per_iteration):
             # Sample random batch from replay buffer
-            batch_data = random.sample(list(replay_buffer), self.batch_size)
+            batch_data = random.sample(training_set, self.batch_size)
 
-            # Prepare batch tensors
-            inputs = []
+            policy_loss, value_loss, total_loss = self.compute_losses(batch_data)
 
-            # The network predicts the natural log of the probability of each next action. When we use
-            # it to make predictions, we take the softamx of its output which un-logifies it and also
-            # normalizes it to a valid probability distribution.
-            target_policies = []
+            if i % show_loss_every == 0:
+                t, p, v = total_loss.item(), policy_loss.item(), value_loss.item()
+                if len(validation_set) > 0:
+                    with torch.no_grad():
+                        val_policy_loss, val_value_loss, val_total_loss = self.compute_losses(validation_set)
 
-            target_values = []
-
-            for data in batch_data:
-                inputs.append(torch.from_numpy(data["input_array"]))
-                target_policies.append(torch.FloatTensor(data["mcts_policy"]))
-                target_values.append(torch.FloatTensor([data["value"]]))
-
-            inputs = torch.stack(inputs).to(self.device)
-            target_policies = torch.stack(target_policies).to(self.device)
-            target_values = torch.stack(target_values).to(self.device)
-
-            assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
-                "NaN in training data"
-            )
-
-            # Forward pass
-            pred_logits, pred_values = self.network(inputs)
-            # TODO: Should we apply masking before calculating cross-entropy here?
-
-            # Compute losses
-            policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
-            value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
-            total_loss = policy_loss + value_loss
-            # print(f"{total_loss.item():3.3f} {policy_loss.item():3.3f} {value_loss.item():3.3f}")
+                        vt, vp, vv = val_total_loss.item(), val_policy_loss.item(), val_value_loss.item()
+                        print(f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}")
+                else:
+                    print(f"{i:>7} {t:>7.3f} {p:>7.3f} {v:>7.3f}")
 
             # Backward pass
             self.optimizer.zero_grad()
