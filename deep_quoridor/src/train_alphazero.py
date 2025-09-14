@@ -80,6 +80,7 @@ def self_play_worker(
         )
 
         for game_i in range(job.num_games):
+            alphazero_agent.start_game(None, None)
             environment.reset()
             num_turns = 0
 
