@@ -31,6 +31,19 @@ class AlphaZeroParams(SubargsBase):
     # Learning rate to use for the optimizer
     learning_rate: float = 0.001
 
+    # L2 regularization weight decay coefficient. Weight decay and L2 regularization are the
+    # same thing for simple NN optimizers like SGD. For Adam, they are subtly different
+    # because of the adaptive learning rates. It seems that the common (best?) practice is to
+    # use weight decay with "decoupled weights" to achieve the same effect as L2 regularization.
+    # We use the AdamW otimizer which does this by default. 1e-4 here is the same value uesd in
+    # the AlphaZero paper.
+    #
+    # For more explanation weight decay vs L2 regularization, see:
+    #
+    #     https://www.johntrimble.com/posts/weight-decay-is-not-l2-regularization/
+    #
+    weight_decay: float = 0.0001
+
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
     temperature: float = 1.0
 
@@ -53,6 +66,46 @@ class AlphaZeroParams(SubargsBase):
 
     # A higher number favors exploration over exploitation
     mcts_ucb_c: float = 1.4
+
+    # Parameters for adding Dirichlet noise to the policy distribution at the root MCTS node during
+    # training. Adding this noise helps keep MCTS from only focusing on a few moves that happen to end
+    # in good results early on.
+    #
+    # According to the Alphago Zero paper, the action priors for the root node are updated according to:
+    #
+    #     P(s, a) = (1 - epsilon) * p_a + epsilon * eta_alpha
+    #
+    # Where eta_alpha is drawn from a Dirichlet distribution Dir(alpha). In other words, the
+    # policy distribution that MCTS uses is a weighted average of the one created by the evaluator
+    # and a completely random distribution. The default value of 0.25 for epsilon means that the
+    # evaluator's policy gets a weight of 75% and the completely random Dirichlet distribution gets
+    # a weighting of 25%. The value of alpha changes the shape of the completely Dirichlet
+    # distribution; 0.03 is the value used in the Alphago Zero paper.
+    #
+    # In the Alphazero paper, the value for alpha was set differently for different games:
+    #
+    #    "Dirichlet noise Dir(α) was added to the prior probabilities in the root node; this was scaled
+    #     in inverse proportion to the approximate number of legal moves in a typical position, to a
+    #     value of α = {0.3, 0.15, 0.03} for chess, shogi and Go respectively."
+    #
+    # Those values for alpha work out to approximately (10 / <typical number of valid moves>)
+    # For Quoridor, the number of possible moves varies _a lot_ depending on whether a player has walls
+    # remaining. For example on a 5x5 board in the start position, there are 3 valid movements and 32
+    # valid wall placements, for a total of 35 valid moves. Once a player is out of walls, there are a maximum
+    # of 5 valid moves (in a case where diagonal jumps are possible.) More often there are 1 to 4 valid moves.
+    #
+    # mcts_noise_epsilon - may be between 0.0 and 1.0. If it is 0, then no noise is added. If it is 1.0,
+    # then the policy from the evaluator is ignored and pure noise is used. In between, you get a weighted
+    # average of the evaluator's policy and Dirichlet noise.
+    #
+    # mcts_noise_alpha  - can be either None (default) or a positive real value. If it is None, then we use
+    # an (10 / typical_number_of_valid_moves), where the typical number of valid moves is esimated based
+    # on the board size and whether max_walls is 0 or not.
+    #
+    # NOTE: these parameters are only used in training_mode. Otherwise no Dirichlet noise is added.
+    #
+    mcts_noise_epsilon: float = 0.25
+    mcts_noise_alpha: Optional[float] = None
 
     # Number of nodes to pre-evaluate in MCTS. This is to take advantage of the GPU
     # being efficient in batching.
@@ -81,6 +134,9 @@ class AlphaZeroParams(SubargsBase):
     # The options are: "never" | "first" | "always"
     save_replay_buffer: str = "never"
 
+    # What fraction of the total moves will be used for validation during training, or 0.0 to not use a validation set
+    validation_ratio: float = 0.0
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -91,10 +147,12 @@ class AlphaZeroParams(SubargsBase):
             "training_mode",
             "train_every",
             "learning_rate",
+            "weight_decay",
             "optimizer_iterations",
             "batch_size",
             "replay_buffer_size",
             "save_replay_buffer",
+            "validation_ratio",
         }
 
 
@@ -126,10 +184,23 @@ class AlphaZeroAgent(TrainableAgent):
         else:
             self.evaluator = evaluator
 
+        # Disable dirichlet noise unless we are in training mode.
+        mcts_noise_epsilon = params.mcts_noise_epsilon if params.training_mode else 0.0
+        # Estimate the typical number of valid moves and use that to choose the alpha parameter of dirichlet noise.
+        # (see parameters class for more explanation of how to choose alpha)
+        if params.mcts_noise_alpha is None:
+            max_valid_wall_actions = 0 if max_walls == 0 else self.action_encoder.num_actions - board_size**2
+            typical_num_valid_actions = float(np.mean([3, max_valid_wall_actions]))
+            mcts_noise_alpha = 10.0 / typical_num_valid_actions
+        else:
+            mcts_noise_alpha: float = params.mcts_noise_alpha
+
         self.mcts = MCTS(
             params.mcts_n,
             params.mcts_k,
             params.mcts_ucb_c,
+            mcts_noise_epsilon,
+            mcts_noise_alpha,
             self.max_steps,
             self.evaluator,
             self.visited_states,
@@ -137,7 +208,9 @@ class AlphaZeroAgent(TrainableAgent):
         )
 
         if params.training_mode and params.train_every is not None:
-            self.evaluator.train_prepare(params.learning_rate, params.batch_size, params.optimizer_iterations)
+            self.evaluator.train_prepare(
+                params.learning_rate, params.batch_size, params.optimizer_iterations, params.weight_decay
+            )
 
         self.episode_count = 0
 
@@ -265,19 +338,16 @@ class AlphaZeroAgent(TrainableAgent):
                 self.first_replay_buffer_saved = True
 
         t0 = time.time()
-        print(
-            f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...",
-            end="",
-        )
+        print(f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...")
 
-        metrics = self.evaluator.train_iteration(self.replay_buffer)
+        metrics = self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio)
 
         # Store loss for metrics
         self.recent_losses.append(metrics["total_loss"])
         if len(self.recent_losses) > 100:  # Keep only recent losses
             self.recent_losses = self.recent_losses[-100:]
 
-        print(f"done in {time.time() - t0:.2f}s")
+        print(f"Finished training in {time.time() - t0:.2f}s")
 
     def _replay_buffer_filename(self, episode_number: int):
         params = {
