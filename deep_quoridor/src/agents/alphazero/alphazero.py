@@ -1,5 +1,7 @@
 import os
 import pickle
+import shutil
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -10,7 +12,7 @@ import numpy as np
 import torch
 import wandb
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
-from utils import get_initial_random_seed, my_device
+from utils import get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
@@ -184,6 +186,9 @@ class AlphaZeroAgent(TrainableAgent):
         else:
             self.evaluator = evaluator
 
+        self._fetch_model_from_wand_and_update_params()
+        self._resolve_and_load_model()
+
         # Disable dirichlet noise unless we are in training mode.
         mcts_noise_epsilon = params.mcts_noise_epsilon if params.training_mode else 0.0
         # Estimate the typical number of valid moves and use that to choose the alpha parameter of dirichlet noise.
@@ -239,6 +244,72 @@ class AlphaZeroAgent(TrainableAgent):
                 print("Running bootstrap training iteration...")
                 self.train_iteration(is_replay_buffer_bootstrap=True)
                 self.first_replay_buffer_loaded = True
+
+    # TO DO, this was copy-pasted from AbstractTrainableAgent, need to refactor it
+    def _fetch_model_from_wand_and_update_params(self):
+        """
+        This function doesn't do anything if wandb_alias is not set in self.params.
+        Otherwise, it will download the file if there's not a local copy.
+        The params are updated to the artifact metadata.
+
+        """
+        alias = self.params.wandb_alias
+        if not alias:
+            return
+
+        api = wandb.Api()
+        path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
+        print(f"{self.name()} - Fetching model from wandb: {path}")
+        artifact = api.artifact(path, type="model")
+        local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
+
+        param_fields = set(self.params_class().__dataclass_fields__.keys())
+        filtered_metadata = {k: v for k, v in artifact.metadata.items() if k in param_fields}
+
+        all_params = self.params_class()(**filtered_metadata)
+
+        # Override params, but only the ones that are not training only
+        for key, value in artifact.metadata.items():
+            if key not in all_params.training_only_params():
+                setattr(self.params, key, value)
+
+        self.params.model_filename = str(local_filename)
+
+        if os.path.exists(local_filename):
+            return local_filename
+
+        os.makedirs(local_filename.parent, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_dir = artifact.download(root=tmpdir)
+
+            # NOTE: This picks the first .pt file it finds in the artifact
+            tmp_filename = next(Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None)
+            if tmp_filename is None:
+                raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
+
+            shutil.copyfile(tmp_filename, local_filename)
+
+            print(f"Model downloaded from wandb to {local_filename}")
+
+    def _resolve_and_load_model(self):
+        """Figure out what model needs to be loaded based on the settings and loads it."""
+        if self.params.model_filename:
+            filename = self.params.model_filename
+        else:
+            # If no filename is passed in training mode, assume we are not loading a model
+            if self.params.training_mode:
+                return
+
+            print("WARNING: no initial model provided usign a filename or wandb, so using random initialized model")
+            return
+            # If it's not training mode, we definitely need to load a pretrained model, so try the
+            # default path for local files
+            # filename = resolve_path(self.params.model_dir, self.resolve_filename("final"))
+
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"Model file {filename} not found.")
+
+        self.load_model(filename)
 
     def version(self):
         return "1.0"
