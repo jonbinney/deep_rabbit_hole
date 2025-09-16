@@ -11,11 +11,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from quoridor import ActionEncoder
 from utils import SubargsBase, my_device, resolve_path
 from utils.misc import get_opponent_player_id
 
-import wandb
 from agents.core.agent import ActionLog, Agent
 from agents.core.replay_buffer import ReplayBuffer
 
@@ -200,7 +200,7 @@ class AbstractTrainableAgent(TrainableAgent):
 
         # Setup device
         self.device = my_device()
-        self._fetch_model_from_wand_and_update_params()
+        self._fetch_model_from_wandb_and_update_params()
 
         # Initialize networks
         self.online_network = self._create_network()
@@ -589,7 +589,7 @@ class AbstractTrainableAgent(TrainableAgent):
     def get_model_extension(cls):
         return "pt"
 
-    def _fetch_model_from_wand_and_update_params(self):
+    def _fetch_model_from_wandb_and_update_params(self):
         """
         This function doesn't do anything if wandb_alias is not set in self.params.
         Otherwise, it will download the file if there's not a local copy.
