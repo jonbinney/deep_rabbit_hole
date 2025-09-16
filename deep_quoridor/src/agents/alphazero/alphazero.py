@@ -186,7 +186,7 @@ class AlphaZeroAgent(TrainableAgent):
         else:
             self.evaluator = evaluator
 
-        self._fetch_model_from_wand_and_update_params()
+        self._fetch_model_from_wandb_and_update_params()
         self._resolve_and_load_model()
 
         # Disable dirichlet noise unless we are in training mode.
@@ -246,7 +246,7 @@ class AlphaZeroAgent(TrainableAgent):
                 self.first_replay_buffer_loaded = True
 
     # TO DO, this was copy-pasted from AbstractTrainableAgent, need to refactor it
-    def _fetch_model_from_wand_and_update_params(self):
+    def _fetch_model_from_wandb_and_update_params(self):
         """
         This function doesn't do anything if wandb_alias is not set in self.params.
         Otherwise, it will download the file if there's not a local copy.
