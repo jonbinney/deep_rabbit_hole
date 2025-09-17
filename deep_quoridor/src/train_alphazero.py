@@ -78,10 +78,11 @@ def train_alphazero(
             )
 
         game_num = epoch * args.games_per_epoch
-        model_suffix = (f"_epoch_{epoch}",)
-        model_path = Path(training_agent.params.wandb_dir)
-        model_path.mkdir(parents=True, exist_ok=True)
-        training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
+        model_suffix = f"_epoch_{epoch}"
+        model_dir = Path(training_agent.params.wandb_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / training_agent.resolve_filename(model_suffix)
+        training_agent.save_model(model_path)
         if wandb_train_plugin is not None:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
