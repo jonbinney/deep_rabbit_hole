@@ -57,7 +57,7 @@ class SelfPlayManager(threading.Thread):
         # in the worker processes since they're only doing CPU work,
         # and we don't want pytorch to waste GPU memory with the allocations
         # it automatically does on startup
-        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        orig_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
         games_per_worker = int(np.ceil(self.num_games / self.num_workers))
@@ -89,7 +89,11 @@ class SelfPlayManager(threading.Thread):
 
         # Restore the CUDA_VISIBLE_DEVICES environment variable so that the server
         # can use the GPU if it wants to.
-        os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+        if orig_cuda_visible_devices is None:
+            if "CUDA_VISIBLE_DEVICES" in os.environ:
+                del os.environ["CUDA_VISIBLE_DEVICES"]
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = orig_cuda_visible_devices
 
         evaluator_server = EvaluatorServer(
             nn_evaluator,
