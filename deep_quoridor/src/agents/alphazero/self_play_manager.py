@@ -3,12 +3,13 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from queue import Empty
 from typing import Optional
 
 import numpy as np
 import quoridor_env
 from quoridor import ActionEncoder
-from utils import my_device, parse_subargs, set_deterministic
+from utils import my_device, set_deterministic
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from agents.alphazero.multiprocess_evaluator import EvaluatorClient, EvaluatorServer, EvaluatorStatistics
@@ -26,7 +27,7 @@ class GameParams:
 class SelfPlayResult:
     worker_id: int
     replay_buffer: list[dict]
-    evaluator_statistics: EvaluatorStatistics
+    evaluator_statistics: Optional[EvaluatorStatistics]
 
 
 class SelfPlayManager(threading.Thread):
@@ -128,7 +129,7 @@ class SelfPlayManager(threading.Thread):
 
             try:
                 worker_result = self._result_queue.get(timeout=new_timeout)
-            except mp.queues.Empty:
+            except Empty:
                 break
 
             self._results.append(worker_result)
@@ -205,6 +206,6 @@ def run_self_play_games(
         print(f"Worker {worker_id}: Game {game_i + 1}/{num_games} ended after {num_turns} turns")
         alphazero_agent.end_game(environment)
 
-    result_queue.put(SelfPlayResult(worker_id, alphazero_agent.replay_buffer, evaluator.get_statistics()))
+    result_queue.put(SelfPlayResult(worker_id, list(alphazero_agent.replay_buffer), evaluator.get_statistics()))
 
     print(f"Worker {worker_id} exiting")

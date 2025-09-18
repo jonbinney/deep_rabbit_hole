@@ -2,7 +2,6 @@ import argparse
 import copy
 import multiprocessing as mp
 import time
-from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +20,7 @@ def train_alphazero(
 
     # Create an agent that we'll use to do training.
     training_params = parse_subargs(args.params, AlphaZeroParams)
+    assert isinstance(training_params, AlphaZeroParams)
     training_params.training_mode = True  # We only use this agent for training
     training_params.train_every = None  # We manually run training at the end of each epoch
     training_agent = AlphaZeroAgent(
@@ -78,7 +78,7 @@ def train_alphazero(
         if wandb_train_plugin is not None:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
-            wandb_train_plugin.compute_tournament_metrics(model_path)
+            wandb_train_plugin.compute_tournament_metrics(str(model_path))
 
 
 def main(args):

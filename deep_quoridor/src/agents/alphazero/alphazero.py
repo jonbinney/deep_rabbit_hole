@@ -467,6 +467,10 @@ class AlphaZeroAgent(TrainableAgent):
 
     def load_replay_buffer_from_file(self) -> bool:
         """Load replay buffer from file if it exists. Returns True if the file exists."""
+        if self.params.train_every is None:
+            return False
+
+        assert isinstance(self.params.train_every, int), "train_every must be set to load replay buffer from file"
         filepath = os.path.join("replay_buffers", self._replay_buffer_filename(self.params.train_every))
         if not os.path.exists(filepath):
             return False
