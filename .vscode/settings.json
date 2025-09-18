@@ -3,8 +3,6 @@
     "python.analysis.autoImportCompletions": true,
     "python.analysis.useLibraryCodeForTypes": true,
     "[python]": {
-        // Type checking with Pylance (choose: "off", "basic", or "strict")
-
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
