@@ -393,10 +393,15 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_iteration(self, is_replay_buffer_bootstrap=False):
-        """Train the neural network on collected data."""
-        if len(self.replay_buffer) < self.params.batch_size:
-            return
+    def train_iteration(self, is_replay_buffer_bootstrap=False) -> bool:
+        """
+        Train the neural network on collected data.
+
+        Returns:
+            True if training was done, False if not enough data was available.
+        """
+        if len(self.replay_buffer) * (1.0 - self.params.validation_ratio) < self.params.batch_size:
+            return False
 
         # Save replay buffer if requested
         if not is_replay_buffer_bootstrap:
@@ -419,6 +424,8 @@ class AlphaZeroAgent(TrainableAgent):
             self.recent_losses = self.recent_losses[-100:]
 
         print(f"Finished training in {time.time() - t0:.2f}s")
+
+        return True
 
     def _replay_buffer_filename(self, episode_number: int):
         params = {

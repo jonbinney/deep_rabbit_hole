@@ -28,7 +28,6 @@ def train_alphazero(
         args.max_walls,
         params=training_params,
     )
-    replay_buffer = deque(maxlen=training_params.replay_buffer_size)
 
     # Create parameters used by the workers during self play
     self_play_params = copy.deepcopy(training_params)
@@ -63,19 +62,12 @@ def train_alphazero(
         new_replay_buffer_items = None
         while new_replay_buffer_items is None:
             new_replay_buffer_items = self_play_manager.get_results(timeout=0.1)
-        replay_buffer.extend(new_replay_buffer_items)
+        training_agent.replay_buffer.extend(new_replay_buffer_items)
         self_play_manager.join()
 
         # Do training if we have enough samples in the replay buffer.
-        if len(replay_buffer) > training_params.batch_size:
-            print(f"Training with {len(replay_buffer)} turns in replay buffer")
-            metrics = training_agent.evaluator.train_iteration(replay_buffer)
-            print(f"Training done: {metrics}")
-        else:
-            print(
-                f"Not training; batch_size={training_params.batch_size} is less than "
-                + f"replay buffer size ({len(replay_buffer)})"
-            )
+        training_occured = training_agent.train_iteration()
+        print(f"Training occured: {training_occured}")
 
         game_num = epoch * args.games_per_epoch
         model_suffix = f"_epoch_{epoch}"
