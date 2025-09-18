@@ -1,5 +1,6 @@
 import shlex
 from dataclasses import dataclass, fields
+from types import UnionType
 from typing import Type, Union, get_args, get_origin
 
 
@@ -12,7 +13,10 @@ class SubargsBase:
         """Return a map of field name to type name, e.g. 'id': 'int'"""
 
         def resolve_type(tp):
-            if get_origin(tp) is Union:
+            # Older style unions like Union[FooType, BarType] result in typing.Union type. Newer
+            # style unions written as FooType | BarType result in types.UnionType. Eventually
+            # we should switch to all new style unions, but for now we support both.
+            if get_origin(tp) in (Union, UnionType):
                 args = [arg for arg in get_args(tp) if arg is not type(None)]
                 return args[0].__name__ if args else None
             return tp.__name__

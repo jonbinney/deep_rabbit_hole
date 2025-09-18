@@ -1,134 +1,39 @@
 import argparse
 import copy
 import multiprocessing as mp
-import os
 import time
-from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from agents.alphazero.multiprocess_evaluator import EvaluatorClient, EvaluatorServer, EvaluatorStatistics
-from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
 from agents.core.agent import AgentRegistry
 from plugins.wandb_train import WandbParams, WandbTrainPlugin
-from quoridor import ActionEncoder
-from utils import my_device, parse_subargs, set_deterministic
-
-
-@dataclass
-class WorkerParams:
-    worker_id: int
-    random_seed: int
-    board_size: int
-    max_walls: int
-    max_steps: int
-    job_queue: mp.Queue
-    result_queue: mp.Queue
-    evaluator: EvaluatorClient
-
-
-@dataclass
-class Worker:
-    params: WorkerParams
-    process: mp.Process
-
-
-@dataclass
-class RunGamesJob:
-    num_games: int  # If -1, worker shuts itself down.
-    alphazero_params: Optional[AlphaZeroParams]
-    clear_evaluator_cache: bool
-
-
-@dataclass
-class RunGamesResult:
-    worker_id: int
-    replay_buffer: list[dict]
-    evaluator_statistics: EvaluatorStatistics
-
-
-def self_play_worker(
-    params: WorkerParams,
-):
-    # Each worker process uses its own random seed to make sure they don't make the exact same moves during
-    # their self-play moves.
-    set_deterministic(params.random_seed)
-
-    environment = quoridor_env.env(
-        board_size=params.board_size, max_walls=params.max_walls, max_steps=params.max_steps, step_rewards=False
-    )
-
-    while True:
-        job = params.job_queue.get()
-        if job.num_games == -1:
-            break
-
-        if job.clear_evaluator_cache:
-            params.evaluator.clear_cache()
-
-        # Use the updated model and parameters
-        alphazero_agent = AlphaZeroAgent(
-            params.board_size,
-            params.max_walls,
-            params.max_steps,
-            params=job.alphazero_params,
-            evaluator=params.evaluator,
-        )
-
-        for game_i in range(job.num_games):
-            alphazero_agent.start_game(None, None)
-            environment.reset()
-            num_turns = 0
-
-            for _ in environment.agent_iter():
-                observation, _, termination, truncation, _ = environment.last()
-                if termination:
-                    break
-                elif truncation:
-                    print("Game was truncated")
-                    print(environment.render())
-                    break
-
-                action_index = alphazero_agent.get_action(observation)
-                environment.step(action_index)
-                num_turns += 1
-
-            print(f"Worker {params.worker_id}: Game {game_i + 1}/{job.num_games} ended after {num_turns} turns")
-            alphazero_agent.end_game(environment)
-
-        params.result_queue.put(
-            RunGamesResult(params.worker_id, alphazero_agent.replay_buffer, params.evaluator.get_statistics())
-        )
-        alphazero_agent.replay_buffer = []
-
-    print(f"Worker {params.worker_id} exiting")
+from utils import parse_subargs, set_deterministic
 
 
 def train_alphazero(
     args: argparse.Namespace,
-    evaluator_server: EvaluatorServer,
-    workers: list[Worker],
     wandb_train_plugin: Optional[WandbTrainPlugin],
 ):
-    # Create an agent that we'll use to do training. The self play games will happen with agents
-    # created in each worker process.
+    game_params = GameParams(args.board_size, args.max_walls, args.max_steps)
+
+    # Create an agent that we'll use to do training.
     training_params = parse_subargs(args.params, AlphaZeroParams)
-    training_params.training_mode = True  # We always want training mode, don't make the user specify it
+    assert isinstance(training_params, AlphaZeroParams)
+    training_params.training_mode = True  # We only use this agent for training
     training_params.train_every = None  # We manually run training at the end of each epoch
     training_agent = AlphaZeroAgent(
-        args.board_size, args.max_walls, params=training_params, evaluator=evaluator_server.evaluator
+        args.board_size,
+        args.max_walls,
+        params=training_params,
     )
-    replay_buffer = deque(maxlen=training_params.replay_buffer_size)
 
     # Create parameters used by the workers during self play
     self_play_params = copy.deepcopy(training_params)
     self_play_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
 
-    evaluator_server.train_prepare(
+    training_agent.evaluator.train_prepare(
         training_params.learning_rate,
         training_params.batch_size,
         training_params.optimizer_iterations,
@@ -137,63 +42,52 @@ def train_alphazero(
 
     if wandb_train_plugin is not None:
         # HACK: the start_game method only cares that "game" has board_size and max_walls
-        # members, so we pass in our arguments object. We need to call this method though,
+        # members, so we pass in a GameParams object. We have to call start_game
         # because it calls the plugin's internal _intialize method which sets up metrics.
         wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
 
-        # Tell workers to run self play games for this epoch
-        games_per_worker = int(np.ceil(args.games_per_epoch / len(workers)))
-        games_remaining_to_allocate = args.games_per_epoch
-        for worker in workers:
-            this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-            worker.params.job_queue.put(
-                RunGamesJob(this_worker_num_games, self_play_params, clear_evaluator_cache=True)
-            )
+        # We use a different random seed each epoch to make sure we don't get correlated games, but
+        # we want the runs to be repeatable so we use a deterministic scheme to generate the seeds.
+        random_seed = args.seed + args.num_workers * epoch
 
-        # Collect results from the workers
-        results = []
-        for worker in workers:
-            results.append(worker.params.result_queue.get())
+        # Create a self-play manager to run self-play games across multiple processes. The
+        # worker processes get re-spawned each epoch to make sure all cached values get freed.
+        self_play_manager = SelfPlayManager(
+            args.num_workers, random_seed, args.games_per_epoch, game_params, self_play_params
+        )
+        self_play_manager.start()
+        new_replay_buffer_items = None
+        while new_replay_buffer_items is None:
+            new_replay_buffer_items = self_play_manager.get_results(timeout=0.1)
+        training_agent.replay_buffer.extend(new_replay_buffer_items)
+        self_play_manager.join()
 
-        # Merge results into the primary replay buffer. We sort them to try and
-        # make the results more deterministic across multiple runs.
-        results = sorted(results, key=lambda r: r.worker_id)
-        for r in results:
-            # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
-            # the replay buffer results from all agents each epoch or else we'll end up discarding
-            # some results and we'll have wasted computation by playing those games.
-            replay_buffer.extend(r.replay_buffer)
-
-        if len(replay_buffer) > training_params.batch_size:
-            print(f"Training with {len(replay_buffer)} turns in replay buffer")
-            metrics = evaluator_server.train_iteration(replay_buffer)
-            print(f"Training done: {metrics}")
-        else:
-            print(
-                f"Not training; batch_size={training_params.batch_size} is less than "
-                + f"replay buffer size ({len(replay_buffer)})"
-            )
+        # Do training if we have enough samples in the replay buffer.
+        training_occured = training_agent.train_iteration()
+        print(f"Training occured: {training_occured}")
 
         game_num = epoch * args.games_per_epoch
-        model_suffix = (f"_epoch_{epoch}",)
-        model_path = Path(training_agent.params.wandb_dir)
-        model_path.mkdir(parents=True, exist_ok=True)
-        training_agent.save_model(model_path / training_agent.resolve_filename(model_suffix))
+        model_suffix = f"_epoch_{epoch}"
+        model_dir = Path(training_agent.params.wandb_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / training_agent.resolve_filename(model_suffix)
+        training_agent.save_model(model_path)
         if wandb_train_plugin is not None:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
-            wandb_train_plugin.compute_tournament_metrics(model_path)
-
-        print(evaluator_server.get_statistics())
-        for r in results:
-            print(r.evaluator_statistics)
+            wandb_train_plugin.compute_tournament_metrics(str(model_path))
 
 
-def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
+def main(args):
+    # Set multiprocessing start method to avoid tensor sharing issues and Mac bugs
+    mp.set_start_method("spawn", force=True)
+
     set_deterministic(args.seed)
+
+    t0 = time.time()
 
     if args.wandb is None:
         wandb_train_plugin = None
@@ -209,93 +103,15 @@ def setup(args) -> tuple[EvaluatorServer, list[Worker]]:
             wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
         )
 
-    # Queues used for worker processes to send evaluation requests to the EvaluatorSerer, and for it
-    # to send the resulting (value, policy) back.
-    evaluator_request_queue = mp.Queue()
-    evaluator_result_queues = [mp.Queue() for _ in range(args.num_workers)]
-
-    # Create the evaluator server and start its processing thread.
-    action_encoder = ActionEncoder(args.board_size)
-    nn_evaluator = NNEvaluator(action_encoder, my_device())
-    evaluator_server = EvaluatorServer(
-        nn_evaluator,
-        input_queue=evaluator_request_queue,
-        output_queues=evaluator_result_queues,
-    )
-    evaluator_server.start()
-
-    # Create the worker processes. We hide the CUDA devices
-    # in the worker processes since they're only doing CPU work,
-    # and we don't want pytorch to waste GPU memory with the allocations
-    # it automatically does on startup
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    workers = []
-    for worker_id in range(args.num_workers):
-        evaluator_client = EvaluatorClient(
-            args.board_size,
-            worker_id,
-            evaluator_request_queue,
-            evaluator_result_queues[worker_id],
-        )
-        job_queue = mp.Queue()
-        result_queue = mp.Queue()
-        worker_params = WorkerParams(
-            worker_id,
-            args.seed + worker_id,
-            args.board_size,
-            args.max_walls,
-            args.max_steps,
-            job_queue,
-            result_queue,
-            evaluator_client,
-        )
-        worker_process = mp.Process(
-            target=self_play_worker,
-            args=(worker_params,),
-        )
-        workers.append(Worker(worker_params, worker_process))
-
-    # Start the worker processes
-    for worker in workers:
-        worker.process.start()
-
-    return evaluator_server, workers, wandb_train_plugin
-
-
-def shutdown(evaluator_server: EvaluatorServer, workers: list[Worker]):
-    # Stop the worker processes
-    for worker in workers:
-        worker.params.job_queue.put(RunGamesJob(-1, None, False))
-
-    for worker in workers:
-        worker.process.join()
-
-    # Stop the evaluator server
-    evaluator_server.shutdown()
-    evaluator_server.join()
-
-
-def main(args):
-    # Set multiprocessing start method to avoid tensor sharing issues and Mac bugs
-    mp.set_start_method("spawn", force=True)
-
     t0 = time.time()
 
-    evaluator_server, workers, wandb_train_plugin = setup(args)
+    train_alphazero(args, wandb_train_plugin=wandb_train_plugin)
 
     t1 = time.time()
 
-    try:
-        train_alphazero(args, evaluator_server, workers=workers, wandb_train_plugin=wandb_train_plugin)
-    finally:
-        shutdown(evaluator_server, workers)
-
-    t2 = time.time()
-
-    print(f"Worker startup time: {t1 - t0}")
-    print(f"Total processing time {t2 - t0}")
-    print(f"Time per game: {(t2 - t0) / (args.games_per_epoch * args.epochs)}")
-    print(f"Throughput = {(args.games_per_epoch * args.epochs) / (t2 - t0)}")
+    print(f"Total processing time {t1 - t0}")
+    print(f"Time per game: {(t1 - t0) / (args.games_per_epoch * args.epochs)}")
+    print(f"Throughput = {(args.games_per_epoch * args.epochs) / (t1 - t0)}")
 
 
 if __name__ == "__main__":
