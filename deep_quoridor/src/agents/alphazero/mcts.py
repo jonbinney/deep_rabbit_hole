@@ -106,8 +106,8 @@ class Node:
         """
         self.value_sum += value
         self.visit_count += 1
-        self.wins = self.wins + 1 if value == 1 else 0
-        self.losses = self.losses + 1 if value == -1 else 0
+        self.wins = self.wins + (1 if value == 1 else 0)
+        self.losses = self.losses + (1 if value == -1 else 0)
 
         if self.parent is not None:
             self.parent.backpropagate_result(-value)
