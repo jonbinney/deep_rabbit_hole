@@ -65,7 +65,9 @@ class Metrics:
 
         return int(agent_rating - best_opponent)
 
-    def compute(self, agent_encoded_name: str) -> tuple[int, dict[str, float], int, float, int, int]:
+    def compute(
+        self, agent_encoded_name: str
+    ) -> tuple[int, dict[str, float], int, float, dict[str, float], dict[str, float], int, int]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
@@ -80,6 +82,7 @@ class Metrics:
                 - win_perc (float): The win percentage of the evaluated agent against the opponents.
                 - p1_win_percentages (dict[str, float]): Win percentage as player one against each oponnent.
                 - p2_win_percentages (dict[str, float]): Win percentage as player two against each oponnent.
+                - absolute_elo (int): ELO rating obtained during the tournament
                 - dumb_score (int): A score between 0 (perfect) and 100 (always wrong) on how the agent performs in certain basic situations
 
         Notes:

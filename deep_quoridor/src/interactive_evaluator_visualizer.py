@@ -5,7 +5,8 @@ This module provides an interactive matplotlib-based utility for visualizing and
 Quoridor board states while displaying real-time ActionLog information from evaluators.
 """
 
-import sys
+import argparse
+import re
 from typing import Any, Optional
 
 import matplotlib.pyplot as plt
@@ -301,12 +302,32 @@ def create_interactive_visualizer(
 
 
 if __name__ == "__main__":
-    board_size = 5
-    game = Quoridor(Board(board_size=board_size, max_walls=3))
+    parser = argparse.ArgumentParser(description="Visualize how the model evaluates a state")
+    parser.add_argument("-N", "--board_size", type=int, default=9, help="Board Size")
+    parser.add_argument("-W", "--max_walls", type=int, default=10, help="Max walls per player")
+    parser.add_argument(
+        "model",
+        nargs="?",
+        type=str,
+        help="Path to the model file or nothing to use a random initialized network",
+    )
+
+    args = parser.parse_args()
+    board_size = args.board_size
+    max_walls = args.max_walls
+
+    # Infer from model name
+    if args.model:
+        match = re.search(r"_B(\d+)W(\d+)", args.model)
+        if match:
+            board_size = int(match.group(1))
+            max_walls = int(match.group(2))
+
+    game = Quoridor(Board(board_size=board_size, max_walls=max_walls))
     evaluator = NNEvaluator(ActionEncoder(board_size), my_device())
 
-    if len(sys.argv) > 1:
-        model_state = torch.load(sys.argv[1], map_location=my_device())
+    if args.model:
+        model_state = torch.load(args.model, map_location=my_device())
         evaluator.network.load_state_dict(model_state["network_state_dict"])
 
     visualizer = create_interactive_visualizer(
