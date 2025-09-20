@@ -83,9 +83,9 @@ class Node:
             Calculate the UCB value for a child node.
             """
             penalized = -1 if visited_states and QuoridorKey(child.game) in visited_states else 0
-            q_value = 0.5
+            q_value = 0.0
             if child.visit_count != 0:
-                q_value = (child.value_sum / child.visit_count + 1) / 2
+                q_value = child.value_sum / child.visit_count
             return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1) + penalized
 
         return max(self.children, key=get_child_ucb)
@@ -187,7 +187,7 @@ class MCTS:
                 node.expand(priors)
                 self.new_nodes.extend(node.children)
 
-                node.backpropagate(value)
+                node.backpropagate(-value)
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
