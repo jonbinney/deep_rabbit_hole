@@ -24,6 +24,9 @@ from agents.core import TrainableAgent
 class AlphaZeroParams(SubargsBase):
     training_mode: bool = False
 
+    # Just used to display a user friendly name
+    nick: Optional[str] = None
+
     # After how many self play games we train the network If set to None, agent will not run the
     # NN training itself even if traning_mode == True. This is useful if we want the agent to
     # use params as if it is training, but have the actual NN training run by an higher level
@@ -311,6 +314,11 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.load_model(filename)
 
+    def name(self):
+        if self.params.nick:
+            return self.params.nick
+        return "alphazero"
+
     def version(self):
         return "1.0"
 
@@ -319,6 +327,10 @@ class AlphaZeroAgent(TrainableAgent):
 
     def is_training(self):
         return self.params.training_mode
+
+    @classmethod
+    def get_model_extension(cls):
+        return "pt"
 
     @classmethod
     def params_class(cls):
@@ -438,6 +450,8 @@ class AlphaZeroAgent(TrainableAgent):
             "ucbc": int(self.params.mcts_ucb_c * 100),
             "pvs": "" if self.params.penalized_visited_states else None,
             "frbl": "" if self.first_replay_buffer_loaded else None,
+            "ne": self.params.mcts_noise_epsilon,
+            "na": self.params.mcts_noise_alpha,
         }
 
         if self.first_replay_buffer_saved:
