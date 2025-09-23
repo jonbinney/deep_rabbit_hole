@@ -50,19 +50,16 @@ def train_alphazero(
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
 
-        # We use a different random seed each epoch to make sure we don't get correlated games, but
-        # we want the runs to be repeatable so we use a deterministic scheme to generate the seeds.
-        random_seed = args.seed + args.num_workers * epoch
-
         # When using per process evaluation, set the filename so that each process loads the most recent model.
         if args.per_process_evaluation:
-            self_play_params.model_filename = current_filename
+            self_play_params.model_filename = str(current_filename)
 
         # Create a self-play manager to run self-play games across multiple processes. The
         # worker processes get re-spawned each epoch to make sure all cached values get freed.
         self_play_manager = SelfPlayManager(
             args.num_workers,
-            random_seed,
+            args.seed,
+            epoch,
             args.games_per_epoch,
             game_params,
             self_play_params,
