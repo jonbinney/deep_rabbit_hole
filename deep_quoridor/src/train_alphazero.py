@@ -2,7 +2,6 @@ import argparse
 import copy
 import multiprocessing as mp
 import time
-from pathlib import Path
 from typing import Optional
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
@@ -29,6 +28,8 @@ def train_alphazero(
         params=training_params,
     )
 
+    current_filename = training_agent.save_model_with_suffix("_initial")
+
     # Create parameters used by the workers during self play
     self_play_params = copy.deepcopy(training_params)
     self_play_params.replay_buffer_size = None  # Keep all moves, we'll manually clear them later
@@ -53,10 +54,19 @@ def train_alphazero(
         # we want the runs to be repeatable so we use a deterministic scheme to generate the seeds.
         random_seed = args.seed + args.num_workers * epoch
 
+        # When using per process evaluation, set the filename so that each process loads the most recent model.
+        if args.per_process_evaluation:
+            self_play_params.model_filename = current_filename
+
         # Create a self-play manager to run self-play games across multiple processes. The
         # worker processes get re-spawned each epoch to make sure all cached values get freed.
         self_play_manager = SelfPlayManager(
-            args.num_workers, random_seed, args.games_per_epoch, game_params, self_play_params
+            args.num_workers,
+            random_seed,
+            args.games_per_epoch,
+            game_params,
+            self_play_params,
+            args.per_process_evaluation,
         )
         self_play_manager.start()
         new_replay_buffer_items = None
@@ -67,18 +77,15 @@ def train_alphazero(
 
         # Do training if we have enough samples in the replay buffer.
         training_occured = training_agent.train_iteration()
-        print(f"Training occured: {training_occured}")
+        if not training_occured:
+            print("Not enough samples - skipping training")
 
-        game_num = epoch * args.games_per_epoch
-        model_suffix = f"_epoch_{epoch}"
-        model_dir = Path(training_agent.params.wandb_dir)
-        model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = model_dir / training_agent.resolve_filename(model_suffix)
-        training_agent.save_model(model_path)
+        game_num = (epoch + 1) * args.games_per_epoch
+        current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
         if wandb_train_plugin is not None:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
-            wandb_train_plugin.compute_tournament_metrics(str(model_path))
+            wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
 
 def main(args):
@@ -151,6 +158,12 @@ if __name__ == "__main__":
         help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
+    parser.add_argument(
+        "--per-process-evaluation",
+        action="store_true",
+        default=False,
+        help="Each process will do NN evaluations.  Otherwise, just one process will handle them all",
+    )
     args = parser.parse_args()
 
     # Handle deprecated --max-game-length argument

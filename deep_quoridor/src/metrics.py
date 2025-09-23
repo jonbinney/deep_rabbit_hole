@@ -122,7 +122,7 @@ class Metrics:
             results = arena._play_games(players, times, PlayMode.ALL_VS_ALL)
             self.stored_elos = compute_elo(results)
 
-        results = arena._play_games([agent] + players, times, PlayMode.FIRST_VS_RANDOM)
+        results = arena._play_games([agent] + players, times, PlayMode.FIRST_VS_ALL)
 
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())

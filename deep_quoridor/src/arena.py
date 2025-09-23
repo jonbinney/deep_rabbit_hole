@@ -16,6 +16,7 @@ from utils.misc import get_opponent_player_id
 class PlayMode(Enum):
     ALL_VS_ALL = "all_vs_all"  # Legacy mode where all players play against each other
     FIRST_VS_RANDOM = "first_vs_random"  # First player plays against randomly selected opponents
+    FIRST_VS_ALL = "first_vs_all"  # First player plays against all the opponents
 
 
 class Arena:
@@ -158,7 +159,7 @@ class Arena:
 
         if mode == PlayMode.ALL_VS_ALL:
             total_games = len(agents) * (len(agents) - 1) * times // 2
-        else:  # FIRST_VS_RANDOM mode
+        else:  # FIRST_VS_RANDOM or FIRST_VS_ALL mode
             total_games = (len(agents) - 1) * times
 
         self.plugins.start_arena(self.game, total_games=total_games)
@@ -179,13 +180,13 @@ class Arena:
                             result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
                             results.append(result)
                             match_id += 1
-            else:  # FIRST_VS_RANDOM mode
+            else:  # FIRST_VS_RANDOM or FIRST_VS_ALL mode
                 first_agent = agents[0]
                 remaining_agents = agents[1:]
 
-                for _ in range(times):
-                    for _ in range(len(remaining_agents)):
-                        opponent = random.choice(remaining_agents)
+                for opp in remaining_agents:
+                    for _ in range(times):
+                        opponent = random.choice(remaining_agents) if mode == PlayMode.FIRST_VS_RANDOM else opp
                         agent_1, agent_2 = (
                             (first_agent, opponent)
                             if not self.swap_players or match_id % 2 == 0

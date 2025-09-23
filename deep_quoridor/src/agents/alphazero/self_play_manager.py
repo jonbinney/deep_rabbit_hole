@@ -32,7 +32,13 @@ class SelfPlayResult:
 
 class SelfPlayManager(threading.Thread):
     def __init__(
-        self, num_workers, base_random_seed, num_games, game_params: GameParams, alphazero_params: AlphaZeroParams
+        self,
+        num_workers,
+        base_random_seed,
+        num_games,
+        game_params: GameParams,
+        alphazero_params: AlphaZeroParams,
+        per_process_evaluation: bool,
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
@@ -42,9 +48,20 @@ class SelfPlayManager(threading.Thread):
         self._results = []
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
+        # If true, each process will have a copy of the model
+        # and will be in charge of doing the evaluations.
+        # Otherwise, each process will communicate with the root
+        # process, which would be in charge of the evaluations.
+        self._per_process_evaluation = per_process_evaluation
         super().__init__()
 
     def run(self):
+        if self._per_process_evaluation:
+            self._run_per_process_evaluation()
+        else:
+            self._run_central_evaluation()
+
+    def _run_central_evaluation(self):
         # Create the evaluator server and start its processing thread.
         action_encoder = ActionEncoder(self.game_params.board_size)
         nn_evaluator = NNEvaluator(action_encoder, my_device())
@@ -110,6 +127,31 @@ class SelfPlayManager(threading.Thread):
         print(evaluator_server.get_statistics())
         evaluator_server.join()
 
+    def _run_per_process_evaluation(self):
+        games_per_worker = int(np.ceil(self.num_games / self.num_workers))
+        games_remaining_to_allocate = self.num_games
+        workers = []
+        for worker_id in range(self.num_workers):
+            this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
+
+            worker_process = mp.Process(
+                target=run_self_play_games,
+                args=(
+                    this_worker_num_games,
+                    self.game_params,
+                    self.alphazero_params,
+                    None,
+                    self.base_random_seed + worker_id,
+                    worker_id,
+                    self._result_queue,
+                ),
+            )
+            workers.append(worker_process)
+            worker_process.start()
+
+        for worker in workers:
+            worker.join()
+
     def get_results(self, timeout: float = 0.1) -> Optional[list[dict]]:
         """
         Get results if they are available, waiting up to timeout seconds.
@@ -160,7 +202,7 @@ def run_self_play_games(
     num_games: int,
     game_params: GameParams,
     alphazero_params: AlphaZeroParams,
-    evaluator: EvaluatorClient,
+    evaluator: Optional[EvaluatorClient],
     random_seed: int,
     worker_id: int,
     result_queue: mp.Queue,
@@ -190,6 +232,7 @@ def run_self_play_games(
         environment.reset()
         num_turns = 0
 
+        t0 = time.time()
         for _ in environment.agent_iter():
             observation, _, termination, truncation, _ = environment.last()
             if termination:
@@ -203,9 +246,12 @@ def run_self_play_games(
             environment.step(action_index)
             num_turns += 1
 
-        print(f"Worker {worker_id}: Game {game_i + 1}/{num_games} ended after {num_turns} turns")
+        t1 = time.time()
+        print(f"Worker {worker_id}: Game {game_i + 1}/{num_games} ended after {num_turns} turns ({t1 - t0:.2f}s)")
         alphazero_agent.end_game(environment)
 
-    result_queue.put(SelfPlayResult(worker_id, list(alphazero_agent.replay_buffer), evaluator.get_statistics()))
+    # TODO implement the stats for the per process evaluator
+    stats = evaluator.get_statistics() if evaluator else None
+    result_queue.put(SelfPlayResult(worker_id, list(alphazero_agent.replay_buffer), stats))
 
     print(f"Worker {worker_id} exiting")
