@@ -124,7 +124,7 @@ class MCTS:
         max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
-        pre_evaluate_nodes_total: int = 64,
+        top_k_pre_evaluate: int = 16,
     ):
         assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
@@ -135,7 +135,7 @@ class MCTS:
         self.max_steps = max_steps
         self.evaluator = evaluator
         self.new_nodes = []
-        self.extra_eval = pre_evaluate_nodes_total - 1
+        self.top_k_pre_evaluate = top_k_pre_evaluate
         self.visited_states = visited_states
 
     def select(self, node: Node) -> Node:
@@ -150,6 +150,7 @@ class MCTS:
 
     def search(self, initial_game: Quoridor):
         root = Node(initial_game, ucb_c=self.ucb_c)
+        self.new_nodes = []
 
         if self.k is not None:
             num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
@@ -168,8 +169,9 @@ class MCTS:
             elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
                 node.backpropagate_result(0)
             else:
-                games_to_evaluate = [n.game for n in self.new_nodes[: self.extra_eval]]
-                self.new_nodes = self.new_nodes[self.extra_eval :]
+                games_to_evaluate = [n.game for n in self.new_nodes]
+                self.new_nodes = []
+
                 value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
 
                 if node is root and self.noise_epsilon > 0.0:
@@ -185,7 +187,9 @@ class MCTS:
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
 
                 node.expand(priors)
-                self.new_nodes.extend(node.children)
+                if self.top_k_pre_evaluate > 0:
+                    sorted_children = sorted(node.children, key=lambda c: c.prior, reverse=True)
+                    self.new_nodes.extend(sorted_children[: self.top_k_pre_evaluate])
 
                 node.backpropagate(-value)
 

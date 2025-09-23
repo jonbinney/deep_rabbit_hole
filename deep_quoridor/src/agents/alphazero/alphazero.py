@@ -112,9 +112,14 @@ class AlphaZeroParams(SubargsBase):
     mcts_noise_epsilon: float = 0.25
     mcts_noise_alpha: Optional[float] = None
 
-    # Number of nodes to pre-evaluate in MCTS. This is to take advantage of the GPU
-    # being efficient in batching.
-    mcts_pre_evaluate_nodes_total: int = 64
+    # When expanding a node, we take the top k children based on the prior (since those are the nodes that will
+    # be expanded first), and queue them for piggy-back evaluation.
+    # A value too high will compute many evaluations that are not used, and a value too low will make it run more evaluations,
+    # making it slower in both cases.
+    # The optimal value will depend on mcts_n as well as the board complexity, requiring a higher value when either increases.
+    # Having said that, it may not be worth trying to tune this to the ideal value, but if it's too far off it will slow it down.
+    # Notice that this value won't change the results, just the speed.
+    mcts_top_k_pre_evaluate: int = 16
 
     # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
     wandb_alias: Optional[str] = None
@@ -212,7 +217,7 @@ class AlphaZeroAgent(TrainableAgent):
             self.max_steps,
             self.evaluator,
             self.visited_states,
-            params.mcts_pre_evaluate_nodes_total,
+            params.mcts_top_k_pre_evaluate,
         )
 
         if params.training_mode and params.train_every is not None:
