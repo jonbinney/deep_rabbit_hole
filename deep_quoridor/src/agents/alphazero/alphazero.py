@@ -364,6 +364,11 @@ class AlphaZeroAgent(TrainableAgent):
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
 
+    def save_model_with_suffix(self, suffix: str) -> Path:
+        path = resolve_path(self.params.model_dir, self.resolve_filename(suffix))
+        self.save_model(path)
+        return path
+
     def set_model_state(self, model_state: dict):
         self.evaluator.network.load_state_dict(model_state["network_state_dict"])
 
