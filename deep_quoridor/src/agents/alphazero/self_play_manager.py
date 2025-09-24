@@ -1,3 +1,4 @@
+import hashlib
 import multiprocessing as mp
 import os
 import threading
@@ -35,6 +36,7 @@ class SelfPlayManager(threading.Thread):
         self,
         num_workers,
         base_random_seed,
+        epoch: int,
         num_games,
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
@@ -42,6 +44,7 @@ class SelfPlayManager(threading.Thread):
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
+        self.epoch = epoch
         self.num_games = num_games
         self.game_params = game_params
         self.alphazero_params = alphazero_params
@@ -90,6 +93,7 @@ class SelfPlayManager(threading.Thread):
                 evaluator_request_queue,
                 evaluator_result_queues[worker_id],
             )
+
             worker_process = mp.Process(
                 target=run_self_play_games,
                 args=(
@@ -97,7 +101,7 @@ class SelfPlayManager(threading.Thread):
                     self.game_params,
                     self.alphazero_params,
                     evaluator_client,
-                    self.base_random_seed + worker_id,
+                    self.compute_worker_random_seed(worker_id),
                     worker_id,
                     self._result_queue,
                 ),
@@ -141,7 +145,7 @@ class SelfPlayManager(threading.Thread):
                     self.game_params,
                     self.alphazero_params,
                     None,
-                    self.base_random_seed + worker_id,
+                    self.compute_worker_random_seed(worker_id),
                     worker_id,
                     self._result_queue,
                 ),
@@ -180,6 +184,7 @@ class SelfPlayManager(threading.Thread):
                 replay_buffer = []
                 results = sorted(self._results, key=lambda r: r.worker_id)
                 for r in results:
+                    print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
                     print(r.evaluator_statistics)
 
                     # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
@@ -190,6 +195,23 @@ class SelfPlayManager(threading.Thread):
                 return replay_buffer
 
         return None
+
+    def compute_worker_random_seed(self, worker_id: int) -> int:
+        """
+        This feels like overkill but we want a random seed for each worker that is:
+
+            - different from all other workers
+            - different each epoch
+            - different from the base seed used by the main process
+            - the same if we re-run the script with the same arguments and same random seed
+            - fits in an int32 (numpy, for example, requires this for its random seed)
+        """
+
+        worker_random_hash = hashlib.sha256()
+        for x in (self.base_random_seed, worker_id, self.epoch):
+            worker_random_hash.update(x.to_bytes((x.bit_length() + 7) // 8, byteorder="big"))
+        worker_random_seed = int.from_bytes(worker_random_hash.digest()[:4], byteorder="big")
+        return worker_random_seed
 
     def shutdown(self):
         """
@@ -210,6 +232,8 @@ def run_self_play_games(
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
     # their self-play moves.
     set_deterministic(random_seed)
+
+    print(f"Worker {worker_id} starting, running {num_games} games with random seed {random_seed}")
 
     environment = quoridor_env.env(
         board_size=game_params.board_size,
