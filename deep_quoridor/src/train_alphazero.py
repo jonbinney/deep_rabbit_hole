@@ -7,6 +7,7 @@ from typing import Optional
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
 from agents.core.agent import AgentRegistry
+from metrics import Metrics
 from plugins.wandb_train import WandbParams, WandbTrainPlugin
 from utils import parse_subargs, set_deterministic
 
@@ -46,6 +47,12 @@ def train_alphazero(
         # members, so we pass in a GameParams object. We have to call start_game
         # because it calls the plugin's internal _intialize method which sets up metrics.
         wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
+        training_agent.set_wandb_run(wandb_train_plugin.run)
+
+        # Compute the tournament metrics with the initial model, possibly random initialized, to
+        # be able to see how it evolves from there
+        wandb_train_plugin.episode_count = 0
+        wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
@@ -73,7 +80,8 @@ def train_alphazero(
         self_play_manager.join()
 
         # Do training if we have enough samples in the replay buffer.
-        training_occured = training_agent.train_iteration()
+        # training_agent.episode_count = game_num
+        training_occured = training_agent.train_iteration(epoch=epoch)
         if not training_occured:
             print("Not enough samples - skipping training")
 
@@ -102,9 +110,10 @@ def main(args):
             wandb_params = parse_subargs(args.wandb, WandbParams)
             assert isinstance(wandb_params, WandbParams)
 
+        metrics = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps)
         agent_encoded_name = "alphazero:" + args.params
         wandb_train_plugin = WandbTrainPlugin(
-            wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, args.benchmarks
+            wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, metrics
         )
 
     t0 = time.time()
@@ -153,6 +162,13 @@ if __name__ == "__main__":
         type=str,
         default=["random", "simple"],
         help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
+    )
+    parser.add_argument(
+        "-bt",
+        "--benchmarks_t",
+        type=int,
+        default=10,
+        help="How many time to play against each opponent during benchmarks",
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
