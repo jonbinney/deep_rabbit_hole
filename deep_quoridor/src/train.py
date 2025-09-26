@@ -4,6 +4,7 @@ from typing import Optional
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import ArenaPlugin
+from metrics import Metrics
 from play import player_with_params
 from plugins import SaveModelEveryNEpisodesPlugin, WandbTrainPlugin
 from plugins.wandb_train import WandbParams
@@ -22,6 +23,7 @@ def train_dqn(
     wandb_params: Optional[WandbParams] = None,
     players: list = [],
     benchmarks: list = [],
+    benchmarks_t: int = 10,
     renderers: list[ArenaPlugin] = [],
     run_id: str = "",
     trigger_metrics: Optional[tuple[int, int]] = None,
@@ -31,8 +33,9 @@ def train_dqn(
 
     after_save_method = None
     if wandb_params is not None:
+        metrics = Metrics(board_size, max_walls, benchmarks, benchmarks_t, max_steps)
         wandb_plugin = WandbTrainPlugin(
-            wandb_params, total_episodes=total_episodes, agent_encoded_name=players[0], benchmarks=benchmarks
+            wandb_params, total_episodes=total_episodes, agent_encoded_name=players[0], metrics=metrics
         )
         plugins.append(wandb_plugin)
         after_save_method = wandb_plugin.compute_tournament_metrics
@@ -127,7 +130,13 @@ if __name__ == "__main__":
         default=["random", "simple"],
         help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
     )
-
+    parser.add_argument(
+        "-bt",
+        "--benchmarks_t",
+        type=int,
+        default=10,
+        help="How many time to play against each opponent during benchmarks",
+    )
     args = parser.parse_args()
 
     renderers = [Renderer.create(r) for r in args.renderers]
@@ -161,6 +170,7 @@ if __name__ == "__main__":
             step_rewards=args.step_rewards,
             players=args.players,
             benchmarks=args.benchmarks,
+            benchmarks_t=args.benchmarks_t,
             renderers=renderers,
             wandb_params=wandb_params,
             trigger_metrics=args.trigger_metrics,

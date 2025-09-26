@@ -2,10 +2,8 @@ import datetime
 import getpass
 import os
 from dataclasses import asdict, dataclass
-from typing import List
 
 import wandb
-from agents import Agent
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
@@ -38,9 +36,7 @@ class WandbParams(SubargsBase):
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(
-        self, params: WandbParams, total_episodes: int, agent_encoded_name: str, benchmarks: List[str | Agent] = []
-    ):
+    def __init__(self, params: WandbParams, total_episodes: int, agent_encoded_name: str, metrics: Metrics):
         self.params = params
         self.total_episodes = total_episodes
         self.episode_count = 0
@@ -49,7 +45,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.best_model_filename = None
         # Notice that the best model won't be uploaded if it's not better than the initialization.
         self.best_model_relative_elo = -800
-        self.benchmarks = benchmarks
+        self.metrics = metrics
 
     def _initialize(self, game):
         assert self.agent
@@ -61,7 +57,6 @@ class WandbTrainPlugin(ArenaPlugin):
             "player_args": self.agent.params,
         }
         config.update(self.agent.model_hyperparameters())
-        self.metrics = Metrics(game.board_size, game.max_walls, self.benchmarks)
 
         self.run = wandb.init(
             project=self.params.project,
@@ -72,6 +67,11 @@ class WandbTrainPlugin(ArenaPlugin):
             name=f"{self.params.run_id()}",
             notes=self.params.notes,
         )
+
+        wandb.define_metric("Loss step", hidden=True)
+        wandb.define_metric("Episode", hidden=True)
+        wandb.define_metric("loss_*", "Loss step")
+        wandb.define_metric("*", "Episode")
 
     def start_game(self, game, agent1, agent2):
         if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
@@ -93,8 +93,7 @@ class WandbTrainPlugin(ArenaPlugin):
             avg_loss, avg_reward = self.agent.compute_loss_and_reward(self.params.log_every)
 
             self.run.log(
-                {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon},
-                step=self.episode_count,
+                {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon, "Episode": self.episode_count}
             )
 
     def _upload_model(self, save_file: str, aliases: list[str] | None = None) -> str:
@@ -148,23 +147,19 @@ class WandbTrainPlugin(ArenaPlugin):
             self.best_model_filename = model_filename
             print("Best Relative Elo so far!")
 
-        wandb_elo_table = wandb.Table(
-            columns=["Player", "elo"], data=[[player, elo] for player, elo in elo_table.items()]
-        )
         metrics = {
-            "elo": wandb_elo_table,
             "relative_elo": relative_elo,
             "win_perc": win_perc,
             "absolute_elo": absolute_elo,
             "dumb_score": dumb_score,
+            "Episode": self.episode_count,  # x axis
         }
+
         for opponent in p1_win_percentages:
             metrics[f"p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
         for opponent in p2_win_percentages:
             metrics[f"p2_win_perc_vs_{opponent}"] = p2_win_percentages[opponent]
-        self.run.log(
-            metrics,
-            step=self.episode_count,
-        )
+
+        self.run.log(metrics)
 
         return relative_elo

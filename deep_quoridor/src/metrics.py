@@ -12,11 +12,20 @@ class Metrics:
     Computes metrics for an agent by making it play against other agents.
     """
 
-    def __init__(self, board_size: int, max_walls: int, benchmarks: list[str | Agent] = []):
+    def __init__(
+        self,
+        board_size: int,
+        max_walls: int,
+        benchmarks: list[str | Agent] = [],
+        benchmarks_t: int = 10,
+        max_steps=200,
+    ):
         self.board_size = board_size
         self.max_walls = max_walls
         self.stored_elos = {}
         self.benchmarks = benchmarks
+        self.benchmarks_t = benchmarks_t
+        self.max_steps = max_steps
 
     def _compute_win_percentages(self, results: list[GameResult], agent_name: str):
         played = 0
@@ -92,7 +101,6 @@ class Metrics:
         """
         # Bump if there's any change in the scoring
         VERSION = 1
-        times = 10
 
         players: list[str | Agent] = (
             [
@@ -107,7 +115,7 @@ class Metrics:
             if self.benchmarks is None
             else self.benchmarks
         )
-        arena = Arena(self.board_size, self.max_walls, max_steps=200, renderers=[MatchResultsRenderer()])
+        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, renderers=[MatchResultsRenderer()])
 
         agent = AgentRegistry.create_from_encoded_name(
             agent_encoded_name,
@@ -119,10 +127,10 @@ class Metrics:
         # We store the elos of the opponents playing against each other so we don't have to play those matches
         # every time
         if not self.stored_elos:
-            results = arena._play_games(players, times, PlayMode.ALL_VS_ALL)
+            results = arena._play_games(players, self.benchmarks_t, PlayMode.ALL_VS_ALL)
             self.stored_elos = compute_elo(results)
 
-        results = arena._play_games([agent] + players, times, PlayMode.FIRST_VS_ALL)
+        results = arena._play_games([agent] + players, self.benchmarks_t, PlayMode.FIRST_VS_ALL)
 
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())

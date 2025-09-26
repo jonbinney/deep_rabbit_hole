@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from queue import Empty
 from typing import Optional
 
-import numpy as np
 import quoridor_env
 from quoridor import ActionEncoder
 from utils import my_device, set_deterministic
@@ -64,6 +63,14 @@ class SelfPlayManager(threading.Thread):
         else:
             self._run_central_evaluation()
 
+    # Return an array with the number of games per worker, such that they add up to the total number of games
+    # and each worker gets X or X+1 jobs.
+    # E.g. for 20 games and 8 workers it returns: [3, 3, 3, 3, 2, 2, 2, 2]
+    def _games_per_worker(self):
+        base = self.num_games // self.num_workers
+        extra = self.num_games - base * self.num_workers
+        return [base + 1 if i < extra else base for i in range(self.num_workers)]
+
     def _run_central_evaluation(self):
         # Create the evaluator server and start its processing thread.
         action_encoder = ActionEncoder(self.game_params.board_size)
@@ -81,12 +88,9 @@ class SelfPlayManager(threading.Thread):
         orig_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-        games_per_worker = int(np.ceil(self.num_games / self.num_workers))
-        games_remaining_to_allocate = self.num_games
         workers = []
+        games_per_worker = self._games_per_worker()
         for worker_id in range(self.num_workers):
-            this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-
             evaluator_client = EvaluatorClient(
                 self.game_params.board_size,
                 worker_id,
@@ -97,7 +101,7 @@ class SelfPlayManager(threading.Thread):
             worker_process = mp.Process(
                 target=run_self_play_games,
                 args=(
-                    this_worker_num_games,
+                    games_per_worker[worker_id],
                     self.game_params,
                     self.alphazero_params,
                     evaluator_client,
@@ -132,16 +136,13 @@ class SelfPlayManager(threading.Thread):
         evaluator_server.join()
 
     def _run_per_process_evaluation(self):
-        games_per_worker = int(np.ceil(self.num_games / self.num_workers))
-        games_remaining_to_allocate = self.num_games
+        games_per_worker = self._games_per_worker()
         workers = []
         for worker_id in range(self.num_workers):
-            this_worker_num_games = min(games_per_worker, games_remaining_to_allocate)
-
             worker_process = mp.Process(
                 target=run_self_play_games,
                 args=(
-                    this_worker_num_games,
+                    games_per_worker[worker_id],
                     self.game_params,
                     self.alphazero_params,
                     None,

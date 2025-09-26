@@ -23,8 +23,29 @@ if __name__ == "__main__":
         required=True,
         help="List of players to run the metrics.  The metrics for each player are computed independently",
     )
+    parser.add_argument(
+        "-b",
+        "--benchmarks",
+        nargs="+",
+        type=str,
+        default=["random", "simple"],
+        help=f"List of players to benchmark against. Can include parameters in parentheses. Allowed types {AgentRegistry.names()}",
+    )
+    parser.add_argument(
+        "-bt",
+        "--benchmarks_t",
+        type=int,
+        default=10,
+        help="How many time to play against each opponent during benchmarks",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=200,
+        help="Max number of turns before game is called a tie (pass -1 for no limit)",
+    )
     args = parser.parse_args()
-    m = Metrics(args.board_size, args.max_walls)
+    m = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps)
     table = PrettyTable()
     table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score"]
 

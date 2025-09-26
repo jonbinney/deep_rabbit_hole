@@ -95,7 +95,7 @@ def test_evaluator_training_with_deterministic_policy():
     value, policy = evaluator.evaluate(game)
     assert np.abs(value - target_value) < required_precision
     assert (np.abs(policy - target_policy) < required_precision).all()
-    assert training_stats["total_loss"] < required_precision
+    assert training_stats["loss_total"] < required_precision
 
 
 def test_evaluator_training_with_probabilistic_policy():
@@ -131,4 +131,4 @@ def test_evaluator_training_with_probabilistic_policy():
     # If the NN models the policy perfectly then the remaining policy loss should equal the
     # entropy of the target policy.
     target_policy_entropy = Categorical(torch.Tensor(target_policy)).entropy()
-    assert training_stats["total_loss"] - target_policy_entropy < required_precision
+    assert training_stats["loss_total"] - target_policy_entropy < required_precision

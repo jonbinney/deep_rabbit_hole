@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 import wandb
+import wandb.wandb_run
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
@@ -238,11 +239,6 @@ class AlphaZeroAgent(TrainableAgent):
         # Just to make the training status plugin happy
         self.epsilon = 0.0
 
-        # Avoid circular imports
-        from metrics import Metrics
-
-        self.metrics = Metrics(board_size, max_walls)
-
         self.first_replay_buffer_saved = False
         self.first_replay_buffer_loaded = False
 
@@ -252,6 +248,11 @@ class AlphaZeroAgent(TrainableAgent):
                 print("Running bootstrap training iteration...")
                 self.train_iteration(is_replay_buffer_bootstrap=True)
                 self.first_replay_buffer_loaded = True
+
+        self.wandb_run = None
+
+    def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
+        self.wandb_run = wandb_run
 
     # TO DO, this was copy-pasted from AbstractTrainableAgent, need to refactor it
     def _fetch_model_from_wandb_and_update_params(self):
@@ -270,16 +271,6 @@ class AlphaZeroAgent(TrainableAgent):
         print(f"{self.name()} - Fetching model from wandb: {path}")
         artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
-
-        param_fields = set(self.params_class().__dataclass_fields__.keys())
-        filtered_metadata = {k: v for k, v in artifact.metadata.items() if k in param_fields}
-
-        all_params = self.params_class()(**filtered_metadata)
-
-        # Override params, but only the ones that are not training only
-        for key, value in artifact.metadata.items():
-            if key not in all_params.training_only_params():
-                setattr(self.params, key, value)
 
         self.params.model_filename = str(local_filename)
 
@@ -415,13 +406,32 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_iteration(self, is_replay_buffer_bootstrap=False) -> bool:
+    def train_iteration(self, is_replay_buffer_bootstrap=False, epoch=None) -> bool:
         """
         Train the neural network on collected data.
 
         Returns:
             True if training was done, False if not enough data was available.
         """
+
+        def log_loss_entry(entry):
+            i = entry["step"]
+            t, p, v = entry["loss_total"], entry["loss_policy"], entry["loss_value"]
+
+            if "loss_total_val" in entry:
+                vt, vp, vv = entry["loss_total_val"], entry["loss_policy_val"], entry["loss_value_val"]
+                print(f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}")
+            else:
+                print(f"{i:>7} {t:>7.3f} {p:>7.3f} {v:>7.3f}")
+
+            if self.wandb_run:
+                # Log this to take care of half of the epoch, so we can
+                # see clearly the different phases of training
+                entry["Loss step"] = epoch + entry["completion"] * 0.5
+                del entry["step"]
+                del entry["completion"]
+                self.wandb_run.log(entry)
+
         if len(self.replay_buffer) * (1.0 - self.params.validation_ratio) < self.params.batch_size:
             return False
 
@@ -438,12 +448,14 @@ class AlphaZeroAgent(TrainableAgent):
         t0 = time.time()
         print(f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...")
 
-        metrics = self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio)
+        if self.params.validation_ratio > 0.0:
+            print("==== Training & Validation Loss ====")
+            print("  Epoch       Total   Val Total   Policy  Val Policy  Value   Val Value")
+        else:
+            print("==== Training Loss ====")
+            print("  Epoch   Total   Policy  Value")
 
-        # Store loss for metrics
-        self.recent_losses.append(metrics["total_loss"])
-        if len(self.recent_losses) > 100:  # Keep only recent losses
-            self.recent_losses = self.recent_losses[-100:]
+        self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio, on_new_entry=log_loss_entry)
 
         print(f"Finished training in {time.time() - t0:.2f}s")
 
@@ -491,7 +503,7 @@ class AlphaZeroAgent(TrainableAgent):
 
     def load_replay_buffer_from_file(self) -> bool:
         """Load replay buffer from file if it exists. Returns True if the file exists."""
-        if self.params.train_every is None:
+        if self.params.train_every is None or not self.is_training():
             return False
 
         assert isinstance(self.params.train_every, int), "train_every must be set to load replay buffer from file"
