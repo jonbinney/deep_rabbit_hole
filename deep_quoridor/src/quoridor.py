@@ -60,7 +60,7 @@ class ActionEncoder:
         self.board_size = board_size
         self.wall_size = board_size - 1
         self.num_actions = self.board_size**2 + self.wall_size**2 * 2
-        self.constant_action_mask_template = np.zeros(self.num_actions, dtype=np.float32)
+        self.constant_action_mask_template = np.zeros(self.num_actions, dtype=np.int8)
 
     def get_action_mask_template(self):
         return np.copy(self.constant_action_mask_template)
