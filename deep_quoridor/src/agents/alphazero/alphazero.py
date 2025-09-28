@@ -189,11 +189,11 @@ class AlphaZeroAgent(TrainableAgent):
         self.visited_states = set()
 
         self.action_encoder = ActionEncoder(board_size)
-        self.evaluator = NNEvaluator(self.action_encoder, self.device)
         if evaluator is None:
             self.evaluator = NNEvaluator(self.action_encoder, self.device)
         else:
             self.evaluator = evaluator
+        assert isinstance(self.evaluator, NNEvaluator), "evaluator must be an instance of NNEvaluator"
 
         self._fetch_model_from_wandb_and_update_params()
         self._resolve_and_load_model()

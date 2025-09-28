@@ -57,20 +57,22 @@ def train_alphazero(
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}")
 
-        # When using per process evaluation, set the filename so that each process loads the most recent model.
-        if args.per_process_evaluation:
-            self_play_params.model_filename = str(current_filename)
+        # We use a different random seed each epoch to make sure we don't get correlated games, but
+        # we want the runs to be repeatable so we use a deterministic scheme to generate the seeds.
+        random_seed = args.seed + args.num_workers * epoch
+
+        # Set the filename so that each process loads the most recent model.
+        self_play_params.model_filename = str(current_filename)
 
         # Create a self-play manager to run self-play games across multiple processes. The
         # worker processes get re-spawned each epoch to make sure all cached values get freed.
         self_play_manager = SelfPlayManager(
             args.num_workers,
-            args.seed,
+            random_seed,
             epoch,
             args.games_per_epoch,
             game_params,
             self_play_params,
-            args.per_process_evaluation,
         )
         self_play_manager.start()
         new_replay_buffer_items = None
@@ -174,10 +176,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--per-process-evaluation",
         action="store_true",
-        default=False,
-        help="Each process will do NN evaluations.  Otherwise, just one process will handle them all",
+        help="Deprecated; Worker processes always do their own NN evaluations.",
     )
     args = parser.parse_args()
+
+    # Handle deprecated --per-process-evaluation argument
+    if args.per_process_evaluation is not None:
+        print("Warning: --per-process-evaluation is deprecated. Worker processes always do their own evaluation.")
+        args.per_process_evaluation = False
 
     # Handle deprecated --max-game-length argument
     if args.max_game_length is not None:
