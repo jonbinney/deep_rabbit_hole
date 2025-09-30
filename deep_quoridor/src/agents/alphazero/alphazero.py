@@ -175,7 +175,7 @@ class AlphaZeroAgent(TrainableAgent):
         max_steps: int = -1,  # -1 means games are never truncated.
         observation_space=None,
         action_space=None,
-        evaluator=None,
+        evaluator: Optional[NNEvaluator] = None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -193,7 +193,6 @@ class AlphaZeroAgent(TrainableAgent):
             self.evaluator = NNEvaluator(self.action_encoder, self.device)
         else:
             self.evaluator = evaluator
-        assert isinstance(self.evaluator, NNEvaluator), "evaluator must be an instance of NNEvaluator"
 
         self._fetch_model_from_wandb_and_update_params()
         self._resolve_and_load_model()
