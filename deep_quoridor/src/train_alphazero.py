@@ -92,6 +92,10 @@ def train_alphazero(
             wandb_train_plugin.episode_count = game_num
             wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
+    # Close the arena so the best model and the final model are uploaded to wandb
+    if wandb_train_plugin is not None:
+        wandb_train_plugin.end_arena(None, None)
+
 
 def main(args):
     # Set multiprocessing start method to avoid tensor sharing issues and Mac bugs

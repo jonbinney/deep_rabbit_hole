@@ -51,7 +51,12 @@ class AlphaZeroParams(SubargsBase):
     weight_decay: float = 0.0001
 
     # Exploration vs exploitation.  0 is pure exploitation, infinite is random exploration.
-    temperature: float = 1.0
+    # If not set, it will use 1 for training and 0 for playing (unless drop_t_on_step is set,
+    # in which case it will be set to 1)
+    temperature: Optional[float] = None
+
+    # If set, on that number of moves and afterwards the temperature will be set to 0
+    drop_t_on_step: Optional[int] = None
 
     # How many moves to remember. The training batches are sampled from this replay buffer.
     # If set to none, the buffer grows without bound.
@@ -229,7 +234,13 @@ class AlphaZeroAgent(TrainableAgent):
         self.episode_count = 0
 
         # When playing use 0.0 for temperature so we always chose the best available action.
-        self.temperature = params.temperature if params.training_mode else 0.0
+        if params.temperature:
+            self.initial_temperature = params.temperature
+        else:
+            if params.training_mode or params.drop_t_on_step is not None:
+                self.initial_temperature = 1
+            else:  # Play mode and params.drop_t_on_step is None
+                self.initial_temperature = 0
 
         self.replay_buffer = deque(maxlen=params.replay_buffer_size)
 
@@ -465,7 +476,8 @@ class AlphaZeroAgent(TrainableAgent):
         params = {
             "ep": episode_number,
             "i": get_initial_random_seed(),
-            "t": int(self.params.temperature * 100),
+            "t": int(self.params.temperature * 100) if self.params.temperature else None,
+            "dt": self.params.drop_t_on_step,
             "rbs": self.params.replay_buffer_size,
             "n": self.params.mcts_n,
             "k": self.params.mcts_k,
@@ -549,12 +561,16 @@ class AlphaZeroAgent(TrainableAgent):
             visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
         )
 
-        if self.temperature == 0.0:
+        temperature = self.initial_temperature
+        if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
+            temperature = 0
+
+        if temperature == 0.0:
             max_value = np.max(visit_probs)
             visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
             visit_probs /= np.sum(visit_probs)
         else:
-            visit_probs = visit_probs ** (1.0 / self.temperature)
+            visit_probs = visit_probs ** (1.0 / temperature)
             visit_probs = visit_probs / np.sum(visit_probs)
 
         # Sample from probability distribution
