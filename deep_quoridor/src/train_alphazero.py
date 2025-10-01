@@ -1,6 +1,7 @@
 import argparse
 import copy
 import multiprocessing as mp
+import sys
 import time
 from typing import Optional
 
@@ -94,6 +95,9 @@ def train_alphazero(
 def main(args):
     # Set multiprocessing start method to avoid tensor sharing issues and Mac bugs
     mp.set_start_method("spawn", force=True)
+
+    # MCTS can hit recursion limits during backpropagation sometimes
+    sys.setrecursionlimit(10000)
 
     set_deterministic(args.seed)
 
