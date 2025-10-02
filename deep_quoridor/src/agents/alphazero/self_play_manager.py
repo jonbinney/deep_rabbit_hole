@@ -1,6 +1,5 @@
 import hashlib
 import multiprocessing as mp
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -8,12 +7,10 @@ from queue import Empty
 from typing import Optional
 
 import quoridor_env
-from quoridor import ActionEncoder
-from utils import my_device, set_deterministic
+from utils import set_deterministic
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from agents.alphazero.multiprocess_evaluator import EvaluatorClient, EvaluatorServer, EvaluatorStatistics
-from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.nn_evaluator import EvaluatorStatistics
 
 
 @dataclass
@@ -39,7 +36,6 @@ class SelfPlayManager(threading.Thread):
         num_games,
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
-        per_process_evaluation: bool,
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
@@ -50,18 +46,7 @@ class SelfPlayManager(threading.Thread):
         self._results = []
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
-        # If true, each process will have a copy of the model
-        # and will be in charge of doing the evaluations.
-        # Otherwise, each process will communicate with the root
-        # process, which would be in charge of the evaluations.
-        self._per_process_evaluation = per_process_evaluation
         super().__init__()
-
-    def run(self):
-        if self._per_process_evaluation:
-            self._run_per_process_evaluation()
-        else:
-            self._run_central_evaluation()
 
     # Return an array with the number of games per worker, such that they add up to the total number of games
     # and each worker gets X or X+1 jobs.
@@ -71,71 +56,7 @@ class SelfPlayManager(threading.Thread):
         extra = self.num_games - base * self.num_workers
         return [base + 1 if i < extra else base for i in range(self.num_workers)]
 
-    def _run_central_evaluation(self):
-        # Create the evaluator server and start its processing thread.
-        action_encoder = ActionEncoder(self.game_params.board_size)
-        nn_evaluator = NNEvaluator(action_encoder, my_device())
-
-        # Queues used for worker processes to send evaluation requests to the EvaluatorServer, and for it
-        # to send the resulting (value, policy) back.
-        evaluator_request_queue = mp.Queue()
-        evaluator_result_queues = [mp.Queue() for _ in range(self.num_workers)]
-
-        # Create the worker processes. We hide the CUDA devices
-        # in the worker processes since they're only doing CPU work,
-        # and we don't want pytorch to waste GPU memory with the allocations
-        # it automatically does on startup
-        orig_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
-        workers = []
-        games_per_worker = self._games_per_worker()
-        for worker_id in range(self.num_workers):
-            evaluator_client = EvaluatorClient(
-                self.game_params.board_size,
-                worker_id,
-                evaluator_request_queue,
-                evaluator_result_queues[worker_id],
-            )
-
-            worker_process = mp.Process(
-                target=run_self_play_games,
-                args=(
-                    games_per_worker[worker_id],
-                    self.game_params,
-                    self.alphazero_params,
-                    evaluator_client,
-                    self.compute_worker_random_seed(worker_id),
-                    worker_id,
-                    self._result_queue,
-                ),
-            )
-            workers.append(worker_process)
-            worker_process.start()
-
-        # Restore the CUDA_VISIBLE_DEVICES environment variable so that the server
-        # can use the GPU if it wants to.
-        if orig_cuda_visible_devices is None:
-            if "CUDA_VISIBLE_DEVICES" in os.environ:
-                del os.environ["CUDA_VISIBLE_DEVICES"]
-        else:
-            os.environ["CUDA_VISIBLE_DEVICES"] = orig_cuda_visible_devices
-
-        evaluator_server = EvaluatorServer(
-            nn_evaluator,
-            input_queue=evaluator_request_queue,
-            output_queues=evaluator_result_queues,
-        )
-        evaluator_server.start()
-
-        for worker in workers:
-            worker.join()
-
-        evaluator_server.shutdown()
-        print(evaluator_server.get_statistics())
-        evaluator_server.join()
-
-    def _run_per_process_evaluation(self):
+    def run(self):
         games_per_worker = self._games_per_worker()
         workers = []
         for worker_id in range(self.num_workers):
@@ -145,7 +66,6 @@ class SelfPlayManager(threading.Thread):
                     games_per_worker[worker_id],
                     self.game_params,
                     self.alphazero_params,
-                    None,
                     self.compute_worker_random_seed(worker_id),
                     worker_id,
                     self._result_queue,
@@ -225,7 +145,6 @@ def run_self_play_games(
     num_games: int,
     game_params: GameParams,
     alphazero_params: AlphaZeroParams,
-    evaluator: Optional[EvaluatorClient],
     random_seed: int,
     worker_id: int,
     result_queue: mp.Queue,
@@ -249,7 +168,6 @@ def run_self_play_games(
         game_params.max_walls,
         game_params.max_steps,
         params=alphazero_params,
-        evaluator=evaluator,
     )
 
     for game_i in range(num_games):
@@ -276,7 +194,12 @@ def run_self_play_games(
         alphazero_agent.end_game(environment)
 
     # TODO implement the stats for the per process evaluator
-    stats = evaluator.get_statistics() if evaluator else None
-    result_queue.put(SelfPlayResult(worker_id, list(alphazero_agent.replay_buffer), stats))
+    result_queue.put(
+        SelfPlayResult(
+            worker_id,
+            list(alphazero_agent.replay_buffer),
+            None,
+        )
+    )
 
     print(f"Worker {worker_id} exiting")

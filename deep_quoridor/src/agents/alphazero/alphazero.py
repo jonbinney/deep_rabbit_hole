@@ -180,7 +180,7 @@ class AlphaZeroAgent(TrainableAgent):
         max_steps: int = -1,  # -1 means games are never truncated.
         observation_space=None,
         action_space=None,
-        evaluator=None,
+        evaluator: Optional[NNEvaluator] = None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -194,7 +194,6 @@ class AlphaZeroAgent(TrainableAgent):
         self.visited_states = set()
 
         self.action_encoder = ActionEncoder(board_size)
-        self.evaluator = NNEvaluator(self.action_encoder, self.device)
         if evaluator is None:
             self.evaluator = NNEvaluator(self.action_encoder, self.device)
         else:

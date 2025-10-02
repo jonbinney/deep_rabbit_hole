@@ -1,10 +1,11 @@
 import random
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from quoridor import ActionEncoder, Board, Player, Quoridor
+from quoridor import ActionEncoder, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.core.rotation import create_rotation_mapping
@@ -12,21 +13,32 @@ from agents.core.rotation import create_rotation_mapping
 INVALID_ACTION_VALUE = -1e32
 
 
+@dataclass
+class EvaluatorStatistics:
+    """
+    Statistics about all evaluations since this evaluator was created.
+    """
+
+    duty_cycle: float
+    average_evaluation_time: float
+    num_evaluations: int
+    num_cache_hits: int
+
+
 class NNEvaluator:
     def __init__(
         self,
         action_encoder: ActionEncoder,
         device,
+        network_type: str = "mlp",
     ):
         self.action_encoder = action_encoder
         self.device = device
 
-        # Create a temporary game just to see how  big the input tensors are.
-        temp_game = Quoridor(Board(self.action_encoder.board_size))
-        temp_input = NNEvaluator.game_to_input_array(temp_game)
-        self.input_size = len(temp_input)
-
-        self.network = MLPNetwork(self.input_size, self.action_encoder.num_actions, self.device)
+        if network_type == "mlp":
+            self.network = MLPNetwork(self.action_encoder, self.device)
+        else:
+            raise ValueError(f"Unknown network type: {network_type}")
 
         [self.action_mapping_original_to_rotated, self.action_mapping_rotated_to_original] = create_rotation_mapping(
             self.action_encoder.board_size
@@ -67,8 +79,8 @@ class NNEvaluator:
 
         all_games = [game] + extra_games_to_evaluate
         all_hashes = [g.get_fast_hash() for g in all_games]
-        all_games = [NNEvaluator.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
-        all_games_input_arrays = [torch.from_numpy(NNEvaluator.game_to_input_array(g)) for g in all_games]
+        all_games = [self.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
+        all_games_input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in all_games]
         all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
 
         with torch.no_grad():
@@ -99,8 +111,7 @@ class NNEvaluator:
         """
         return policy[self.action_mapping_original_to_rotated]
 
-    @staticmethod
-    def rotate_if_needed_to_point_downwards(game: Quoridor):
+    def rotate_if_needed_to_point_downwards(self, game: Quoridor):
         """
         Rotates the game so that the current player's goal is the row with the largest index.
 
@@ -120,33 +131,9 @@ class NNEvaluator:
 
         return game, is_rotated
 
-    @staticmethod
-    def game_to_input_array(game: Quoridor) -> np.ndarray:
+    def game_to_input_array(self, game: Quoridor) -> np.ndarray:
         """Convert Quoridor game state to tensor format for neural network."""
-        player = game.get_current_player()
-        opponent = Player(1 - player)
-
-        player_position = game.board.get_player_position(player)
-        opponent_position = game.board.get_player_position(opponent)
-
-        player_board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.float32)
-        player_board[player_position] = 1
-        opponent_board = np.zeros((game.board.board_size, game.board.board_size), dtype=np.float32)
-        opponent_board[opponent_position] = 1
-
-        # Make a copy of walls
-        walls = game.board.get_old_style_walls()
-
-        my_walls = game.board.get_walls_remaining(player)
-        opponent_walls = game.board.get_walls_remaining(opponent)
-
-        # Combine all features into single tensor
-        input_array = np.concatenate(
-            [player_board.flatten(), opponent_board.flatten(), walls.flatten(), [my_walls, opponent_walls]],
-            dtype=np.float32,
-        )
-
-        return input_array
+        return self.network.game_to_input_array(game)
 
     def train_prepare(self, learning_rate, batch_size, batches_per_iteration, weight_decay: float):
         assert not hasattr(self, "optimizer") or self.optimizer is None, "train_prepare should be called only once"
