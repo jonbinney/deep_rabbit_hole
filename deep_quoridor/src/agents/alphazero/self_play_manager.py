@@ -208,18 +208,17 @@ def run_self_play_games(
                     print(environments[i].render())
                     finished[i] = True
                 else:
-                    observations.append(observation)
+                    observations.append((i, observation))
                     num_turns[i] += 1
 
             action_indexes = alphazero_agent.multi_get_action(observations)
             # print(f"action indexes: {action_indexes}")
             # print(f"finished: {finished}, obs: {len(observations)}, turns {num_turns}")
-            for i in range(n):
-                if finished[i]:
+            for env_idx, action_index in action_indexes:
+                if finished[env_idx]:
                     continue
-                action_index = action_indexes.pop(0)
-                # print(f"game {i}, action {action_index}")
-                environments[i].step(action_index)
+                # print(f"game {env_idx}, action {action_index}")
+                environments[env_idx].step(action_index)
 
         game_i += n
         t1 = time.time()

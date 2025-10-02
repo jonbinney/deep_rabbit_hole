@@ -577,13 +577,18 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
-    def multi_get_action(self, observations: list) -> list[int]:
+    def multi_get_action(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
+        if not observations_with_ids:
+            return []
+
         games = []
         players = []
-        for observation in observations:
+        game_indices = []
+        for game_idx, observation in observations_with_ids:
             g, p, _ = construct_game_from_observation(observation["observation"])
             games.append(g)
             players.append(p)
+            game_indices.append(game_idx)
 
         # root_childrens = []
         # root_values = []
@@ -595,8 +600,8 @@ class AlphaZeroAgent(TrainableAgent):
         root_childrens, root_values = self.mcts.multi_search(games)
 
         actions = []
-        for i, root_children, root_value, game, player in zip(
-            range(len(observations)), root_childrens, root_values, games, players
+        for game_idx, root_children, root_value, game, player in zip(
+            game_indices, root_childrens, root_values, games, players
         ):
             visit_counts = np.array([child.visit_count for child in root_children])
             visit_counts_sum = np.sum(visit_counts)
@@ -624,7 +629,7 @@ class AlphaZeroAgent(TrainableAgent):
             # Sample from probability distribution
             best_child = np.random.choice(root_children, p=visit_probs)
             action = best_child.action_taken
-            actions.append(self.action_encoder.action_to_index(action))
+            actions.append((game_idx, self.action_encoder.action_to_index(action)))
 
             # TODO disabled on multi
             if self.params.penalized_visited_states:
@@ -636,7 +641,7 @@ class AlphaZeroAgent(TrainableAgent):
                 for child in root_children:
                     action_index = self.action_encoder.action_to_index(child.action_taken)
                     policy_target[action_index] = child.visit_count / visit_counts_sum
-                self.store_training_data(game, policy_target, player, i)
+                self.store_training_data(game, policy_target, player, game_idx)
 
         return actions
 
