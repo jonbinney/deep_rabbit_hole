@@ -168,7 +168,7 @@ class MCTS:
         assert num_iterations
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
-
+        extra_games = []
         for _ in range(num_iterations):
             games_to_evaluate = []
             # better names
@@ -194,8 +194,10 @@ class MCTS:
             #     value, priors = self.evaluator.evaluate(game)
             #     values.append(value)
             #     priorses.append(priors)
-            values, priorses = self.evaluator.evaluate_all(games_to_evaluate)
+            values, priorses = self.evaluator.evaluate_all(games_to_evaluate, extra_games[: self.top_k_pre_evaluate])
+            extra_games = []
 
+            top_games_and_values = []
             for node, root, value, priors in zip(selected_nodes, selected_roots, values, priorses):
                 if node is root and self.noise_epsilon > 0.0:
                     # To encourage exploration we add noise to the priors at the root node.
@@ -209,7 +211,18 @@ class MCTS:
                     priors[valid_action_indices] *= 1.0 - self.noise_epsilon
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
                 node.expand(priors)
+                prev_value = root.value_sum
                 node.backpropagate(-value)
+
+                if self.top_k_pre_evaluate > 0:
+                    if node.children:
+                        top_child = max(node.children, key=lambda c: c.prior)
+                        delta = prev_value - root.value_sum
+                        top_games_and_values.append((top_child.game, delta))
+
+            if self.top_k_pre_evaluate > 0 and top_games_and_values:
+                top_games_and_values.sort(key=lambda x: x[1], reverse=True)
+                extra_games = [game for game, _ in top_games_and_values[: self.top_k_pre_evaluate]]
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.

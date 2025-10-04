@@ -70,6 +70,7 @@ def train_alphazero(
             args.games_per_epoch,
             game_params,
             self_play_params,
+            args.parallel_games,
         )
         self_play_manager.start()
         new_replay_buffer_items = None
@@ -181,6 +182,13 @@ if __name__ == "__main__":
         "--per-process-evaluation",
         action="store_true",
         help="Deprecated; Worker processes always do their own NN evaluations.",
+    )
+    parser.add_argument(
+        "-pg",
+        "--parallel_games",
+        type=int,
+        default=32,
+        help="How many games to play in parallel per process",
     )
     args = parser.parse_args()
 

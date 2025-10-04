@@ -36,6 +36,7 @@ class SelfPlayManager(threading.Thread):
         num_games,
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
+        num_parallel_games: int,
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
@@ -46,6 +47,7 @@ class SelfPlayManager(threading.Thread):
         self._results = []
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
+        self.num_parallel_games = num_parallel_games
         super().__init__()
 
     # Return an array with the number of games per worker, such that they add up to the total number of games
@@ -69,6 +71,7 @@ class SelfPlayManager(threading.Thread):
                     self.compute_worker_random_seed(worker_id),
                     worker_id,
                     self._result_queue,
+                    self.num_parallel_games,
                 ),
             )
             workers.append(worker_process)
@@ -148,13 +151,15 @@ def run_self_play_games(
     random_seed: int,
     worker_id: int,
     result_queue: mp.Queue,
+    num_parallel_games: int,
 ):
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
     # their self-play moves.
     set_deterministic(random_seed)
 
-    print(f"Worker {worker_id} starting, running {num_games} games with random seed {random_seed}")
-    num_parallel_games = 32
+    print(
+        f"Worker {worker_id} starting, running {num_games} games ({num_parallel_games} in parallel) with random seed {random_seed}"
+    )
 
     environments = [
         quoridor_env.env(
