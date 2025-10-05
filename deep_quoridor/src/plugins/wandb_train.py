@@ -7,7 +7,7 @@ import wandb
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
-from utils import resolve_path
+from utils import Timer, resolve_path
 from utils.subargs import SubargsBase
 
 
@@ -67,6 +67,7 @@ class WandbTrainPlugin(ArenaPlugin):
             name=f"{self.params.run_id()}",
             notes=self.params.notes,
         )
+        Timer.set_wandb_run(self.run)
 
         wandb.define_metric("Loss step", hidden=True)
         wandb.define_metric("Episode", hidden=True)
@@ -134,12 +135,16 @@ class WandbTrainPlugin(ArenaPlugin):
             print("Uploading the best model to wandb...")
             self._upload_model(self.best_model_filename, aliases=[f"{self.run.id}-best"])
 
+        Timer.log_totals()
+
         wandb.finish()
 
     def compute_tournament_metrics(self, model_filename: str) -> int:
+        Timer.start("benchmark")
         _, elo_table, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = (
             self.metrics.compute(self.agent_encoded_name + f",model_filename={model_filename}")
         )
+        Timer.finish("benchmark", self.episode_count)
 
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
         if relative_elo > self.best_model_relative_elo:

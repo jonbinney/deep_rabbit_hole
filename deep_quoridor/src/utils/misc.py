@@ -168,3 +168,19 @@ def get_opponent_player_id(player_id: str) -> str:
 
 def cnn_output_size_per_channel(input_size, padding, kernel_size=3, stride=1):
     return (input_size + 2 * padding - kernel_size) // stride + 1
+
+
+def format_time(time_in_seconds: float) -> str:
+    if time_in_seconds > 120:
+        hours = int(time_in_seconds // 3600)
+        minutes = int((time_in_seconds % 3600) // 60)
+        seconds = int(time_in_seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d} ({int(time_in_seconds)}s)"
+
+    if time_in_seconds < 0.001:
+        return f"{time_in_seconds * 1e6:.2f}µs"
+
+    if time_in_seconds < 1:
+        return f"{time_in_seconds * 1e3:.2f}ms"
+
+    return f"{time_in_seconds:.2f}s"

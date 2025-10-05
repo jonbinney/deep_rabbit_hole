@@ -10,7 +10,7 @@ from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
 from agents.core.agent import AgentRegistry
 from metrics import Metrics
 from plugins.wandb_train import WandbParams, WandbTrainPlugin
-from utils import parse_subargs, set_deterministic
+from utils import Timer, parse_subargs, set_deterministic
 
 
 def train_alphazero(
@@ -61,6 +61,8 @@ def train_alphazero(
         # Set the filename so that each process loads the most recent model.
         self_play_params.model_filename = str(current_filename)
 
+        Timer.start("self-play")
+
         # Create a self-play manager to run self-play games across multiple processes. The
         # worker processes get re-spawned each epoch to make sure all cached values get freed.
         self_play_manager = SelfPlayManager(
@@ -77,6 +79,9 @@ def train_alphazero(
             new_replay_buffer_items = self_play_manager.get_results(timeout=0.1)
         training_agent.replay_buffer.extend(new_replay_buffer_items)
         self_play_manager.join()
+        game_num = (epoch + 1) * args.games_per_epoch
+
+        Timer.finish("self-play", game_num)
 
         # Do training if we have enough samples in the replay buffer.
         # training_agent.episode_count = game_num
@@ -84,16 +89,17 @@ def train_alphazero(
         if not training_occured:
             print("Not enough samples - skipping training")
 
-        game_num = (epoch + 1) * args.games_per_epoch
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
-        if wandb_train_plugin is not None:
+        if wandb_train_plugin is not None and epoch < args.epochs - 1:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
             wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     # Close the arena so the best model and the final model are uploaded to wandb
     if wandb_train_plugin is not None:
-        wandb_train_plugin.end_arena(None, None)
+        wandb_train_plugin.end_arena(None, [])
+    else:
+        Timer.log_totals()
 
 
 def main(args):
