@@ -124,7 +124,6 @@ class MCTS:
         max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
-        top_k_pre_evaluate: int = 16,
     ):
         assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
@@ -134,7 +133,6 @@ class MCTS:
         self.noise_alpha = noise_alpha
         self.max_steps = max_steps
         self.evaluator = evaluator
-        self.top_k_pre_evaluate = top_k_pre_evaluate
         self.visited_states = visited_states
 
     def select(self, node: Node) -> Node:
@@ -147,16 +145,7 @@ class MCTS:
             node = node.select(self.visited_states)
         return node
 
-    def multi_search_trucho(self, initial_games: list[Quoridor]):
-        rcs, rvs = [], []
-        for game in initial_games:
-            rc, rv = self.search(game)
-            rcs.append(rc)
-            rvs.append(rv)
-
-        return rcs, rvs
-
-    def multi_search(self, initial_games: list[Quoridor]):
+    def search_batch(self, initial_games: list[Quoridor]):
         # if self.k is not None:
         #     num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
         #     num_iterations = self.k * num_actions
@@ -168,7 +157,6 @@ class MCTS:
         assert num_iterations
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
-        extra_games = []
         for _ in range(num_iterations):
             games_to_evaluate = []
             # better names
@@ -188,16 +176,8 @@ class MCTS:
                     selected_nodes.append(node)
                     selected_roots.append(root)
 
-            # trucho
-            # values, priorses = [], []
-            # for game in games_to_evaluate:
-            #     value, priors = self.evaluator.evaluate(game)
-            #     values.append(value)
-            #     priorses.append(priors)
-            values, priorses = self.evaluator.evaluate_all(games_to_evaluate, extra_games[: self.top_k_pre_evaluate])
-            extra_games = []
+            values, priorses = self.evaluator.evaluate_batch(games_to_evaluate)
 
-            top_games_and_values = []
             for node, root, value, priors in zip(selected_nodes, selected_roots, values, priorses):
                 if node is root and self.noise_epsilon > 0.0:
                     # To encourage exploration we add noise to the priors at the root node.
@@ -211,70 +191,13 @@ class MCTS:
                     priors[valid_action_indices] *= 1.0 - self.noise_epsilon
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
                 node.expand(priors)
-                prev_value = root.value_sum
                 node.backpropagate(-value)
-
-                if self.top_k_pre_evaluate > 0:
-                    if node.children:
-                        top_child = max(node.children, key=lambda c: c.prior)
-                        delta = prev_value - root.value_sum
-                        top_games_and_values.append((top_child.game, delta))
-
-            if self.top_k_pre_evaluate > 0 and top_games_and_values:
-                top_games_and_values.sort(key=lambda x: x[1], reverse=True)
-                extra_games = [game for game, _ in top_games_and_values[: self.top_k_pre_evaluate]]
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
         # root_value = -(root.value_sum / root.visit_count)
         return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
 
-    def search(self, initial_game: Quoridor):
-        root = Node(initial_game, ucb_c=self.ucb_c)
-        new_nodes = []
-
-        if self.k is not None:
-            num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
-            num_iterations = self.k * num_actions
-        else:
-            assert self.n is not None, "n must be specified if k is not"
-            num_iterations = self.n
-
-        for _ in range(num_iterations):
-            # Traverse down the tree guided by maximum UCB until we find a node to expand
-            node = self.select(root)
-
-            if node.game.is_game_over():
-                # The player who just made a move must have won.
-                node.backpropagate_result(1)
-            elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
-                node.backpropagate_result(0)
-            else:
-                games_to_evaluate = [n.game for n in new_nodes]
-                new_nodes = []
-
-                value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
-
-                if node is root and self.noise_epsilon > 0.0:
-                    # To encourage exploration we add noise to the priors at the root node.
-                    # NOTE: It isn't clear from the paper whether we should apply the dirichlet noise
-                    # only to the valid actions, or whether we should apply it to all actions and then
-                    # re-mask and re-normalize. These might work out to be equivalent, but I'm not sure of
-                    # that either. For now we apply the noise _only_ to the valid actions. That seems to
-                    # match what the Openspiel python implementation does.
-                    (valid_action_indices,) = np.nonzero(priors > 0.0)
-                    dirichlet_noise = dirichlet([self.noise_alpha] * len(valid_action_indices))
-                    priors[valid_action_indices] *= 1.0 - self.noise_epsilon
-                    priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
-
-                node.expand(priors)
-                if self.top_k_pre_evaluate > 0:
-                    sorted_children = sorted(node.children, key=lambda c: c.prior, reverse=True)
-                    new_nodes.extend(sorted_children[: self.top_k_pre_evaluate])
-
-                node.backpropagate(-value)
-
-        # Negate the value because the value is actually the value that the opponent
-        # got for getting to that state.
-        root_value = -(root.value_sum / root.visit_count)
-        return root.children, root_value
+    def search(self, game: Quoridor):
+        children_batch, root_value_batch = self.search_batch([game])
+        return children_batch[0], root_value_batch[0]

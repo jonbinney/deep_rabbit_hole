@@ -188,9 +188,7 @@ def run_self_play_games(
 
         # TODO problems with state
         # alphazero_agent.start_game(None, None)
-        alphazero_agent.multi_start_game(environments)
-
-        # print(f"=== Playing {n} games in parallel, {len(environments)} envs")
+        alphazero_agent.start_game_batch(environments)
 
         num_turns = [0] * n
         finished = [False] * n
@@ -202,35 +200,27 @@ def run_self_play_games(
                 if finished[i]:
                     continue
 
-                # print(f"game {i}, turn {num_turns[i]}")
-
                 observation, _, termination, truncation, _ = environments[i].last()
                 if termination:
                     print(f"Worker {worker_id} :Game {game_i + i + 1}/{num_games} ended after {num_turns[i]} turns")
                     finished[i] = True
                 elif truncation:
                     print(f"Worker {worker_id}: Game {game_i + i + 1}/{num_games} truncated after {num_turns[i]} turns")
-                    print(environments[i].render())
                     finished[i] = True
                 else:
                     observations.append((i, observation))
                     num_turns[i] += 1
 
-            action_indexes = alphazero_agent.multi_get_action(observations)
-            # print(f"action indexes: {action_indexes}")
-            # print(f"finished: {finished}, obs: {len(observations)}, turns {num_turns}")
-            for env_idx, action_index in action_indexes:
+            action_index_batch = alphazero_agent.get_action_batch(observations)
+
+            for env_idx, action_index in action_index_batch:
                 if finished[env_idx]:
                     continue
-                # print(f"game {env_idx}, action {action_index}")
                 environments[env_idx].step(action_index)
 
         game_i += n
         t1 = time.time()
-        alphazero_agent.multi_end_game()
-        # for env in environments:
-        #     alphazero_agent.end_game(env)
-
+        alphazero_agent.end_game_batch()
         print(f"Worker {worker_id}: played {n} games in ({t1 - t0:.2f}s)")
 
     # TODO implement the stats for the per process evaluator

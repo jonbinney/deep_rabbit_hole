@@ -118,15 +118,6 @@ class AlphaZeroParams(SubargsBase):
     mcts_noise_epsilon: float = 0.25
     mcts_noise_alpha: Optional[float] = None
 
-    # When expanding a node, we take the top k children based on the prior (since those are the nodes that will
-    # be expanded first), and queue them for piggy-back evaluation.
-    # A value too high will compute many evaluations that are not used, and a value too low will make it run more evaluations,
-    # making it slower in both cases.
-    # The optimal value will depend on mcts_n as well as the board complexity, requiring a higher value when either increases.
-    # Having said that, it may not be worth trying to tune this to the ideal value, but if it's too far off it will slow it down.
-    # Notice that this value won't change the results, just the speed.
-    mcts_top_k_pre_evaluate: int = 16
-
     # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
     wandb_alias: Optional[str] = None
 
@@ -222,7 +213,6 @@ class AlphaZeroAgent(TrainableAgent):
             self.max_steps,
             self.evaluator,
             self.visited_states,
-            params.mcts_top_k_pre_evaluate,
         )
 
         if params.training_mode and params.train_every is not None:
@@ -383,12 +373,12 @@ class AlphaZeroAgent(TrainableAgent):
         model_state = torch.load(path, map_location=my_device())
         self.set_model_state(model_state)
 
-    def multi_start_game(self, envs):
+    def start_game_batch(self, envs):
         self.visited_states.clear()
         self.game_envs = envs
         self.replay_buffers_in_progress = [[] for _ in range(len(envs))]
 
-    def multi_end_game(self):
+    def end_game_batch(self):
         if not self.params.training_mode:
             return
 
@@ -577,7 +567,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
-    def multi_get_action(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
+    def get_action_batch(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
         if not observations_with_ids:
             return []
 
@@ -597,7 +587,7 @@ class AlphaZeroAgent(TrainableAgent):
         #     root_childrens.append(root_children)
         #     root_values.append(root_value)
 
-        root_childrens, root_values = self.mcts.multi_search(games)
+        root_childrens, root_values = self.mcts.search_batch(games)
 
         actions = []
         for game_idx, root_children, root_value, game, player in zip(
@@ -609,10 +599,14 @@ class AlphaZeroAgent(TrainableAgent):
                 raise RuntimeError("No nodes visited during MCTS")
 
             visit_probs = visit_counts / visit_counts_sum
-            # TODO disabled on multi
-            self._log_action(
-                visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
-            )
+
+            # _log_action is used to display information about the action (e.g. probabilities of moves) in the GUI.
+            # We allow that only when there's one game at the time, since we won't be playing multiple games and
+            # displaying them
+            if len(observations_with_ids) == 1:
+                self._log_action(
+                    visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
+                )
 
             temperature = self.initial_temperature
             if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
@@ -646,6 +640,10 @@ class AlphaZeroAgent(TrainableAgent):
         return actions
 
     def get_action(self, observation) -> int:
+        action_batch = self.get_action_batch([(0, observation)])
+        return action_batch[0][1]
+
+    def get_action_old(self, observation) -> int:
         # TODO just call multi
         game, player, _ = construct_game_from_observation(observation["observation"])
         # Run MCTS to get action visit counts
