@@ -153,16 +153,12 @@ class MCTS:
             num_iterations = [self.n for _ in initial_games]
 
         max_iterations = max(num_iterations)
-        # print(f"{num_iterations=}, {max_iterations=}")
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
         for iteration in range(max_iterations):
-            games_to_evaluate = []
-            # better names
-            selected_roots = []
-            selected_nodes = []
+            need_evaluation = []  # (root, node)
             for game_idx, root in enumerate(roots):
-                # TODO  if iteration is passed skip
+                # The number of iterations may be less if using mcts_k
                 if iteration >= num_iterations[game_idx]:
                     continue
 
@@ -175,13 +171,12 @@ class MCTS:
                 elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
                     node.backpropagate_result(0)
                 else:
-                    games_to_evaluate.append(node.game)
-                    selected_nodes.append(node)
-                    selected_roots.append(root)
+                    need_evaluation.append((root, node))
 
-            values, priorses = self.evaluator.evaluate_batch(games_to_evaluate)
+            games_to_evaluate = [node.game for _, node in need_evaluation]
+            value_batch, priors_batch = self.evaluator.evaluate_batch(games_to_evaluate)
 
-            for node, root, value, priors in zip(selected_nodes, selected_roots, values, priorses):
+            for (root, node), value, priors in zip(need_evaluation, value_batch, priors_batch):
                 if node is root and self.noise_epsilon > 0.0:
                     # To encourage exploration we add noise to the priors at the root node.
                     # NOTE: It isn't clear from the paper whether we should apply the dirichlet noise
@@ -198,7 +193,6 @@ class MCTS:
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
-        # root_value = -(root.value_sum / root.visit_count)
         return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
 
     def search(self, initial_game: Quoridor):

@@ -97,18 +97,13 @@ class NNEvaluator:
         policy_masked = policy_masked.cpu().numpy()
 
         for i, g, h in zip(range(len(games_to_evaluate)), games_to_evaluate, games_by_hash.keys()):
-            pm = policy_masked[i]
-            # Sanity checks
-            assert np.all(pm >= 0), "Policy contains negative probabilities"
-            assert np.abs(np.sum(pm) - 1) < 1e-6, "Policy does not sum to 1"
-            assert np.isfinite(values[i]), "Policy or value is non-finite"
-
             # If the game was originally rotated, rotate the resulting back to player 2's perspective
             if g.get_current_player() == Player.TWO:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
 
             self.cache[h] = (values[i][0], policy_masked[i])
 
+        # list of values, list of policies
         return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
 
     def evaluate(self, game: Quoridor):

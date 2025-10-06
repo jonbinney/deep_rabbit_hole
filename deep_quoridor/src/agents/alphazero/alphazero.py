@@ -382,9 +382,7 @@ class AlphaZeroAgent(TrainableAgent):
         if not self.params.training_mode:
             return
 
-        # print(f"multi_end_game: replay buffer {len(self.replay_buffer)}")
         for i, env in enumerate(self.game_envs):
-            # print(f"game {i} has {len(self.replay_buffers_in_progress[i])} entries")
             # Assign the final game outcome to all positions in this episode
             # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
             episode_positions = []
@@ -399,8 +397,6 @@ class AlphaZeroAgent(TrainableAgent):
             self.replay_buffer.extend(reversed(episode_positions))
 
             self.episode_count += 1
-
-        # print(f"AFTER multi_end_game: replay buffer {len(self.replay_buffer)}")
 
     def start_game(self, game, player_id):
         self.visited_states.clear()
@@ -568,6 +564,10 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
     def get_action_batch(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
+        """
+        Get actions for multiple observations.  Each entry in observation_with_ids needs a distinct id that can be
+        an arbitrary number. The same id will be returned with the action matching the observation.
+        """
         if not observations_with_ids:
             return []
 
@@ -580,18 +580,11 @@ class AlphaZeroAgent(TrainableAgent):
             players.append(p)
             game_indices.append(game_idx)
 
-        # root_childrens = []
-        # root_values = []
-        # for game in games:
-        #     root_children, root_value = self.mcts.search(game)
-        #     root_childrens.append(root_children)
-        #     root_values.append(root_value)
-
-        root_childrens, root_values = self.mcts.search_batch(games)
+        root_children_batch, root_value_batch = self.mcts.search_batch(games)
 
         actions = []
         for game_idx, root_children, root_value, game, player in zip(
-            game_indices, root_childrens, root_values, games, players
+            game_indices, root_children_batch, root_value_batch, games, players
         ):
             visit_counts = np.array([child.visit_count for child in root_children])
             visit_counts_sum = np.sum(visit_counts)
@@ -625,9 +618,11 @@ class AlphaZeroAgent(TrainableAgent):
             action = best_child.action_taken
             actions.append((game_idx, self.action_encoder.action_to_index(action)))
 
-            # TODO disabled on multi
-            if self.params.penalized_visited_states:
+            # TODO: this is disabled with multiple ids because we would need to keep multiple visited states sets,
+            # one per game. Is it worth implementing?
+            if len(observations_with_ids) == 1 and self.params.penalized_visited_states:
                 self.visited_states.add(QuoridorKey(best_child.game))
+
             # Store training data if in training mode
             if self.params.training_mode:
                 # Convert visit counts to policy target (normalized)
