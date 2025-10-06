@@ -643,50 +643,6 @@ class AlphaZeroAgent(TrainableAgent):
         action_batch = self.get_action_batch([(0, observation)])
         return action_batch[0][1]
 
-    def get_action_old(self, observation) -> int:
-        # TODO just call multi
-        game, player, _ = construct_game_from_observation(observation["observation"])
-        # Run MCTS to get action visit counts
-        root_children, root_value = self.mcts.search(game)
-        visit_counts = np.array([child.visit_count for child in root_children])
-        visit_counts_sum = np.sum(visit_counts)
-        if visit_counts_sum == 0:
-            raise RuntimeError("No nodes visited during MCTS")
-
-        visit_probs = visit_counts / visit_counts_sum
-        self._log_action(
-            visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
-        )
-
-        temperature = self.initial_temperature
-        if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
-            temperature = 0
-
-        if temperature == 0.0:
-            max_value = np.max(visit_probs)
-            visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
-            visit_probs /= np.sum(visit_probs)
-        else:
-            visit_probs = visit_probs ** (1.0 / temperature)
-            visit_probs = visit_probs / np.sum(visit_probs)
-
-        # Sample from probability distribution
-        best_child = np.random.choice(root_children, p=visit_probs)
-        action = best_child.action_taken
-
-        if self.params.penalized_visited_states:
-            self.visited_states.add(QuoridorKey(best_child.game))
-        # Store training data if in training mode
-        if self.params.training_mode:
-            # Convert visit counts to policy target (normalized)
-            policy_target = self.action_encoder.get_action_mask_template()
-            for child in root_children:
-                action_index = self.action_encoder.action_to_index(child.action_taken)
-                policy_target[action_index] = child.visit_count / visit_counts_sum
-            self.store_training_data(game, policy_target, player, 0)
-
-        return self.action_encoder.action_to_index(action)
-
     def store_training_data(self, game, mcts_policy, player, game_idx):
         """Store training data for later use in training."""
         game, is_rotated = self.evaluator.rotate_if_needed_to_point_downwards(game)

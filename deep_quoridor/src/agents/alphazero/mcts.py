@@ -146,23 +146,26 @@ class MCTS:
         return node
 
     def search_batch(self, initial_games: list[Quoridor]):
-        # if self.k is not None:
-        #     num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
-        #     num_iterations = self.k * num_actions
-        # else:
-        #     assert self.n is not None, "n must be specified if k is not"
-        #     num_iterations = self.n
-        # TODO support K
-        num_iterations = self.n
-        assert num_iterations
+        if self.k is not None:
+            num_iterations = [self.k * int(np.sum(np.array(game.get_action_mask()) == 1)) for game in initial_games]
+        else:
+            assert self.n is not None, "n must be specified if k is not"
+            num_iterations = [self.n for _ in initial_games]
+
+        max_iterations = max(num_iterations)
+        # print(f"{num_iterations=}, {max_iterations=}")
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
-        for _ in range(num_iterations):
+        for iteration in range(max_iterations):
             games_to_evaluate = []
             # better names
             selected_roots = []
             selected_nodes = []
-            for root in roots:
+            for game_idx, root in enumerate(roots):
+                # TODO  if iteration is passed skip
+                if iteration >= num_iterations[game_idx]:
+                    continue
+
                 # Traverse down the tree guided by maximum UCB until we find a node to expand
                 node = self.select(root)
 
@@ -198,6 +201,6 @@ class MCTS:
         # root_value = -(root.value_sum / root.visit_count)
         return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
 
-    def search(self, game: Quoridor):
-        children_batch, root_value_batch = self.search_batch([game])
+    def search(self, initial_game: Quoridor):
+        children_batch, root_value_batch = self.search_batch([initial_game])
         return children_batch[0], root_value_batch[0]

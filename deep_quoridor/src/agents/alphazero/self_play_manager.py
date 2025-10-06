@@ -182,15 +182,14 @@ def run_self_play_games(
     game_i = 0
     while game_i < num_games:
         n = min(num_parallel_games, num_games - game_i)
-        environments = environments[:n]  # mhhh
+        environments = environments[:n]  # we may have less games in the last batch
         for i in range(n):
             environments[i].reset()
 
-        # TODO problems with state
-        # alphazero_agent.start_game(None, None)
         alphazero_agent.start_game_batch(environments)
 
         num_turns = [0] * n
+        finished_in = []
         finished = [False] * n
 
         t0 = time.time()
@@ -202,10 +201,9 @@ def run_self_play_games(
 
                 observation, _, termination, truncation, _ = environments[i].last()
                 if termination:
-                    print(f"Worker {worker_id} :Game {game_i + i + 1}/{num_games} ended after {num_turns[i]} turns")
                     finished[i] = True
+                    finished_in.append(num_turns[i])
                 elif truncation:
-                    print(f"Worker {worker_id}: Game {game_i + i + 1}/{num_games} truncated after {num_turns[i]} turns")
                     finished[i] = True
                 else:
                     observations.append((i, observation))
@@ -221,7 +219,10 @@ def run_self_play_games(
         game_i += n
         t1 = time.time()
         alphazero_agent.end_game_batch()
-        print(f"Worker {worker_id}: played {n} games in ({t1 - t0:.2f}s)")
+        num_truncated = n - len(finished_in)
+        print(
+            f"Worker {worker_id}: ({t1 - t0:.2f}s) Games {game_i}...{game_i + n - 1} / {num_games} ended after {sorted(finished_in)} turns. {num_truncated} truncated"
+        )
 
     # TODO implement the stats for the per process evaluator
     result_queue.put(
