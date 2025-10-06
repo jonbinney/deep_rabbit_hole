@@ -36,6 +36,7 @@ class SelfPlayManager(threading.Thread):
         num_games,
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
+        num_parallel_games: int,
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
@@ -46,6 +47,7 @@ class SelfPlayManager(threading.Thread):
         self._results = []
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
+        self.num_parallel_games = num_parallel_games
         super().__init__()
 
     # Return an array with the number of games per worker, such that they add up to the total number of games
@@ -69,6 +71,7 @@ class SelfPlayManager(threading.Thread):
                     self.compute_worker_random_seed(worker_id),
                     worker_id,
                     self._result_queue,
+                    self.num_parallel_games,
                 ),
             )
             workers.append(worker_process)
@@ -106,7 +109,8 @@ class SelfPlayManager(threading.Thread):
                 results = sorted(self._results, key=lambda r: r.worker_id)
                 for r in results:
                     print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
-                    print(r.evaluator_statistics)
+                    if r.evaluator_statistics is not None:
+                        print(r.evaluator_statistics)
 
                     # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
                     # the replay buffer results from all agents each epoch or else we'll end up discarding
@@ -148,19 +152,25 @@ def run_self_play_games(
     random_seed: int,
     worker_id: int,
     result_queue: mp.Queue,
+    num_parallel_games: int,
 ):
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
     # their self-play moves.
     set_deterministic(random_seed)
 
-    print(f"Worker {worker_id} starting, running {num_games} games with random seed {random_seed}")
-
-    environment = quoridor_env.env(
-        board_size=game_params.board_size,
-        max_walls=game_params.max_walls,
-        max_steps=game_params.max_steps,
-        step_rewards=False,
+    print(
+        f"Worker {worker_id} starting, running {num_games} games ({num_parallel_games} in parallel) with random seed {random_seed}"
     )
+
+    environments = [
+        quoridor_env.env(
+            board_size=game_params.board_size,
+            max_walls=game_params.max_walls,
+            max_steps=game_params.max_steps,
+            step_rewards=False,
+        )
+        for i in range(num_parallel_games)
+    ]
 
     # Use the updated model and parameters
     alphazero_agent = AlphaZeroAgent(
@@ -170,28 +180,50 @@ def run_self_play_games(
         params=alphazero_params,
     )
 
-    for game_i in range(num_games):
-        alphazero_agent.start_game(None, None)
-        environment.reset()
-        num_turns = 0
+    game_i = 0
+    while game_i < num_games:
+        n = min(num_parallel_games, num_games - game_i)
+        environments = environments[:n]  # we may have less games in the last batch
+        for i in range(n):
+            environments[i].reset()
+
+        alphazero_agent.start_game_batch(environments)
+
+        num_turns = [0] * n
+        finished_in = []
+        finished = [False] * n
 
         t0 = time.time()
-        for _ in environment.agent_iter():
-            observation, _, termination, truncation, _ = environment.last()
-            if termination:
-                break
-            elif truncation:
-                print("Game was truncated")
-                print(environment.render())
-                break
+        while not all(finished):
+            observations = []
+            for i in range(n):
+                if finished[i]:
+                    continue
 
-            action_index = alphazero_agent.get_action(observation)
-            environment.step(action_index)
-            num_turns += 1
+                observation, _, termination, truncation, _ = environments[i].last()
+                if termination:
+                    finished[i] = True
+                    finished_in.append(num_turns[i])
+                elif truncation:
+                    finished[i] = True
+                else:
+                    observations.append((i, observation))
+                    num_turns[i] += 1
 
+            action_index_batch = alphazero_agent.get_action_batch(observations)
+
+            for env_idx, action_index in action_index_batch:
+                if finished[env_idx]:
+                    continue
+                environments[env_idx].step(action_index)
+
+        game_i += n
         t1 = time.time()
-        print(f"Worker {worker_id}: Game {game_i + 1}/{num_games} ended after {num_turns} turns ({t1 - t0:.2f}s)")
-        alphazero_agent.end_game(environment)
+        alphazero_agent.end_game_batch()
+        num_truncated = n - len(finished_in)
+        print(
+            f"Worker {worker_id}: ({t1 - t0:.2f}s) Games {game_i}...{game_i + n - 1} / {num_games} ended after {sorted(finished_in)} turns. {num_truncated} truncated"
+        )
 
     # TODO implement the stats for the per process evaluator
     result_queue.put(
@@ -201,5 +233,3 @@ def run_self_play_games(
             None,
         )
     )
-
-    print(f"Worker {worker_id} exiting")

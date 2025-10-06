@@ -118,15 +118,6 @@ class AlphaZeroParams(SubargsBase):
     mcts_noise_epsilon: float = 0.25
     mcts_noise_alpha: Optional[float] = None
 
-    # When expanding a node, we take the top k children based on the prior (since those are the nodes that will
-    # be expanded first), and queue them for piggy-back evaluation.
-    # A value too high will compute many evaluations that are not used, and a value too low will make it run more evaluations,
-    # making it slower in both cases.
-    # The optimal value will depend on mcts_n as well as the board complexity, requiring a higher value when either increases.
-    # Having said that, it may not be worth trying to tune this to the ideal value, but if it's too far off it will slow it down.
-    # Notice that this value won't change the results, just the speed.
-    mcts_top_k_pre_evaluate: int = 16
-
     # If wandb_alias is provided, the model will be fetched from wandb using the model_id and the alias
     wandb_alias: Optional[str] = None
 
@@ -222,7 +213,6 @@ class AlphaZeroAgent(TrainableAgent):
             self.max_steps,
             self.evaluator,
             self.visited_states,
-            params.mcts_top_k_pre_evaluate,
         )
 
         if params.training_mode and params.train_every is not None:
@@ -242,6 +232,7 @@ class AlphaZeroAgent(TrainableAgent):
                 self.initial_temperature = 0
 
         self.replay_buffer = deque(maxlen=params.replay_buffer_size)
+        self.replay_buffers_in_progress = []
 
         # Metrics tracking
         self.recent_losses = []
@@ -382,8 +373,34 @@ class AlphaZeroAgent(TrainableAgent):
         model_state = torch.load(path, map_location=my_device())
         self.set_model_state(model_state)
 
+    def start_game_batch(self, envs):
+        self.visited_states.clear()
+        self.game_envs = envs
+        self.replay_buffers_in_progress = [[] for _ in range(len(envs))]
+
+    def end_game_batch(self):
+        if not self.params.training_mode:
+            return
+
+        for i, env in enumerate(self.game_envs):
+            # Assign the final game outcome to all positions in this episode
+            # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
+            episode_positions = []
+            replay_buffer = self.replay_buffers_in_progress[i]
+            while replay_buffer and replay_buffer[-1]["value"] is None:
+                position = replay_buffer.pop()
+                agent = env.player_to_agent[position["player"]]
+                position["value"] = env.rewards[agent]
+                episode_positions.append(position)
+
+            # Add back the positions with assigned values
+            self.replay_buffer.extend(reversed(episode_positions))
+
+            self.episode_count += 1
+
     def start_game(self, game, player_id):
         self.visited_states.clear()
+        self.replay_buffers_in_progress = [[]]
 
     def end_game(self, env):
         if not self.params.training_mode:
@@ -546,56 +563,88 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
+    def get_action_batch(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
+        """
+        Get actions for multiple observations.  Each entry in observation_with_ids needs a distinct id that can be
+        an arbitrary number. The same id will be returned with the action matching the observation.
+        """
+        if not observations_with_ids:
+            return []
+
+        games = []
+        players = []
+        game_indices = []
+        for game_idx, observation in observations_with_ids:
+            g, p, _ = construct_game_from_observation(observation["observation"])
+            games.append(g)
+            players.append(p)
+            game_indices.append(game_idx)
+
+        root_children_batch, root_value_batch = self.mcts.search_batch(games)
+
+        actions = []
+        for game_idx, root_children, root_value, game, player in zip(
+            game_indices, root_children_batch, root_value_batch, games, players
+        ):
+            visit_counts = np.array([child.visit_count for child in root_children])
+            visit_counts_sum = np.sum(visit_counts)
+            if visit_counts_sum == 0:
+                raise RuntimeError("No nodes visited during MCTS")
+
+            visit_probs = visit_counts / visit_counts_sum
+
+            # _log_action is used to display information about the action (e.g. probabilities of moves) in the GUI.
+            # We allow that only when there's one game at the time, since we won't be playing multiple games and
+            # displaying them
+            if len(observations_with_ids) == 1:
+                self._log_action(
+                    visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
+                )
+
+            temperature = self.initial_temperature
+            if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
+                temperature = 0
+
+            if temperature == 0.0:
+                max_value = np.max(visit_probs)
+                visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
+                visit_probs /= np.sum(visit_probs)
+            else:
+                visit_probs = visit_probs ** (1.0 / temperature)
+                visit_probs = visit_probs / np.sum(visit_probs)
+
+            # Sample from probability distribution
+            best_child = np.random.choice(root_children, p=visit_probs)
+            action = best_child.action_taken
+            actions.append((game_idx, self.action_encoder.action_to_index(action)))
+
+            # TODO: this is disabled with multiple ids because we would need to keep multiple visited states sets,
+            # one per game. Is it worth implementing?
+            if len(observations_with_ids) == 1 and self.params.penalized_visited_states:
+                self.visited_states.add(QuoridorKey(best_child.game))
+
+            # Store training data if in training mode
+            if self.params.training_mode:
+                # Convert visit counts to policy target (normalized)
+                policy_target = self.action_encoder.get_action_mask_template()
+                for child in root_children:
+                    action_index = self.action_encoder.action_to_index(child.action_taken)
+                    policy_target[action_index] = child.visit_count / visit_counts_sum
+                self.store_training_data(game, policy_target, player, game_idx)
+
+        return actions
+
     def get_action(self, observation) -> int:
-        game, player, _ = construct_game_from_observation(observation["observation"])
-        # Run MCTS to get action visit counts
-        root_children, root_value = self.mcts.search(game)
-        visit_counts = np.array([child.visit_count for child in root_children])
-        visit_counts_sum = np.sum(visit_counts)
-        if visit_counts_sum == 0:
-            raise RuntimeError("No nodes visited during MCTS")
+        action_batch = self.get_action_batch([(0, observation)])
+        return action_batch[0][1]
 
-        visit_probs = visit_counts / visit_counts_sum
-        self._log_action(
-            visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
-        )
-
-        temperature = self.initial_temperature
-        if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
-            temperature = 0
-
-        if temperature == 0.0:
-            max_value = np.max(visit_probs)
-            visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
-            visit_probs /= np.sum(visit_probs)
-        else:
-            visit_probs = visit_probs ** (1.0 / temperature)
-            visit_probs = visit_probs / np.sum(visit_probs)
-
-        # Sample from probability distribution
-        best_child = np.random.choice(root_children, p=visit_probs)
-        action = best_child.action_taken
-
-        if self.params.penalized_visited_states:
-            self.visited_states.add(QuoridorKey(best_child.game))
-        # Store training data if in training mode
-        if self.params.training_mode:
-            # Convert visit counts to policy target (normalized)
-            policy_target = self.action_encoder.get_action_mask_template()
-            for child in root_children:
-                action_index = self.action_encoder.action_to_index(child.action_taken)
-                policy_target[action_index] = child.visit_count / visit_counts_sum
-            self.store_training_data(game, policy_target, player)
-
-        return self.action_encoder.action_to_index(action)
-
-    def store_training_data(self, game, mcts_policy, player):
+    def store_training_data(self, game, mcts_policy, player, game_idx):
         """Store training data for later use in training."""
         game, is_rotated = self.evaluator.rotate_if_needed_to_point_downwards(game)
         input_array = self.evaluator.game_to_input_array(game)
         if is_rotated:
             mcts_policy = self.evaluator.rotate_policy_from_original(mcts_policy)
-        self.replay_buffer.append(
+        self.replay_buffers_in_progress[game_idx].append(
             {
                 "input_array": input_array,
                 "mcts_policy": mcts_policy,

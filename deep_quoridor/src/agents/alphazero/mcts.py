@@ -124,7 +124,6 @@ class MCTS:
         max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
-        top_k_pre_evaluate: int = 16,
     ):
         assert n is not None or k is not None, "Either n or k need to be specified"
         self.n = n
@@ -134,7 +133,6 @@ class MCTS:
         self.noise_alpha = noise_alpha
         self.max_steps = max_steps
         self.evaluator = evaluator
-        self.top_k_pre_evaluate = top_k_pre_evaluate
         self.visited_states = visited_states
 
     def select(self, node: Node) -> Node:
@@ -147,32 +145,38 @@ class MCTS:
             node = node.select(self.visited_states)
         return node
 
-    def search(self, initial_game: Quoridor):
-        root = Node(initial_game, ucb_c=self.ucb_c)
-        new_nodes = []
-
+    def search_batch(self, initial_games: list[Quoridor]):
         if self.k is not None:
-            num_actions = np.sum(np.array(initial_game.get_action_mask()) == 1)
-            num_iterations = self.k * num_actions
+            num_iterations = [self.k * int(np.sum(np.array(game.get_action_mask()) == 1)) for game in initial_games]
         else:
             assert self.n is not None, "n must be specified if k is not"
-            num_iterations = self.n
+            num_iterations = [self.n for _ in initial_games]
 
-        for _ in range(num_iterations):
-            # Traverse down the tree guided by maximum UCB until we find a node to expand
-            node = self.select(root)
+        max_iterations = max(num_iterations)
 
-            if node.game.is_game_over():
-                # The player who just made a move must have won.
-                node.backpropagate_result(1)
-            elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
-                node.backpropagate_result(0)
-            else:
-                games_to_evaluate = [n.game for n in new_nodes]
-                new_nodes = []
+        roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
+        for iteration in range(max_iterations):
+            need_evaluation = []  # (root, node)
+            for game_idx, root in enumerate(roots):
+                # The number of iterations may be less if using mcts_k
+                if iteration >= num_iterations[game_idx]:
+                    continue
 
-                value, priors = self.evaluator.evaluate(node.game, games_to_evaluate)
+                # Traverse down the tree guided by maximum UCB until we find a node to expand
+                node = self.select(root)
 
+                if node.game.is_game_over():
+                    # The player who just made a move must have won.
+                    node.backpropagate_result(1)
+                elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
+                    node.backpropagate_result(0)
+                else:
+                    need_evaluation.append((root, node))
+
+            games_to_evaluate = [node.game for _, node in need_evaluation]
+            value_batch, priors_batch = self.evaluator.evaluate_batch(games_to_evaluate)
+
+            for (root, node), value, priors in zip(need_evaluation, value_batch, priors_batch):
                 if node is root and self.noise_epsilon > 0.0:
                     # To encourage exploration we add noise to the priors at the root node.
                     # NOTE: It isn't clear from the paper whether we should apply the dirichlet noise
@@ -184,15 +188,13 @@ class MCTS:
                     dirichlet_noise = dirichlet([self.noise_alpha] * len(valid_action_indices))
                     priors[valid_action_indices] *= 1.0 - self.noise_epsilon
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
-
                 node.expand(priors)
-                if self.top_k_pre_evaluate > 0:
-                    sorted_children = sorted(node.children, key=lambda c: c.prior, reverse=True)
-                    new_nodes.extend(sorted_children[: self.top_k_pre_evaluate])
-
                 node.backpropagate(-value)
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
-        root_value = -(root.value_sum / root.visit_count)
-        return root.children, root_value
+        return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
+
+    def search(self, initial_game: Quoridor):
+        children_batch, root_value_batch = self.search_batch([initial_game])
+        return children_batch[0], root_value_batch[0]

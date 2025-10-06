@@ -73,37 +73,42 @@ class NNEvaluator:
 
         return values_tensor, policies_tensor
 
-    def evaluate(self, game: Quoridor, extra_games_to_evaluate: list[Quoridor] = []):
-        if game.get_fast_hash() in self.cache:
-            return self.cache[game.get_fast_hash()]
+    @torch.no_grad
+    def evaluate_batch(self, games: list[Quoridor]):
+        hashes = [g.get_fast_hash() for g in games]
 
-        all_games = [game] + extra_games_to_evaluate
-        all_hashes = [g.get_fast_hash() for g in all_games]
-        all_games = [self.rotate_if_needed_to_point_downwards(g)[0] for g in all_games]
-        all_games_input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in all_games]
-        all_games_tensors = torch.stack(all_games_input_arrays).to(device=self.device)
+        if all([h in self.cache for h in hashes]):
+            # everything was cached!
+            return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
 
-        with torch.no_grad():
-            action_masks = torch.stack([torch.from_numpy(g.get_action_mask()) for g in all_games]).to(
-                device=self.device
-            )
-            values, policy_masked = self.evaluate_tensors(all_games_tensors, action_masks)
-            values = values.cpu().numpy()
-            policy_masked = policy_masked.cpu().numpy()
+        # We may receive the game more than once, so this deduplicates it
+        games_by_hash = {h: g for g, h in zip(games, hashes) if h not in self.cache}
+        games_to_evaluate = games_by_hash.values()
 
-        for i, g in enumerate(all_games):
-            pm = policy_masked[i]
-            # Sanity checks
-            assert np.all(pm >= 0), "Policy contains negative probabilities"
-            assert np.abs(np.sum(pm) - 1) < 1e-6, "Policy does not sum to 1"
-            assert np.isfinite(values[i]), "Policy or value is non-finite"
+        games_to_evaluate = [self.rotate_if_needed_to_point_downwards(g)[0] for g in games_to_evaluate]
+        input_arrays = [torch.from_numpy(self.game_to_input_array(g)) for g in games_to_evaluate]
+        tensors = torch.stack(input_arrays).to(device=self.device)
+        action_masks = torch.stack([torch.from_numpy(g.get_action_mask()) for g in games_to_evaluate]).to(
+            device=self.device
+        )
 
+        values, policy_masked = self.evaluate_tensors(tensors, action_masks)
+        values = values.cpu().numpy()
+        policy_masked = policy_masked.cpu().numpy()
+
+        for i, g, h in zip(range(len(games_to_evaluate)), games_to_evaluate, games_by_hash.keys()):
             # If the game was originally rotated, rotate the resulting back to player 2's perspective
             if g.get_current_player() == Player.TWO:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
-            self.cache[all_hashes[i]] = (values[i][0], policy_masked[i])
 
-        return values[0][0], policy_masked[0]
+            self.cache[h] = (values[i][0], policy_masked[i])
+
+        # list of values, list of policies
+        return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
+
+    def evaluate(self, game: Quoridor):
+        value, policy_masked = self.evaluate_batch([game])
+        return value[0], policy_masked[0]
 
     def rotate_policy_from_original(self, policy: np.ndarray):
         """
