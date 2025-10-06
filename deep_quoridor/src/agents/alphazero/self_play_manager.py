@@ -106,7 +106,8 @@ class SelfPlayManager(threading.Thread):
                 results = sorted(self._results, key=lambda r: r.worker_id)
                 for r in results:
                     print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
-                    print(r.evaluator_statistics)
+                    if r.evaluator_statistics is not None:
+                        print(r.evaluator_statistics)
 
                     # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
                     # the replay buffer results from all agents each epoch or else we'll end up discarding

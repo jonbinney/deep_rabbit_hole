@@ -153,6 +153,10 @@ class AlphaZeroParams(SubargsBase):
     # What fraction of the total moves will be used for validation during training, or 0.0 to not use a validation set
     validation_ratio: float = 0.0
 
+    # What neural network structure to use
+    # The options are "mlp" or "resnet"
+    nn_type: str = "mlp"
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -195,7 +199,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.action_encoder = ActionEncoder(board_size)
         if evaluator is None:
-            self.evaluator = NNEvaluator(self.action_encoder, self.device)
+            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type)
         else:
             self.evaluator = evaluator
 
