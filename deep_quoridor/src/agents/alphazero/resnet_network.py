@@ -26,7 +26,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResnetNetwork(nn.Module):
-    def __init__(self, action_encoder: ActionEncoder, device, num_blocks: Optional[int] = None, num_channels: int = 16):
+    def __init__(self, action_encoder: ActionEncoder, device, num_blocks: Optional[int] = None, num_channels: int = 32):
         """
         ResNet-based network following AlphaZero architecture.
 
