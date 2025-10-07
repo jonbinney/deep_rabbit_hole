@@ -110,14 +110,18 @@ class ResnetNetwork(nn.Module):
 
     def game_to_input_array(self, game: Quoridor) -> np.ndarray:
         """
-        Convert Quoridor game state to tensor format for neural network.
+        Convert Quoridor game state to an input array for the neural network.
 
+        The returned array is 5xMxM, where M is the dimension of the combined
+        grid representation, which is twice the board dimension plus three.
 
-        1. Walls
-        2. Current player's position, as a 1-hot encoding
-        3. Opponent's position, as a 1-hot encoding
-        4. Current player walls remaining
-        5. Opponent walls remaining.
+        The 5 planes in the array are:
+
+            1. Walls (1 where there is a wall, zero otherwise)
+            2. Current player's position, as a 1-hot encoding
+            3. Opponent's position, as a 1-hot encoding
+            4. Current player walls remaining (same value for entire plane)
+            5. Opponent walls remaining (same value for the entire plane)
         """
         input_array = np.zeros((5, self.input_size, self.input_size), dtype=np.float32)
 
