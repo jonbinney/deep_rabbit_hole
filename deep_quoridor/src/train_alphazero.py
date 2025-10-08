@@ -91,13 +91,14 @@ def train_alphazero(
             print("Not enough samples - skipping training")
 
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
-        if wandb_train_plugin is not None and epoch < args.epochs - 1:
+        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0 and epoch < args.epochs - 1:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
             wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     # Close the arena so the best model and the final model are uploaded to wandb
     if wandb_train_plugin is not None:
+        wandb_train_plugin.episode_count = game_num
         wandb_train_plugin.end_arena(None, [])
     else:
         Timer.log_totals()
@@ -182,6 +183,13 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="How many time to play against each opponent during benchmarks",
+    )
+    parser.add_argument(
+        "-be",
+        "--benchmarks_every",
+        type=int,
+        default=1,
+        help="Every how many epochs to compute the benchmark",
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
