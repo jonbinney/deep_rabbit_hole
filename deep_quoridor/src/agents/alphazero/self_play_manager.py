@@ -217,13 +217,13 @@ def run_self_play_games(
                     continue
                 environments[env_idx].step(action_index)
 
-        game_i += n
         t1 = time.time()
         alphazero_agent.end_game_batch()
         num_truncated = n - len(finished_in)
         print(
             f"Worker {worker_id}: ({t1 - t0:.2f}s) Games {game_i}...{game_i + n - 1} / {num_games} ended after {sorted(finished_in)} turns. {num_truncated} truncated"
         )
+        game_i += n
 
     # TODO implement the stats for the per process evaluator
     result_queue.put(
