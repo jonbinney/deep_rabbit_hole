@@ -1,7 +1,9 @@
 import datetime
 import getpass
 import os
+import shutil
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import wandb
 from agents.core.trainable_agent import TrainableAgent
@@ -103,15 +105,21 @@ class WandbTrainPlugin(ArenaPlugin):
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
         artifact.add_file(local_path=save_file)
         artifact.save()
-        wandb.log_artifact(artifact, aliases=aliases).wait(60)
-        print(f"Done! Model uploaded with version {artifact.version} and aliases {artifact.aliases}")
+        logged_artifact = wandb.log_artifact(artifact)
+        logged_artifact.wait(60)
+        if aliases is not None:
+            logged_artifact.aliases.extend(aliases)
+            logged_artifact.save()
+
+        print(f"Done! Model uploaded with version {logged_artifact.version} and aliases {logged_artifact.aliases}")
 
         wand_file = resolve_path(self.agent.params.wandb_dir, self.agent.wandb_local_filename(artifact))
 
-        # Now that we know the digest, rename the file to include it, so it takes the expected name and
-        # doesn't need to be re-downloaded from wandb.
+        # Now that we know the digest, copy the file to the wandb dir and include the digest, so it takes
+        # the expected name and doesn't need to be re-downloaded from wandb.
         # Source and target file are in the same path, just a different file name
-        os.rename(save_file, wand_file)
+        os.makedirs(Path(wand_file).absolute().parents[0], exist_ok=True)
+        shutil.copy(save_file, wand_file)
         print(f"Model saved to {wand_file}")
         return str(wand_file)
 
@@ -128,12 +136,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.agent.save_model(save_file)
 
         print("Uploading the final model to wandb...")
-        wandb_file = self._upload_model(str(save_file))
-        relative_elo = self.compute_tournament_metrics(wandb_file)
-
-        if self.best_model_relative_elo > relative_elo and self.best_model_filename is not None:
-            print("Uploading the best model to wandb...")
-            self._upload_model(self.best_model_filename, aliases=[f"{self.run.id}-best"])
+        self._upload_model(str(save_file))
 
         Timer.log_totals()
 
@@ -151,6 +154,7 @@ class WandbTrainPlugin(ArenaPlugin):
             self.best_model_relative_elo = relative_elo
             self.best_model_filename = model_filename
             print("Best Relative Elo so far!")
+            self._upload_model(self.best_model_filename, aliases=[f"best-ep_{self.episode_count}-{self.run.id}"])
 
         metrics = {
             "relative_elo": relative_elo,
