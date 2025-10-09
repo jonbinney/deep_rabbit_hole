@@ -3,14 +3,16 @@ import copy
 import multiprocessing as mp
 import sys
 import time
+from dataclasses import asdict
 from typing import Optional
 
-from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
+from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroBenchmarkOverrideParams, AlphaZeroParams
 from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
 from agents.core.agent import AgentRegistry
 from metrics import Metrics
 from plugins.wandb_train import WandbParams, WandbTrainPlugin
 from utils import Timer, parse_subargs, set_deterministic
+from utils.subargs import override_subargs
 
 
 def train_alphazero(
@@ -118,14 +120,19 @@ def main(args):
     if args.wandb is None:
         wandb_train_plugin = None
     else:
-        if args.wandb == "":
-            wandb_params = WandbParams()
-        else:
-            wandb_params = parse_subargs(args.wandb, WandbParams)
-            assert isinstance(wandb_params, WandbParams)
+        wandb_params = parse_subargs(args.wandb, WandbParams)
+        assert isinstance(wandb_params, WandbParams)
 
         metrics = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps)
         agent_encoded_name = "alphazero:" + args.params
+
+        if args.benchmarks_params:
+            benchmarks_params = parse_subargs(args.benchmarks_params, AlphaZeroBenchmarkOverrideParams)
+            assert isinstance(benchmarks_params, AlphaZeroBenchmarkOverrideParams)
+            override_args = {k: v for k, v in asdict(benchmarks_params).items() if v is not None}
+
+            agent_encoded_name = "alphazero:" + override_subargs(args.params, override_args)
+
         wandb_train_plugin = WandbTrainPlugin(
             wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, metrics
         )
@@ -191,6 +198,7 @@ if __name__ == "__main__":
         default=1,
         help="Every how many epochs to compute the benchmark",
     )
+    parser.add_argument("--benchmarks_params", nargs="?", const="", default=None, type=str)
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
         "--per-process-evaluation",
