@@ -17,7 +17,9 @@ from utils import get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
+from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.resnet_network import ResnetNetwork
 from agents.core import TrainableAgent
 
 
@@ -148,6 +150,15 @@ class AlphaZeroParams(SubargsBase):
     # The options are "mlp" or "resnet"
     nn_type: str = "mlp"
 
+    # Number of residual blocks in the resnet. Only used if nn_type is set to "resnet"
+    # If set to None, then 2*(dimension of combined grid)+2 is used. Alphazero used a value of 20 for chess
+    # and 40 for Go, so we also choose something a little more than double the input dimension.
+    nn_resnet_num_blocks: Optional[int] = None
+
+    # Number of channels used internally between residual blocks. Only used if nn_type is set to "resnet"
+    # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
+    nn_resnet_num_channels: int = 32
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -189,8 +200,21 @@ class AlphaZeroAgent(TrainableAgent):
         self.visited_states = set()
 
         self.action_encoder = ActionEncoder(board_size)
+
+        if params.nn_type == "mlp":
+            self.network = MLPNetwork(self.action_encoder, self.device)
+        elif params.nn_type == "resnet":
+            self.network = ResnetNetwork(
+                self.action_encoder,
+                self.device,
+                num_blocks=params.nn_resnet_num_blocks,
+                num_channels=params.nn_resnet_num_channels,
+            )
+        else:
+            raise ValueError(f"Unknown network type: {params.nn_type}")
+
         if evaluator is None:
-            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type)
+            self.evaluator = NNEvaluator(self.action_encoder, self.device, self.network)
         else:
             self.evaluator = evaluator
 
@@ -348,7 +372,7 @@ class AlphaZeroAgent(TrainableAgent):
 
     def get_model_state(self) -> dict:
         # Save the neural network state dict
-        nn = self.evaluator.network
+        nn = self.network
         model_state = {
             "network_state_dict": nn.state_dict(),
             "episode_count": self.episode_count,
@@ -371,7 +395,7 @@ class AlphaZeroAgent(TrainableAgent):
         return path
 
     def set_model_state(self, model_state: dict):
-        self.evaluator.network.load_state_dict(model_state["network_state_dict"])
+        self.network.load_state_dict(model_state["network_state_dict"])
 
     def load_model(self, path):
         model_state = torch.load(path, map_location=my_device())
