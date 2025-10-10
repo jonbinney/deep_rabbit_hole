@@ -193,11 +193,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
-        "--per-process-evaluation",
-        action="store_true",
-        help="Deprecated; Worker processes always do their own NN evaluations.",
-    )
-    parser.add_argument(
         "-pg",
         "--parallel_games",
         type=int,
@@ -205,11 +200,6 @@ if __name__ == "__main__":
         help="How many games to play in parallel per process",
     )
     args = parser.parse_args()
-
-    # Handle deprecated --per-process-evaluation argument
-    if args.per_process_evaluation is not None:
-        print("Warning: --per-process-evaluation is deprecated. Worker processes always do their own evaluation.")
-        args.per_process_evaluation = False
 
     # Handle deprecated --max-game-length argument
     if args.max_game_length is not None:

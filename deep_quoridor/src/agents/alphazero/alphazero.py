@@ -17,9 +17,7 @@ from utils import get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
-from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.nn_evaluator import NNEvaluator
-from agents.alphazero.resnet_network import ResnetNetwork
 from agents.core import TrainableAgent
 
 
@@ -201,20 +199,15 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.action_encoder = ActionEncoder(board_size)
 
-        if params.nn_type == "mlp":
-            self.network = MLPNetwork(self.action_encoder, self.device)
-        elif params.nn_type == "resnet":
-            self.network = ResnetNetwork(
-                self.action_encoder,
-                self.device,
-                num_blocks=params.nn_resnet_num_blocks,
-                num_channels=params.nn_resnet_num_channels,
-            )
-        else:
-            raise ValueError(f"Unknown network type: {params.nn_type}")
-
         if evaluator is None:
-            self.evaluator = NNEvaluator(self.action_encoder, self.device, self.network)
+            if params.nn_type == "mlp":
+                nn_kwargs = {}
+            elif params.nn_type == "resnet":
+                nn_kwargs = {"num_blocks": params.nn_resnet_num_blocks, "num_channels": params.nn_resnet_num_channels}
+            else:
+                raise ValueError(f"Invalid value for parameter nn_type: {params.nn_type}")
+
+            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type, nn_kwargs)
         else:
             self.evaluator = evaluator
 
@@ -372,7 +365,7 @@ class AlphaZeroAgent(TrainableAgent):
 
     def get_model_state(self) -> dict:
         # Save the neural network state dict
-        nn = self.network
+        nn = self.evaluator.network
         model_state = {
             "network_state_dict": nn.state_dict(),
             "episode_count": self.episode_count,
@@ -395,7 +388,7 @@ class AlphaZeroAgent(TrainableAgent):
         return path
 
     def set_model_state(self, model_state: dict):
-        self.network.load_state_dict(model_state["network_state_dict"])
+        self.evaluator.network.load_state_dict(model_state["network_state_dict"])
 
     def load_model(self, path):
         model_state = torch.load(path, map_location=my_device())

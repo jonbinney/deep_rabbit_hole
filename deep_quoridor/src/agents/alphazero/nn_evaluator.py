@@ -7,6 +7,8 @@ import torch
 import torch.nn.functional as F
 from quoridor import ActionEncoder, Player, Quoridor
 
+from agents.alphazero.mlp_network import MLPNetwork
+from agents.alphazero.resnet_network import ResnetNetwork
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -25,16 +27,20 @@ class EvaluatorStatistics:
 
 
 class NNEvaluator:
-    def __init__(
-        self,
-        action_encoder: ActionEncoder,
-        device,
-        network,
-    ):
+    def __init__(self, action_encoder: ActionEncoder, device, nn_type: str = "mlp", nn_kwargs: dict = {}):
         self.action_encoder = action_encoder
         self.device = device
 
-        self.network = network
+        if nn_type == "mlp":
+            self.network = MLPNetwork(self.action_encoder, self.device, **nn_kwargs)
+        elif nn_type == "resnet":
+            self.network = ResnetNetwork(
+                self.action_encoder,
+                self.device,
+                **nn_kwargs,
+            )
+        else:
+            raise ValueError(f"Unknown network type: {nn_type}")
 
         [self.action_mapping_original_to_rotated, self.action_mapping_rotated_to_original] = create_rotation_mapping(
             self.action_encoder.board_size
