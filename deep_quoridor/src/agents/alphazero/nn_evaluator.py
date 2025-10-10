@@ -27,19 +27,18 @@ class EvaluatorStatistics:
 
 
 class NNEvaluator:
-    def __init__(
-        self,
-        action_encoder: ActionEncoder,
-        device,
-        nn_type: str = "mlp",
-    ):
+    def __init__(self, action_encoder: ActionEncoder, device, nn_type: str = "mlp", nn_kwargs: dict = {}):
         self.action_encoder = action_encoder
         self.device = device
 
         if nn_type == "mlp":
-            self.network = MLPNetwork(self.action_encoder, self.device)
+            self.network = MLPNetwork(self.action_encoder, self.device, **nn_kwargs)
         elif nn_type == "resnet":
-            self.network = ResnetNetwork(self.action_encoder, self.device)
+            self.network = ResnetNetwork(
+                self.action_encoder,
+                self.device,
+                **nn_kwargs,
+            )
         else:
             raise ValueError(f"Unknown network type: {nn_type}")
 

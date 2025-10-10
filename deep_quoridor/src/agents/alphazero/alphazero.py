@@ -148,6 +148,15 @@ class AlphaZeroParams(SubargsBase):
     # The options are "mlp" or "resnet"
     nn_type: str = "mlp"
 
+    # Number of residual blocks in the resnet. Only used if nn_type is set to "resnet"
+    # If set to None, then 2*(dimension of combined grid)+2 is used. Alphazero used a value of 20 for chess
+    # and 40 for Go, so we also choose something a little more than double the input dimension.
+    nn_resnet_num_blocks: Optional[int] = None
+
+    # Number of channels used internally between residual blocks. Only used if nn_type is set to "resnet"
+    # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
+    nn_resnet_num_channels: int = 32
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -189,8 +198,16 @@ class AlphaZeroAgent(TrainableAgent):
         self.visited_states = set()
 
         self.action_encoder = ActionEncoder(board_size)
+
         if evaluator is None:
-            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type)
+            if params.nn_type == "mlp":
+                nn_kwargs = {}
+            elif params.nn_type == "resnet":
+                nn_kwargs = {"num_blocks": params.nn_resnet_num_blocks, "num_channels": params.nn_resnet_num_channels}
+            else:
+                raise ValueError(f"Invalid value for parameter nn_type: {params.nn_type}")
+
+            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type, nn_kwargs)
         else:
             self.evaluator = evaluator
 
