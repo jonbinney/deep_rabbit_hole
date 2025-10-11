@@ -1,7 +1,7 @@
 import shlex
 from dataclasses import dataclass, fields
 from types import UnionType
-from typing import Type, Union, get_args, get_origin
+from typing import Any, Type, Union, get_args, get_origin
 
 
 @dataclass
@@ -71,3 +71,42 @@ def parse_subargs(s: str, cls: Type[SubargsBase], separator=",", assign="=", ign
         args[k] = v
 
     return cls(**args)
+
+
+def override_subargs(s: str, override: dict[str, Any], separator=",", assign="=") -> str:
+    """
+    Overrides or appends key-value pairs in a subargument string.
+
+    Parses a string of subarguments (e.g., "a=1,b=2") and replaces the values of keys found in the `override` dictionary.
+    Keys in `override` that are not present in the input string are appended as new key-value pairs.
+    The separator and assignment characters can be customized.
+
+    Args:
+        s (str): The input subargument string containing key-value pairs.
+        override (dict[str, Any]): Dictionary of keys and values to override or append.
+        separator (str, optional): Character used to separate key-value pairs. Defaults to ",".
+        assign (str, optional): Character used to assign values to keys. Defaults to "=".
+
+    Returns:
+        str: The resulting subargument string with overrides and additions applied.
+
+    Raises:
+        ParseSubargsError: If any part of the input string does not contain the assignment character.
+    """
+    fields = []
+    unused_keys = set(override.keys())
+    for part in split_with_shlex(s, separator):
+        if assign not in part:
+            raise ParseSubargsError(f"The subargument '{part}' needs to have an assignment using '{assign}'")
+
+        k, v = part.split(assign)
+        if k in override:
+            v = str(override[k])
+            unused_keys.remove(k)
+
+        fields.append(f"{k}{assign}{v}")
+
+    for key in unused_keys:
+        fields.append(f"{key}{assign}{override[key]}")
+
+    return separator.join(fields)

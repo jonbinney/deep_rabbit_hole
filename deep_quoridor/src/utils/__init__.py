@@ -1,5 +1,6 @@
 __all__ = [
     "my_device",
+    "override_subargs",
     "parse_subargs",
     "resolve_path",
     "set_deterministic",
@@ -20,5 +21,5 @@ from utils.misc import (
     set_deterministic,
     yargs,
 )
-from utils.subargs import SubargsBase, parse_subargs
+from utils.subargs import SubargsBase, override_subargs, parse_subargs
 from utils.timer import Timer, timer

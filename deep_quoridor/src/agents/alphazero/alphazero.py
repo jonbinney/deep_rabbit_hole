@@ -176,6 +176,15 @@ class AlphaZeroParams(SubargsBase):
         }
 
 
+@dataclass
+class AlphaZeroBenchmarkOverrideParams(SubargsBase):
+    temperature: Optional[float] = None
+    drop_t_on_step: Optional[int] = None
+    mcts_n: Optional[int] = None
+    mcts_k: Optional[int] = None
+    mcts_ucb_c: Optional[float] = None
+
+
 class AlphaZeroAgent(TrainableAgent):
     def __init__(
         self,
@@ -189,7 +198,6 @@ class AlphaZeroAgent(TrainableAgent):
         **kwargs,
     ):
         super().__init__(**kwargs)
-
         self.params = params
         self.board_size = board_size
         self.max_walls = max_walls
