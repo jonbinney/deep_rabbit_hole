@@ -4,13 +4,15 @@ import os
 import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Optional
 
 import wandb
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
+from cliff_tournament import CliffTournament
 from metrics import Metrics
 from utils import Timer, resolve_path
-from utils.subargs import SubargsBase
+from utils.subargs import SubargsBase, override_subargs
 
 
 @dataclass
@@ -38,7 +40,14 @@ class WandbParams(SubargsBase):
 
 
 class WandbTrainPlugin(ArenaPlugin):
-    def __init__(self, params: WandbParams, total_episodes: int, agent_encoded_name: str, metrics: Metrics):
+    def __init__(
+        self,
+        params: WandbParams,
+        total_episodes: int,
+        agent_encoded_name: str,
+        metrics: Metrics,
+        cliff_tournament: Optional[CliffTournament] = None,
+    ):
         self.params = params
         self.total_episodes = total_episodes
         self.episode_count = 0
@@ -48,6 +57,7 @@ class WandbTrainPlugin(ArenaPlugin):
         # Notice that the best model won't be uploaded if it's not better than the initialization.
         self.best_model_relative_elo = -800
         self.metrics = metrics
+        self.cliff_tournament = cliff_tournament
 
     def _initialize(self, game):
         assert self.agent
@@ -143,9 +153,13 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb.finish()
 
     def compute_tournament_metrics(self, model_filename: str) -> int:
+        agent_name = self.agent_encoded_name.split(":")[0]
+        override_args = {"model_filename": model_filename, "nick": f"{agent_name}_{self.episode_count}"}
+        agent_encoded_name = override_subargs(self.agent_encoded_name, override_args)
+
         Timer.start("benchmark")
-        _, elo_table, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = (
-            self.metrics.compute(self.agent_encoded_name + f",model_filename={model_filename}")
+        _, _, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = (
+            self.metrics.compute(agent_encoded_name)
         )
         Timer.finish("benchmark", self.episode_count)
 
@@ -163,6 +177,23 @@ class WandbTrainPlugin(ArenaPlugin):
             "dumb_score": dumb_score,
             "Episode": self.episode_count,  # x axis
         }
+
+        if self.cliff_tournament is not None:
+            Timer.start("benchmark-cliff")
+            elos = self.cliff_tournament.add_agent_and_compute(agent_encoded_name)
+            Timer.finish("benchmark-cliff", self.episode_count)
+            elos_by_agent_episode = {}
+            for nick, elo in elos.items():
+                metrics[f"cliff_{nick}"] = int(elo)
+                episode = int(nick.split("_")[-1])
+                elos_by_agent_episode[episode] = int(elo)
+
+            print(elos_by_agent_episode)
+            # Sort elos_by_agent_episode by elo descending
+            sorted_elos = sorted(elos_by_agent_episode.items(), key=lambda x: x[1], reverse=True)
+            print(sorted_elos)
+            for i, ep in sorted_elos:
+                metrics[f"cliff_place_{i + 1}"] = ep
 
         for opponent in p1_win_percentages:
             metrics[f"p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
