@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Optional
 
 import wandb
+from agent_evolution_tournament import AgentEvolutionTournament
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
-from cliff_tournament import CliffTournament
 from metrics import Metrics
 from utils import Timer, resolve_path
 from utils.subargs import SubargsBase, override_subargs
@@ -46,7 +46,7 @@ class WandbTrainPlugin(ArenaPlugin):
         total_episodes: int,
         agent_encoded_name: str,
         metrics: Metrics,
-        cliff_tournament: Optional[CliffTournament] = None,
+        agent_evolution_tournament: Optional[AgentEvolutionTournament] = None,
     ):
         self.params = params
         self.total_episodes = total_episodes
@@ -57,7 +57,7 @@ class WandbTrainPlugin(ArenaPlugin):
         # Notice that the best model won't be uploaded if it's not better than the initialization.
         self.best_model_relative_elo = -800
         self.metrics = metrics
-        self.cliff_tournament = cliff_tournament
+        self.agent_evolution_tournament = agent_evolution_tournament
 
     def _initialize(self, game):
         assert self.agent
@@ -178,22 +178,19 @@ class WandbTrainPlugin(ArenaPlugin):
             "Episode": self.episode_count,  # x axis
         }
 
-        if self.cliff_tournament is not None:
-            Timer.start("benchmark-cliff")
-            elos = self.cliff_tournament.add_agent_and_compute(agent_encoded_name)
-            Timer.finish("benchmark-cliff", self.episode_count)
+        if self.agent_evolution_tournament is not None:
+            Timer.start("benchmark-agent-evolution")
+            elos = self.agent_evolution_tournament.add_agent_and_compute(agent_encoded_name)
+            Timer.finish("benchmark-agent-evolution", self.episode_count)
             elos_by_agent_episode = {}
             for nick, elo in elos.items():
-                metrics[f"cliff_{nick}"] = int(elo)
+                metrics[f"agent_evolution_{nick}"] = int(elo)
                 episode = int(nick.split("_")[-1])
                 elos_by_agent_episode[episode] = int(elo)
 
-            print(elos_by_agent_episode)
-            # Sort elos_by_agent_episode by elo descending
             sorted_elos = sorted(elos_by_agent_episode.items(), key=lambda x: x[1], reverse=True)
-            print(sorted_elos)
-            for i, ep in sorted_elos:
-                metrics[f"cliff_place_{i + 1}"] = ep
+            for i, (ep, _) in enumerate(sorted_elos):
+                metrics[f"agent_evolution_place_{i + 1}"] = ep
 
         for opponent in p1_win_percentages:
             metrics[f"p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]

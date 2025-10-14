@@ -8,7 +8,7 @@ from utils.subargs import SubargsBase
 
 
 @dataclass
-class CliffTournamentParams(SubargsBase):
+class AgentEvolutionTournamentParams(SubargsBase):
     # How many agents are kept in the tournament
     top_n: int = 5
 
@@ -16,9 +16,21 @@ class CliffTournamentParams(SubargsBase):
     t: int = 10
 
 
-class CliffTournament:
+class AgentEvolutionTournament:
+    """
+    Manages an evolutionary tournament for agents in the Quoridor game environment.
+
+    This class facilitates the addition of new agents, evaluates their performance against existing agents,
+    and maintains a leaderboard using Elo ratings. Agents compete in an arena, and only the top N agents
+    (as specified by parameters) are retained in the tournament.
+    """
+
     def __init__(
-        self, board_size: int, max_walls: int, max_steps=200, params: CliffTournamentParams = CliffTournamentParams()
+        self,
+        board_size: int,
+        max_walls: int,
+        max_steps=200,
+        params: AgentEvolutionTournamentParams = AgentEvolutionTournamentParams(),
     ):
         self.agents = {}
         self.elos = {}
