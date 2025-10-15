@@ -655,7 +655,7 @@ class AlphaZeroAgent(TrainableAgent):
             # Store training data if in training mode
             if self.params.training_mode:
                 # Convert visit counts to policy target (normalized)
-                policy_target = self.action_encoder.get_action_mask_template()
+                policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
                 for child in root_children:
                     action_index = self.action_encoder.action_to_index(child.action_taken)
                     policy_target[action_index] = child.visit_count / visit_counts_sum
