@@ -93,7 +93,7 @@ def train_alphazero(
             print("Not enough samples - skipping training")
 
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
-        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0 and epoch < args.epochs - 1:
+        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
             wandb_train_plugin.compute_tournament_metrics(str(current_filename))
