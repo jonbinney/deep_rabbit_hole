@@ -1,9 +1,16 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from quoridor import ActionEncoder, Player, Quoridor
+
+
+@dataclass
+class ResnetConfig:
+    num_blocks: Optional[int] = None
+    num_channels: int = 32
 
 
 class ResidualBlock(nn.Module):
@@ -26,7 +33,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResnetNetwork(nn.Module):
-    def __init__(self, action_encoder: ActionEncoder, device, num_blocks: Optional[int] = None, num_channels: int = 32):
+    def __init__(self, action_encoder: ActionEncoder, device, config: ResnetConfig):
         """
         ResNet-based network following AlphaZero architecture.
 
@@ -42,23 +49,23 @@ class ResnetNetwork(nn.Module):
 
         self.action_encoder = action_encoder
         self.device = device
-        self.num_channels = num_channels
+        num_channels = config.num_channels
+        num_blocks = config.num_blocks
 
         # Calculate input dimensions: MxMx5 where M = board_size * 2 + 3
         self.input_size = action_encoder.board_size * 2 + 3
 
-        self.num_blocks = num_blocks
-        if self.num_blocks is None:
+        if num_blocks is None:
             # Alphazero used 20 blocks for chess and 40 for Go, which seems to be a bit more
             # than double the board dimension.
-            self.num_blocks = self.input_size * 2 + 2
+            num_blocks = self.input_size * 2 + 2
 
         # Initial convolutional block
         self.conv_input = nn.Conv2d(5, num_channels, kernel_size=3, padding=1)
         self.bn_input = nn.BatchNorm2d(num_channels)
 
         # Residual tower
-        self.residual_blocks = nn.ModuleList([ResidualBlock(num_channels) for _ in range(self.num_blocks)])
+        self.residual_blocks = nn.ModuleList([ResidualBlock(num_channels) for _ in range(num_blocks)])
 
         # Policy head
         self.policy_conv = nn.Conv2d(num_channels, 2, kernel_size=1)

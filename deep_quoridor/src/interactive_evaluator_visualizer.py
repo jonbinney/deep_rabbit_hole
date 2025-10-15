@@ -10,8 +10,7 @@ import re
 from typing import Any, Optional
 
 import matplotlib.pyplot as plt
-import torch
-from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core.agent import ActionLog
 from mpl_visualizer import _draw_action_log, _draw_board_base
 from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallOrientation
@@ -323,13 +322,16 @@ if __name__ == "__main__":
             board_size = int(match.group(1))
             max_walls = int(match.group(2))
 
+        evaluator = NNEvaluator.from_model_file(args.model, my_device())
+    else:
+        # We just use the default NN config, but in the future we may be interested in having
+        # parameters to choose the NN.
+        evaluator = NNEvaluator(ActionEncoder(board_size), my_device(), NNConfig())
+
     game = Quoridor(Board(board_size=board_size, max_walls=max_walls))
-    evaluator = NNEvaluator(ActionEncoder(board_size), my_device())
-
-    if args.model:
-        model_state = torch.load(args.model, map_location=my_device())
-        evaluator.network.load_state_dict(model_state["network_state_dict"])
-
     visualizer = create_interactive_visualizer(
-        initial_game=game, evaluator=evaluator, figsize=(10, 10), title="Interactive Evaluator Visualizer"
+        initial_game=game,
+        evaluator=evaluator,
+        figsize=(10, 10),
+        title="Interactive Evaluator Visualizer",
     )
