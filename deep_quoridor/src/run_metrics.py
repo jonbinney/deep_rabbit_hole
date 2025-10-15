@@ -44,8 +44,10 @@ if __name__ == "__main__":
         default=200,
         help="Max number of turns before game is called a tie (pass -1 for no limit)",
     )
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of worker processes")
+
     args = parser.parse_args()
-    m = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps)
+    m = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps, args.num_workers)
     table = PrettyTable()
     table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score"]
 

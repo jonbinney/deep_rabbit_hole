@@ -16,9 +16,10 @@ class Metrics:
         self,
         board_size: int,
         max_walls: int,
-        benchmarks: list[str | Agent] = [],
+        benchmarks: list[str] = [],
         benchmarks_t: int = 10,
         max_steps=200,
+        num_workers=0,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
@@ -26,6 +27,7 @@ class Metrics:
         self.benchmarks = benchmarks
         self.benchmarks_t = benchmarks_t
         self.max_steps = max_steps
+        self.num_workers = num_workers
 
     def _compute_win_percentages(self, results: list[GameResult], agent_name: str):
         played = 0
@@ -102,7 +104,7 @@ class Metrics:
         # Bump if there's any change in the scoring
         VERSION = 1
 
-        players: list[str | Agent] = (
+        players: list[str] = (
             [
                 "greedy",
                 "greedy:p_random=0.1,nick=greedy-01",
@@ -117,20 +119,18 @@ class Metrics:
         )
         arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, renderers=[MatchResultsRenderer()])
 
-        agent = AgentRegistry.create_from_encoded_name(
-            agent_encoded_name,
-            arena.game,
-            remove_training_args=True,
-            keep_args={"model_filename"},
-        )
+        play_encoded_name = AgentRegistry.training_encoded_name_to_playing_encoded_name(agent_encoded_name)
+        agent = AgentRegistry.create_from_encoded_name(play_encoded_name, arena.game)
 
         # We store the elos of the opponents playing against each other so we don't have to play those matches
         # every time
         if not self.stored_elos:
-            results = arena._play_games(players, self.benchmarks_t, PlayMode.ALL_VS_ALL)
+            results = arena._play_games(players, self.benchmarks_t, PlayMode.ALL_VS_ALL, num_workers=self.num_workers)
             self.stored_elos = compute_elo(results)
 
-        results = arena._play_games([agent] + players, self.benchmarks_t, PlayMode.FIRST_VS_ALL)
+        results = arena._play_games(
+            [play_encoded_name] + players, self.benchmarks_t, PlayMode.FIRST_VS_ALL, num_workers=self.num_workers
+        )
 
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())

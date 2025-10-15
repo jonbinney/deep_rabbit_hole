@@ -1,3 +1,4 @@
+import concurrent.futures
 import random
 import time
 from enum import Enum
@@ -10,6 +11,46 @@ from arena_utils import ArenaPlugin, CompositeArenaPlugin, GameResult, MoveInfo
 from quoridor_env import env
 from renderers import PygameRenderer
 from utils.misc import get_opponent_player_id
+
+# When running multi process Arena, this global variable will have an instance of ArenaMultiprocessWorker.
+# We can't keep this data inside of Arena because when sending the job to the subprocess, the Arena gets pickled and unpickled
+# and then any changes would be lost.
+_WORKER = None
+
+
+class ArenaMultiprocessWorker:
+    """
+    Just a container to keep the data that we need for multi-process arena:
+    - arena: where the game is played
+    - agents: a lazy dict that maps the player encoded name to the agent
+    """
+
+    def __init__(self, arena):
+        self.arena = arena
+        self.agents = {}
+
+    def play(self, args):
+        p1, p2, game_id = args
+        if p1 not in self.agents:
+            self.agents[p1] = AgentRegistry.create_from_encoded_name(p1, self.arena.game)
+        agent1 = self.agents[p1]
+
+        if p2 not in self.agents:
+            self.agents[p2] = AgentRegistry.create_from_encoded_name(p2, self.arena.game)
+        agent2 = self.agents[p2]
+
+        return self.arena._play_game(agent1, agent2, game_id)
+
+
+def init_worker(arena):
+    global _WORKER
+    _WORKER = ArenaMultiprocessWorker(arena)
+
+
+def run_game(args):
+    global _WORKER
+    assert isinstance(_WORKER, ArenaMultiprocessWorker)
+    return _WORKER.play(args)
 
 
 # Add after imports
@@ -148,53 +189,59 @@ class Arena:
         self.game.close()
         return result
 
-    # Replace the existing _play_games method
-    def _play_games(self, players: list[str | Agent], times: int, mode: PlayMode) -> list[GameResult]:
-        agents = []
-        for p in players:
-            if isinstance(p, Agent):
-                agents.append(p)
-            else:
-                agents.append(AgentRegistry.create_from_encoded_name(p, self.game))
+    def _list_of_games_to_play(self, players: list[str], times: int, mode: PlayMode) -> list[tuple[str, str, str]]:
+        match_id = 1
+        games_to_play = []
 
         if mode == PlayMode.ALL_VS_ALL:
-            total_games = len(agents) * (len(agents) - 1) * times // 2
+            for i in range(len(players)):
+                for j in range(i + 1, len(players)):
+                    for t in range(times):
+                        if not self.swap_players or t % 2 == 0:
+                            games_to_play.append((players[i], players[j], f"game_{match_id:04d}"))
+                        else:
+                            games_to_play.append((players[j], players[i], f"game_{match_id:04d}"))
+                        match_id += 1
+
         else:  # FIRST_VS_RANDOM or FIRST_VS_ALL mode
-            total_games = (len(agents) - 1) * times
+            first_agent = players[0]
+            remaining_agents = players[1:]
 
-        self.plugins.start_arena(self.game, total_games=total_games)
+            for opp in remaining_agents:
+                for _ in range(times):
+                    opponent = random.choice(remaining_agents) if mode == PlayMode.FIRST_VS_RANDOM else opp
+                    if not self.swap_players or match_id % 2 == 0:
+                        games_to_play.append((first_agent, opponent, f"game_{match_id:04d}"))
+                    else:
+                        games_to_play.append((opponent, first_agent, f"game_{match_id:04d}"))
 
-        match_id = 1
+                    match_id += 1
+
+        return games_to_play
+
+    def _play_games(self, players: list[str], times: int, mode: PlayMode, num_workers: int = 0) -> list[GameResult]:
+        games_to_play = self._list_of_games_to_play(players, times, mode)
+        self.plugins.start_arena(self.game, total_games=len(games_to_play))
+
         results = []
 
         try:
-            if mode == PlayMode.ALL_VS_ALL:
-                for i in range(len(agents)):
-                    for j in range(i + 1, len(agents)):
-                        for t in range(times):
-                            agent_1, agent_2 = (
-                                (agents[i], agents[j])
-                                if not self.swap_players or t % 2 == 0
-                                else (agents[j], agents[i])
-                            )
-                            result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
-                            results.append(result)
-                            match_id += 1
-            else:  # FIRST_VS_RANDOM or FIRST_VS_ALL mode
-                first_agent = agents[0]
-                remaining_agents = agents[1:]
+            if num_workers == 0:
+                # play in this process
+                agents = {}
+                for p in players:
+                    agents[p] = AgentRegistry.create_from_encoded_name(p, self.game)
 
-                for opp in remaining_agents:
-                    for _ in range(times):
-                        opponent = random.choice(remaining_agents) if mode == PlayMode.FIRST_VS_RANDOM else opp
-                        agent_1, agent_2 = (
-                            (first_agent, opponent)
-                            if not self.swap_players or match_id % 2 == 0
-                            else (opponent, first_agent)
-                        )
-                        result = self._play_game(agent_1, agent_2, f"game_{match_id:04d}")
+                for p1, p2, game_id in games_to_play:
+                    result = self._play_game(agents[p1], agents[p2], game_id)
+                    results.append(result)
+            else:
+                # Multi process play
+                with concurrent.futures.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=init_worker, initargs=(self,)
+                ) as executor:
+                    for _, result in zip(games_to_play, executor.map(run_game, games_to_play)):
                         results.append(result)
-                        match_id += 1
 
         except KeyboardInterrupt:
             print("!!! Interrupted by user. Closing the arena before exit.")
@@ -232,12 +279,13 @@ class Arena:
 
         self.plugins.end_arena(self.game, results)
 
-    def play_games(self, players: list[str | Agent], times: int, mode: PlayMode = PlayMode.ALL_VS_ALL):
+    def play_games(self, players: list[str], times: int, mode: PlayMode = PlayMode.ALL_VS_ALL, num_workers: int = 0):
         pygame_renderer = next((r for r in self.renderers if isinstance(r, PygameRenderer)), None)
 
         if pygame_renderer is None:
-            self._play_games(players, times, mode)
+            self._play_games(players, times, mode, num_workers=num_workers)
         else:
+            assert num_workers == 0, "Can't use PyGame with multiple workers"
             # When using PygameRenderer, pygame needs to run in the main thread (at least on MacOS),
             # so we need to start a new thread for the game loop.
             thread = Thread(target=self._play_games, args=(players, times, mode))
