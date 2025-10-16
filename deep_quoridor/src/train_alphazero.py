@@ -6,6 +6,7 @@ import time
 from dataclasses import asdict
 from typing import Optional
 
+from agent_evolution_tournament import AgentEvolutionTournament, AgentEvolutionTournamentParams
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroBenchmarkOverrideParams, AlphaZeroParams
 from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
 from agents.core.agent import AgentRegistry
@@ -133,8 +134,24 @@ def main(args):
 
             agent_encoded_name = "alphazero:" + override_subargs(args.params, override_args)
 
+        if args.agent_evolution is not None:
+            agent_evolution_params = parse_subargs(args.agent_evolution, AgentEvolutionTournamentParams)
+            assert isinstance(agent_evolution_params, AgentEvolutionTournamentParams)
+            agent_evolution_tournament = AgentEvolutionTournament(
+                args.board_size,
+                args.max_walls,
+                args.max_steps,
+                agent_evolution_params,
+            )
+        else:
+            agent_evolution_tournament = None
+
         wandb_train_plugin = WandbTrainPlugin(
-            wandb_params, args.epochs * args.games_per_epoch, agent_encoded_name, metrics
+            wandb_params,
+            args.epochs * args.games_per_epoch,
+            agent_encoded_name,
+            metrics,
+            agent_evolution_tournament,
         )
 
     t0 = time.time()
@@ -206,6 +223,15 @@ if __name__ == "__main__":
         type=int,
         default=32,
         help="How many games to play in parallel per process",
+    )
+    parser.add_argument(
+        "-a",
+        "--agent_evolution",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="Parameters for the Agent Evolution Tournament",
     )
     args = parser.parse_args()
 
