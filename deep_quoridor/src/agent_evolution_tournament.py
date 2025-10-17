@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from agents.core.agent import Agent, AgentRegistry
+from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo
@@ -38,21 +38,19 @@ class AgentEvolutionTournament:
         self.arena = Arena(board_size, max_walls, max_steps=max_steps, renderers=[MatchResultsRenderer()])
 
     def add_agent_and_compute(self, agent_encoded_name: str):
-        agent = AgentRegistry.create_from_encoded_name(
-            agent_encoded_name,
-            self.arena.game,
-            remove_training_args=True,
-            keep_args={"model_filename"},
-        )
+        play_encoded_name = AgentRegistry.training_encoded_name_to_playing_encoded_name(agent_encoded_name)
 
-        agents_playing: list[str | Agent] = [agent]
-        agents_playing.extend(list(self.agents.values()))
+        agents_playing = [play_encoded_name] + list(self.agents.values())
 
         results = self.arena._play_games(agents_playing, self.params.t, PlayMode.FIRST_VS_ALL)
         self.elos = compute_elo(results, initial_elos=self.elos)
-        self.agents[agent.name()] = agent
+
+        nick = AgentRegistry.nick_from_encoded_name(play_encoded_name)
+        self.agents[nick] = play_encoded_name
+
         if len(self.elos) > self.params.top_n:
-            lowest_agent = min(self.elos, key=self.elos.get)
+            lowest_agent = min(self.elos, key=lambda k: self.elos[k])
+
             self.elos.pop(lowest_agent)
             self.agents.pop(lowest_agent)
 
