@@ -83,7 +83,7 @@ def override_subargs(s: str, override: dict[str, Any], separator=",", assign="="
 
     Args:
         s (str): The input subargument string containing key-value pairs.
-        override (dict[str, Any]): Dictionary of keys and values to override or append.
+        override (dict[str, Any]): Dictionary of keys and values to override, append or remove (if the value is None)
         separator (str, optional): Character used to separate key-value pairs. Defaults to ",".
         assign (str, optional): Character used to assign values to keys. Defaults to "=".
 
@@ -94,13 +94,15 @@ def override_subargs(s: str, override: dict[str, Any], separator=",", assign="="
         ParseSubargsError: If any part of the input string does not contain the assignment character.
     """
     fields = []
-    unused_keys = set(override.keys())
+    unused_keys = set([k for k, v in override.items() if v is not None])
     for part in split_with_shlex(s, separator):
         if assign not in part:
             raise ParseSubargsError(f"The subargument '{part}' needs to have an assignment using '{assign}'")
 
         k, v = part.split(assign)
         if k in override:
+            if override[k] is None:
+                continue
             v = str(override[k])
             unused_keys.remove(k)
 

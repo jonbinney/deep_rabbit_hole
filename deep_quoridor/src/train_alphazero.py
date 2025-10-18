@@ -94,7 +94,7 @@ def train_alphazero(
             print("Not enough samples - skipping training")
 
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
-        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0 and epoch < args.epochs - 1:
+        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0:
             # Save the model where the plugin wants it and use the plugin to compute metrics.
             wandb_train_plugin.episode_count = game_num
             wandb_train_plugin.compute_tournament_metrics(str(current_filename))
@@ -124,7 +124,9 @@ def main(args):
         wandb_params = parse_subargs(args.wandb, WandbParams)
         assert isinstance(wandb_params, WandbParams)
 
-        metrics = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps)
+        metrics = Metrics(
+            args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps, args.num_workers
+        )
         agent_encoded_name = "alphazero:" + args.params
 
         if args.benchmarks_params:
@@ -178,7 +180,7 @@ if __name__ == "__main__":
         help="Number of self play games to do between each model training",
     )
     parser.add_argument("-e", "--epochs", type=int, default=2, help="Number of training epochs")
-    parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes")
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of worker processes")
     parser.add_argument("--max-game-length", type=int, help="Deprecated; use --max-steps instead")
     parser.add_argument(
         "--max-steps",

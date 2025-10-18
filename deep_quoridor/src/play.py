@@ -77,6 +77,7 @@ if __name__ == "__main__":
         default=False,
         help="Use cProfile to profile the game.",
     )
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of worker processes")
 
     args_dict = yargs(parser, "yargs/play")
 
@@ -107,7 +108,7 @@ if __name__ == "__main__":
         arena = Arena(**arena_args)
 
         def make_call():
-            arena.play_games(players, args.times)
+            arena.play_games(players, args.times, num_workers=args.num_workers)
 
         if args.profile:
             import cProfile

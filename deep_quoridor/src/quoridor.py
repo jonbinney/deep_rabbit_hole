@@ -104,6 +104,9 @@ class ActionEncoder:
 
         return action
 
+    def __reduce__(self):
+        return (self.__class__, (self.board_size,))
+
 
 def array_to_action(action_array: np.ndarray) -> Action:
     """
