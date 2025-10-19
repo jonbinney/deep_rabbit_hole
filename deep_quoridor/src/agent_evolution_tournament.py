@@ -29,12 +29,14 @@ class AgentEvolutionTournament:
         self,
         board_size: int,
         max_walls: int,
-        max_steps=200,
+        max_steps: int = 200,
+        num_workers: int = 0,
         params: AgentEvolutionTournamentParams = AgentEvolutionTournamentParams(),
     ):
         self.agents = {}
         self.elos = {}
         self.params = params
+        self.num_workers = num_workers
         self.arena = Arena(board_size, max_walls, max_steps=max_steps, renderers=[MatchResultsRenderer()])
 
     def add_agent_and_compute(self, agent_encoded_name: str):
@@ -42,8 +44,9 @@ class AgentEvolutionTournament:
 
         agents_playing = [play_encoded_name] + list(self.agents.values())
 
-        results = self.arena._play_games(agents_playing, self.params.t, PlayMode.FIRST_VS_ALL)
+        results = self.arena._play_games(agents_playing, self.params.t, PlayMode.FIRST_VS_ALL, self.num_workers)
         self.elos = compute_elo(results, initial_elos=self.elos)
+        all_elos = self.elos.copy()
 
         nick = AgentRegistry.nick_from_encoded_name(play_encoded_name)
         self.agents[nick] = play_encoded_name
@@ -54,4 +57,4 @@ class AgentEvolutionTournament:
             self.elos.pop(lowest_agent)
             self.agents.pop(lowest_agent)
 
-        return self.elos
+        return all_elos

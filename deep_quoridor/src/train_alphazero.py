@@ -143,6 +143,7 @@ def main(args):
                 args.board_size,
                 args.max_walls,
                 args.max_steps,
+                args.num_workers,
                 agent_evolution_params,
             )
         else:
