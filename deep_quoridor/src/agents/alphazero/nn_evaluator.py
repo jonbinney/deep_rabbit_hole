@@ -323,7 +323,8 @@ class NNEvaluator:
         duty_cycle = np.nan
         if last_evaluation_end_time is not None and first_evaluation_start_time is not None:
             total_runtime = last_evaluation_end_time - first_evaluation_start_time
-            duty_cycle = total_time_spent_evaluating / total_runtime
+            if total_runtime > 0.0:
+                duty_cycle = total_time_spent_evaluating / total_runtime
 
         average_evaluation_time = np.nan
         cache_hit_rate = np.nan
