@@ -24,7 +24,7 @@ class EvaluatorStatistics:
     duty_cycle: float
     average_evaluation_time: float
     num_evaluations: int
-    num_cache_hits: int
+    cache_hit_rate: float
 
 
 @dataclass
@@ -333,5 +333,5 @@ class NNEvaluator:
             duty_cycle=duty_cycle,
             average_evaluation_time=average_evaluation_time,
             num_evaluations=len(self.evaluation_infos),
-            num_cache_hits=num_cache_hits,
+            cache_hit_rate=num_cache_hits / len(self.evaluation_infos),
         )
