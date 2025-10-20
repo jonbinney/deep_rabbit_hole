@@ -326,12 +326,14 @@ class NNEvaluator:
             duty_cycle = total_time_spent_evaluating / total_runtime
 
         average_evaluation_time = np.nan
+        cache_hit_rate = np.nan
         if len(self.evaluation_infos) > 0:
             average_evaluation_time = total_time_spent_evaluating / len(self.evaluation_infos)
+            cache_hit_rate = num_cache_hits / len(self.evaluation_infos)
 
         return EvaluatorStatistics(
             duty_cycle=duty_cycle,
             average_evaluation_time=average_evaluation_time,
             num_evaluations=len(self.evaluation_infos),
-            cache_hit_rate=num_cache_hits / len(self.evaluation_infos),
+            cache_hit_rate=cache_hit_rate,
         )
