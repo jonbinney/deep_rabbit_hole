@@ -52,10 +52,11 @@ if __name__ == "__main__":
     table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score"]
 
     for player in args.players:
-        print(f"Computing metrics for {player}")
+        player_nick = AgentRegistry.nick_from_encoded_name(player)
+        print(f"=== Computing metrics for {player_nick} ===")
         _, _, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = m.compute(
             player
         )
-        table.add_row([player, absolute_elo, relative_elo, win_perc, dumb_score])
+        table.add_row([player_nick, absolute_elo, relative_elo, f"{win_perc:.2f}", dumb_score])
 
     print(table)

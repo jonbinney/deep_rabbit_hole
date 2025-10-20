@@ -288,7 +288,6 @@ class AlphaZeroAgent(TrainableAgent):
 
         api = wandb.Api()
         path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
-        print(f"{self.name()} - Fetching model from wandb: {path}")
         artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
@@ -296,6 +295,8 @@ class AlphaZeroAgent(TrainableAgent):
 
         if os.path.exists(local_filename):
             return local_filename
+
+        print(f"{self.name()} - Fetching model from wandb: {path}")
 
         os.makedirs(local_filename.parent, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmpdir:
