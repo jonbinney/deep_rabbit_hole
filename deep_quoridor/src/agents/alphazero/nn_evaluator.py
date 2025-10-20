@@ -57,7 +57,7 @@ def create_network(action_encoder: ActionEncoder, device, config: NNConfig):
 
 
 class NNEvaluator:
-    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig):  # TODO default value?
+    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig):
         self.action_encoder = action_encoder
         self.device = device
         self.network = create_network(action_encoder, device, config)
