@@ -80,7 +80,7 @@ class SelfPlayManager(threading.Thread):
         for worker in workers:
             worker.join()
 
-    def get_results(self, timeout: float = 0.1) -> Optional[list[dict]]:
+    def get_results(self, timeout: float = 0.1) -> Optional[list[SelfPlayResult]]:
         """
         Get results if they are available, waiting up to timeout seconds.
 
@@ -88,7 +88,7 @@ class SelfPlayManager(threading.Thread):
             timeout: Maximum time to wait for results in seconds.
 
         Returns:
-            List of replay buffer dictionaries, or None on timeout.
+            List of results from each worker process, sorted by worker_id (or None if not all are done)
         """
         t0 = time.time()
         while len(self._results) < self.num_workers:
@@ -107,17 +107,8 @@ class SelfPlayManager(threading.Thread):
                 # Merge results into one replay buffer. We sort them to make the results deterministic.
                 replay_buffer = []
                 results = sorted(self._results, key=lambda r: r.worker_id)
-                for r in results:
-                    print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
-                    if r.evaluator_statistics is not None:
-                        print(r.evaluator_statistics)
 
-                    # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
-                    # the replay buffer results from all agents each epoch or else we'll end up discarding
-                    # some results and we'll have wasted computation by playing those games.
-                    replay_buffer.extend(r.replay_buffer)
-
-                return replay_buffer
+                return results
 
         return None
 
@@ -225,11 +216,10 @@ def run_self_play_games(
         )
         game_i += n
 
-    # TODO implement the stats for the per process evaluator
     result_queue.put(
         SelfPlayResult(
             worker_id,
             list(alphazero_agent.replay_buffer),
-            None,
+            alphazero_agent.evaluator.get_statistics(),
         )
     )
