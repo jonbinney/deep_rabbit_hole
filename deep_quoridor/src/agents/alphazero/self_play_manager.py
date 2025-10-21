@@ -7,10 +7,12 @@ from queue import Empty
 from typing import Optional
 
 import quoridor_env
+import wandb
+from plugins.wandb_train import WandbParams
 from utils import set_deterministic
+from utils.timer import Timer
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from agents.alphazero.nn_evaluator import EvaluatorStatistics
 
 
 @dataclass
@@ -24,7 +26,6 @@ class GameParams:
 class SelfPlayResult:
     worker_id: int
     replay_buffer: list[dict]
-    evaluator_statistics: Optional[EvaluatorStatistics]
 
 
 class SelfPlayManager(threading.Thread):
@@ -37,6 +38,8 @@ class SelfPlayManager(threading.Thread):
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
         num_parallel_games: int,
+        completed_episodes: int,  # So that we can log relative to global episode number
+        wandb_params: Optional[WandbParams] = None,
     ):
         self.num_workers = num_workers
         self.base_random_seed = base_random_seed
@@ -48,6 +51,8 @@ class SelfPlayManager(threading.Thread):
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
         self.num_parallel_games = num_parallel_games
+        self._completed_episodes = completed_episodes
+        self.wandb_params = wandb_params
         super().__init__()
 
     # Return an array with the number of games per worker, such that they add up to the total number of games
@@ -72,6 +77,8 @@ class SelfPlayManager(threading.Thread):
                     worker_id,
                     self._result_queue,
                     self.num_parallel_games,
+                    self._completed_episodes,
+                    self.wandb_params,
                 ),
             )
             workers.append(worker_process)
@@ -80,7 +87,7 @@ class SelfPlayManager(threading.Thread):
         for worker in workers:
             worker.join()
 
-    def get_results(self, timeout: float = 0.1) -> Optional[list[SelfPlayResult]]:
+    def get_results(self, timeout: float = 0.1) -> Optional[list[dict]]:
         """
         Get results if they are available, waiting up to timeout seconds.
 
@@ -88,7 +95,7 @@ class SelfPlayManager(threading.Thread):
             timeout: Maximum time to wait for results in seconds.
 
         Returns:
-            List of results from each worker process, sorted by worker_id (or None if not all are done)
+            List of replay buffer dictionaries, or None on timeout.
         """
         t0 = time.time()
         while len(self._results) < self.num_workers:
@@ -107,8 +114,15 @@ class SelfPlayManager(threading.Thread):
                 # Merge results into one replay buffer. We sort them to make the results deterministic.
                 replay_buffer = []
                 results = sorted(self._results, key=lambda r: r.worker_id)
+                for r in results:
+                    print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
 
-                return results
+                    # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
+                    # the replay buffer results from all agents each epoch or else we'll end up discarding
+                    # some results and we'll have wasted computation by playing those games.
+                    replay_buffer.extend(r.replay_buffer)
+
+                return replay_buffer
 
         return None
 
@@ -144,6 +158,8 @@ def run_self_play_games(
     worker_id: int,
     result_queue: mp.Queue,
     num_parallel_games: int,
+    completed_episodes: int,  # So that we can log metrics by global episode
+    wandb_params: Optional[WandbParams] = None,
 ):
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
     # their self-play moves.
@@ -152,6 +168,23 @@ def run_self_play_games(
     print(
         f"Worker {worker_id} starting, running {num_games} games ({num_parallel_games} in parallel) with random seed {random_seed}"
     )
+
+    wandb_run = None
+    if wandb_params is not None:
+        run_id = f"{wandb_params.run_id()}-worker-{worker_id}"
+        print(f"Wandb group: {wandb_params.run_id()} run: {run_id}")
+        wandb_run = wandb.init(
+            project=wandb_params.project,
+            job_type="self_play_worker",
+            group=f"{wandb_params.run_id()}",
+            # Since this ID is the same even after a worker process has
+            # been restarted, it will continue to log to the same WandB run.
+            name=run_id,
+            id=run_id,
+            resume="allow",
+        )
+
+        Timer.set_wandb_run(wandb_run)
 
     environments = [
         quoridor_env.env(
@@ -216,10 +249,15 @@ def run_self_play_games(
         )
         game_i += n
 
+        # Technically counting the episodes this way ignores games completed in other worker processes, but that seems fine.
+        Timer.log_totals(episode=completed_episodes + game_i)
+
+    if wandb_run is not None:
+        wandb_run.finish(0)
+
     result_queue.put(
         SelfPlayResult(
             worker_id,
             list(alphazero_agent.replay_buffer),
-            alphazero_agent.evaluator.get_statistics(),
         )
     )
