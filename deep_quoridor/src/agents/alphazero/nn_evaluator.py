@@ -23,16 +23,20 @@ class EvaluatorStatistics:
 
     duty_cycle: float
     average_evaluation_time: float
+    average_batch_evaluation_time: float
     num_evaluations: int
+    num_batches: int
+    average_batch_size: float
     cache_hit_rate: float
     cache_size: int  # Number of elements in cache
 
 
 @dataclass
-class EvaluationInfo:
+class EvaluationBatchInfo:
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     cache_hit: bool = False
+    batch_size: Optional[int] = None  # Batch size (after de-duplication)
 
 
 class NNEvaluator:
@@ -57,7 +61,7 @@ class NNEvaluator:
         # fast hash -> (value, policy)
         self.cache = {}
 
-        self.evaluation_infos = []
+        self.evaluation_batch_infos = []
 
     def evaluate_tensors(
         self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor
@@ -93,7 +97,7 @@ class NNEvaluator:
 
         if all([h in self.cache for h in hashes]):
             # everything was cached!
-            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, cache_hit=True))
+            self.evaluation_batch_infos.append(EvaluationBatchInfo(start_time=start_time, cache_hit=True))
             return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
 
         # We may receive the game more than once, so this deduplicates it
@@ -119,7 +123,9 @@ class NNEvaluator:
             self.cache[h] = (values[i][0], policy_masked[i])
 
         end_time = time.time()
-        self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=end_time, cache_hit=False))
+        self.evaluation_batch_infos.append(
+            EvaluationBatchInfo(start_time=start_time, end_time=end_time, cache_hit=False, batch_size=len(input_arrays))
+        )
 
         # list of values, list of policies
         return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
@@ -307,18 +313,27 @@ class NNEvaluator:
         first_evaluation_start_time = None
         last_evaluation_end_time = None
         total_time_spent_evaluating = 0.0
-        for info in self.evaluation_infos:
+        total_batches_evaluated = 0
+        total_inputs_evaluated = 0
+        for info in self.evaluation_batch_infos:
             if first_evaluation_start_time is None and info.start_time is not None:
                 first_evaluation_start_time = info.start_time
 
             if info.end_time is not None:
                 last_evaluation_end_time = info.end_time
 
+            if info.cache_hit:
+                num_cache_hits += 1
+
+                # The rest of the stats are only for actual NN computations, not just cache retrieval.
+                continue
+
             if info.start_time is not None and info.end_time is not None:
                 total_time_spent_evaluating += info.end_time - info.start_time
 
-            if info.cache_hit:
-                num_cache_hits += 1
+            total_batches_evaluated += 1
+            if info.batch_size is not None:
+                total_inputs_evaluated += info.batch_size
 
         total_runtime = None
         duty_cycle = np.nan
@@ -327,16 +342,25 @@ class NNEvaluator:
             if total_runtime > 0.0:
                 duty_cycle = total_time_spent_evaluating / total_runtime
 
-        average_evaluation_time = np.nan
+        average_batch_evaluation_time = np.nan
+        average_batch_size = np.nan
         cache_hit_rate = np.nan
-        if len(self.evaluation_infos) > 0:
-            average_evaluation_time = total_time_spent_evaluating / len(self.evaluation_infos)
-            cache_hit_rate = num_cache_hits / len(self.evaluation_infos)
+        if total_batches_evaluated > 0:
+            average_batch_evaluation_time = total_time_spent_evaluating / total_batches_evaluated
+            cache_hit_rate = num_cache_hits / total_batches_evaluated
+            average_batch_size = total_inputs_evaluated / total_batches_evaluated
+
+        average_evaluation_time = np.nan
+        if total_inputs_evaluated > 0:
+            average_evaluation_time = total_time_spent_evaluating / total_inputs_evaluated
 
         return EvaluatorStatistics(
             duty_cycle=duty_cycle,
             average_evaluation_time=average_evaluation_time,
-            num_evaluations=len(self.evaluation_infos),
+            average_batch_evaluation_time=average_batch_evaluation_time,
+            num_evaluations=len(self.evaluation_batch_infos),
+            num_batches=len(self.evaluation_batch_infos),
+            average_batch_size=average_batch_size,
             cache_hit_rate=cache_hit_rate,
             cache_size=len(self.cache),
         )
