@@ -25,6 +25,7 @@ class EvaluatorStatistics:
     average_evaluation_time: float
     num_evaluations: int
     cache_hit_rate: float
+    cache_size: int  # Number of elements in cache
 
 
 @dataclass
@@ -337,4 +338,5 @@ class NNEvaluator:
             average_evaluation_time=average_evaluation_time,
             num_evaluations=len(self.evaluation_infos),
             cache_hit_rate=cache_hit_rate,
+            cache_size=len(self.cache),
         )
