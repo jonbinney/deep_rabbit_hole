@@ -19,10 +19,9 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from agents import ActionLog
 from agents.alphazero.nn_evaluator import NNEvaluator
-from quoridor import ActionEncoder, Board, MoveAction, Player, Quoridor, WallOrientation
+from quoridor import Board, MoveAction, Player, Quoridor, WallOrientation
 from utils.misc import my_device
 
 
@@ -63,7 +62,7 @@ class ReplayBufferVisualizer:
         self.model = None
         if model_path:
             print("Loading trained model...")
-            self.model = self._load_model(model_path)
+            self.model = NNEvaluator.from_model_file(model_path, my_device())
             print("Model loaded successfully")
 
         # Navigation state
@@ -106,25 +105,6 @@ class ReplayBufferVisualizer:
                 sorted_entries.append((entry, count))
 
         return sorted_entries
-
-    def _load_model(self, model_path: str) -> NNEvaluator:
-        """Load trained model for comparison."""
-        # Determine board size from first entry
-        sample_entry = self.sorted_entries[0][0]
-        input_array = sample_entry["input_array"]
-        board_size = self._infer_board_size(input_array)
-
-        # Create evaluator
-        action_encoder = ActionEncoder(board_size)
-        device = my_device()
-        evaluator = NNEvaluator(action_encoder, device)
-
-        # Load model state
-        model_state = torch.load(model_path, map_location=device)
-        evaluator.network.load_state_dict(model_state["network_state_dict"])
-        evaluator.network.eval()
-
-        return evaluator
 
     def _infer_board_size(self, input_array: np.ndarray) -> int:
         """Infer board size from input array dimensions."""

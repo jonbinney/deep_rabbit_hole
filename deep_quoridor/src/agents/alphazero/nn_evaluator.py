@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from quoridor import ActionEncoder, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
-from agents.alphazero.resnet_network import ResnetNetwork
+from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -34,25 +34,46 @@ class EvaluationInfo:
     cache_hit: bool = False
 
 
+@dataclass
+class NNConfig:
+    type: str = "mlp"  # mlp or resnet
+    resnet: Optional[ResnetConfig] = None
+
+    # TO DO: AlphaZeroParams should have an instance of this class instead of using different keys,
+    # but this requires significant changes (e.g. hierarchical subargs)
+    @staticmethod
+    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":
+        config = NNConfig(type=params.nn_type)
+        if params.nn_type == "resnet":
+            resnet_config = ResnetConfig()
+            resnet_config.num_blocks = params.nn_resnet_num_blocks
+            resnet_config.num_channels = params.nn_resnet_num_channels
+            config.resnet = resnet_config
+
+        return config
+
+
+def create_network(action_encoder: ActionEncoder, device, config: NNConfig):
+    if config.type == "mlp":
+        return MLPNetwork(action_encoder, device)
+
+    if config.type == "resnet":
+        resnet = ResnetConfig() if config.resnet is None else config.resnet
+        return ResnetNetwork(action_encoder, device, resnet)
+
+    raise ValueError(f"Unknown network type: {config.type}")
+
+
 class NNEvaluator:
-    def __init__(self, action_encoder: ActionEncoder, device, nn_type: str = "mlp", nn_kwargs: dict = {}):
+    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig):
         self.action_encoder = action_encoder
         self.device = device
+        self.network = create_network(action_encoder, device, config)
 
-        if nn_type == "mlp":
-            self.network = MLPNetwork(self.action_encoder, self.device, **nn_kwargs)
-        elif nn_type == "resnet":
-            self.network = ResnetNetwork(
-                self.action_encoder,
-                self.device,
-                **nn_kwargs,
-            )
-        else:
-            raise ValueError(f"Unknown network type: {nn_type}")
-
-        [self.action_mapping_original_to_rotated, self.action_mapping_rotated_to_original] = create_rotation_mapping(
-            self.action_encoder.board_size
-        )
+        [
+            self.action_mapping_original_to_rotated,
+            self.action_mapping_rotated_to_original,
+        ] = create_rotation_mapping(self.action_encoder.board_size)
         # fast hash -> (value, policy)
         self.cache = {}
 
@@ -301,6 +322,30 @@ class NNEvaluator:
 
         return entry
 
+    def load_model(self, path):
+        from agents.alphazero import AlphaZeroParams
+
+        model_state = torch.load(path, map_location=self.device)
+        config_az = AlphaZeroParams(**model_state["params"])
+        config = NNConfig.from_alphazero_params(config_az)
+
+        self.network = create_network(self.action_encoder, self.device, config)
+        self.network.load_state_dict(model_state["network_state_dict"])
+
+    @classmethod
+    def from_model_file(cls, path: str, device):
+        from agents.alphazero import AlphaZeroParams
+
+        model_state = torch.load(path, map_location=device)
+        action_encoder = ActionEncoder(model_state["board_size"])
+
+        config_az = AlphaZeroParams(**model_state["params"])
+        config = NNConfig.from_alphazero_params(config_az)
+
+        evaluator = cls(action_encoder, device, config)
+        evaluator.network.load_state_dict(model_state["network_state_dict"])
+        return evaluator
+      
     def get_statistics(self) -> EvaluatorStatistics:
         num_cache_hits = 0
         first_evaluation_start_time = None

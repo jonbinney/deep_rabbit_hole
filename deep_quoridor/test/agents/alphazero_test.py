@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core import rotation
 from quoridor import ActionEncoder, Board, MoveAction, Quoridor, WallAction, WallOrientation
 from torch.distributions import Categorical
@@ -20,7 +20,7 @@ def _assert_policy_and_rotated_policy_equivalent(
 
 def _evaluator_test_setup(board_size: int, max_walls) -> tuple[ActionEncoder, NNEvaluator, Quoridor]:
     action_encoder = ActionEncoder(board_size)
-    evaluator = NNEvaluator(action_encoder, my_device())
+    evaluator = NNEvaluator(action_encoder, my_device(), NNConfig())
     game = Quoridor(Board(board_size, max_walls))
 
     return action_encoder, evaluator, game

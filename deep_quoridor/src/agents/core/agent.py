@@ -194,16 +194,17 @@ class AgentRegistry:
         return override_subargs(encoded_name, args_to_remove)
 
     @staticmethod
-    def nick_from_encoded_name(encoded_name: str) -> Optional[str]:
+    def nick_from_encoded_name(encoded_name: str) -> str:
         parts = encoded_name.split(":")
         agent_type = parts[0]
         if len(parts) == 1:
-            return None
+            return encoded_name
 
         registry_entry = AgentRegistry.get_registry_entry(agent_type)
         assert registry_entry.params_class
         subargs = parse_subargs(parts[1], registry_entry.params_class)
-        return getattr(subargs, "nick")
+        nick = getattr(subargs, "nick")
+        return encoded_name if nick is None else nick
 
     @staticmethod
     def is_valid_encoded_name(encoded_name: str):

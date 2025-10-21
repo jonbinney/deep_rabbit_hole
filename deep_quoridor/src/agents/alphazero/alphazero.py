@@ -17,7 +17,7 @@ from utils import get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
-from agents.alphazero.nn_evaluator import NNEvaluator
+from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core import TrainableAgent
 
 
@@ -193,7 +193,6 @@ class AlphaZeroAgent(TrainableAgent):
         max_steps: int = -1,  # -1 means games are never truncated.
         observation_space=None,
         action_space=None,
-        evaluator: Optional[NNEvaluator] = None,
         params=AlphaZeroParams(),
         **kwargs,
     ):
@@ -207,17 +206,8 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.action_encoder = ActionEncoder(board_size)
 
-        if evaluator is None:
-            if params.nn_type == "mlp":
-                nn_kwargs = {}
-            elif params.nn_type == "resnet":
-                nn_kwargs = {"num_blocks": params.nn_resnet_num_blocks, "num_channels": params.nn_resnet_num_channels}
-            else:
-                raise ValueError(f"Invalid value for parameter nn_type: {params.nn_type}")
-
-            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type, nn_kwargs)
-        else:
-            self.evaluator = evaluator
+        nn_config = NNConfig.from_alphazero_params(params)
+        self.evaluator = NNEvaluator(self.action_encoder, self.device, nn_config)
 
         self._fetch_model_from_wandb_and_update_params()
         self._resolve_and_load_model()
@@ -298,7 +288,6 @@ class AlphaZeroAgent(TrainableAgent):
 
         api = wandb.Api()
         path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
-        print(f"{self.name()} - Fetching model from wandb: {path}")
         artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
@@ -306,6 +295,8 @@ class AlphaZeroAgent(TrainableAgent):
 
         if os.path.exists(local_filename):
             return local_filename
+
+        print(f"{self.name()} - Fetching model from wandb: {path}")
 
         os.makedirs(local_filename.parent, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -395,12 +386,8 @@ class AlphaZeroAgent(TrainableAgent):
         self.save_model(path)
         return path
 
-    def set_model_state(self, model_state: dict):
-        self.evaluator.network.load_state_dict(model_state["network_state_dict"])
-
     def load_model(self, path):
-        model_state = torch.load(path, map_location=my_device())
-        self.set_model_state(model_state)
+        self.evaluator.load_model(path)
 
     def start_game_batch(self, envs):
         self.visited_states.clear()

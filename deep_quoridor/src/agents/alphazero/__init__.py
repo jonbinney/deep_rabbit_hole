@@ -1,1 +1,2 @@
-from agents.alphazero.alphazero import AlphaZeroAgent
+__all__ = ["AlphaZeroAgent", "AlphaZeroParams"]
+from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
