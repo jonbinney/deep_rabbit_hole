@@ -63,6 +63,8 @@ class ReplayBufferVisualizer:
         if model_path:
             print("Loading trained model...")
             self.model = NNEvaluator.from_model_file(model_path, my_device())
+            evaluator = NNEvaluator(ActionEncoder(board_size), my_device(), model_filename=args.model)
+
             print("Model loaded successfully")
 
         # Navigation state

@@ -1,7 +1,21 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
+            "name": "Debug play",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "program": "deep_quoridor/src/play.py",
+            "args": [
+                "-N", "7", "-W", "7", "-p",
+                "greedy", "alphazero:wandb_alias=v8,wandb_project=B7W7,mcts_n=3,mcts_ucb_c=1.5,nn_type=resnet",
+                "-t", "2", "-r", "textboard", "computationtimes", "arenaresults2", "--num-workers", "0",
+            ],
+            "justMyCode": false
+        },
+         {
             "name": "Train AlphaZero",
             "type": "debugpy",
             "request": "launch",
