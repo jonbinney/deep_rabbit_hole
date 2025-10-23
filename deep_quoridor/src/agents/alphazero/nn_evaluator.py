@@ -63,6 +63,9 @@ def create_network(action_encoder: ActionEncoder, device, config: NNConfig):
 
     raise ValueError(f"Unknown network type: {config.type}")
 
+    def clear(self):
+        self.cache.clear()
+
 
 class NNEvaluator:
     def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig, max_cache_size: int):
