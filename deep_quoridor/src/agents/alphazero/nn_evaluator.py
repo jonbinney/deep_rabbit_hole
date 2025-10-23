@@ -65,17 +65,18 @@ def create_network(action_encoder: ActionEncoder, device, config: NNConfig):
 
 
 class NNEvaluator:
-    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig):
+    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig, max_cache_size: int):
         self.action_encoder = action_encoder
         self.device = device
         self.network = create_network(action_encoder, device, config)
+        self.max_cache_size = max_cache_size
 
         [
             self.action_mapping_original_to_rotated,
             self.action_mapping_rotated_to_original,
         ] = create_rotation_mapping(self.action_encoder.board_size)
         # fast hash -> (value, policy)
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
 
         self.evaluation_infos = []
 
@@ -283,7 +284,8 @@ class NNEvaluator:
             }
 
         assert self.optimizer is not None, "Call train_prepare before training"
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
+
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
@@ -345,7 +347,7 @@ class NNEvaluator:
         evaluator = cls(action_encoder, device, config)
         evaluator.network.load_state_dict(model_state["network_state_dict"])
         return evaluator
-      
+
     def get_statistics(self) -> EvaluatorStatistics:
         num_cache_hits = 0
         first_evaluation_start_time = None
