@@ -19,7 +19,7 @@ class LRUCache:
         if key in self.cache:
             self.cache.pop(key)
         if len(self.cache) >= self.max_size:
-            self.cache.pop(next(reversed(self.cache)))
+            self.cache.pop(next(iter(self.cache)))
         self.cache[key] = value
 
     def __len__(self):
