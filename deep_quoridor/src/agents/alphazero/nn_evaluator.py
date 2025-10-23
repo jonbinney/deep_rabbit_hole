@@ -69,6 +69,9 @@ class LRUCache:
     def __setitem__(self, key, value):
         self.put(key, value)
 
+    def clear(self):
+        self.cache.clear()
+
 
 class NNEvaluator:
     def __init__(

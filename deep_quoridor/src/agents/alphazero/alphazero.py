@@ -157,6 +157,9 @@ class AlphaZeroParams(SubargsBase):
     # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
     nn_resnet_num_channels: int = 32
 
+    # Maximum size of for entries in worker cache
+    max_cache_size: int = 1000000
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -215,7 +218,9 @@ class AlphaZeroAgent(TrainableAgent):
             else:
                 raise ValueError(f"Invalid value for parameter nn_type: {params.nn_type}")
 
-            self.evaluator = NNEvaluator(self.action_encoder, self.device, params.nn_type, nn_kwargs)
+            self.evaluator = NNEvaluator(
+                self.action_encoder, self.device, params.nn_type, params.max_cache_size, nn_kwargs
+            )
         else:
             self.evaluator = evaluator
 
