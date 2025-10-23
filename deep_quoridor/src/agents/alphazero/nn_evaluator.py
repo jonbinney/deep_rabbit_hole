@@ -223,7 +223,7 @@ class NNEvaluator:
 
     def compute_losses(self, batch_data):
         if len(batch_data) == 0:
-            raise ValueError("Batch data is empty")
+            return None, None, None
 
         # Prepare batch tensors
         inputs = []
