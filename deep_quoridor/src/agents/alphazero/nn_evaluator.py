@@ -10,6 +10,7 @@ from quoridor import ActionEncoder, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetNetwork
+from agents.core.lru_cache import LRUCache
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -32,48 +33,6 @@ class EvaluationInfo:
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     cache_hit: bool = False
-
-
-class LRUCache:
-    def __init__(self, max_size: int):
-        self.max_size = max_size
-        self.cache = {}
-
-    def get(self, key):
-        if key in self.cache:
-            value = self.cache.pop(key)
-            self.cache[key] = value
-            return value
-        return None
-
-    def put(self, key, value):
-        if key in self.cache:
-            self.cache.pop(key)
-        if len(self.cache) >= self.max_size:
-            self.cache.pop(next(reversed(self.cache)))
-        self.cache[key] = value
-
-    def __len__(self):
-        return len(self.cache)
-
-    def __contains__(self, key):
-        r = key in self.cache
-        return r
-
-    def __iter__(self):
-        return iter(self.cache)
-
-    def __getitem__(self, key):
-        v = self.get(key)
-        if v is None:
-            raise KeyError(key)
-        return v
-
-    def __setitem__(self, key, value):
-        self.put(key, value)
-
-    def clear(self):
-        self.cache.clear()
 
 
 class NNEvaluator:
@@ -250,7 +209,7 @@ class NNEvaluator:
 
     def compute_losses(self, batch_data):
         if len(batch_data) == 0:
-            return None, None, None
+            raise ValueError("Batch data is empty")
 
         # Prepare batch tensors
         inputs = []
@@ -294,7 +253,7 @@ class NNEvaluator:
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
         def make_entry(i, t, p, v, vt=None, vp=None, vv=None):
-            if vt is None:
+            if vt is None or vp is None or vv is None:
                 return {
                     "step": i,
                     "completion": float(i) / self.batches_per_iteration,
