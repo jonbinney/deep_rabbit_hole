@@ -157,6 +157,8 @@ class AlphaZeroParams(SubargsBase):
     # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
     nn_resnet_num_channels: int = 32
 
+    discount_factor: float = 0.99
+
     @classmethod
     def training_only_params(cls) -> set[str]:
         """
@@ -229,6 +231,7 @@ class AlphaZeroAgent(TrainableAgent):
             params.mcts_ucb_c,
             mcts_noise_epsilon,
             mcts_noise_alpha,
+            params.discount_factor,
             self.max_steps,
             self.evaluator,
             self.visited_states,
@@ -403,11 +406,13 @@ class AlphaZeroAgent(TrainableAgent):
             # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
             episode_positions = []
             replay_buffer = self.replay_buffers_in_progress[i]
+            discount = 1.0
             while replay_buffer and replay_buffer[-1]["value"] is None:
                 position = replay_buffer.pop()
                 agent = env.player_to_agent[position["player"]]
                 position["value"] = env.rewards[agent]
                 episode_positions.append(position)
+                discount *= self.params.discount_factor
 
             # Add back the positions with assigned values
             self.replay_buffer.extend(reversed(episode_positions))
@@ -422,19 +427,7 @@ class AlphaZeroAgent(TrainableAgent):
         if not self.params.training_mode:
             return
 
-        # Assign the final game outcome to all positions in this episode
-        # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
-        episode_positions = []
-        while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
-            position = self.replay_buffer.pop()
-            agent = env.player_to_agent[position["player"]]
-            position["value"] = env.rewards[agent]
-            episode_positions.append(position)
-
-        # Add back the positions with assigned values
-        self.replay_buffer.extend(reversed(episode_positions))
-
-        self.episode_count += 1
+        self.end_game_batch()
 
         # Train network if we have enough episodes
         if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:

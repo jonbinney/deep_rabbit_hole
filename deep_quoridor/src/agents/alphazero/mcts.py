@@ -90,27 +90,25 @@ class Node:
 
         return max(self.children, key=get_child_ucb)
 
-    def backpropagate(self, value: float):
+    def backpropagate(self, value: float, discount_factor: float, reached_terminal_state=False):
         """
         Update the nodes from the current node up to the tree by increasing the visit count and adding the value
         """
-        self.value_sum += value
-        self.visit_count += 1
-        if self.parent is not None:
-            self.parent.backpropagate(-value)
 
-    def backpropagate_result(self, value: float):
-        """
-        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
-        It also tracks actual game results (wins and losses)
-        """
-        self.value_sum += value
-        self.visit_count += 1
-        self.wins = self.wins + (1 if value == 1 else 0)
-        self.losses = self.losses + (1 if value == -1 else 0)
+        node = self
+        discount = 1.0
+        sign = 1
+        while node is not None:
+            node.value_sum += sign * value * discount
+            node.visit_count += 1
 
-        if self.parent is not None:
-            self.parent.backpropagate_result(-value)
+            if reached_terminal_state:
+                self.wins = self.wins + (1 if value == 1 else 0)
+                self.losses = self.losses + (1 if value == -1 else 0)
+
+            discount *= discount_factor
+            node = node.parent
+            sign *= -1
 
 
 class MCTS:
@@ -121,6 +119,7 @@ class MCTS:
         ucb_c: float,
         noise_epsilon: float,
         noise_alpha: float,
+        discount_factor: float,
         max_steps: int,  # -1 means no limit
         evaluator,
         visited_states: set,
@@ -131,6 +130,7 @@ class MCTS:
         self.ucb_c = ucb_c
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
+        self.discount_factor = discount_factor
         self.max_steps = max_steps
         self.evaluator = evaluator
         self.visited_states = visited_states
@@ -155,6 +155,19 @@ class MCTS:
         max_iterations = max(num_iterations)
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
+
+        # When n is 0, it plays just with the NN and doesn't actually perform MCTS.
+        # For this, we just set the visit counts to a value proportional to the prior
+        if self.n == 0:
+            value_batch, priors_batch = self.evaluator.evaluate_batch([node.game for node in roots])
+            for root, value, priors in zip(roots, value_batch, priors_batch):
+                root.expand(priors)
+                root.backpropagate(-value, self.discount_factor)
+                for ch in root.children:
+                    ch.visit_count = int(ch.prior * 1000)
+
+            return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
+
         for iteration in range(max_iterations):
             need_evaluation = []  # (root, node)
             for game_idx, root in enumerate(roots):
@@ -167,9 +180,9 @@ class MCTS:
 
                 if node.game.is_game_over():
                     # The player who just made a move must have won.
-                    node.backpropagate_result(1)
+                    node.backpropagate(1, self.discount_factor, reached_terminal_state=True)
                 elif self.max_steps >= 0 and node.game.completed_steps >= self.max_steps:
-                    node.backpropagate_result(0)
+                    node.backpropagate(0, self.discount_factor, reached_terminal_state=True)
                 else:
                     need_evaluation.append((root, node))
 
@@ -189,7 +202,7 @@ class MCTS:
                     priors[valid_action_indices] *= 1.0 - self.noise_epsilon
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
                 node.expand(priors)
-                node.backpropagate(-value)
+                node.backpropagate(-value, self.discount_factor)
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.
