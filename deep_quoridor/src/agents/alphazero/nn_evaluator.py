@@ -34,10 +34,54 @@ class EvaluationInfo:
     cache_hit: bool = False
 
 
+class LRUCache:
+    def __init__(self, max_size: int):
+        self.max_size = max_size
+        self.cache = {}
+
+    def get(self, key):
+        if key in self.cache:
+            value = self.cache.pop(key)
+            self.cache[key] = value
+            return value
+        return None
+
+    def put(self, key, value):
+        if key in self.cache:
+            self.cache.pop(key)
+        self.cache[key] = value
+
+    def __len__(self):
+        return len(self.cache)
+
+    def __contains__(self, key):
+        return key in self.cache
+
+    def __iter__(self):
+        return iter(self.cache)
+
+    def __getitem__(self, key):
+        v = self.get(key)
+        if v is None:
+            raise KeyError(key)
+        return v
+
+    def __setitem__(self, key, value):
+        self.put(key, value)
+
+
 class NNEvaluator:
-    def __init__(self, action_encoder: ActionEncoder, device, nn_type: str = "mlp", nn_kwargs: dict = {}):
+    def __init__(
+        self,
+        action_encoder: ActionEncoder,
+        device,
+        nn_type: str = "mlp",
+        max_cache_size: int = 200000,
+        nn_kwargs: dict = {},
+    ):
         self.action_encoder = action_encoder
         self.device = device
+        self.max_cache_size = max_cache_size
 
         if nn_type == "mlp":
             self.network = MLPNetwork(self.action_encoder, self.device, **nn_kwargs)
@@ -54,7 +98,7 @@ class NNEvaluator:
             self.action_encoder.board_size
         )
         # fast hash -> (value, policy)
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
 
         self.evaluation_infos = []
 
@@ -262,7 +306,8 @@ class NNEvaluator:
             }
 
         assert self.optimizer is not None, "Call train_prepare before training"
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
+
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
