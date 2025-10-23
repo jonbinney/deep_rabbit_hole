@@ -8,7 +8,6 @@ import torch
 import torch.nn.functional as F
 from quoridor import ActionEncoder, Player, Quoridor
 
-from agents.alphazero.alphazero import AlphaZeroParams
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
 from agents.core.lru_cache import LRUCache
@@ -44,7 +43,7 @@ class NNConfig:
     # TO DO: AlphaZeroParams should have an instance of this class instead of using different keys,
     # but this requires significant changes (e.g. hierarchical subargs)
     @staticmethod
-    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":
+    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":  # type: ignore
         config = NNConfig(type=params.nn_type)
         if params.nn_type == "resnet":
             resnet_config = ResnetConfig()
