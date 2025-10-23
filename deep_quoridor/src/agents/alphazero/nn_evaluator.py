@@ -49,13 +49,16 @@ class LRUCache:
     def put(self, key, value):
         if key in self.cache:
             self.cache.pop(key)
+        if len(self.cache) >= self.max_size:
+            self.cache.pop(next(reversed(self.cache)))
         self.cache[key] = value
 
     def __len__(self):
         return len(self.cache)
 
     def __contains__(self, key):
-        return key in self.cache
+        r = key in self.cache
+        return r
 
     def __iter__(self):
         return iter(self.cache)
@@ -137,9 +140,10 @@ class NNEvaluator:
         start_time = time.time()
         hashes = [g.get_fast_hash() for g in games]
 
+        cached_entries = {h: self.cache[h] for h in hashes if h in self.cache}
         if all([h in self.cache for h in hashes]):
             # everything was cached!
-            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, cache_hit=True))
+            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=time.time(), cache_hit=True))
             return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
 
         # We may receive the game more than once, so this deduplicates it
@@ -163,12 +167,13 @@ class NNEvaluator:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
 
             self.cache[h] = (values[i][0], policy_masked[i])
+            cached_entries[h] = (values[i][0], policy_masked[i])
 
         end_time = time.time()
         self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=end_time, cache_hit=False))
 
         # list of values, list of policies
-        return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
+        return [cached_entries[h][0] for h in hashes], [cached_entries[h][1] for h in hashes]
 
     def evaluate(self, game: Quoridor):
         value, policy_masked = self.evaluate_batch([game])
