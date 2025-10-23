@@ -8,8 +8,10 @@ import torch
 import torch.nn.functional as F
 from quoridor import ActionEncoder, Player, Quoridor
 
+from agents.alphazero.alphazero import AlphaZeroParams
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
+from agents.core.lru_cache import LRUCache
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -222,7 +224,7 @@ class NNEvaluator:
 
     def compute_losses(self, batch_data):
         if len(batch_data) == 0:
-            return None, None, None
+            raise ValueError("Batch data is empty")
 
         # Prepare batch tensors
         inputs = []
@@ -266,7 +268,7 @@ class NNEvaluator:
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
         def make_entry(i, t, p, v, vt=None, vp=None, vv=None):
-            if vt is None:
+            if vt is None or vp is None or vv is None:
                 return {
                     "step": i,
                     "completion": float(i) / self.batches_per_iteration,
@@ -346,7 +348,7 @@ class NNEvaluator:
         config_az = AlphaZeroParams(**model_state["params"])
         config = NNConfig.from_alphazero_params(config_az)
 
-        evaluator = cls(action_encoder, device, config)
+        evaluator = cls(action_encoder, device, config, config_az.max_cache_size)
         evaluator.network.load_state_dict(model_state["network_state_dict"])
         return evaluator
 
