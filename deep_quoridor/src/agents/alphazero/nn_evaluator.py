@@ -10,6 +10,7 @@ from quoridor import ActionEncoder, Player, Quoridor
 
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
+from agents.core.lru_cache import LRUCache
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
@@ -42,7 +43,7 @@ class NNConfig:
     # TO DO: AlphaZeroParams should have an instance of this class instead of using different keys,
     # but this requires significant changes (e.g. hierarchical subargs)
     @staticmethod
-    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":
+    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":  # type: ignore
         config = NNConfig(type=params.nn_type)
         if params.nn_type == "resnet":
             resnet_config = ResnetConfig()
@@ -65,17 +66,18 @@ def create_network(action_encoder: ActionEncoder, device, config: NNConfig):
 
 
 class NNEvaluator:
-    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig):
+    def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig, max_cache_size: int):
         self.action_encoder = action_encoder
         self.device = device
         self.network = create_network(action_encoder, device, config)
+        self.max_cache_size = max_cache_size
 
         [
             self.action_mapping_original_to_rotated,
             self.action_mapping_rotated_to_original,
         ] = create_rotation_mapping(self.action_encoder.board_size)
         # fast hash -> (value, policy)
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
 
         self.evaluation_infos = []
 
@@ -111,9 +113,10 @@ class NNEvaluator:
         start_time = time.time()
         hashes = [g.get_fast_hash() for g in games]
 
+        cached_entries = {h: self.cache[h] for h in hashes if h in self.cache}
         if all([h in self.cache for h in hashes]):
             # everything was cached!
-            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, cache_hit=True))
+            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=time.time(), cache_hit=True))
             return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
 
         # We may receive the game more than once, so this deduplicates it
@@ -137,12 +140,13 @@ class NNEvaluator:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
 
             self.cache[h] = (values[i][0], policy_masked[i])
+            cached_entries[h] = (values[i][0], policy_masked[i])
 
         end_time = time.time()
         self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=end_time, cache_hit=False))
 
         # list of values, list of policies
-        return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
+        return [cached_entries[h][0] for h in hashes], [cached_entries[h][1] for h in hashes]
 
     def evaluate(self, game: Quoridor):
         value, policy_masked = self.evaluate_batch([game])
@@ -263,7 +267,7 @@ class NNEvaluator:
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
         def make_entry(i, t, p, v, vt=None, vp=None, vv=None):
-            if vt is None:
+            if vt is None or vp is None or vv is None:
                 return {
                     "step": i,
                     "completion": float(i) / self.batches_per_iteration,
@@ -283,7 +287,8 @@ class NNEvaluator:
             }
 
         assert self.optimizer is not None, "Call train_prepare before training"
-        self.cache = {}
+        self.cache = LRUCache(max_size=self.max_cache_size)
+
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
@@ -342,10 +347,10 @@ class NNEvaluator:
         config_az = AlphaZeroParams(**model_state["params"])
         config = NNConfig.from_alphazero_params(config_az)
 
-        evaluator = cls(action_encoder, device, config)
+        evaluator = cls(action_encoder, device, config, config_az.max_cache_size)
         evaluator.network.load_state_dict(model_state["network_state_dict"])
         return evaluator
-      
+
     def get_statistics(self) -> EvaluatorStatistics:
         num_cache_hits = 0
         first_evaluation_start_time = None

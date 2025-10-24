@@ -326,7 +326,7 @@ if __name__ == "__main__":
     else:
         # We just use the default NN config, but in the future we may be interested in having
         # parameters to choose the NN.
-        evaluator = NNEvaluator(ActionEncoder(board_size), my_device(), NNConfig())
+        evaluator = NNEvaluator(ActionEncoder(board_size), my_device(), NNConfig(), 10000)
 
     game = Quoridor(Board(board_size=board_size, max_walls=max_walls))
     visualizer = create_interactive_visualizer(
