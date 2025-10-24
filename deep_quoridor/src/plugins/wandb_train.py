@@ -76,7 +76,7 @@ class WandbTrainPlugin(ArenaPlugin):
             config=config,
             tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
             id=self.params.run_id(),
-            name=f"{self.params.run_id()}",
+            group=f"{self.params.run_id()}",
             notes=self.params.notes,
         )
         Timer.set_wandb_run(self.run)
