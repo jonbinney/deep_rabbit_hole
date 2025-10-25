@@ -77,7 +77,6 @@ def train_alphazero(
             game_params,
             self_play_params,
             args.parallel_games,
-            completed_episodes=epoch * args.games_per_epoch,
             wandb_params=wandb_params,
         )
         self_play_manager.start()

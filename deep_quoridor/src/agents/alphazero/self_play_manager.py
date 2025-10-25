@@ -38,7 +38,6 @@ class SelfPlayManager(threading.Thread):
         game_params: GameParams,
         alphazero_params: AlphaZeroParams,
         num_parallel_games: int,
-        completed_episodes: int,  # So that we can log relative to global episode number
         wandb_params: Optional[WandbParams] = None,
     ):
         self.num_workers = num_workers
@@ -51,7 +50,6 @@ class SelfPlayManager(threading.Thread):
         self._result_queue = mp.Queue()
         self._stop_event = mp.Event()
         self.num_parallel_games = num_parallel_games
-        self._completed_episodes = completed_episodes
         self.wandb_params = wandb_params
         super().__init__()
 
@@ -77,7 +75,7 @@ class SelfPlayManager(threading.Thread):
                     worker_id,
                     self._result_queue,
                     self.num_parallel_games,
-                    self._completed_episodes,
+                    self.epoch,
                     self.wandb_params,
                 ),
             )
@@ -158,7 +156,7 @@ def run_self_play_games(
     worker_id: int,
     result_queue: mp.Queue,
     num_parallel_games: int,
-    completed_episodes: int,  # So that we can log metrics by global episode
+    epoch: int,  # So that we can log metrics by global episode
     wandb_params: Optional[WandbParams] = None,
 ):
     # Each worker process uses its own random seed to make sure they don't make the exact same moves during
@@ -249,8 +247,7 @@ def run_self_play_games(
         )
         game_i += n
 
-        # Technically counting the episodes this way ignores games completed in other worker processes, but that seems fine.
-        Timer.log_totals(episode=completed_episodes + game_i)
+    Timer.log_cumulative("Epoch", epoch)
 
     if wandb_run is not None:
         wandb_run.finish(0)

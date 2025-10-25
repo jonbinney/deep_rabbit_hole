@@ -1,5 +1,4 @@
 import random
-import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -62,7 +61,6 @@ class NNEvaluator:
         self.cache = LRUCache(max_size=self.max_cache_size)
 
         self.evaluation_batch_infos = []
-        self._creation_time = time.time()
 
     def evaluate_tensors(
         self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor

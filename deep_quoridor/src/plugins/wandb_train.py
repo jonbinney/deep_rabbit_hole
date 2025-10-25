@@ -82,6 +82,7 @@ class WandbTrainPlugin(ArenaPlugin):
         Timer.set_wandb_run(self.run)
 
         wandb.define_metric("Loss step", hidden=True)
+        wandb.define_metric("Epoch", hidden=True)
         wandb.define_metric("Episode", hidden=True)
         wandb.define_metric("loss_*", "Loss step")
         wandb.define_metric("*", "Episode")

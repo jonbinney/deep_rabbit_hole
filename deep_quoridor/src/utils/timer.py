@@ -56,7 +56,25 @@ class Timer:
                 cls.wandb_run.log({f"time-{name}": elapsed, "Episode": episode})
 
     @classmethod
-    def log_totals(cls, episode: Optional[int] = None):
+    def log_cumulative(cls, x_name: str, x_value: int | float):
+        """
+        Logs the cumulative values of timers and counters to WandB
+
+        Args:
+            x_name - the name of the WandB metric which should be used as the x-axis; for example "Episode"
+            x_value - value for that x-axis metric
+        """
+        if cls.wandb_run:
+            total_times = {f"time-cumulative-{name}": total for name, total in cls.total_times.items()}
+            counters = {f"counter-{name}": total for name, total in cls.counters.items()}
+
+            total_times[x_name] = x_value
+            counters[x_name] = x_value
+            cls.wandb_run.log(total_times)
+            cls.wandb_run.log(counters)
+
+    @classmethod
+    def log_totals(cls):
         if len(cls.starts) > 0:
             print(f"TIMER: WARNING - timers for {list(cls.starts.keys())} still running")
 
@@ -71,9 +89,6 @@ class Timer:
         if cls.wandb_run:
             total_times = {f"time-total-{name}": total for name, total in cls.total_times.items()}
             counters = {f"counter-{name}": total for name, total in cls.counters.items()}
-            if episode is not None:
-                total_times["Episode"] = episode
-                counters["Episode"] = episode
             cls.wandb_run.log(total_times)
             cls.wandb_run.log(counters)
 
