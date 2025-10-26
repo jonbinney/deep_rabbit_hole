@@ -1,5 +1,4 @@
 import random
-import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -7,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from quoridor import ActionEncoder, Player, Quoridor
+from utils.timer import Timer, timer
 
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
@@ -14,25 +14,6 @@ from agents.core.lru_cache import LRUCache
 from agents.core.rotation import create_rotation_mapping
 
 INVALID_ACTION_VALUE = -1e32
-
-
-@dataclass
-class EvaluatorStatistics:
-    """
-    Statistics about all evaluations since this evaluator was created.
-    """
-
-    duty_cycle: float
-    average_evaluation_time: float
-    num_evaluations: int
-    cache_hit_rate: float
-
-
-@dataclass
-class EvaluationInfo:
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-    cache_hit: bool = False
 
 
 @dataclass
@@ -79,7 +60,7 @@ class NNEvaluator:
         # fast hash -> (value, policy)
         self.cache = LRUCache(max_size=self.max_cache_size)
 
-        self.evaluation_infos = []
+        self.evaluation_batch_infos = []
 
     def evaluate_tensors(
         self, inputs_tensor: torch.Tensor, action_masks_tensor: torch.Tensor
@@ -108,16 +89,19 @@ class NNEvaluator:
 
         return values_tensor, policies_tensor
 
+    @timer("evaluate_batch")
     @torch.no_grad
     def evaluate_batch(self, games: list[Quoridor]):
-        start_time = time.time()
         hashes = [g.get_fast_hash() for g in games]
 
         cached_entries = {h: self.cache[h] for h in hashes if h in self.cache}
         if all([h in self.cache for h in hashes]):
             # everything was cached!
-            self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=time.time(), cache_hit=True))
-            return [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
+            Timer.increment_counter("evaluator-cache-lookup", len(hashes))
+            Timer.start("evaluator-cache-lookup")
+            result = [self.cache[h][0] for h in hashes], [self.cache[h][1] for h in hashes]
+            Timer.finish("evaluator-cache-lookup")
+            return result
 
         # We may receive the game more than once, so this deduplicates it
         games_by_hash = {h: g for g, h in zip(games, hashes) if h not in self.cache}
@@ -130,23 +114,33 @@ class NNEvaluator:
             device=self.device
         )
 
+        Timer.increment_counter("evaluator-nn-batch", 1)
+        Timer.increment_counter("evaluator-nn-input", len(tensors))
+        Timer.start("evaluator-nn-forward")
         values, policy_masked = self.evaluate_tensors(tensors, action_masks)
         values = values.cpu().numpy()
         policy_masked = policy_masked.cpu().numpy()
+        Timer.finish("evaluator-nn-forward")
 
         for i, g, h in zip(range(len(games_to_evaluate)), games_to_evaluate, games_by_hash.keys()):
             # If the game was originally rotated, rotate the resulting back to player 2's perspective
             if g.get_current_player() == Player.TWO:
                 policy_masked[i] = policy_masked[i][self.action_mapping_rotated_to_original]
 
+        Timer.increment_counter("evaluator-cache-updates", len(games_to_evaluate))
+        Timer.start("evaluator-cache-update")
+        for i, g, h in zip(range(len(games_to_evaluate)), games_to_evaluate, games_by_hash.keys()):
             self.cache[h] = (values[i][0], policy_masked[i])
             cached_entries[h] = (values[i][0], policy_masked[i])
+        Timer.finish("evaluator-cache-update")
+        Timer.set_counter("evaluator-cache-size", len(self.cache))
 
-        end_time = time.time()
-        self.evaluation_infos.append(EvaluationInfo(start_time=start_time, end_time=end_time, cache_hit=False))
-
+        Timer.increment_counter("evaluator-cache-lookups", len(self.cache))
+        Timer.start("evaluator-cache-lookup")
         # list of values, list of policies
-        return [cached_entries[h][0] for h in hashes], [cached_entries[h][1] for h in hashes]
+        result = [cached_entries[h][0] for h in hashes], [cached_entries[h][1] for h in hashes]
+        Timer.finish("evaluator-cache-lookup")
+        return result
 
     def evaluate(self, game: Quoridor):
         value, policy_masked = self.evaluate_batch([game])
@@ -350,41 +344,3 @@ class NNEvaluator:
         evaluator = cls(action_encoder, device, config, config_az.max_cache_size)
         evaluator.network.load_state_dict(model_state["network_state_dict"])
         return evaluator
-
-    def get_statistics(self) -> EvaluatorStatistics:
-        num_cache_hits = 0
-        first_evaluation_start_time = None
-        last_evaluation_end_time = None
-        total_time_spent_evaluating = 0.0
-        for info in self.evaluation_infos:
-            if first_evaluation_start_time is None and info.start_time is not None:
-                first_evaluation_start_time = info.start_time
-
-            if info.end_time is not None:
-                last_evaluation_end_time = info.end_time
-
-            if info.start_time is not None and info.end_time is not None:
-                total_time_spent_evaluating += info.end_time - info.start_time
-
-            if info.cache_hit:
-                num_cache_hits += 1
-
-        total_runtime = None
-        duty_cycle = np.nan
-        if last_evaluation_end_time is not None and first_evaluation_start_time is not None:
-            total_runtime = last_evaluation_end_time - first_evaluation_start_time
-            if total_runtime > 0.0:
-                duty_cycle = total_time_spent_evaluating / total_runtime
-
-        average_evaluation_time = np.nan
-        cache_hit_rate = np.nan
-        if len(self.evaluation_infos) > 0:
-            average_evaluation_time = total_time_spent_evaluating / len(self.evaluation_infos)
-            cache_hit_rate = num_cache_hits / len(self.evaluation_infos)
-
-        return EvaluatorStatistics(
-            duty_cycle=duty_cycle,
-            average_evaluation_time=average_evaluation_time,
-            num_evaluations=len(self.evaluation_infos),
-            cache_hit_rate=cache_hit_rate,
-        )

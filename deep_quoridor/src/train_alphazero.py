@@ -68,7 +68,7 @@ def train_alphazero(
 
         # Create a self-play manager to run self-play games across multiple processes. The
         # worker processes get re-spawned each epoch to make sure all cached values get freed.
-        wandb_run = None if wandb_train_plugin is None else wandb_train_plugin.run
+        wandb_params = None if wandb_train_plugin is None else wandb_train_plugin.params
         self_play_manager = SelfPlayManager(
             args.num_workers,
             args.seed,
@@ -77,29 +77,17 @@ def train_alphazero(
             game_params,
             self_play_params,
             args.parallel_games,
+            wandb_params=wandb_params,
         )
         self_play_manager.start()
-        self_play_results = None
-        while self_play_results is None:
-            self_play_results = self_play_manager.get_results(timeout=0.1)
+        new_replay_buffer_items = None
+        while new_replay_buffer_items is None:
+            new_replay_buffer_items = self_play_manager.get_results(timeout=0.1)
+        training_agent.replay_buffer.extend(new_replay_buffer_items)
         self_play_manager.join()
         game_num = (epoch + 1) * args.games_per_epoch
 
         Timer.finish("self-play", game_num)
-
-        for r in self_play_results:
-            print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
-
-            # Log evaluator statistics to wandb
-            if r.evaluator_statistics is not None and wandb_train_plugin is not None:
-                stats_dict = {f"evaluator_{r.worker_id}_{k}": v for k, v in asdict(r.evaluator_statistics).items()}
-                stats_dict["Episode"] = game_num
-                wandb_train_plugin.run.log(stats_dict)
-
-            # NOTE: Make sure the replay buffer size for the training agent is large enough to hold
-            # the replay buffer results from all agents each epoch or else we'll end up discarding
-            # some results and we'll have wasted computation by playing those games.
-            training_agent.replay_buffer.extend(r.replay_buffer)
 
         # Do training if we have enough samples in the replay buffer.
         # training_agent.episode_count = game_num
