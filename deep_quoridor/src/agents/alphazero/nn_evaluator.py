@@ -229,14 +229,18 @@ class NNEvaluator:
 
         target_values = []
 
+        action_masks = []
+
         for data in batch_data:
             inputs.append(torch.from_numpy(data["input_array"]))
             target_policies.append(torch.FloatTensor(data["mcts_policy"]))
             target_values.append(torch.FloatTensor([data["value"]]))
+            action_masks.append(torch.FloatTensor(data["action_mask"]))
 
         inputs = torch.stack(inputs).to(self.device)
         target_policies = torch.stack(target_policies).to(self.device)
         target_values = torch.stack(target_values).to(self.device)
+        action_masks = torch.stack(action_masks).to(self.device)
 
         assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
             "NaN in training data"
@@ -244,10 +248,13 @@ class NNEvaluator:
 
         # Forward pass
         pred_logits, pred_values = self.network(inputs)
-        # TODO: Should we apply masking before calculating cross-entropy here?
+
+        # Apply masking - this means that even if the network gives a high probability to an invalid
+        # action in the policy, we don't penalize it.
+        masked_pred_logits = pred_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
 
         # Compute losses
-        policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
+        policy_loss = F.cross_entropy(masked_pred_logits, target_policies, reduction="mean")
         value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
         total_loss = policy_loss + value_loss
 
