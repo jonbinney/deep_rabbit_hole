@@ -1,3 +1,4 @@
+import torch
 from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
@@ -141,6 +142,10 @@ class Metrics:
         absolute_elo = elo_table[agent.name()]
 
         dumb_score = self.dumb_score(agent)
+
+        del agent
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return (
             VERSION,
