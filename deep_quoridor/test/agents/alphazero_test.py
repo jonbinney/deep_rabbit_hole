@@ -20,7 +20,7 @@ def _assert_policy_and_rotated_policy_equivalent(
 
 def _evaluator_test_setup(board_size: int, max_walls) -> tuple[ActionEncoder, NNEvaluator, Quoridor]:
     action_encoder = ActionEncoder(board_size)
-    evaluator = NNEvaluator(action_encoder, my_device(), NNConfig())
+    evaluator = NNEvaluator(action_encoder, my_device(), NNConfig(), 10000)
     game = Quoridor(Board(board_size, max_walls))
 
     return action_encoder, evaluator, game
