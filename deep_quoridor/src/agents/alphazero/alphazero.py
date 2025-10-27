@@ -157,6 +157,11 @@ class AlphaZeroParams(SubargsBase):
     # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
     nn_resnet_num_channels: int = 32
 
+    # Whether to mask the policies predicted by the NN during training (before computing the loss). When this is
+    # False, the loss function penalizes the network producing a non-zero probability for any action which is
+    # illegal.
+    nn_mask_training_predictions: bool = False
+
     # Maximum size of for entries in worker cache
     max_cache_size: int = 200000
 
