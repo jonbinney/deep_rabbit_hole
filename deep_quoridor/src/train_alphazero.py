@@ -6,6 +6,7 @@ import time
 from dataclasses import asdict
 from typing import Optional
 
+import torch
 from agent_evolution_tournament import AgentEvolutionTournament, AgentEvolutionTournamentParams
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroBenchmarkOverrideParams, AlphaZeroParams
 from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
@@ -248,4 +249,6 @@ if __name__ == "__main__":
             print("Warning: --max-game-length is deprecated. Please use --max-steps instead.")
             args.max_steps = args.max_game_length
 
+    torch.cuda.memory._record_memory_history()
     main(args)
+    torch.cuda.memory._dump_snapshot("mem_snapshot.pickle")
