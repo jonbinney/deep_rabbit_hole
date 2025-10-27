@@ -68,8 +68,8 @@ if __name__ == "__main__":
         "-mx",
         "--max_steps",
         type=int,
-        default=10000,
-        help="Maximum number of steps per game. Default is 10000",
+        default=200,
+        help="Maximum number of steps per game. Default is 200",
     )
     parser.add_argument(
         "--profile",

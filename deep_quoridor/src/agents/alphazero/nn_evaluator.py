@@ -345,7 +345,7 @@ class NNEvaluator:
         evaluator = cls(action_encoder, device, config)
         evaluator.network.load_state_dict(model_state["network_state_dict"])
         return evaluator
-      
+
     def get_statistics(self) -> EvaluatorStatistics:
         num_cache_hits = 0
         first_evaluation_start_time = None
