@@ -1,10 +1,12 @@
 from agents import Agent
+from agents.alphazero.alphazero import AlphaZeroAgent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
 from quoridor_env import env
 from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo, get_opponent_player_id
+from utils.subargs import override_subargs
 
 
 class Metrics:
@@ -78,7 +80,7 @@ class Metrics:
 
     def compute(
         self, agent_encoded_name: str
-    ) -> tuple[int, dict[str, float], int, float, dict[str, float], dict[str, float], int, int]:
+    ) -> tuple[int, dict[str, float], int, float, dict[str, float], dict[str, float], int, int, int]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
@@ -95,6 +97,7 @@ class Metrics:
                 - p2_win_percentages (dict[str, float]): Win percentage as player two against each oponnent.
                 - absolute_elo (int): ELO rating obtained during the tournament
                 - dumb_score (int): A score between 0 (perfect) and 100 (always wrong) on how the agent performs in certain basic situations
+                - dumb_score_raw (int): for AlphaZeroAgent, same as dumb_score but with a raw network rather than MCTS.  For other agents, returns dumb_score
 
         Notes:
             - The method disables training mode for trainable agents during evaluation and restores it afterward.
@@ -142,6 +145,11 @@ class Metrics:
 
         dumb_score = self.dumb_score(agent)
 
+        if isinstance(agent, AlphaZeroAgent):
+            raw_play_encoded_name = override_subargs(play_encoded_name, {"mcts_n": 0})
+            agent_raw = AgentRegistry.create_from_encoded_name(raw_play_encoded_name, arena.game)
+            dumb_score_raw = self.dumb_score(agent_raw, verbose=True)
+
         return (
             VERSION,
             elo_table,
@@ -151,6 +159,7 @@ class Metrics:
             p2_win_percentages,
             int(absolute_elo),
             dumb_score,
+            dumb_score_raw,
         )
 
     def dumb_score(self, agent: Agent, verbose: bool = False):

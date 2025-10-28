@@ -49,14 +49,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     m = Metrics(args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps, args.num_workers)
     table = PrettyTable()
-    table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score"]
+    table.field_names = ["Agent", "Elo", "Relative Elo", "Win %", "Dumb Score", "Raw Dumb Score"]
 
     for player in args.players:
         player_nick = AgentRegistry.nick_from_encoded_name(player)
         print(f"=== Computing metrics for {player_nick} ===")
-        _, _, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = m.compute(
-            player
-        )
-        table.add_row([player_nick, absolute_elo, relative_elo, f"{win_perc:.2f}", dumb_score])
+        (
+            _,
+            _,
+            relative_elo,
+            win_perc,
+            p1_win_percentages,
+            p2_win_percentages,
+            absolute_elo,
+            dumb_score,
+            dumb_score_raw,
+        ) = m.compute(player)
+        table.add_row([player_nick, absolute_elo, relative_elo, f"{win_perc:.2f}", dumb_score, dumb_score_raw])
 
     print(table)

@@ -159,9 +159,17 @@ class WandbTrainPlugin(ArenaPlugin):
         agent_encoded_name = override_subargs(self.agent_encoded_name, override_args)
 
         Timer.start("benchmark")
-        _, _, relative_elo, win_perc, p1_win_percentages, p2_win_percentages, absolute_elo, dumb_score = (
-            self.metrics.compute(agent_encoded_name)
-        )
+        (
+            _,
+            _,
+            relative_elo,
+            win_perc,
+            p1_win_percentages,
+            p2_win_percentages,
+            absolute_elo,
+            dumb_score,
+            dumb_score_raw,
+        ) = self.metrics.compute(agent_encoded_name)
         Timer.finish("benchmark", self.episode_count)
 
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
@@ -176,6 +184,7 @@ class WandbTrainPlugin(ArenaPlugin):
             "win_perc": win_perc,
             "absolute_elo": absolute_elo,
             "dumb_score": dumb_score,
+            "dumb_score_raw": dumb_score_raw,
             "Episode": self.episode_count,  # x axis
         }
 
