@@ -21,11 +21,13 @@ class NNConfig:
     type: str = "mlp"  # mlp or resnet
     resnet: Optional[ResnetConfig] = None
 
+    mask_training_predictions: bool = False
+
     # TO DO: AlphaZeroParams should have an instance of this class instead of using different keys,
     # but this requires significant changes (e.g. hierarchical subargs)
     @staticmethod
     def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":  # type: ignore
-        config = NNConfig(type=params.nn_type)
+        config = NNConfig(type=params.nn_type, mask_training_predictions=params.nn_mask_training_predictions)
         if params.nn_type == "resnet":
             resnet_config = ResnetConfig()
             resnet_config.num_blocks = params.nn_resnet_num_blocks
@@ -50,6 +52,7 @@ class NNEvaluator:
     def __init__(self, action_encoder: ActionEncoder, device, config: NNConfig, max_cache_size: int):
         self.action_encoder = action_encoder
         self.device = device
+        self.config = config
         self.network = create_network(action_encoder, device, config)
         self.max_cache_size = max_cache_size
 
@@ -229,14 +232,18 @@ class NNEvaluator:
 
         target_values = []
 
+        action_masks = []
+
         for data in batch_data:
             inputs.append(torch.from_numpy(data["input_array"]))
             target_policies.append(torch.FloatTensor(data["mcts_policy"]))
             target_values.append(torch.FloatTensor([data["value"]]))
+            action_masks.append(torch.FloatTensor(data["action_mask"]))
 
         inputs = torch.stack(inputs).to(self.device)
         target_policies = torch.stack(target_policies).to(self.device)
         target_values = torch.stack(target_values).to(self.device)
+        action_masks = torch.stack(action_masks).to(self.device)
 
         assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
             "NaN in training data"
@@ -244,7 +251,11 @@ class NNEvaluator:
 
         # Forward pass
         pred_logits, pred_values = self.network(inputs)
-        # TODO: Should we apply masking before calculating cross-entropy here?
+
+        if self.config.mask_training_predictions:
+            # Apply masking - this means that even if the network gives a high probability to an invalid
+            # action in the policy, we don't penalize it.
+            pred_logits = pred_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
 
         # Compute losses
         policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
