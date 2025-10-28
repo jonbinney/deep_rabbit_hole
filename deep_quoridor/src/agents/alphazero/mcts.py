@@ -155,6 +155,19 @@ class MCTS:
         max_iterations = max(num_iterations)
 
         roots = [Node(g, ucb_c=self.ucb_c) for g in initial_games]
+
+        # When n is 0, it plays just with the NN and doesn't actually perform MCTS.
+        # For this, we just set the visit counts to a value proportional to the prior
+        if self.n == 0:
+            value_batch, priors_batch = self.evaluator.evaluate_batch([node.game for node in roots])
+            for root, value, priors in zip(roots, value_batch, priors_batch):
+                root.expand(priors)
+                root.backpropagate(-value)
+                for ch in root.children:
+                    ch.visit_count = int(ch.prior * 1000)
+
+            return [root.children for root in roots], [-(root.value_sum / root.visit_count) for root in roots]
+
         for iteration in range(max_iterations):
             need_evaluation = []  # (root, node)
             for game_idx, root in enumerate(roots):

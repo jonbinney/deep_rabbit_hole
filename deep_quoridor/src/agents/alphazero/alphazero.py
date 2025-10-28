@@ -157,6 +157,11 @@ class AlphaZeroParams(SubargsBase):
     # Alphazero used 256. It's set lower here to make training faster, but we should try a higher value.
     nn_resnet_num_channels: int = 32
 
+    # Whether to mask the policies predicted by the NN during training (before computing the loss). When this is
+    # False, the loss function penalizes the network producing a non-zero probability for any action which is
+    # illegal.
+    nn_mask_training_predictions: bool = False
+
     # Maximum size of for entries in worker cache
     max_cache_size: int = 200000
 
@@ -661,12 +666,15 @@ class AlphaZeroAgent(TrainableAgent):
         """Store training data for later use in training."""
         game, is_rotated = self.evaluator.rotate_if_needed_to_point_downwards(game)
         input_array = self.evaluator.game_to_input_array(game)
+        action_mask = game.get_action_mask()
         if is_rotated:
             mcts_policy = self.evaluator.rotate_policy_from_original(mcts_policy)
+
         self.replay_buffers_in_progress[game_idx].append(
             {
                 "input_array": input_array,
                 "mcts_policy": mcts_policy,
+                "action_mask": action_mask,
                 "value": None,  # Will be filled in at end of episode
                 "player": player,
             }
