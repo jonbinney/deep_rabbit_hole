@@ -1,3 +1,4 @@
+import torch
 from agents import Agent
 from agents.alphazero.alphazero import AlphaZeroAgent
 from agents.core.agent import AgentRegistry
@@ -144,11 +145,17 @@ class Metrics:
         absolute_elo = elo_table[agent.name()]
 
         dumb_score = self.dumb_score(agent)
+        del agent
 
         if isinstance(agent, AlphaZeroAgent):
             raw_play_encoded_name = override_subargs(play_encoded_name, {"mcts_n": 0})
             agent_raw = AgentRegistry.create_from_encoded_name(raw_play_encoded_name, arena.game)
             dumb_score_raw = self.dumb_score(agent_raw, verbose=True)
+            del agent_raw
+
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return (
             VERSION,

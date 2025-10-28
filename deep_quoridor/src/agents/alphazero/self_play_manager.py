@@ -7,6 +7,7 @@ from queue import Empty
 from typing import Optional
 
 import quoridor_env
+import torch
 import wandb
 from plugins.wandb_train import WandbParams
 from utils import set_deterministic
@@ -258,3 +259,7 @@ def run_self_play_games(
             list(alphazero_agent.replay_buffer),
         )
     )
+
+    del alphazero_agent
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
