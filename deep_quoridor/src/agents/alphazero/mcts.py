@@ -3,6 +3,7 @@ from typing import Optional
 import numpy as np
 from numpy.random import dirichlet
 from quoridor import Action, Quoridor
+from utils.timer import Timer, timer
 
 
 class QuoridorKey:
@@ -145,6 +146,7 @@ class MCTS:
             node = node.select(self.visited_states)
         return node
 
+    @timer("mcts-search-batch")
     def search_batch(self, initial_games: list[Quoridor]):
         if self.k is not None:
             num_iterations = [self.k * int(np.sum(np.array(game.get_action_mask()) == 1)) for game in initial_games]
@@ -186,9 +188,15 @@ class MCTS:
                 else:
                     need_evaluation.append((root, node))
 
+            Timer.start("mcts-get-games")
             games_to_evaluate = [node.game for _, node in need_evaluation]
-            value_batch, priors_batch = self.evaluator.evaluate_batch(games_to_evaluate)
+            Timer.finish("mcts-get-games")
 
+            Timer.start("mcts-evaluate-batch")
+            value_batch, priors_batch = self.evaluator.evaluate_batch(games_to_evaluate)
+            Timer.finish("mcts-evaluate-batch")
+
+            Timer.start("mcts-expand-and-backprop")
             for (root, node), value, priors in zip(need_evaluation, value_batch, priors_batch):
                 if node is root and self.noise_epsilon > 0.0:
                     # To encourage exploration we add noise to the priors at the root node.
@@ -203,6 +211,7 @@ class MCTS:
                     priors[valid_action_indices] += self.noise_epsilon * dirichlet_noise
                 node.expand(priors)
                 node.backpropagate(-value)
+            Timer.finish("mcts-expand-and-backprop")
 
         # Negate the value because the value is actually the value that the opponent
         # got for getting to that state.

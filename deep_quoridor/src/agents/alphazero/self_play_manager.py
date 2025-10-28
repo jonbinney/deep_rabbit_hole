@@ -203,6 +203,8 @@ def run_self_play_games(
         params=alphazero_params,
     )
 
+    Timer.start("self-play-loop")
+
     game_i = 0
     while game_i < num_games:
         n = min(num_parallel_games, num_games - game_i)
@@ -210,7 +212,9 @@ def run_self_play_games(
         for i in range(n):
             environments[i].reset()
 
+        Timer.start("self-play-loop-start-game-batch")
         alphazero_agent.start_game_batch(environments)
+        Timer.finish("self-play-loop-start-game-batch")
 
         num_turns = [0] * n
         finished_in = []
@@ -223,7 +227,9 @@ def run_self_play_games(
                 if finished[i]:
                     continue
 
+                Timer.start("self-play-loop-get-obs")
                 observation, _, termination, truncation, _ = environments[i].last()
+                Timer.finish("self-play-loop-get-obs")
                 if termination:
                     finished[i] = True
                     finished_in.append(num_turns[i])
@@ -233,12 +239,16 @@ def run_self_play_games(
                     observations.append((i, observation))
                     num_turns[i] += 1
 
+            Timer.start("self-play-loop-get-action-batch")
             action_index_batch = alphazero_agent.get_action_batch(observations)
+            Timer.finish("self-play-loop-get-action-batch")
 
+            Timer.start("self-play-loop-step-env")
             for env_idx, action_index in action_index_batch:
                 if finished[env_idx]:
                     continue
                 environments[env_idx].step(action_index)
+            Timer.finish("self-play-loop-step-env")
 
         t1 = time.time()
         alphazero_agent.end_game_batch()
@@ -247,6 +257,8 @@ def run_self_play_games(
             f"Worker {worker_id}: ({t1 - t0:.2f}s) Games {game_i}...{game_i + n - 1} / {num_games} ended after {sorted(finished_in)} turns. {num_truncated} truncated"
         )
         game_i += n
+
+    Timer.finish("self-play-loop")
 
     Timer.log_cumulative("Epoch", epoch)
 
