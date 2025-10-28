@@ -147,12 +147,12 @@ class Metrics:
         dumb_score = self.dumb_score(agent)
 
         if isinstance(agent, AlphaZeroAgent):
-            del agent
             raw_play_encoded_name = override_subargs(play_encoded_name, {"mcts_n": 0})
             agent_raw = AgentRegistry.create_from_encoded_name(raw_play_encoded_name, arena.game)
             dumb_score_raw = self.dumb_score(agent_raw, verbose=True)
             del agent_raw
 
+        del agent
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
