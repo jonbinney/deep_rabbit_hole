@@ -1,4 +1,5 @@
 import random
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -22,12 +23,17 @@ class NNConfig:
     resnet: Optional[ResnetConfig] = None
 
     mask_training_predictions: bool = False
+    use_amp: bool = False
 
     # TO DO: AlphaZeroParams should have an instance of this class instead of using different keys,
     # but this requires significant changes (e.g. hierarchical subargs)
     @staticmethod
-    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":  # type: ignore
-        config = NNConfig(type=params.nn_type, mask_training_predictions=params.nn_mask_training_predictions)
+    def from_alphazero_params(params: "AlphaZeroParams") -> "NNConfig":  # noqa: F821 # type: ignore
+        config = NNConfig(
+            type=params.nn_type,
+            mask_training_predictions=params.nn_mask_training_predictions,
+            use_amp=params.nn_use_amp,
+        )
         if params.nn_type == "resnet":
             resnet_config = ResnetConfig()
             resnet_config.num_blocks = params.nn_resnet_num_blocks
@@ -186,6 +192,11 @@ class NNEvaluator:
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
+        if self.config.use_amp:
+            self.scaler = torch.GradScaler(self.device.type)
+        else:
+            self.scaler = None
+
     def split_data(self, replay_buffer, validation_ratio: float) -> tuple[list, list]:
         """
         Splits the replay buffer into a training set and a validation set.
@@ -218,7 +229,7 @@ class NNEvaluator:
 
         return training_set, validation_set
 
-    def compute_losses(self, batch_data):
+    def compute_losses(self, batch_data, use_autocast=False):
         if len(batch_data) == 0:
             return None, None, None
 
@@ -250,17 +261,19 @@ class NNEvaluator:
         )
 
         # Forward pass
-        pred_logits, pred_values = self.network(inputs)
+        autocast_context = torch.autocast(self.device.type) if use_autocast else nullcontext()
+        with autocast_context:
+            pred_logits, pred_values = self.network(inputs)
 
-        if self.config.mask_training_predictions:
-            # Apply masking - this means that even if the network gives a high probability to an invalid
-            # action in the policy, we don't penalize it.
-            pred_logits = pred_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
+            if self.config.mask_training_predictions:
+                # Apply masking - this means that even if the network gives a high probability to an invalid
+                # action in the policy, we don't penalize it.
+                pred_logits = pred_logits * action_masks + INVALID_ACTION_VALUE * (1 - action_masks)
 
-        # Compute losses
-        policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
-        value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
-        total_loss = policy_loss + value_loss
+            # Compute losses
+            policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
+            value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
+            total_loss = policy_loss + value_loss
 
         return policy_loss, value_loss, total_loss
 
@@ -306,7 +319,8 @@ class NNEvaluator:
             # Sample random batch from replay buffer
             batch_data = random.sample(training_set, self.batch_size)
 
-            policy_loss, value_loss, total_loss = self.compute_losses(batch_data)
+            policy_loss, value_loss, total_loss = self.compute_losses(batch_data, use_autocast=self.config.use_amp)
+            assert total_loss is not None, "total_loss should not be None"
 
             if i % show_loss_every == 0 and on_new_entry is not None:
                 with torch.no_grad():
@@ -317,8 +331,16 @@ class NNEvaluator:
 
             # Backward pass
             self.optimizer.zero_grad()
-            total_loss.backward()
-            self.optimizer.step()
+            if self.scaler is not None:
+                scaled_loss = self.scaler.scale(
+                    total_loss,
+                )
+                scaled_loss.backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                total_loss.backward()
+                self.optimizer.step()
 
         # Get a last entry for the losses after the last backprop
         with torch.no_grad():

@@ -162,6 +162,9 @@ class AlphaZeroParams(SubargsBase):
     # illegal.
     nn_mask_training_predictions: bool = False
 
+    # If true, use automatic mixed precision in pytorch.
+    nn_use_amp: bool = False
+
     # Maximum size of for entries in worker cache
     max_cache_size: int = 200000
 
