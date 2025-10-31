@@ -610,7 +610,7 @@ class AlphaZeroAgent(TrainableAgent):
         for game_idx, root_children, root_value, game, player in zip(
             game_indices, root_children_batch, root_value_batch, games, players
         ):
-            visit_counts = np.array([child.visit_count for child in root_children])
+            visit_counts = root_children
             visit_counts_sum = np.sum(visit_counts)
             if visit_counts_sum == 0:
                 raise RuntimeError("No nodes visited during MCTS")
@@ -638,22 +638,24 @@ class AlphaZeroAgent(TrainableAgent):
                 visit_probs = visit_probs / np.sum(visit_probs)
 
             # Sample from probability distribution
-            best_child = np.random.choice(root_children, p=visit_probs)
-            action = best_child.action_taken
-            actions.append((game_idx, self.action_encoder.action_to_index(action)))
+            best_child = np.random.choice(len(visit_probs), p=visit_probs)
+            # action = best_child.action_taken
+            actions.append((game_idx, best_child))
 
             # TODO: this is disabled with multiple ids because we would need to keep multiple visited states sets,
             # one per game. Is it worth implementing?
             if len(observations_with_ids) == 1 and self.params.penalized_visited_states:
-                self.visited_states.add(QuoridorKey(best_child.game))
+                self.visited_states.add(QuoridorKey(best_child.game))  # error
 
             # Store training data if in training mode
             if self.params.training_mode:
                 # Convert visit counts to policy target (normalized)
-                policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
-                for child in root_children:
-                    action_index = self.action_encoder.action_to_index(child.action_taken)
-                    policy_target[action_index] = child.visit_count / visit_counts_sum
+                # policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+                # for child in root_children:
+                #     action_index = self.action_encoder.action_to_index(child.action_taken)
+                #     policy_target[action_index] = child.visit_count / visit_counts_sum
+                # TODO this was calculated before, maybe store it somewhere else
+                policy_target = visit_counts / visit_counts_sum
                 self.store_training_data(game, policy_target, player, game_idx)
 
         return actions
