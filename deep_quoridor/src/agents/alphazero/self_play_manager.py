@@ -205,6 +205,7 @@ def run_self_play_games(
 
     game_i = 0
     while game_i < num_games:
+        print(f"Worker {worker_id}: game_i={game_i}")
         n = min(num_parallel_games, num_games - game_i)
         environments = environments[:n]  # we may have less games in the last batch
         for i in range(n):
@@ -218,6 +219,7 @@ def run_self_play_games(
 
         t0 = time.time()
         while not all(finished):
+            print(f"Worker {worker_id}: num_turns={num_turns}")
             observations = []
             for i in range(n):
                 if finished[i]:
