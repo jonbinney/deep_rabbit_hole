@@ -47,6 +47,7 @@ class WandbTrainPlugin(ArenaPlugin):
         agent_encoded_name: str,
         metrics: Metrics,
         agent_evolution_tournament: Optional[AgentEvolutionTournament] = None,
+        include_raw_metrics: bool = False,
     ):
         self.params = params
         self.total_episodes = total_episodes
@@ -58,6 +59,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.best_model_relative_elo = -800
         self.metrics = metrics
         self.agent_evolution_tournament = agent_evolution_tournament
+        self.include_raw_metrics = include_raw_metrics
 
     def _initialize(self, game):
         assert self.agent
@@ -153,12 +155,11 @@ class WandbTrainPlugin(ArenaPlugin):
 
         wandb.finish()
 
-    def compute_tournament_metrics(self, model_filename: str) -> int:
-        agent_name = self.agent_encoded_name.split(":")[0]
-        override_args = {"model_filename": model_filename, "nick": f"{agent_name}_{self.episode_count}"}
-        agent_encoded_name = override_subargs(self.agent_encoded_name, override_args)
+    def _run_benchmark(self, agent_encoded_name: str, prefix: str = ""):
+        if prefix != "":
+            prefix = prefix + "_"
 
-        Timer.start("benchmark")
+        Timer.start(f"{prefix}benchmark")
         (
             _,
             _,
@@ -168,10 +169,32 @@ class WandbTrainPlugin(ArenaPlugin):
             p2_win_percentages,
             absolute_elo,
             dumb_score,
-            dumb_score_raw,
         ) = self.metrics.compute(agent_encoded_name)
-        Timer.finish("benchmark", self.episode_count)
+        Timer.finish(f"{prefix}benchmark", self.episode_count)
 
+        metrics = {
+            f"{prefix}relative_elo": relative_elo,
+            f"{prefix}win_perc": win_perc,
+            f"{prefix}absolute_elo": absolute_elo,
+            f"{prefix}dumb_score": dumb_score,
+            "Episode": self.episode_count,  # x axis
+        }
+
+        for opponent in p1_win_percentages:
+            metrics[f"{prefix}p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
+        for opponent in p2_win_percentages:
+            metrics[f"{prefix}p2_win_perc_vs_{opponent}"] = p2_win_percentages[opponent]
+
+        return metrics
+
+    def compute_tournament_metrics(self, model_filename: str) -> int:
+        agent_name = self.agent_encoded_name.split(":")[0]
+        override_args = {"model_filename": model_filename, "nick": f"{agent_name}_{self.episode_count}"}
+        agent_encoded_name = override_subargs(self.agent_encoded_name, override_args)
+
+        metrics = self._run_benchmark(agent_encoded_name)
+        relative_elo = metrics["relative_elo"]
+        win_perc = metrics["win_perc"]
         print(f"Tournament Metrics - Relative elo: {relative_elo}, win percentage: {win_perc}")
         if relative_elo > self.best_model_relative_elo:
             self.best_model_relative_elo = relative_elo
@@ -179,14 +202,10 @@ class WandbTrainPlugin(ArenaPlugin):
             print("Best Relative Elo so far!")
             self._upload_model(self.best_model_filename, aliases=[f"best-ep_{self.episode_count}-{self.run.id}"])
 
-        metrics = {
-            "relative_elo": relative_elo,
-            "win_perc": win_perc,
-            "absolute_elo": absolute_elo,
-            "dumb_score": dumb_score,
-            "dumb_score_raw": dumb_score_raw,
-            "Episode": self.episode_count,  # x axis
-        }
+        if self.include_raw_metrics:
+            raw_encoded_name = override_subargs(agent_encoded_name, {"mcts_n": 0})
+            raw_metrics = self._run_benchmark(raw_encoded_name, prefix="raw")
+            metrics.update(raw_metrics)
 
         if self.agent_evolution_tournament is not None:
             Timer.start("benchmark-agent-evolution")
@@ -201,11 +220,6 @@ class WandbTrainPlugin(ArenaPlugin):
             sorted_elos = sorted(elos_by_agent_episode.items(), key=lambda x: x[1], reverse=True)
             for i, (ep, _) in enumerate(sorted_elos):
                 metrics[f"agent_evolution_place_{i + 1}"] = ep
-
-        for opponent in p1_win_percentages:
-            metrics[f"p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
-        for opponent in p2_win_percentages:
-            metrics[f"p2_win_perc_vs_{opponent}"] = p2_win_percentages[opponent]
 
         self.run.log(metrics)
 
