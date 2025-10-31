@@ -3,7 +3,7 @@ from typing import Optional
 
 import numpy as np
 from numpy.random import dirichlet
-from quoridor import Action, Quoridor
+from quoridor import Quoridor
 
 
 class QuoridorKey:
@@ -19,71 +19,64 @@ class QuoridorKey:
 
 
 @dataclass
-class NodeProConfig:
+class NodeConfig:
     action_size: int
     c_puct: float
 
 
-class NodePro:
-    def __init__(
-        self, game: Quoridor, parent: Optional["NodePro"], pos_at_parent: int, config: Optional[NodeProConfig] = None
-    ):
+class Node:
+    class Children:
+        def __init__(self, priors: np.ndarray):
+            indices = np.flatnonzero(priors)
+            n = len(indices)
+            self.priors = priors[indices]
+            self.actions = indices
+            self.visit_counts = np.zeros((n), dtype=np.int32)
+            self.value_sums = np.zeros((n), dtype=np.float32)
+            self.children_nodes = np.empty((n), dtype=object)
+
+    def __init__(self, game: Quoridor, parent: Optional["Node"], pos_at_parent: int, config: NodeConfig):
         self.game = game
         self.parent = parent
         self.pos_at_parent = pos_at_parent
-        if self.parent:
-            self.config = self.parent.config
-        else:
-            assert config is not None
-            self.config = config
+        self.config = config
 
-        self.actions = None
-        self.visit_counts = None
-        self.value_sums = None
-        self.priors = None
-        self.children_nodes = None
-        self.expanded = False
+        self.children = None
 
     def should_expand(self):
-        return not self.expanded
+        return self.children is None
 
     def expand(self, priors: np.ndarray):
-        indices = np.flatnonzero(priors)
-        n = len(indices)
-        self.priors = priors[indices]
-        self.actions = indices
-        self.visit_counts = np.zeros((n), dtype=np.int32)
-        self.value_sums = np.zeros((n), dtype=np.float32)
-        self.children_nodes: list[Optional[NodePro]] = [None] * n
-        self.expanded = True
+        self.children = Node.Children(priors)
 
-    def select(self) -> "NodePro":
+    def select(self) -> "Node":
         """
         Return the child of the current node with the highest ucb
         """
         if self.parent is None and self.should_expand():
             return self  # TO DO,
 
-        assert self.expanded and self.value_sums and self.visit_counts and self.priors and self.children_nodes
+        assert self.children
+        children = self.children
 
         # Compute Q values: value_sums / visit_counts, but 0 where visit_counts == 0
-        q_values = np.zeros_like(self.value_sums)
-        nonzero_mask = self.visit_counts != 0
-        q_values[nonzero_mask] = self.value_sums[nonzero_mask] / self.visit_counts[nonzero_mask]
+        q_values = np.zeros_like(children.value_sums)
+        nonzero_mask = children.visit_counts != 0
+        q_values[nonzero_mask] = children.value_sums[nonzero_mask] / children.visit_counts[nonzero_mask]
         # print(f"{q_values=}")
-        total_visit_count = np.sum(self.visit_counts) + 1
-        ucb = q_values + self.priors * self.config.c_puct * np.sqrt(total_visit_count) / (self.visit_counts + 1)
+        total_visit_count = np.sum(children.visit_counts) + 1
+        ucb = q_values + children.priors * self.config.c_puct * np.sqrt(total_visit_count) / (children.visit_counts + 1)
 
         # print(f"{ucb=}")
         max_index = int(np.argmax(ucb))
-        if self.children_nodes[max_index] is None:
+        if children.children_nodes[max_index] is None:
             game = self.game.create_new()
-            action = self.game.action_encoder.index_to_action(self.actions[max_index])
+            action = self.game.action_encoder.index_to_action(children.actions[max_index])
             game.step(action)
-            self.children_nodes[max_index] = NodePro(game, self, max_index)
+            children.children_nodes[max_index] = Node(game, self, max_index, self.config)
 
         # assert self.children_nodes[max_index] is not None
-        return self.children_nodes[max_index]
+        return children.children_nodes[max_index]
 
     def backpropagate(self, value: float):
         """
@@ -91,147 +84,30 @@ class NodePro:
         """
         # TODo not recursive
         if self.parent is not None:
-            assert self.parent.value_sums and self.parent.visit_counts
-            self.parent.value_sums[self.pos_at_parent] += value
-            self.parent.visit_counts[self.pos_at_parent] += 1
+            children = self.parent.children
+            assert children
+            children.value_sums[self.pos_at_parent] += value
+            children.visit_counts[self.pos_at_parent] += 1
             self.parent.backpropagate(-value)
 
     def backpropagate_result(self, value: float):
         return self.backpropagate(value)  # TO DO
 
-    def results_dict(self):
-        results = {}
-        for i, child in enumerate(self.children_nodes):
-            if child is None:
-                continue
-
-            results[self.actions[i]] = self.visit_counts[i]
-
-        return results
-
     def results(self):
+        assert self.children
         results = np.zeros((self.config.action_size), dtype=np.int32)
-        for i, child in enumerate(self.children_nodes):
-            if child is None:
-                continue
+        indices = np.nonzero(self.children.visit_counts)
+        results[self.children.actions[indices]] = self.children.visit_counts[indices]
+        # for i, child in enumerate(self.children_nodes):
+        #     if child is None:
+        #         continue
 
-            results[self.actions[i]] = self.visit_counts[i]
+        #     results[self.actions[i]] = self.visit_counts[i]
 
         return results
-
-    def children(self):
-        children = []
-        for i, child in enumerate(self.children_nodes):
-            if child is None:
-                continue
-            action = self.game.action_encoder.index_to_action(self.actions[i])
-
-            n = Node(child.game, None, action, 0.0, self.priors[i])  # TO DO
-            n.visit_count = self.visit_counts[i]
-            n.value_sum = self.value_sums[i]
-            children.append(n)
-            # print(f"===== {n.action_taken}, {n.visit_count}, {n.value_sum}")
-
-        return children
 
     def value(self):
-        return -(np.sum(self.value_sums) / np.sum(self.visit_counts))
-
-
-class Node:
-    def __init__(
-        self,
-        game: Optional[Quoridor],  # If None, the game will be computed lazily from the parent when needed
-        parent: Optional["Node"] = None,
-        action_taken: Optional[Action] = None,
-        ucb_c: float = 1.0,
-        prior: float = 0.0,
-    ):
-        if game is None:
-            assert parent is not None, "When constructing a node without a game, the parent should be provided"
-            assert action_taken is not None, (
-                "When constructing a node without a game, the action_taken should be provided"
-            )
-
-        self._game = game
-        self.parent = parent
-        self.action_taken = action_taken
-
-        self.children = []
-        self.visit_count = 0
-        self.value_sum = 0.0
-        self.wins = 0
-        self.losses = 0
-
-        self.ucb_c = ucb_c
-        self.prior = prior
-
-    @property
-    def game(self) -> Quoridor:
-        """
-        The game is lazily set when used, by copying the parent's game and applying the action taken.
-        """
-        if self._game is None:
-            assert self.parent is not None, "The root node should have a non-None game attribute"
-            assert self.action_taken is not None, "The root node should have a non-None action_taken attribute"
-            self._game = self.parent.game.create_new()
-            self._game.step(self.action_taken)
-
-        return self._game
-
-    def should_expand(self):
-        return len(self.children) == 0
-
-    def expand(self, priors: np.ndarray):
-        """
-        Create all the children of the current node.
-        """
-        for action_index, prob in enumerate(priors):
-            assert 0.0 <= prob <= 1.0, "Invalid action probability in policy"
-            if prob > 0.0:
-                action = self.game.action_encoder.index_to_action(action_index)
-                child = Node(game=None, parent=self, action_taken=action, ucb_c=self.ucb_c, prior=prob)
-                self.children.append(child)
-
-    def select(self, visited_states) -> "Node":
-        """
-        Return the child of the current node with the highest ucb
-        """
-        ucbc_visitcount = self.ucb_c * np.sqrt(self.visit_count)
-
-        def get_child_ucb(child: "Node") -> float:
-            """
-            Calculate the UCB value for a child node.
-            """
-            penalized = -1 if visited_states and QuoridorKey(child.game) in visited_states else 0
-            q_value = 0.0
-            if child.visit_count != 0:
-                q_value = child.value_sum / child.visit_count
-            return q_value + child.prior * ucbc_visitcount / (child.visit_count + 1) + penalized
-
-        return max(self.children, key=get_child_ucb)
-
-    def backpropagate(self, value: float):
-        """
-        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
-        """
-        self.value_sum += value
-        self.visit_count += 1
-        if self.parent is not None:
-            self.parent.backpropagate(-value)
-
-    def backpropagate_result(self, value: float):
-        """
-        Update the nodes from the current node up to the tree by increasing the visit count and adding the value
-        It also tracks actual game results (wins and losses)
-        """
-        self.value_sum += value
-        self.visit_count += 1
-        self.wins = self.wins + (1 if value == 1 else 0)
-        self.losses = self.losses + (1 if value == -1 else 0)
-
-        if self.parent is not None:
-            self.parent.backpropagate_result(-value)
+        return -(np.sum(self.children.value_sums) / np.sum(self.children.visit_counts))
 
 
 class MCTS:
@@ -256,7 +132,7 @@ class MCTS:
         self.evaluator = evaluator
         self.visited_states = visited_states
 
-    def select(self, node: NodePro) -> NodePro:
+    def select(self, node: Node) -> Node:
         """
         Select a node to expand, starting from the given node.
         As long as the passed node has leaves to expand, that one will be selected.
@@ -276,8 +152,8 @@ class MCTS:
         max_iterations = max(num_iterations)
 
         # TODO: redo MCTS 0
-        config = NodeProConfig(initial_games[0].action_encoder.num_actions, self.ucb_c)
-        roots = [NodePro(g, None, 0, config) for g in initial_games]
+        config = NodeConfig(initial_games[0].action_encoder.num_actions, self.ucb_c)
+        roots = [Node(g, None, 0, config) for g in initial_games]
 
         # # When n is 0, it plays just with the NN and doesn't actually perform MCTS.
         # # For this, we just set the visit counts to a value proportional to the prior
