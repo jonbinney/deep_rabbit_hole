@@ -157,6 +157,7 @@ def main(args):
             agent_encoded_name,
             metrics,
             agent_evolution_tournament,
+            include_raw_metrics=True,
         )
 
     t0 = time.time()
