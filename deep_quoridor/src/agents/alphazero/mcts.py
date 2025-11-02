@@ -33,7 +33,7 @@ class Node:
             self.actions = indices
             self.visit_counts = np.zeros((n), dtype=np.int32)
             self.value_sums = np.zeros((n), dtype=np.float32)
-            self.children_nodes = np.empty((n), dtype=object)
+            self.children_nodes = [None] * n
 
     def __init__(self, game: Quoridor, parent: Optional["Node"], pos_at_parent: int, config: NodeConfig):
         self.game = game
