@@ -42,12 +42,15 @@ class Node:
         self.config = config
 
         self.children = None
+        self.q_values = None
+        self.visit_count = 0
 
     def should_expand(self):
         return self.children is None
 
     def expand(self, priors: np.ndarray):
         self.children = Node.Children(priors)
+        self.q_values = np.zeros_like(self.children.value_sums)
 
     def select(self) -> "Node":
         """
@@ -56,16 +59,16 @@ class Node:
         if self.parent is None and self.should_expand():
             return self  # TO DO,
 
-        assert self.children
+        assert self.children and self.q_values is not None
         children = self.children
 
         # Compute Q values: value_sums / visit_counts, but 0 where visit_counts == 0
-        q_values = np.zeros_like(children.value_sums)
-        nonzero_mask = children.visit_counts != 0
-        q_values[nonzero_mask] = children.value_sums[nonzero_mask] / children.visit_counts[nonzero_mask]
+        # nonzero_mask = children.visit_counts != 0
+        # self.q_values[nonzero_mask] = children.value_sums[nonzero_mask] / children.visit_counts[nonzero_mask]
         # print(f"{q_values=}")
-        total_visit_count = np.sum(children.visit_counts) + 1
-        ucb = q_values + children.priors * self.config.c_puct * np.sqrt(total_visit_count) / (children.visit_counts + 1)
+        ucb = self.q_values + children.priors * self.config.c_puct * np.sqrt(self.visit_count) / (
+            children.visit_counts + 1
+        )
 
         # print(f"{ucb=}")
         max_index = int(np.argmax(ucb))
@@ -83,11 +86,15 @@ class Node:
         Update the nodes from the current node up to the tree by increasing the visit count and adding the value
         """
         # TODo not recursive
+        self.visit_count += 1
         if self.parent is not None:
             children = self.parent.children
             assert children
             children.value_sums[self.pos_at_parent] += value
             children.visit_counts[self.pos_at_parent] += 1
+            self.parent.q_values[self.pos_at_parent] = (
+                children.value_sums[self.pos_at_parent] / children.visit_counts[self.pos_at_parent]
+            )
             self.parent.backpropagate(-value)
 
     def backpropagate_result(self, value: float):
