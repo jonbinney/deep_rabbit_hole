@@ -14,6 +14,9 @@ from metrics import Metrics
 from utils import Timer, resolve_path
 from utils.subargs import SubargsBase, override_subargs
 
+# Prevents getting messages in the console every few lines telling you to install weave
+os.environ["WANDB_DISABLE_WEAVE"] = "true"
+
 
 @dataclass
 class WandbParams(SubargsBase):
@@ -112,17 +115,18 @@ class WandbTrainPlugin(ArenaPlugin):
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon, "Episode": self.episode_count}
             )
 
-    def _upload_model(self, save_file: str, aliases: list[str] | None = None) -> str:
+    def upload_model(self, model_file: str, extra_files: list[str] = []) -> str:
         assert self.agent
-
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
-        artifact.add_file(local_path=save_file)
+        artifact.add_file(local_path=model_file)
+        for file in extra_files:
+            artifact.add_file(local_path=file)
+
         artifact.save()
         logged_artifact = wandb.log_artifact(artifact)
         logged_artifact.wait(60)
-        if aliases is not None:
-            logged_artifact.aliases.extend(aliases)
-            logged_artifact.save()
+        logged_artifact.aliases.extend([f"ep_{self.episode_count}-{self.run.id}"])
+        logged_artifact.save()
 
         print(f"Done! Model uploaded with version {logged_artifact.version} and aliases {logged_artifact.aliases}")
 
@@ -132,27 +136,11 @@ class WandbTrainPlugin(ArenaPlugin):
         # the expected name and doesn't need to be re-downloaded from wandb.
         # Source and target file are in the same path, just a different file name
         os.makedirs(Path(wand_file).absolute().parents[0], exist_ok=True)
-        shutil.copy(save_file, wand_file)
+        shutil.copy(model_file, wand_file)
         print(f"Model saved to {wand_file}")
         return str(wand_file)
 
     def end_arena(self, game, results):
-        assert self.agent
-        if not self.params.upload_model:
-            print("Model NOT uploaded to wandb since using `upload_model=False`")
-            wandb.finish()
-            return
-
-        # Save the model in the wandb directory with the suffix "final".  The file will be renamed
-        # once we upload it to wandb and have the digest.
-        save_file = resolve_path(self.agent.params.wandb_dir, self.agent.resolve_filename("final"))
-        self.agent.save_model(save_file)
-
-        print("Uploading the final model to wandb...")
-        self._upload_model(str(save_file))
-
-        Timer.log_totals()
-
         wandb.finish()
 
     def _run_benchmark(self, agent_encoded_name: str, prefix: str = ""):
@@ -200,7 +188,6 @@ class WandbTrainPlugin(ArenaPlugin):
             self.best_model_relative_elo = relative_elo
             self.best_model_filename = model_filename
             print("Best Relative Elo so far!")
-            self._upload_model(self.best_model_filename, aliases=[f"best-ep_{self.episode_count}-{self.run.id}"])
 
         if self.include_raw_metrics:
             raw_encoded_name = override_subargs(agent_encoded_name, {"mcts_n": 0})

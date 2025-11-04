@@ -282,6 +282,15 @@ class AlphaZeroAgent(TrainableAgent):
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
 
+    def wandb_artifact(self):
+        alias = self.params.wandb_alias
+        if not alias:
+            return None
+
+        api = wandb.Api()
+        path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
+        return api.artifact(path, type="model")
+
     # TO DO, this was copy-pasted from AbstractTrainableAgent, need to refactor it
     def _fetch_model_from_wandb_and_update_params(self):
         """
@@ -290,13 +299,9 @@ class AlphaZeroAgent(TrainableAgent):
         The params are updated to the artifact metadata.
 
         """
-        alias = self.params.wandb_alias
-        if not alias:
+        artifact = self.wandb_artifact()
+        if artifact is None:
             return
-
-        api = wandb.Api()
-        path = f"the-lazy-learning-lair/{self.params.wandb_project}/{self.model_id()}:{alias}"
-        artifact = api.artifact(path, type="model")
         local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
 
         self.params.model_filename = str(local_filename)
@@ -304,7 +309,7 @@ class AlphaZeroAgent(TrainableAgent):
         if os.path.exists(local_filename):
             return local_filename
 
-        print(f"{self.name()} - Fetching model from wandb: {path}")
+        print(f"{self.name()} - Fetching model from wandb: {artifact.name}")
 
         os.makedirs(local_filename.parent, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmpdir:
