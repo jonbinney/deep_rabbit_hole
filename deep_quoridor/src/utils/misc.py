@@ -48,17 +48,13 @@ def my_device():
         dc = torch.cuda.device_count()
         if dc > 1:
             gpu_n = os.getpid() % dc
-            print(f"DEVICE: Found CUDA with {dc} GPUs.  Usign CUDA:{gpu_n}")
             return torch.device(f"cuda:{gpu_n}")
 
-        print("DEVICE: using cuda")
         return torch.device("cuda")
 
     if torch.backends.mps.is_available():
-        print("DEVICE: using MPS")
         return torch.device("mps")
 
-    print("DEVICE: using CPU")
     return torch.device("cpu")
 
 
