@@ -80,8 +80,6 @@ def train_alphazero(
 
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
-        wandb_train_plugin.episode_count = initial_epoch * args.games_per_epoch
-        wandb_train_plugin.upload_model(str(current_filename))
         wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     last_epoch = initial_epoch + args.epochs
