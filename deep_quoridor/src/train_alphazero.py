@@ -1,10 +1,14 @@
 import argparse
 import copy
+import gzip
 import multiprocessing as mp
+import os
+import pickle
 import sys
+import tempfile
 import time
 from dataclasses import asdict
-from typing import Optional
+from typing import BinaryIO, Optional, cast
 
 from agent_evolution_tournament import AgentEvolutionTournament, AgentEvolutionTournamentParams
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroBenchmarkOverrideParams, AlphaZeroParams
@@ -32,6 +36,27 @@ def train_alphazero(
         args.max_walls,
         params=training_params,
     )
+    initial_epoch = 0
+    initial_artifact = training_agent.wandb_artifact()
+    if initial_artifact:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_dir = initial_artifact.download(root=tmpdir)
+            filename = os.path.join(artifact_dir, "training_state.gz")
+            if not os.path.exists(filename):
+                raise RuntimeError(
+                    "The specified wandb checkpoint doesn't have training_state.gz, so it's not possible to continue training from this point"
+                )
+            with gzip.open(filename, "rb") as f:
+                data = pickle.load(f)
+
+        initial_epoch = data["epoch"]
+        training_agent.replay_buffer.extend(data["replay_buffer"])
+        # TO DO: this is a bit tricky, so not sure if it's worth implementing, because the agent evolution tournament
+        # relies on local model files that could not exist because they were deleted or created in another computer,
+        # or they could even belong to a different training.  If we want to allow agent_evolution to continue, maybe
+        # a solution would be to use a wandb alias rather than a local file name
+        # if wandb_train_plugin is not None and wandb_train_plugin.agent_evolution_tournament is not None:
+        #    wandb_train_plugin.agent_evolution_tournament.elos = data["agent_evolution_elos"]
 
     current_filename = training_agent.save_model_with_suffix("_initial")
 
@@ -55,10 +80,10 @@ def train_alphazero(
 
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
-        wandb_train_plugin.episode_count = 0
         wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
-    for epoch in range(args.epochs):
+    last_epoch = initial_epoch + args.epochs
+    for epoch in range(initial_epoch, last_epoch):
         print(f"Starting epoch {epoch}")
 
         # Set the filename so that each process loads the most recent model.
@@ -90,23 +115,44 @@ def train_alphazero(
         Timer.finish("self-play", game_num)
 
         # Do training if we have enough samples in the replay buffer.
-        # training_agent.episode_count = game_num
         training_occured = training_agent.train_iteration(epoch=epoch)
         if not training_occured:
             print("Not enough samples - skipping training")
 
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
-        if wandb_train_plugin is not None and (epoch + 1) % args.benchmarks_every == 0:
-            # Save the model where the plugin wants it and use the plugin to compute metrics.
+        if wandb_train_plugin is not None:
             wandb_train_plugin.episode_count = game_num
-            wandb_train_plugin.compute_tournament_metrics(str(current_filename))
+            # Compute the metrics periodically and in the last epoch
+            if (epoch + 1) % args.benchmarks_every == 0 or epoch == last_epoch - 1:
+                wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
-    # Close the arena so the best model and the final model are uploaded to wandb
+            # Upload the model and training state
+            with tempfile.TemporaryDirectory() as tmpdir:
+                training_state_filename = os.path.join(tmpdir, "training_state.gz")
+                save_training_state(training_state_filename, training_agent, wandb_train_plugin, epoch + 1, game_num)
+                wandb_train_plugin.upload_model(str(current_filename), [training_state_filename])
+
+    Timer.log_totals()
+
+    # Close the arena to finish wandb run
     if wandb_train_plugin is not None:
-        wandb_train_plugin.episode_count = game_num
         wandb_train_plugin.end_arena(None, [])
-    else:
-        Timer.log_totals()
+
+
+def save_training_state(
+    path: str, agent: AlphaZeroAgent, wandb_train_plugin: WandbTrainPlugin, epoch: int, episode: int
+):
+    aet = wandb_train_plugin.agent_evolution_tournament
+    agent_evolution_elos = aet.elos if aet else {}
+
+    state = {
+        "replay_buffer": list(agent.replay_buffer),
+        "epoch": epoch,
+        "episode": episode,
+        "agent_evolution_elos": agent_evolution_elos,
+    }
+    with gzip.open(path, "wb") as f:
+        pickle.dump(state, cast(BinaryIO, f))
 
 
 def main(args):
