@@ -77,7 +77,6 @@ class SelfPlayManager(threading.Thread):
                     self._result_queue,
                     self.num_parallel_games,
                     self.epoch,
-                    self.wandb_params,
                 ),
             )
             workers.append(worker_process)
