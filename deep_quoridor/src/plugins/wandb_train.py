@@ -38,6 +38,9 @@ class WandbParams(SubargsBase):
     # How often to log training metrics
     log_every: int = 10
 
+    # Wether workers will also log to wandb (in separate runs)
+    log_from_workers: bool = True
+
     def run_id(self):
         return f"{self.prefix}-{self.suffix}"
 
