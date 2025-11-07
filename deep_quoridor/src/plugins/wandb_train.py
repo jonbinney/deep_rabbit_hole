@@ -124,7 +124,7 @@ class WandbTrainPlugin(ArenaPlugin):
 
         artifact.save()
         logged_artifact = wandb.log_artifact(artifact)
-        logged_artifact.wait(60)
+        logged_artifact.wait(300)
         logged_artifact.aliases.extend([f"ep_{self.episode_count}-{self.run.id}"])
         logged_artifact.save()
 
