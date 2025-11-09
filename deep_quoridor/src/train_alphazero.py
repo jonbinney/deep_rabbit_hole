@@ -80,7 +80,8 @@ def train_alphazero(
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
         wandb_train_plugin.episode_count = initial_epoch * args.games_per_epoch
-        wandb_train_plugin.compute_tournament_metrics(str(current_filename))
+        if not args.benchmarks_skip_initial:
+            wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     last_epoch = initial_epoch + args.epochs
     for epoch in range(initial_epoch, last_epoch):
@@ -268,6 +269,9 @@ if __name__ == "__main__":
         help="Every how many epochs to compute the benchmark",
     )
     parser.add_argument("--benchmarks_params", nargs="?", const="", default=None, type=str)
+    parser.add_argument(
+        "--benchmarks_skip_initial", action="store_true", default=False, help="Skip the initial benchmark"
+    )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
         "-pg",
