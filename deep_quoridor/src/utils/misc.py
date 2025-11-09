@@ -1,5 +1,7 @@
 import argparse
+import os
 import random
+from functools import cache
 from glob import glob
 from pathlib import Path
 from typing import Optional
@@ -40,8 +42,14 @@ def get_initial_random_seed():
     return initial_random_seed
 
 
+@cache
 def my_device():
     if torch.cuda.is_available():
+        dc = torch.cuda.device_count()
+        if dc > 1:
+            gpu_n = os.getpid() % dc
+            return torch.device(f"cuda:{gpu_n}")
+
         return torch.device("cuda")
 
     if torch.backends.mps.is_available():

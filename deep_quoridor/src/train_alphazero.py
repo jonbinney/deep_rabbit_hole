@@ -77,9 +77,9 @@ def train_alphazero(
         # because it calls the plugin's internal _intialize method which sets up metrics.
         wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
         training_agent.set_wandb_run(wandb_train_plugin.run)
-
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
+        wandb_train_plugin.episode_count = initial_epoch * args.games_per_epoch
         wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     last_epoch = initial_epoch + args.epochs
@@ -122,15 +122,15 @@ def train_alphazero(
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
         if wandb_train_plugin is not None:
             wandb_train_plugin.episode_count = game_num
-            # Compute the metrics periodically and in the last epoch
-            if (epoch + 1) % args.benchmarks_every == 0 or epoch == last_epoch - 1:
-                wandb_train_plugin.compute_tournament_metrics(str(current_filename))
-
             # Upload the model and training state
             with tempfile.TemporaryDirectory() as tmpdir:
                 training_state_filename = os.path.join(tmpdir, "training_state.gz")
                 save_training_state(training_state_filename, training_agent, wandb_train_plugin, epoch + 1, game_num)
                 wandb_train_plugin.upload_model(str(current_filename), [training_state_filename])
+
+            # Compute the metrics periodically and in the last epoch
+            if (epoch + 1) % args.benchmarks_every == 0 or epoch == last_epoch - 1:
+                wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     Timer.log_totals()
 

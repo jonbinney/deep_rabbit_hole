@@ -10,7 +10,7 @@ import quoridor_env
 import torch
 import wandb
 from plugins.wandb_train import WandbParams
-from utils import set_deterministic
+from utils import my_device, set_deterministic
 from utils.timer import Timer
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
@@ -165,11 +165,11 @@ def run_self_play_games(
     set_deterministic(random_seed)
 
     print(
-        f"Worker {worker_id} starting, running {num_games} games ({num_parallel_games} in parallel) with random seed {random_seed}"
+        f"Worker {worker_id} starting ({my_device()}), running {num_games} games ({num_parallel_games} in parallel) with random seed {random_seed}"
     )
 
     wandb_run = None
-    if wandb_params is not None:
+    if wandb_params is not None and wandb_params.log_from_workers:
         run_id = f"{wandb_params.run_id()}-worker-{worker_id}"
         print(f"Wandb group: {wandb_params.run_id()} run: {run_id}")
         wandb_run = wandb.init(

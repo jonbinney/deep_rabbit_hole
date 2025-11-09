@@ -38,6 +38,9 @@ class WandbParams(SubargsBase):
     # How often to log training metrics
     log_every: int = 10
 
+    # Wether workers will also log to wandb (in separate runs)
+    log_from_workers: bool = True
+
     def run_id(self):
         return f"{self.prefix}-{self.suffix}"
 
@@ -124,7 +127,7 @@ class WandbTrainPlugin(ArenaPlugin):
 
         artifact.save()
         logged_artifact = wandb.log_artifact(artifact)
-        logged_artifact.wait(60)
+        logged_artifact.wait(300)
         logged_artifact.aliases.extend([f"ep_{self.episode_count}-{self.run.id}"])
         logged_artifact.save()
 
