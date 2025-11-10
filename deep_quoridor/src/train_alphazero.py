@@ -256,33 +256,33 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-bt",
-        "--benchmarks_t",
+        "--benchmarks-t",
         type=int,
         default=10,
         help="How many time to play against each opponent during benchmarks",
     )
     parser.add_argument(
         "-be",
-        "--benchmarks_every",
+        "--benchmarks-every",
         type=int,
         default=1,
         help="Every how many epochs to compute the benchmark",
     )
-    parser.add_argument("--benchmarks_params", nargs="?", const="", default=None, type=str)
+    parser.add_argument("--benchmarks-params", nargs="?", const="", default=None, type=str)
     parser.add_argument(
-        "--benchmarks_skip_initial", action="store_true", default=False, help="Skip the initial benchmark"
+        "--benchmarks-skip-initial", action="store_true", default=False, help="Skip the initial benchmark"
     )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
         "-pg",
-        "--parallel_games",
+        "--parallel-games",
         type=int,
         default=32,
         help="How many games to play in parallel per process",
     )
     parser.add_argument(
         "-a",
-        "--agent_evolution",
+        "--agent-evolution",
         nargs="?",
         const="",
         default=None,
