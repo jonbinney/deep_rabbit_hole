@@ -80,7 +80,8 @@ def train_alphazero(
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
         wandb_train_plugin.episode_count = initial_epoch * args.games_per_epoch
-        wandb_train_plugin.compute_tournament_metrics(str(current_filename))
+        if not args.benchmarks_skip_initial:
+            wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     last_epoch = initial_epoch + args.epochs
     for epoch in range(initial_epoch, last_epoch):
@@ -255,30 +256,33 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-bt",
-        "--benchmarks_t",
+        "--benchmarks-t",
         type=int,
         default=10,
         help="How many time to play against each opponent during benchmarks",
     )
     parser.add_argument(
         "-be",
-        "--benchmarks_every",
+        "--benchmarks-every",
         type=int,
         default=1,
         help="Every how many epochs to compute the benchmark",
     )
-    parser.add_argument("--benchmarks_params", nargs="?", const="", default=None, type=str)
+    parser.add_argument("--benchmarks-params", nargs="?", const="", default=None, type=str)
+    parser.add_argument(
+        "--benchmarks-skip-initial", action="store_true", default=False, help="Skip the initial benchmark"
+    )
     parser.add_argument("-w", "--wandb", nargs="?", const="", default=None, type=str)
     parser.add_argument(
         "-pg",
-        "--parallel_games",
+        "--parallel-games",
         type=int,
         default=32,
         help="How many games to play in parallel per process",
     )
     parser.add_argument(
         "-a",
-        "--agent_evolution",
+        "--agent-evolution",
         nargs="?",
         const="",
         default=None,

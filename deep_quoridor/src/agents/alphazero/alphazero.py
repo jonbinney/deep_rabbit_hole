@@ -131,7 +131,7 @@ class AlphaZeroParams(SubargsBase):
     wandb_dir: str = "wandbmodels"
 
     # Directory where local models are stored
-    model_dir = "models"
+    model_dir: str = "models"
 
     # If True, the agent will penalize visited states in MCTS to avoid cycling
     penalized_visited_states: bool = False
