@@ -13,7 +13,7 @@ import torch
 import wandb
 import wandb.wandb_run
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
-from utils import get_initial_random_seed, my_device, resolve_path
+from utils import get_initial_random_seed, my_device, resolve_path, timer
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
@@ -462,6 +462,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
+    @timer("training")
     def train_iteration(self, is_replay_buffer_bootstrap=False, epoch=None) -> bool:
         """
         Train the neural network on collected data.

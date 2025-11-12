@@ -123,14 +123,17 @@ def train_alphazero(
         current_filename = training_agent.save_model_with_suffix(f"_epoch_{epoch}")
         if wandb_train_plugin is not None:
             wandb_train_plugin.episode_count = game_num
-            # Upload the model and training state
-            with tempfile.TemporaryDirectory() as tmpdir:
-                training_state_filename = os.path.join(tmpdir, "training_state.gz")
-                save_training_state(training_state_filename, training_agent, wandb_train_plugin, epoch + 1, game_num)
-                wandb_train_plugin.upload_model(str(current_filename), [training_state_filename])
 
-            # Compute the metrics periodically and in the last epoch
+            # Compute the metrics and upload the model periodically and in the last epoch
             if (epoch + 1) % args.benchmarks_every == 0 or epoch == last_epoch - 1:
+                # Upload the model and training state
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    training_state_filename = os.path.join(tmpdir, "training_state.gz")
+                    save_training_state(
+                        training_state_filename, training_agent, wandb_train_plugin, epoch + 1, game_num
+                    )
+                    wandb_train_plugin.upload_model(str(current_filename), [training_state_filename])
+
                 wandb_train_plugin.compute_tournament_metrics(str(current_filename))
 
     Timer.log_totals()

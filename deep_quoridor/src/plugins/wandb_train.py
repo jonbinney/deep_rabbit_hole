@@ -11,7 +11,7 @@ from agent_evolution_tournament import AgentEvolutionTournament
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
 from metrics import Metrics
-from utils import Timer, resolve_path
+from utils import Timer, resolve_path, timer
 from utils.subargs import SubargsBase, override_subargs
 
 # Prevents getting messages in the console every few lines telling you to install weave
@@ -118,6 +118,7 @@ class WandbTrainPlugin(ArenaPlugin):
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon, "Episode": self.episode_count}
             )
 
+    @timer("upload_model")
     def upload_model(self, model_file: str, extra_files: list[str] = []) -> str:
         assert self.agent
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
