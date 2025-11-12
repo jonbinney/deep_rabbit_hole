@@ -116,7 +116,7 @@ def train_alphazero(
         Timer.finish("self-play", game_num)
 
         # Do training if we have enough samples in the replay buffer.
-        training_occured = training_agent.train_iteration(epoch=epoch)
+        training_occured = training_agent.train_iteration(epoch=epoch, episode=game_num)
         if not training_occured:
             print("Not enough samples - skipping training")
 
