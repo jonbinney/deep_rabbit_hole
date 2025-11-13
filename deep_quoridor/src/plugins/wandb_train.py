@@ -120,6 +120,7 @@ class WandbTrainPlugin(ArenaPlugin):
 
     def upload_model(self, model_file: str, extra_files: list[str] = []) -> str:
         assert self.agent
+        Timer.start("upload_model")
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
         artifact.add_file(local_path=model_file)
         for file in extra_files:
@@ -141,6 +142,8 @@ class WandbTrainPlugin(ArenaPlugin):
         os.makedirs(Path(wand_file).absolute().parents[0], exist_ok=True)
         shutil.copy(model_file, wand_file)
         print(f"Model saved to {wand_file}")
+        Timer.finish("upload_model", self.episode_count)
+
         return str(wand_file)
 
     def end_arena(self, game, results):

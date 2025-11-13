@@ -2,7 +2,6 @@ import os
 import pickle
 import shutil
 import tempfile
-import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,7 @@ import torch
 import wandb
 import wandb.wandb_run
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
-from utils import get_initial_random_seed, my_device, resolve_path
+from utils import Timer, get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
 
 from agents.alphazero.mcts import MCTS, QuoridorKey
@@ -462,7 +461,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_iteration(self, is_replay_buffer_bootstrap=False, epoch=None) -> bool:
+    def train_iteration(self, is_replay_buffer_bootstrap=False, epoch=None, episode=None) -> bool:
         """
         Train the neural network on collected data.
 
@@ -501,7 +500,7 @@ class AlphaZeroAgent(TrainableAgent):
                 self.save_replay_buffer_to_file(self.episode_count)
                 self.first_replay_buffer_saved = True
 
-        t0 = time.time()
+        Timer.start("training")
         print(f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...")
 
         if self.params.validation_ratio > 0.0:
@@ -513,7 +512,7 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio, on_new_entry=log_loss_entry)
 
-        print(f"Finished training in {time.time() - t0:.2f}s")
+        Timer.finish("training", episode)
 
         return True
 
