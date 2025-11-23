@@ -8,8 +8,11 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict
-from typing import BinaryIO, Optional, cast
+from pathlib import Path
+from typing import BinaryIO, cast
 
+import wandb
+import yaml
 from agent_evolution_tournament import AgentEvolutionTournament, AgentEvolutionTournamentParams
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroBenchmarkOverrideParams, AlphaZeroParams
 from agents.alphazero.self_play_manager import GameParams, SelfPlayManager
@@ -20,14 +23,66 @@ from utils import Timer, parse_subargs, set_deterministic
 from utils.subargs import override_subargs
 
 
-def train_alphazero(
-    args: argparse.Namespace,
-    wandb_train_plugin: Optional[WandbTrainPlugin],
-):
+def train_alphazero(args: argparse.Namespace):
+    alphazero_params = args.params
+
+    if args.wandb is None:
+        wandb_train_plugin = None
+    else:
+        # Create the benchmarks and evolution tournament, and then create the WandB training plugin
+        wandb_params = parse_subargs(args.wandb, WandbParams)
+        assert isinstance(wandb_params, WandbParams)
+
+        wandb_run = None
+        if args.sweep is not None:
+            # Instead of letting the wandb plugin start its own run, we create one from the sweep config
+            # and later pass it in to WandbTrainPlugin.start_game().
+            with open(args.sweep) as sweep_config_file:
+                sweep_config = yaml.load(sweep_config_file, Loader=yaml.FullLoader)
+
+            wandb_run = wandb.init(config=sweep_config)
+
+            # Apply the sweep params on top of the command line params
+            alphazero_params = override_subargs(alphazero_params, wandb_run.config["alphazero"])
+
+        metrics = Metrics(
+            args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps, args.num_workers
+        )
+
+        benchmark_params = alphazero_params
+        if args.benchmarks_params:
+            benchmark_param_overrides = parse_subargs(args.benchmarks_params, AlphaZeroBenchmarkOverrideParams)
+            assert isinstance(benchmark_param_overrides, AlphaZeroBenchmarkOverrideParams)
+            override_args = {k: v for k, v in asdict(benchmark_param_overrides).items() if v is not None}
+
+            benchmark_params = override_subargs(benchmark_params, override_args)
+
+        if args.agent_evolution is not None:
+            agent_evolution_params = parse_subargs(args.agent_evolution, AgentEvolutionTournamentParams)
+            assert isinstance(agent_evolution_params, AgentEvolutionTournamentParams)
+            agent_evolution_tournament = AgentEvolutionTournament(
+                args.board_size,
+                args.max_walls,
+                args.max_steps,
+                args.num_workers,
+                agent_evolution_params,
+            )
+        else:
+            agent_evolution_tournament = None
+
+        wandb_train_plugin = WandbTrainPlugin(
+            wandb_params,
+            args.epochs * args.games_per_epoch,
+            "alphazero:" + benchmark_params,
+            metrics,
+            agent_evolution_tournament,
+            include_raw_metrics=True,
+        )
+
     game_params = GameParams(args.board_size, args.max_walls, args.max_steps)
 
     # Create an agent that we'll use to do training.
-    training_params = parse_subargs(args.params, AlphaZeroParams)
+    training_params = parse_subargs(alphazero_params, AlphaZeroParams)
     assert isinstance(training_params, AlphaZeroParams)
     training_params.training_mode = True  # We only use this agent for training
     training_params.train_every = None  # We manually run training at the end of each epoch
@@ -74,8 +129,9 @@ def train_alphazero(
     if wandb_train_plugin is not None:
         # HACK: the start_game method only cares that "game" has board_size and max_walls
         # members, so we pass in a GameParams object. We have to call start_game
-        # because it calls the plugin's internal _intialize method which sets up metrics.
-        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
+        # because it calls the plugin's internal _intialize method which sets up metrics
+        # and creates the WandB run.
+        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent, wandb_run=wandb_run)
         training_agent.set_wandb_run(wandb_train_plugin.run)
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there
@@ -170,49 +226,7 @@ def main(args):
 
     t0 = time.time()
 
-    if args.wandb is None:
-        wandb_train_plugin = None
-    else:
-        wandb_params = parse_subargs(args.wandb, WandbParams)
-        assert isinstance(wandb_params, WandbParams)
-
-        metrics = Metrics(
-            args.board_size, args.max_walls, args.benchmarks, args.benchmarks_t, args.max_steps, args.num_workers
-        )
-        agent_encoded_name = "alphazero:" + args.params
-
-        if args.benchmarks_params:
-            benchmarks_params = parse_subargs(args.benchmarks_params, AlphaZeroBenchmarkOverrideParams)
-            assert isinstance(benchmarks_params, AlphaZeroBenchmarkOverrideParams)
-            override_args = {k: v for k, v in asdict(benchmarks_params).items() if v is not None}
-
-            agent_encoded_name = "alphazero:" + override_subargs(args.params, override_args)
-
-        if args.agent_evolution is not None:
-            agent_evolution_params = parse_subargs(args.agent_evolution, AgentEvolutionTournamentParams)
-            assert isinstance(agent_evolution_params, AgentEvolutionTournamentParams)
-            agent_evolution_tournament = AgentEvolutionTournament(
-                args.board_size,
-                args.max_walls,
-                args.max_steps,
-                args.num_workers,
-                agent_evolution_params,
-            )
-        else:
-            agent_evolution_tournament = None
-
-        wandb_train_plugin = WandbTrainPlugin(
-            wandb_params,
-            args.epochs * args.games_per_epoch,
-            agent_encoded_name,
-            metrics,
-            agent_evolution_tournament,
-            include_raw_metrics=True,
-        )
-
-    t0 = time.time()
-
-    train_alphazero(args, wandb_train_plugin=wandb_train_plugin)
+    train_alphazero(args)
 
     t1 = time.time()
 
@@ -292,6 +306,13 @@ if __name__ == "__main__":
         type=str,
         help="Parameters for the Agent Evolution Tournament",
     )
+    parser.add_argument(
+        "--sweep",
+        default=None,
+        type=Path,
+        help="Path to WandB sweep config yaml file",
+    )
+
     args = parser.parse_args()
 
     # Handle deprecated --max-game-length argument

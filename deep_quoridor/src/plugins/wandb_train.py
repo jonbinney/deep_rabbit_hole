@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import wandb
+import wandb.wandb_run
 from agent_evolution_tournament import AgentEvolutionTournament
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
@@ -67,7 +68,7 @@ class WandbTrainPlugin(ArenaPlugin):
         self.agent_evolution_tournament = agent_evolution_tournament
         self.include_raw_metrics = include_raw_metrics
 
-    def _initialize(self, game):
+    def _initialize(self, game, wandb_run: wandb.wandb_run.Run | None = None):
         assert self.agent
 
         config = {
@@ -76,17 +77,19 @@ class WandbTrainPlugin(ArenaPlugin):
             "episodes": self.total_episodes,
             "player_args": self.agent.params,
         }
-        config.update(self.agent.model_hyperparameters())
 
-        self.run = wandb.init(
-            project=self.params.project,
-            job_type="train",
-            config=config,
-            tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
-            id=self.params.run_id(),
-            group=f"{self.params.run_id()}",
-            notes=self.params.notes,
-        )
+        if wandb_run is None:
+            self.run = wandb.init(
+                project=self.params.project,
+                job_type="train",
+                config=config,
+                tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
+                id=self.params.run_id(),
+                group=f"{self.params.run_id()}",
+                notes=self.params.notes,
+            )
+        else:
+            self.run = wandb_run
         Timer.set_wandb_run(self.run)
 
         wandb.define_metric("Loss step", hidden=True)
@@ -95,7 +98,7 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb.define_metric("loss_*", "Loss step")
         wandb.define_metric("*", "Episode")
 
-    def start_game(self, game, agent1, agent2):
+    def start_game(self, game, agent1, agent2, wandb_run: wandb.wandb_run.Run | None = None):
         if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
             raise ValueError("WandbTrainPlugin being used for an agent, but another agent is being trained")
         if self.agent is not None:
@@ -106,7 +109,7 @@ class WandbTrainPlugin(ArenaPlugin):
             self.agent = agent2
         else:
             raise ValueError("WandbTrainPlugin can only be used with a training agent, both agents are not training")
-        self._initialize(game)
+        self._initialize(game, wandb_run)
 
     def end_game(self, game, result):
         assert self.agent
