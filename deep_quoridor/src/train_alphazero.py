@@ -77,6 +77,7 @@ def train_alphazero(args: argparse.Namespace):
             metrics,
             agent_evolution_tournament,
             include_raw_metrics=True,
+            wandb_run=wandb_run,
         )
 
     game_params = GameParams(args.board_size, args.max_walls, args.max_steps)
@@ -131,7 +132,7 @@ def train_alphazero(args: argparse.Namespace):
         # members, so we pass in a GameParams object. We have to call start_game
         # because it calls the plugin's internal _intialize method which sets up metrics
         # and creates the WandB run.
-        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent, wandb_run=wandb_run)
+        wandb_train_plugin.start_game(game=args, agent1=training_agent, agent2=training_agent)
         training_agent.set_wandb_run(wandb_train_plugin.run)
         # Compute the tournament metrics with the initial model, possibly random initialized, to
         # be able to see how it evolves from there

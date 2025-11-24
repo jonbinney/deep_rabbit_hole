@@ -55,6 +55,7 @@ class WandbTrainPlugin(ArenaPlugin):
         metrics: Metrics,
         agent_evolution_tournament: Optional[AgentEvolutionTournament] = None,
         include_raw_metrics: bool = False,
+        wandb_run: wandb.wandb_run.Run | None = None,
     ):
         self.params = params
         self.total_episodes = total_episodes
@@ -68,22 +69,10 @@ class WandbTrainPlugin(ArenaPlugin):
         self.agent_evolution_tournament = agent_evolution_tournament
         self.include_raw_metrics = include_raw_metrics
 
-    def _initialize(self, game, wandb_run: wandb.wandb_run.Run | None = None):
-        assert self.agent
-
-        config = {
-            "board_size": game.board_size,
-            "max_walls": game.max_walls,
-            "episodes": self.total_episodes,
-            "player_args": self.agent.params,
-        }
-
         if wandb_run is None:
             self.run = wandb.init(
                 project=self.params.project,
                 job_type="train",
-                config=config,
-                tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
                 id=self.params.run_id(),
                 group=f"{self.params.run_id()}",
                 notes=self.params.notes,
@@ -92,13 +81,39 @@ class WandbTrainPlugin(ArenaPlugin):
             self.run = wandb_run
         Timer.set_wandb_run(self.run)
 
+        self._initialized = False
+
+    def _initialize(
+        self,
+        game,
+    ):
+        if self._initialized:
+            return
+
+        assert self.agent is not None
+        assert self.run is not None
+
+        config = {
+            "board_size": game.board_size,
+            "max_walls": game.max_walls,
+            "episodes": self.total_episodes,
+            "player_args": self.agent.params,
+        }
+        config.update(self.agent.model_hyperparameters())
+
+        self.run.config.update(config)
+        assert self.run.tags is not None
+        self.run.tags = self.run.tags + (self.agent.model_id(), f"-{self.params.run_id()}")
+
         wandb.define_metric("Loss step", hidden=True)
         wandb.define_metric("Epoch", hidden=True)
         wandb.define_metric("Episode", hidden=True)
         wandb.define_metric("loss_*", "Loss step")
         wandb.define_metric("*", "Episode")
 
-    def start_game(self, game, agent1, agent2, wandb_run: wandb.wandb_run.Run | None = None):
+        self._initialized = True
+
+    def start_game(self, game, agent1, agent2):
         if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
             raise ValueError("WandbTrainPlugin being used for an agent, but another agent is being trained")
         if self.agent is not None:
@@ -109,7 +124,7 @@ class WandbTrainPlugin(ArenaPlugin):
             self.agent = agent2
         else:
             raise ValueError("WandbTrainPlugin can only be used with a training agent, both agents are not training")
-        self._initialize(game, wandb_run)
+        self._initialize(game)
 
     def end_game(self, game, result):
         assert self.agent
