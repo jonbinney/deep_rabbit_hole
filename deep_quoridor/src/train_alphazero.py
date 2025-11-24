@@ -320,4 +320,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.sweep is not None and args.wandb is None:
+        print("Enabling WandB since we're doing a sweep")
+
     main(args)
