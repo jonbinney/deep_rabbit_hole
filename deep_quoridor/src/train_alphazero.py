@@ -320,12 +320,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Handle deprecated --max-game-length argument
-    if args.max_game_length is not None:
-        if args.max_steps != parser.get_default("max-steps"):  # Check if --max-steps was also provided (not default)
-            print("Warning: Both --max-game-length and --max-steps provided. Using --max-steps value.")
-        else:
-            print("Warning: --max-game-length is deprecated. Please use --max-steps instead.")
-            args.max_steps = args.max_game_length
-
     main(args)
