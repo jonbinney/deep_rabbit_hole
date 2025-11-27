@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import wandb
+import wandb.wandb_run
 from agent_evolution_tournament import AgentEvolutionTournament
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
@@ -54,6 +55,7 @@ class WandbTrainPlugin(ArenaPlugin):
         metrics: Metrics,
         agent_evolution_tournament: Optional[AgentEvolutionTournament] = None,
         include_raw_metrics: bool = False,
+        wandb_run: wandb.wandb_run.Run | None = None,
     ):
         self.params = params
         self.total_episodes = total_episodes
@@ -67,8 +69,29 @@ class WandbTrainPlugin(ArenaPlugin):
         self.agent_evolution_tournament = agent_evolution_tournament
         self.include_raw_metrics = include_raw_metrics
 
-    def _initialize(self, game):
-        assert self.agent
+        if wandb_run is None:
+            self.run = wandb.init(
+                project=self.params.project,
+                job_type="train",
+                id=self.params.run_id(),
+                group=f"{self.params.run_id()}",
+                notes=self.params.notes,
+            )
+        else:
+            self.run = wandb_run
+        Timer.set_wandb_run(self.run)
+
+        self._initialized = False
+
+    def _initialize(
+        self,
+        game,
+    ):
+        if self._initialized:
+            return
+
+        assert self.agent is not None
+        assert self.run is not None
 
         config = {
             "board_size": game.board_size,
@@ -78,22 +101,17 @@ class WandbTrainPlugin(ArenaPlugin):
         }
         config.update(self.agent.model_hyperparameters())
 
-        self.run = wandb.init(
-            project=self.params.project,
-            job_type="train",
-            config=config,
-            tags=[self.agent.model_id(), f"-{self.params.run_id()}"],
-            id=self.params.run_id(),
-            group=f"{self.params.run_id()}",
-            notes=self.params.notes,
-        )
-        Timer.set_wandb_run(self.run)
+        self.run.config.update(config)
+        assert self.run.tags is not None
+        self.run.tags = self.run.tags + (self.agent.model_id(), f"-{self.params.run_id()}")
 
         wandb.define_metric("Loss step", hidden=True)
         wandb.define_metric("Epoch", hidden=True)
         wandb.define_metric("Episode", hidden=True)
         wandb.define_metric("loss_*", "Loss step")
         wandb.define_metric("*", "Episode")
+
+        self._initialized = True
 
     def start_game(self, game, agent1, agent2):
         if (self.agent is not None) and (self.agent != agent1) and (self.agent != agent2):
