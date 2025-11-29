@@ -1,9 +1,12 @@
+import types
 from dataclasses import dataclass, fields
 from typing import Optional
 
 import numpy as np
 import qgrid
+from arena_utils import GameResult, MoveInfo
 from numba import njit, prange
+from plugins import ArenaYAMLRecorder
 from quoridor import (
     ActionEncoder,
     Player,
@@ -162,7 +165,7 @@ def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, go
         return distance_reward + wall_reward
 
 
-@njit(cache=True)
+@njit(cache=False)
 def minimax(
     action,
     grid,
@@ -172,6 +175,7 @@ def minimax(
     current_player,
     agent_player,
     depth,
+    max_depth,
     branching_factor,
     wall_sigma,
     discount_factor,
@@ -186,16 +190,17 @@ def minimax(
     # Did we win?
     if qgrid.check_win(player_positions, goal_rows, current_player):
         best_value = WINNING_REWARD if current_player == agent_player else -WINNING_REWARD
+        best_action_sequence = np.empty((0, 3), dtype=np.int16)
 
     # Did the opponent win?
     elif qgrid.check_win(player_positions, goal_rows, opponent):
         best_value = -WINNING_REWARD if current_player == agent_player else WINNING_REWARD
+        best_action_sequence = np.empty((0, 3), dtype=np.int16)
 
-    # Have we reached the maximum depth?
-    elif depth == 0:
-        best_value = compute_heuristic_for_game_state(
-            grid, player_positions, walls_remaining, goal_rows, agent_player, heuristic
-        )
+    # Have we reached the maximum search depth?
+    elif depth == max_depth:
+        best_value = 0.0
+        best_action_sequence = np.empty((0, 3), dtype=np.int16)
 
     # Try actions from this state.
     else:
@@ -213,14 +218,15 @@ def minimax(
 
         # Determine if maximizing or minimizing
         is_maximizing = current_player == agent_player
-        best_value = -np.float32(WINNING_REWARD * 2) if is_maximizing else np.float32(WINNING_REWARD * 2)
+        best_value = -np.inf if is_maximizing else np.inf
+        best_action_sequence = np.full((max_depth - depth, 3), -1, dtype=np.int16)
 
         # Evaluate all actions
         for i in range(len(next_actions)):
             next_action = next_actions[i]
 
             # Recursively evaluate position
-            value = minimax(
+            value, future_best_action_sequence = minimax(
                 next_action,
                 grid,
                 player_positions,
@@ -228,7 +234,8 @@ def minimax(
                 goal_rows,
                 1 - current_player,
                 agent_player,
-                depth - 1,
+                depth + 1,
+                max_depth,
                 branching_factor,
                 wall_sigma,
                 discount_factor,
@@ -238,19 +245,31 @@ def minimax(
             # Apply discount factor
             value *= discount_factor
 
-            # Update best value
+            # Update best action
             if is_maximizing:
-                best_value = max(best_value, value)
-            else:
-                best_value = min(best_value, value)
+                if value > best_value:
+                    best_value = value
+                    best_action_sequence[0:1, :] = next_action
+                    best_action_sequence[1 : 1 + len(future_best_action_sequence), :] = future_best_action_sequence
+
+                    if best_value == WINNING_REWARD:
+                        break
+            else:  # Minimizing
+                if value < best_value:
+                    best_value = value
+                    best_action_sequence[0:1, :] = next_action
+                    best_action_sequence[1 : 1 + len(future_best_action_sequence), :] = future_best_action_sequence
+
+                    if best_value == -WINNING_REWARD:
+                        break
 
     # Undo action
     qgrid.undo_action(grid, player_positions, walls_remaining, opponent, action, opponent_old_position)
 
-    return best_value
+    return best_value, best_action_sequence
 
 
-@njit(cache=True, parallel=True)
+@njit(cache=False, parallel=True)
 def evaluate_actions(
     grid,
     player_positions,
@@ -274,9 +293,13 @@ def evaluate_actions(
 
     # Evaluate all actions
     values = np.zeros(len(actions), dtype=np.float32)
+    best_action_sequences = np.full((len(actions), max_depth, 3), -1, np.int16)
     for i in prange(len(actions)):
+        best_action_sequences[i : i + 1, 0:1, :] = actions[i]
+
+        print(f"Evaluating action {i}/{len(actions)}")
         # Since we run this loop in parallel, we need to copy the game state arrays for each minimax call
-        values[i] = minimax(
+        values[i], future_best_action_sequence = minimax(
             actions[i],
             grid.copy(),
             player_positions.copy(),
@@ -284,14 +307,16 @@ def evaluate_actions(
             goal_rows,
             1 - current_player,
             current_player,  # Assume we are choosing an action for the current player.
-            max_depth - 1,
+            1,
+            max_depth,
             branching_factor,
             wall_sigma,
             discount_factor,
             heuristic,
         )
+        best_action_sequences[i, 1:, :] = future_best_action_sequence
 
-    return actions, values
+    return actions, values, best_action_sequences
 
 
 class SimpleAgent(Agent):
@@ -299,6 +324,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_walls = kwargs["max_walls"]
         self.action_encoder = ActionEncoder(self.board_size)
 
     @classmethod
@@ -337,7 +363,7 @@ class SimpleAgent(Agent):
         current_player = int(game.get_current_player())
 
         # Use Numba-optimized minimax to evaluate possible actions
-        actions, values = evaluate_actions(
+        actions, values, best_action_sequences = evaluate_actions(
             grid,
             player_positions,
             walls_remaining,
@@ -349,6 +375,56 @@ class SimpleAgent(Agent):
             self.params.discount_factor,
             self.params.heuristic,
         )
+        print(f"Values: {values}")
+        print("Actions:")
+
+        def a2s(action):
+            return f"{action[0]}{action[1]}{action[2]}"
+
+        recorder = ArenaYAMLRecorder("replay.yaml")
+        for action_i in range(len(actions)):
+            print(
+                f"{action_i}: (v={values[action_i]}) - " + ",".join([a2s(m) for m in best_action_sequences[action_i]])
+            )
+            recorder.start_game(None, None, None)
+
+            move_infos = []
+            for m in best_action_sequences[action_i]:
+                if (m == -1).all():
+                    break
+
+                action_object = array_to_action(m)
+                action_index = self.action_encoder.action_to_index(action_object)
+                move_infos.append(MoveInfo(f"p{(len(move_infos) % 1) + 1}", action_index, 0.0))
+                recorder.after_action(None, None, None, int(action_index))
+
+            if values[action_i] == WINNING_REWARD:
+                winner = "p1"
+            elif values[action_i] == -WINNING_REWARD:
+                winner = "p2"
+            elif values[action_i] == 0.0:
+                winner = "tie"
+            else:
+                winner = "bad value"
+
+            recorder.end_game(
+                None,
+                GameResult(
+                    "p1",
+                    "p2",
+                    winner,
+                    len(move_infos),
+                    0,
+                    f"{action_i}",
+                    move_infos,
+                ),
+            )
+
+        game_mock = types.SimpleNamespace()
+        game_mock.board_size = self.board_size
+        game_mock.max_walls = self.max_walls
+        game_mock.step_rewards = False
+        recorder.end_arena(game_mock, None)
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them
         best_value = np.max(values)
