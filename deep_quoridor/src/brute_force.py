@@ -1,4 +1,4 @@
-import sys
+import argparse
 import types
 
 import numpy as np
@@ -11,6 +11,38 @@ from quoridor import Board, Player, Quoridor, array_to_action
 TIE_REWARD = 0
 WIN_REWARD = 1
 LARGE_REWARD = 2  # Used as "infinity"; must be bigger than winning reward
+
+BOARD_SIZE = 0
+WALL_SIZE = 0
+WALL_BITS = 0
+MAX_WALLS = 0
+NUM_UNIQUE_WALLS = 0
+
+
+@njit
+def game_to_compact_id(board_size, grid, player_positions, walls_remaining):
+    global BOARD_SIZE, WALL_SIZE, WALL_BITS
+    row = 0
+    col = 0
+    compact_id = 0
+    num_walls_found = 0
+    while True:  # Vertical walls
+        grid_i = row * 2 + 3
+        grid_j = col * 2 + 3
+
+        if grid[grid_i, grid_j] == qgrid.CELL_WALL:
+            wall_id = grid_i * WALL_SIZE + grid_j
+            compact_id += num_walls_found
+            col += 2
+        else:
+            col += 1
+
+        if col >= WALL_SIZE:
+            col = 0
+            row += 1
+
+        if row >= WALL_SIZE:
+            break
 
 
 @njit(cache=False)
@@ -118,7 +150,7 @@ def evaluate_actions(
     assert len(actions) > 0, "No valid actions found"
 
     # Evaluate all actions
-    values = np.zeros(len(actions), dtype=np.float32)
+    values = np.zeros(len(actions), dtype=np.int8)
     best_action_sequences = np.full((len(actions), max_depth, 3), -1, np.int8)
     for i in prange(len(actions)):
         best_action_sequences[i : i + 1, 0:1, :] = actions[i]
@@ -141,15 +173,8 @@ def evaluate_actions(
     return actions, values, best_action_sequences
 
 
-def main():
-    print("Starting")
-
-    BOARD_SIZE = int(sys.argv[1])
-    MAX_WALLS = int(sys.argv[2])
-    MAX_DEPTH = int(sys.argv[3])
-    print(f"BOARD_SIZE:{BOARD_SIZE} MAX_WALLS:{MAX_WALLS} MAX_DEPTH:{MAX_DEPTH}")
-
-    game = Quoridor(Board(BOARD_SIZE, MAX_WALLS))
+def build_optimal_action_tree(board_size: int, max_walls: int, max_depth: int):
+    game = Quoridor(Board(board_size, max_walls))
 
     # Convert the game state to arrays that can be used by Numba
     grid = game.board._grid
@@ -171,7 +196,7 @@ def main():
         walls_remaining,
         goal_rows,
         current_player,
-        MAX_DEPTH,
+        max_depth,
     )
 
     def a2s(action):
@@ -215,10 +240,20 @@ def main():
         )
 
     game_mock = types.SimpleNamespace()
-    game_mock.board_size = BOARD_SIZE
-    game_mock.max_walls = BOARD_SIZE
+    game_mock.board_size = board_size
+    game_mock.max_walls = board_size
     game_mock.step_rewards = False
     recorder.end_arena(game_mock, None)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build a tree of optimal moves")
+    parser.add_argument("board_size", type=int)
+    parser.add_argument("max_walls", type=int)
+    parser.add_argument("max_depth", type=int)
+    args = parser.parse_args()
+    print(f"Board size:{args.board_size} Max walls:{args.max_walls} Max depth:{args.max_depth}")
+    build_optimal_action_tree(args.board_size, args.max_walls, args.max_depth)
 
 
 if __name__ == "__main__":
