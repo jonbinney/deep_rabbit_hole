@@ -27,6 +27,7 @@ class GameParams:
 class SelfPlayResult:
     worker_id: int
     replay_buffer: list[dict]
+    game_actions: list[list[int]]  # For each game, a list of the actions that were taken
 
 
 class SelfPlayManager(threading.Thread):
@@ -86,7 +87,7 @@ class SelfPlayManager(threading.Thread):
         for worker in workers:
             worker.join()
 
-    def get_results(self, timeout: float = 0.1) -> Optional[list[dict]]:
+    def get_results(self, timeout: float = 0.1) -> Optional[tuple[list[dict], list[list[int]]]]:
         """
         Get results if they are available, waiting up to timeout seconds.
 
@@ -94,7 +95,7 @@ class SelfPlayManager(threading.Thread):
             timeout: Maximum time to wait for results in seconds.
 
         Returns:
-            List of replay buffer dictionaries, or None on timeout.
+            A tuple with a list of replay buffer dictionaries and game actions, or None on timeout.
         """
         t0 = time.time()
         while len(self._results) < self.num_workers:
@@ -112,6 +113,7 @@ class SelfPlayManager(threading.Thread):
             if len(self._results) >= self.num_workers:
                 # Merge results into one replay buffer. We sort them to make the results deterministic.
                 replay_buffer = []
+                game_actions = []
                 results = sorted(self._results, key=lambda r: r.worker_id)
                 for r in results:
                     print(f"Worker {r.worker_id} replay buffer size: {len(r.replay_buffer)}")
@@ -120,8 +122,8 @@ class SelfPlayManager(threading.Thread):
                     # the replay buffer results from all agents each epoch or else we'll end up discarding
                     # some results and we'll have wasted computation by playing those games.
                     replay_buffer.extend(r.replay_buffer)
-
-                return replay_buffer
+                    game_actions.extend(r.game_actions)
+                return (replay_buffer, game_actions)
 
         return None
 
@@ -202,7 +204,7 @@ def run_self_play_games(
         game_params.max_steps,
         params=alphazero_params,
     )
-
+    game_actions = [[] for i in range(num_games)]
     game_i = 0
     while game_i < num_games:
         n = min(num_parallel_games, num_games - game_i)
@@ -239,6 +241,7 @@ def run_self_play_games(
                 if finished[env_idx]:
                     continue
                 environments[env_idx].step(action_index)
+                game_actions[env_idx + game_i].append(action_index)
 
         t1 = time.time()
         alphazero_agent.end_game_batch()
@@ -257,6 +260,7 @@ def run_self_play_games(
         SelfPlayResult(
             worker_id,
             list(alphazero_agent.replay_buffer),
+            game_actions,
         )
     )
 

@@ -108,6 +108,8 @@ class WandbTrainPlugin(ArenaPlugin):
         wandb.define_metric("Loss step", hidden=True)
         wandb.define_metric("Epoch", hidden=True)
         wandb.define_metric("Episode", hidden=True)
+        wandb.define_metric("Move num", hidden=True)
+        wandb.define_metric("game_diversity_*", "Move num")
         wandb.define_metric("loss_*", "Loss step")
         wandb.define_metric("*", "Episode")
 
