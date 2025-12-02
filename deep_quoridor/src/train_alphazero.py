@@ -111,14 +111,17 @@ def train_alphazero(
             wandb_params=wandb_params,
         )
         self_play_manager.start()
-        new_replay_buffer_items = None
-        while new_replay_buffer_items is None:
-            new_replay_buffer_items = self_play_manager.get_results(timeout=0.1)
+        results = None
+        while results is None:
+            results = self_play_manager.get_results(timeout=0.1)
+        new_replay_buffer_items, game_actions = results
         training_agent.replay_buffer.extend(new_replay_buffer_items)
         self_play_manager.join()
         game_num = (epoch + 1) * args.games_per_epoch
 
         Timer.finish("self-play", game_num)
+
+        log_game_diversity(wandb_train_plugin, game_num, game_actions)
 
         # Do training if we have enough samples in the replay buffer.
         training_occured = training_agent.train_iteration(epoch=epoch, episode=game_num)
@@ -146,6 +149,20 @@ def train_alphazero(
     # Close the arena to finish wandb run
     if wandb_train_plugin is not None:
         wandb_train_plugin.end_arena(None, [])
+
+
+def log_game_diversity(wandb_train_plugin: Optional[WandbTrainPlugin], game_num: int, game_actions: list[list[int]]):
+    if wandb_train_plugin is None:
+        return
+
+    n = max([len(g) for g in game_actions])
+    for i in range(1, n):
+        s = set()
+        for g in game_actions:
+            truncated = ",".join([str(action) for action in g[:i]])
+            s.add(truncated)
+
+        wandb_train_plugin.run.log({"Move num": i, f"game_diversity_{game_num}": len(s)})
 
 
 def save_training_state(
