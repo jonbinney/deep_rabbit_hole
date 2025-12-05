@@ -17,6 +17,7 @@ from agents.core import Agent
 # We use a large reward to encourage the agent to win the game, but we can't use infinity
 # because then multiplying by a discount factor won't decrease the reward.
 WINNING_REWARD = 1e6
+TIE_REWARD = 0.0
 
 
 @dataclass
@@ -162,7 +163,13 @@ def compute_heuristic_for_game_state(grid, player_positions, walls_remaining, go
         return distance_reward + wall_reward
 
 
-@njit(cache=True)
+# Here we set inline="never" to get around a bug in numba that causes symbol errors or segfaults in some cases
+# when using cache=True on a recursive function. Oddly we didn't have a problem with an earlier version of the
+# code that decremented depth each time and stopped at 0. I'm guessing that the compiler was somehow inferring
+# the max recursion depth and therefor the max inline depth by looking at the code.
+#
+# Here's the issue for the bug: https://github.com/numba/numba/issues/6061
+@njit(cache=True, inline="always")
 def minimax(
     action,
     grid,
@@ -172,6 +179,8 @@ def minimax(
     current_player,
     agent_player,
     depth,
+    tie_depth,
+    max_depth,
     branching_factor,
     wall_sigma,
     discount_factor,
@@ -191,8 +200,11 @@ def minimax(
     elif qgrid.check_win(player_positions, goal_rows, opponent):
         best_value = -WINNING_REWARD if current_player == agent_player else WINNING_REWARD
 
+    elif depth >= tie_depth:
+        best_value = 0.0
+
     # Have we reached the maximum depth?
-    elif depth == 0:
+    elif depth >= max_depth:
         best_value = compute_heuristic_for_game_state(
             grid, player_positions, walls_remaining, goal_rows, agent_player, heuristic
         )
@@ -228,7 +240,9 @@ def minimax(
                 goal_rows,
                 1 - current_player,
                 agent_player,
-                depth - 1,
+                depth + 1,
+                tie_depth,
+                max_depth,
                 branching_factor,
                 wall_sigma,
                 discount_factor,
@@ -250,13 +264,14 @@ def minimax(
     return best_value
 
 
-@njit(cache=True, parallel=True)
+@njit(cache=False, parallel=False)
 def evaluate_actions(
     grid,
     player_positions,
     walls_remaining,
     goal_rows,
     current_player,
+    tie_depth,
     max_depth,
     branching_factor,
     wall_sigma,
@@ -284,7 +299,9 @@ def evaluate_actions(
             goal_rows,
             1 - current_player,
             current_player,  # Assume we are choosing an action for the current player.
-            max_depth - 1,
+            1,
+            tie_depth,
+            max_depth,
             branching_factor,
             wall_sigma,
             discount_factor,
@@ -299,6 +316,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_steps = kwargs["max_steps"]
         self.action_encoder = ActionEncoder(self.board_size)
 
     @classmethod
@@ -322,6 +340,7 @@ class SimpleAgent(Agent):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
         game, _, _ = construct_game_from_observation(observation)
+        steps_remaining = self.max_steps - game.completed_steps
 
         # Convert the game state to arrays that can be used by Numba
         grid = game.board._grid
@@ -343,6 +362,7 @@ class SimpleAgent(Agent):
             walls_remaining,
             goal_rows,
             current_player,
+            steps_remaining,
             self.params.max_depth,
             self.params.branching_factor,
             self.params.wall_sigma,
