@@ -179,8 +179,8 @@ class WandbTrainPlugin(ArenaPlugin):
             _,
             relative_elo,
             win_perc,
-            p1_win_percentages,
-            p2_win_percentages,
+            p1_stats,
+            p2_stats,
             absolute_elo,
             dumb_score,
         ) = self.metrics.compute(agent_encoded_name)
@@ -194,10 +194,11 @@ class WandbTrainPlugin(ArenaPlugin):
             "Episode": self.episode_count,  # x axis
         }
 
-        for opponent in p1_win_percentages:
-            metrics[f"{prefix}p1_win_perc_vs_{opponent}"] = p1_win_percentages[opponent]
-        for opponent in p2_win_percentages:
-            metrics[f"{prefix}p2_win_perc_vs_{opponent}"] = p2_win_percentages[opponent]
+        for pn, stats in [("p1", p1_stats), ("p2", p2_stats)]:
+            for opponent, opp_stats in stats.items():
+                metrics[f"{prefix}{pn}_win_perc_vs_{opponent}"] = 100 * opp_stats.wins / opp_stats.total()
+                metrics[f"{prefix}{pn}_loss_perc_vs_{opponent}"] = 100 * opp_stats.losses / opp_stats.total()
+                metrics[f"{prefix}{pn}_tie_perc_vs_{opponent}"] = 100 * opp_stats.ties / opp_stats.total()
 
         return metrics
 

@@ -59,8 +59,8 @@ if __name__ == "__main__":
             _,
             relative_elo,
             win_perc,
-            p1_win_percentages,
-            p2_win_percentages,
+            p1_stats,
+            p2_stats,
             absolute_elo,
             dumb_score,
         ) = m.compute(player)
