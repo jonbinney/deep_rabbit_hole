@@ -1,6 +1,7 @@
 import argparse
 import copy
 import gzip
+import hashlib
 import multiprocessing as mp
 import os
 import pickle
@@ -115,13 +116,17 @@ def train_alphazero(
         while results is None:
             results = self_play_manager.get_results(timeout=0.1)
         new_replay_buffer_items, game_actions = results
-        training_agent.replay_buffer.extend(new_replay_buffer_items)
+        new_items = dedup_replay_buffer_items(
+            training_agent.replay_buffer, new_replay_buffer_items, training_params.replay_buffer_dedup
+        )
+        training_agent.replay_buffer.extend(new_items)
         self_play_manager.join()
         game_num = (epoch + 1) * args.games_per_epoch
 
         Timer.finish("self-play", game_num)
 
         log_game_diversity(wandb_train_plugin, game_num, game_actions)
+        log_replay_buffer_info(wandb_train_plugin, training_agent.replay_buffer, game_num)
 
         # Do training if we have enough samples in the replay buffer.
         training_occured = training_agent.train_iteration(epoch=epoch, episode=game_num)
@@ -149,6 +154,40 @@ def train_alphazero(
     # Close the arena to finish wandb run
     if wandb_train_plugin is not None:
         wandb_train_plugin.end_arena(None, [])
+
+
+def dedup_replay_buffer_items(existing_items: list, new_items: list, dedup_mode: str) -> list:
+    if dedup_mode == "none":
+        return new_items
+
+    if dedup_mode == "log":
+        dedup_items = []
+        entry_count = {}
+        for item in existing_items:
+            input_hash = hashlib.sha256(item["input_array"].tobytes()).hexdigest()
+            entry_count[input_hash] = entry_count.get(input_hash, 0) + 1
+
+        initial_size = len(new_items)
+        while len(new_items) > 0:
+            item = new_items.pop(0)
+            input_hash = hashlib.sha256(item["input_array"].tobytes()).hexdigest()
+            entry_count[input_hash] = entry_count.get(input_hash, 0) + 1
+
+            # Check if the entry count it's an exact power of 2
+            if entry_count[input_hash] & (entry_count[input_hash] - 1) == 0:
+                dedup_items.append(item)
+
+        print(f"Replay buffer deduplication: {initial_size} items deduplicated into {len(dedup_items)} items")
+        return dedup_items
+
+    raise ValueError(f"Invalid dedup_mode: {dedup_mode}")
+
+
+def log_replay_buffer_info(wandb_train_plugin: Optional[WandbTrainPlugin], replay_buffer, episode: int):
+    if wandb_train_plugin is None:
+        return
+
+    wandb_train_plugin.run.log({"Episode": episode, "replay_buffer_len": len(replay_buffer)})
 
 
 def log_game_diversity(wandb_train_plugin: Optional[WandbTrainPlugin], game_num: int, game_actions: list[list[int]]):

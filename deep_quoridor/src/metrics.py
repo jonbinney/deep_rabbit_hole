@@ -1,9 +1,10 @@
+from dataclasses import dataclass
+
 import torch
 from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
-from attr import dataclass
 from quoridor_env import env
 from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo, get_opponent_player_id
