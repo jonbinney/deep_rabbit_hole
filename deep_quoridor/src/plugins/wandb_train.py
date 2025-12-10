@@ -11,7 +11,7 @@ import wandb.wandb_run
 from agent_evolution_tournament import AgentEvolutionTournament
 from agents.core.trainable_agent import TrainableAgent
 from arena_utils import ArenaPlugin
-from metrics import Metrics
+from metrics import MatchupStats, Metrics
 from utils import Timer, resolve_path
 from utils.subargs import SubargsBase, override_subargs
 
@@ -195,6 +195,17 @@ class WandbTrainPlugin(ArenaPlugin):
         }
 
         for pn, stats in [("p1", p1_stats), ("p2", p2_stats)]:
+            # Log total win/loss/tie percentages as player pn
+            pn_totals = sum(stats.values(), start=MatchupStats())
+            metrics[f"{prefix}{pn}_win_perc"] = 100 * pn_totals.wins / pn_totals.total()
+            metrics[f"{prefix}{pn}_loss_perc"] = 100 * pn_totals.losses / pn_totals.total()
+            metrics[f"{prefix}{pn}_tie_perc"] = 100 * pn_totals.ties / pn_totals.total()
+
+            # Log average "value" as pn. This is the value as alphazero computes it, with a win counting
+            # as +1, a tie counting as 0, and a loss counting as -1.
+            metrics[f"{prefix}{pn}_avg_value"] = (pn_totals.wins - pn_totals.losses) / pn_totals.total()
+
+            # Log win/loss/tie percentages as pn against each opponent
             for opponent, opp_stats in stats.items():
                 metrics[f"{prefix}{pn}_win_perc_vs_{opponent}"] = 100 * opp_stats.wins / opp_stats.total()
                 metrics[f"{prefix}{pn}_loss_perc_vs_{opponent}"] = 100 * opp_stats.losses / opp_stats.total()

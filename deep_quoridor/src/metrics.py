@@ -21,6 +21,9 @@ class MatchupStats:
         """
         return self.wins + self.losses + self.ties
 
+    def __add__(self, other: "MatchupStats"):
+        return MatchupStats(self.wins + other.wins, self.losses + other.losses, self.ties + other.ties)
+
 
 class Metrics:
     """
