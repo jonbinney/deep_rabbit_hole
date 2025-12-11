@@ -176,7 +176,7 @@ class Arena:
         result = GameResult(
             player1=agent1_name,
             player2=agent2_name,
-            winner=[agent1_name, agent2_name][winner] if winner is not None else "None",
+            winner=[agent1_name, agent2_name][winner] if winner is not None else "tie",
             steps=step,
             time_ms=int((end_time - start_time) * 1000),
             game_id=game_id,

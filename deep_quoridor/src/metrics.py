@@ -3,9 +3,26 @@ from agents import Agent
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
+from attr import dataclass
 from quoridor_env import env
 from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo, get_opponent_player_id
+
+
+@dataclass
+class MatchupStats:
+    wins: int = 0
+    losses: int = 0
+    ties: int = 0
+
+    def total(self) -> int:
+        """
+        Total number of games played.
+        """
+        return self.wins + self.losses + self.ties
+
+    def __add__(self, other: "MatchupStats"):
+        return MatchupStats(self.wins + other.wins, self.losses + other.losses, self.ties + other.ties)
 
 
 class Metrics:
@@ -30,7 +47,9 @@ class Metrics:
         self.max_steps = max_steps
         self.num_workers = num_workers
 
-    def _compute_win_percentages(self, results: list[GameResult], agent_name: str):
+    def _compute_stats(
+        self, results: list[GameResult], agent_name: str
+    ) -> tuple[float, dict[str, MatchupStats], dict[str, MatchupStats]]:
         played = 0
         won = 0
 
@@ -38,35 +57,37 @@ class Metrics:
         for result in results:
             all_player_names.update([result.player1, result.player2])
 
-        # First find out how many times the agent played each other player, and how
-        # many times they won.
-        p1_stats = {}
-        p2_stats = {}
+        # Count up the wins/losses/ties for each opponent when our agent is playing
+        # as P1, and when it is playing as P2.
+        # many times wins/loss
+        p1_stats: dict[str, MatchupStats] = {}
+        p2_stats: dict[str, MatchupStats] = {}
         for result in results:
             if result.player1 == agent_name:
-                played += 1
-                if result.player2 not in p1_stats:
-                    p1_stats[result.player2] = [0, 0]
-                p1_stats[result.player2][0] += 1
-                if result.winner == agent_name:
-                    p1_stats[result.player2][1] += 1
-                    won += 1
+                stats = p1_stats
+                opponent_name = result.player2
+            elif result.player2 == agent_name:
+                stats = p2_stats
+                opponent_name = result.player1
+            else:
+                continue
 
-            if result.player2 == agent_name:
-                played += 1
-                if result.player1 not in p2_stats:
-                    p2_stats[result.player1] = [0, 0]
-                p2_stats[result.player1][0] += 1
-                if result.winner == agent_name:
-                    p2_stats[result.player1][1] += 1
-                    won += 1
+            if opponent_name not in stats:
+                stats[opponent_name] = MatchupStats()
 
-        # Now compute win percentages versus each opponent.
-        p1_win_percentages = {opponent: 100 * s[1] / s[0] for opponent, s in p1_stats.items()}
-        p2_win_percentages = {opponent: 100 * s[1] / s[0] for opponent, s in p2_stats.items()}
+            played += 1
+            if result.winner == agent_name:
+                stats[opponent_name].wins += 1
+                won += 1
+            elif result.winner == opponent_name:
+                stats[opponent_name].losses += 1
+            else:
+                # Neither player won; assume this was a tie.
+                stats[opponent_name].ties += 1
+
         overall_win_percentage = 100.0 * won / played if played > 1 else 0.0
 
-        return overall_win_percentage, p1_win_percentages, p2_win_percentages
+        return overall_win_percentage, p1_stats, p2_stats
 
     def _compute_relative_elo(self, elo_table: dict[str, float], agent_name: str) -> int:
         agent_rating = elo_table[agent_name]
@@ -79,7 +100,7 @@ class Metrics:
 
     def compute(
         self, agent_encoded_name: str
-    ) -> tuple[int, dict[str, float], int, float, dict[str, float], dict[str, float], int, int]:
+    ) -> tuple[int, dict[str, float], int, float, dict[str, MatchupStats], dict[str, MatchupStats], int, int]:
         """
         Evaluates the performance of a given agent by running it against a set of predefined opponents and computing its Elo rating and win percentage.
 
@@ -92,8 +113,8 @@ class Metrics:
                 - elo_table (dict[str, float]): A dictionary mapping agent names to their computed Elo ratings.
                 - relative_elo (int): The evaluated agent's Elo rating minus the elo for the best opponent.
                 - win_perc (float): The win percentage of the evaluated agent against the opponents.
-                - p1_win_percentages (dict[str, float]): Win percentage as player one against each oponnent.
-                - p2_win_percentages (dict[str, float]): Win percentage as player two against each oponnent.
+                - p1_stats (dict[str, MatchupStats]): Number of wins, losses, and ties as P1 against each opponent
+                - p2_stats (dict[str, MatchupStats]): Number of wins, losses, and ties as P1 against each opponent
                 - absolute_elo (int): ELO rating obtained during the tournament
                 - dumb_score (int): A score between 0 (perfect) and 100 (always wrong) on how the agent performs in certain basic situations
 
@@ -136,9 +157,7 @@ class Metrics:
         elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
         relative_elo = self._compute_relative_elo(elo_table, agent.name())
 
-        overall_win_percentage, p1_win_percentages, p2_win_percentages = self._compute_win_percentages(
-            results, agent.name()
-        )
+        overall_win_percentage, p1_stats, p2_stats = self._compute_stats(results, agent.name())
         absolute_elo = elo_table[agent.name()]
 
         dumb_score = self.dumb_score(agent)
@@ -152,8 +171,8 @@ class Metrics:
             elo_table,
             relative_elo,
             overall_win_percentage,
-            p1_win_percentages,
-            p2_win_percentages,
+            p1_stats,
+            p2_stats,
             int(absolute_elo),
             dumb_score,
         )
