@@ -1,0 +1,18 @@
+# Install pytorch from the CPU-only wheels to avoid the extra
+# nvidia dependencies, which cause us to run out of disk space on
+# github action runners.
+--extra-index-url https://download.pytorch.org/whl/cpu
+gymnasium
+matplotlib
+numba
+numpy
+open_spiel
+pettingzoo
+prettytable
+pygame
+pytest
+pyyaml
+tensorflow
+torch==2.9.1+cpu
+wandb
+pyyaml
