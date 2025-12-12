@@ -33,8 +33,11 @@ class WandbParams(SubargsBase):
     # Optional notes to store for the run
     notes: str = ""
 
-    # Wether to upload the final model to wandb
-    upload_model: bool = True
+    # When to upload models to WandB. "never", "last", or "always"
+    #
+    # If Set to "last", we actually upload every model but each time we do we delete the previously uploaded
+    # model for this run. This means that even if the run is terminated early, we should have to most recent one.
+    model_upload_policy: str = "last"
 
     # How often to log training metrics
     log_every: int = 10
@@ -82,6 +85,7 @@ class WandbTrainPlugin(ArenaPlugin):
         Timer.set_wandb_run(self.run)
 
         self._initialized = False
+        self._last_uploaded_model = None
 
     def _initialize(
         self,
@@ -138,7 +142,10 @@ class WandbTrainPlugin(ArenaPlugin):
                 {"loss": avg_loss, "reward": avg_reward, "epsilon": self.agent.epsilon, "Episode": self.episode_count}
             )
 
-    def upload_model(self, model_file: str, extra_files: list[str] = []) -> str:
+    def upload_model(self, model_file: str, extra_files: list[str] = []) -> str | None:
+        if self.params.model_upload_policy == "never":
+            return None
+
         assert self.agent
         Timer.start("upload_model")
         artifact = wandb.Artifact(f"{self.agent.model_id()}", type="model", metadata=asdict(self.agent.params))
@@ -151,6 +158,11 @@ class WandbTrainPlugin(ArenaPlugin):
         logged_artifact.wait(300)
         logged_artifact.aliases.extend([f"ep_{self.episode_count}-{self.run.id}"])
         logged_artifact.save()
+
+        if self.params.model_upload_policy == "last" and self._last_uploaded_model is not None:
+            # Only keep the most recent model (and associated files)
+            self._last_uploaded_model.delete(delete_aliases=True)
+        self._last_uploaded_model = logged_artifact
 
         print(f"Done! Model uploaded with version {logged_artifact.version} and aliases {logged_artifact.aliases}")
 
