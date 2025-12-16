@@ -140,6 +140,17 @@ class AlphaZeroParams(SubargsBase):
     # The options are: "never" | "first" | "always"
     save_replay_buffer: str = "never"
 
+    # Allows to deduplicate the new entries in the replay buffer after each epoch
+    # - "none": doesn't de-duplicate the entries
+    # - "log": the number of appearances is reduced to its log2 quantity.
+    #          As repeated entries appear, only the ones in position 1, 2, 4, 8, 16 are kept
+    replay_buffer_dedup: str = "none"
+
+    # If non-zero, the reward will have a bonus factor based on the game length, making it
+    # better to win in a shorter game than to win in a longer game, and better to lose in a
+    # longer game than a shorter one.
+    game_length_bonus_factor: float = 0.0
+
     # What fraction of the total moves will be used for validation during training, or 0.0 to not use a validation set
     validation_ratio: float = 0.0
 
@@ -418,7 +429,8 @@ class AlphaZeroAgent(TrainableAgent):
             while replay_buffer and replay_buffer[-1]["value"] is None:
                 position = replay_buffer.pop()
                 agent = env.player_to_agent[position["player"]]
-                position["value"] = env.rewards[agent]
+                factor = 1 + self.params.game_length_bonus_factor * (1 - env.game.completed_steps / env.max_steps)
+                position["value"] = factor * env.rewards[agent]
                 episode_positions.append(position)
 
             # Add back the positions with assigned values
@@ -431,24 +443,9 @@ class AlphaZeroAgent(TrainableAgent):
         self.replay_buffers_in_progress = [[]]
 
     def end_game(self, env):
-        if not self.params.training_mode:
-            return
+        self.end_game_batch()
 
-        # Assign the final game outcome to all positions in this episode
-        # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
-        episode_positions = []
-        while self.replay_buffer and self.replay_buffer[-1]["value"] is None:
-            position = self.replay_buffer.pop()
-            agent = env.player_to_agent[position["player"]]
-            position["value"] = env.rewards[agent]
-            episode_positions.append(position)
-
-        # Add back the positions with assigned values
-        self.replay_buffer.extend(reversed(episode_positions))
-
-        self.episode_count += 1
-
-        # Train network if we have enough episodes
+        # This is just used when we use the old train.py script
         if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:
             self.train_iteration()
 
