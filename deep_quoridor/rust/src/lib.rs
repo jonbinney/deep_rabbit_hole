@@ -1,7 +1,11 @@
-use numpy::PyReadonlyArray2;
+use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
 use pyo3::prelude::*;
 
+mod actions;
+mod game_state;
+mod grid;
 mod pathfinding;
+mod validation;
 
 /// Calculate the shortest distance from a position to a target row.
 ///
@@ -26,10 +30,242 @@ fn distance_to_row(
     pathfinding::distance_to_row(&grid_view, start_row, start_col, target_row)
 }
 
+/// Check if wall cells are free.
+#[pyfunction]
+fn are_wall_cells_free(
+    grid: PyReadonlyArray2<i8>,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+) -> bool {
+    grid::are_wall_cells_free(&grid.as_array(), wall_row, wall_col, wall_orientation)
+}
+
+/// Set wall cells to a specific value.
+#[pyfunction]
+fn set_wall_cells(
+    mut grid: PyReadwriteArray2<i8>,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+    cell_value: i8,
+) {
+    let mut grid_mut = grid.as_array_mut();
+    grid::set_wall_cells(&mut grid_mut, wall_row, wall_col, wall_orientation, cell_value);
+}
+
+/// Check if wall cells equal a specific value.
+#[pyfunction]
+fn check_wall_cells(
+    grid: PyReadonlyArray2<i8>,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+    cell_value: i8,
+) -> bool {
+    grid::check_wall_cells(&grid.as_array(), wall_row, wall_col, wall_orientation, cell_value)
+}
+
+/// Check if a wall could potentially block a player's path.
+#[pyfunction]
+fn is_wall_potential_block(
+    grid: PyReadonlyArray2<i8>,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+) -> bool {
+    grid::is_wall_potential_block(&grid.as_array(), wall_row, wall_col, wall_orientation)
+}
+
+/// Validate if a move action is legal.
+#[pyfunction]
+fn is_move_action_valid(
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    current_player: i32,
+    destination_row: i32,
+    destination_col: i32,
+) -> bool {
+    validation::is_move_action_valid(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        current_player,
+        destination_row,
+        destination_col,
+    )
+}
+
+/// Validate if a wall placement is legal.
+#[pyfunction]
+fn is_wall_action_valid(
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+) -> bool {
+    validation::is_wall_action_valid(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        &goal_rows.as_array(),
+        current_player,
+        wall_row,
+        wall_col,
+        wall_orientation,
+    )
+}
+
+/// Compute a mask of valid move actions.
+#[pyfunction]
+fn compute_move_action_mask(
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    current_player: i32,
+    mut action_mask: PyReadwriteArray1<bool>,
+) {
+    let mut mask_mut = action_mask.as_array_mut();
+    actions::compute_move_action_mask(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        current_player,
+        &mut mask_mut,
+    );
+}
+
+/// Compute a mask of valid wall actions.
+#[pyfunction]
+fn compute_wall_action_mask(
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+    mut action_mask: PyReadwriteArray1<bool>,
+) {
+    let mut mask_mut = action_mask.as_array_mut();
+    actions::compute_wall_action_mask(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        &goal_rows.as_array(),
+        current_player,
+        &mut mask_mut,
+    );
+}
+
+/// Get all valid move actions.
+#[pyfunction]
+fn get_valid_move_actions<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    current_player: i32,
+) -> Bound<'py, PyArray2<i32>> {
+    let actions =
+        actions::get_valid_move_actions(&grid.as_array(), &player_positions.as_array(), current_player);
+    PyArray2::from_owned_array_bound(py, actions)
+}
+
+/// Get all valid wall actions.
+#[pyfunction]
+fn get_valid_wall_actions<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+) -> Bound<'py, PyArray2<i32>> {
+    let actions = actions::get_valid_wall_actions(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        &goal_rows.as_array(),
+        current_player,
+    );
+    PyArray2::from_owned_array_bound(py, actions)
+}
+
+/// Check if a player has won.
+#[pyfunction]
+fn check_win(player_positions: PyReadonlyArray2<i32>, goal_rows: PyReadonlyArray1<i32>, player: i32) -> bool {
+    game_state::check_win(&player_positions.as_array(), &goal_rows.as_array(), player)
+}
+
+/// Apply an action to the game state.
+#[pyfunction]
+fn apply_action(
+    mut grid: PyReadwriteArray2<i8>,
+    mut player_positions: PyReadwriteArray2<i32>,
+    mut walls_remaining: PyReadwriteArray1<i32>,
+    current_player: i32,
+    action: PyReadonlyArray1<i32>,
+) {
+    let mut grid_mut = grid.as_array_mut();
+    let mut positions_mut = player_positions.as_array_mut();
+    let mut walls_mut = walls_remaining.as_array_mut();
+    game_state::apply_action(
+        &mut grid_mut,
+        &mut positions_mut,
+        &mut walls_mut,
+        current_player,
+        &action.as_array(),
+    );
+}
+
+/// Undo a previously applied action.
+#[pyfunction]
+fn undo_action(
+    mut grid: PyReadwriteArray2<i8>,
+    mut player_positions: PyReadwriteArray2<i32>,
+    mut walls_remaining: PyReadwriteArray1<i32>,
+    player_that_took_action: i32,
+    action: PyReadonlyArray1<i32>,
+    previous_position: PyReadonlyArray1<i32>,
+) {
+    let mut grid_mut = grid.as_array_mut();
+    let mut positions_mut = player_positions.as_array_mut();
+    let mut walls_mut = walls_remaining.as_array_mut();
+    game_state::undo_action(
+        &mut grid_mut,
+        &mut positions_mut,
+        &mut walls_mut,
+        player_that_took_action,
+        &action.as_array(),
+        &previous_position.as_array(),
+    );
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Core functions
     m.add_function(wrap_pyfunction!(distance_to_row, m)?)?;
+
+    // Grid functions
+    m.add_function(wrap_pyfunction!(are_wall_cells_free, m)?)?;
+    m.add_function(wrap_pyfunction!(set_wall_cells, m)?)?;
+    m.add_function(wrap_pyfunction!(check_wall_cells, m)?)?;
+    m.add_function(wrap_pyfunction!(is_wall_potential_block, m)?)?;
+
+    // Validation functions
+    m.add_function(wrap_pyfunction!(is_move_action_valid, m)?)?;
+    m.add_function(wrap_pyfunction!(is_wall_action_valid, m)?)?;
+
+    // Action functions
+    m.add_function(wrap_pyfunction!(compute_move_action_mask, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_wall_action_mask, m)?)?;
+    m.add_function(wrap_pyfunction!(get_valid_move_actions, m)?)?;
+    m.add_function(wrap_pyfunction!(get_valid_wall_actions, m)?)?;
+
+    // Game state functions
+    m.add_function(wrap_pyfunction!(check_win, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_action, m)?)?;
+    m.add_function(wrap_pyfunction!(undo_action, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", pathfinding::CELL_FREE)?;
