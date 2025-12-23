@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 mod actions;
 mod game_state;
 mod grid;
+mod minimax;
 mod pathfinding;
 mod validation;
 
@@ -240,6 +241,41 @@ fn undo_action(
     );
 }
 
+/// Evaluate all actions for the current player using the minimax algorithm.
+/// This is parallelized using Rayon for better performance.
+#[pyfunction]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic))]
+fn evaluate_actions<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+    max_depth: i32,
+    branching_factor: usize,
+    wall_sigma: f32,
+    discount_factor: f32,
+    heuristic: i32,
+) -> (Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>) {
+    let (actions, values) = minimax::evaluate_actions(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        &goal_rows.as_array(),
+        current_player,
+        max_depth,
+        branching_factor,
+        wall_sigma,
+        discount_factor,
+        heuristic,
+    );
+    (
+        PyArray2::from_owned_array_bound(py, actions),
+        numpy::PyArray1::from_owned_array_bound(py, values),
+    )
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -266,6 +302,9 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_win, m)?)?;
     m.add_function(wrap_pyfunction!(apply_action, m)?)?;
     m.add_function(wrap_pyfunction!(undo_action, m)?)?;
+
+    // Minimax evaluation
+    m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", pathfinding::CELL_FREE)?;

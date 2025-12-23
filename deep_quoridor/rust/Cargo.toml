@@ -11,6 +11,8 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.22", features = ["extension-module"] }
 numpy = "0.22"
 ndarray = "0.16"
+rand = "0.8"
+rayon = "1.10"
 
 [profile.release]
 # Enable optimizations for better performance

@@ -44,6 +44,10 @@ class SimpleParams(SubargsBase):
     #  1: relative distances to goal, ties broken by relative walls remaining
     heuristic: int = 1
 
+    # Whether to use the Rust implementation of evaluate_actions (True) or the Numba implementation (False).
+    # The Rust implementation is generally faster and doesn't require JIT warmup time.
+    use_rust: bool = False
+
 
 @njit(cache=True)
 def gaussian_wall_weights(wall_actions, p1_pos, p2_pos, sigma):
@@ -336,19 +340,34 @@ class SimpleAgent(Agent):
         goal_rows[1] = game.get_goal_row(Player.TWO)
         current_player = int(game.get_current_player())
 
-        # Use Numba-optimized minimax to evaluate possible actions
-        actions, values = evaluate_actions(
-            grid,
-            player_positions,
-            walls_remaining,
-            goal_rows,
-            current_player,
-            self.params.max_depth,
-            self.params.branching_factor,
-            self.params.wall_sigma,
-            self.params.discount_factor,
-            self.params.heuristic,
-        )
+        # Use either Rust or Numba implementation to evaluate possible actions
+        if self.params.use_rust:
+            import quoridor_rs
+            actions, values = quoridor_rs.evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                self.params.max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+            )
+        else:
+            actions, values = evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                self.params.max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+            )
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them
         best_value = np.max(values)
