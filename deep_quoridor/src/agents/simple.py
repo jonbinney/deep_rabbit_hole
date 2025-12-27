@@ -299,6 +299,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_steps = kwargs["max_steps"]
         self.action_encoder = ActionEncoder(self.board_size)
 
     @classmethod
@@ -336,6 +337,8 @@ class SimpleAgent(Agent):
         goal_rows[1] = game.get_goal_row(Player.TWO)
         current_player = int(game.get_current_player())
 
+        max_depth = min(self.params.max_depth, self.max_steps - observation["completed_steps"])
+
         # Use Numba-optimized minimax to evaluate possible actions
         actions, values = evaluate_actions(
             grid,
@@ -343,7 +346,7 @@ class SimpleAgent(Agent):
             walls_remaining,
             goal_rows,
             current_player,
-            self.params.max_depth,
+            max_depth,
             self.params.branching_factor,
             self.params.wall_sigma,
             self.params.discount_factor,
