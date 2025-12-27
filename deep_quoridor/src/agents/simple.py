@@ -303,6 +303,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_steps = kwargs["max_steps"]
         self.action_encoder = ActionEncoder(self.board_size)
 
     @classmethod
@@ -340,16 +341,19 @@ class SimpleAgent(Agent):
         goal_rows[1] = game.get_goal_row(Player.TWO)
         current_player = int(game.get_current_player())
 
+        max_depth = min(self.params.max_depth, self.max_steps - observation["completed_steps"])
+
         # Use either Rust or Numba implementation to evaluate possible actions
         if self.params.use_rust:
             import quoridor_rs
+
             actions, values = quoridor_rs.evaluate_actions(
                 grid,
                 player_positions,
                 walls_remaining,
                 goal_rows,
                 current_player,
-                self.params.max_depth,
+                max_depth,
                 self.params.branching_factor,
                 self.params.wall_sigma,
                 self.params.discount_factor,
@@ -362,7 +366,7 @@ class SimpleAgent(Agent):
                 walls_remaining,
                 goal_rows,
                 current_player,
-                self.params.max_depth,
+                max_depth,
                 self.params.branching_factor,
                 self.params.wall_sigma,
                 self.params.discount_factor,
