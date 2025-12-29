@@ -252,7 +252,7 @@ fn undo_action(
 /// Evaluate all actions for the current player using the minimax algorithm.
 /// This is parallelized using Rayon for better performance.
 #[pyfunction]
-#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic, enable_logging=false))]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic))]
 fn evaluate_actions<'py>(
     py: Python<'py>,
     grid: PyReadonlyArray2<i8>,
@@ -265,8 +265,7 @@ fn evaluate_actions<'py>(
     wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
-    enable_logging: bool,
-) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>, Option<PyObject>)> {
+) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
     let (actions, values, log_entries) = minimax::evaluate_actions(
         &grid.as_array(),
         &player_positions.as_array(),
@@ -278,75 +277,13 @@ fn evaluate_actions<'py>(
         wall_sigma,
         discount_factor,
         heuristic,
-        enable_logging,
+        false, // don't enable logging of the policy
     );
-
-    // Convert log entries to polars DataFrame if present
-    let df_result = if let Some(entries) = log_entries {
-        Some(convert_log_entries_to_dataframe(py, entries)?)
-    } else {
-        None
-    };
 
     Ok((
         PyArray2::from_owned_array_bound(py, actions),
         numpy::PyArray1::from_owned_array_bound(py, values),
-        df_result,
     ))
-}
-
-/// Convert log entries to a Python dictionary that can be used to create a polars DataFrame
-fn convert_log_entries_to_dataframe(py: Python, entries: Vec<minimax::MinimaxLogEntry>) -> PyResult<PyObject> {
-    use pyo3::types::PyDict;
-
-    let dict = PyDict::new_bound(py);
-
-    // Create vectors for each column
-    let mut grids: Vec<Vec<i8>> = Vec::new();
-    let mut player_pos_p1_row: Vec<i32> = Vec::new();
-    let mut player_pos_p1_col: Vec<i32> = Vec::new();
-    let mut player_pos_p2_row: Vec<i32> = Vec::new();
-    let mut player_pos_p2_col: Vec<i32> = Vec::new();
-    let mut current_players: Vec<i32> = Vec::new();
-    let mut walls_p1: Vec<i32> = Vec::new();
-    let mut walls_p2: Vec<i32> = Vec::new();
-    let mut agent_players: Vec<i32> = Vec::new();
-    let mut action_rows: Vec<i32> = Vec::new();
-    let mut action_cols: Vec<i32> = Vec::new();
-    let mut action_types: Vec<i32> = Vec::new();
-    let mut values: Vec<f32> = Vec::new();
-
-    for entry in entries {
-        grids.push(entry.grid);
-        player_pos_p1_row.push(entry.player_positions[0]);
-        player_pos_p1_col.push(entry.player_positions[1]);
-        player_pos_p2_row.push(entry.player_positions[2]);
-        player_pos_p2_col.push(entry.player_positions[3]);
-        current_players.push(entry.current_player);
-        walls_p1.push(entry.walls_remaining[0]);
-        walls_p2.push(entry.walls_remaining[1]);
-        agent_players.push(entry.agent_player);
-        action_rows.push(entry.action[0]);
-        action_cols.push(entry.action[1]);
-        action_types.push(entry.action[2]);
-        values.push(entry.value);
-    }
-
-    dict.set_item("grid", grids)?;
-    dict.set_item("player_pos_p1_row", player_pos_p1_row)?;
-    dict.set_item("player_pos_p1_col", player_pos_p1_col)?;
-    dict.set_item("player_pos_p2_row", player_pos_p2_row)?;
-    dict.set_item("player_pos_p2_col", player_pos_p2_col)?;
-    dict.set_item("current_player", current_players)?;
-    dict.set_item("walls_p1", walls_p1)?;
-    dict.set_item("walls_p2", walls_p2)?;
-    dict.set_item("agent_player", agent_players)?;
-    dict.set_item("action_row", action_rows)?;
-    dict.set_item("action_col", action_cols)?;
-    dict.set_item("action_type", action_types)?;
-    dict.set_item("value", values)?;
-
-    Ok(dict.into())
 }
 
 /// Convert log entries to an Arrow RecordBatch
