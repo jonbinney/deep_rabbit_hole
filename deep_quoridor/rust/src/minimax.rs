@@ -11,8 +11,7 @@ use crate::pathfinding::distance_to_row;
 
 pub const WINNING_REWARD: f32 = 1e6;
 
-/// Structure to hold data for one row of the logging DataFrame
-/// Each entry represents a (state, action) pair with the action's evaluated value
+/// Each entry represents a state with all its evaluated actions and values
 #[derive(Clone)]
 pub struct MinimaxLogEntry {
     pub grid: Vec<i8>,
@@ -20,8 +19,8 @@ pub struct MinimaxLogEntry {
     pub walls_remaining: Vec<i32>,
     pub agent_player: i32,
     pub completed_steps: i32,
-    pub action: Vec<i32>,
-    pub value: f32,
+    pub actions: Vec<Vec<i32>>,  // Vector of actions, each action is [row, col, type]
+    pub values: Vec<f32>,         // Corresponding values for each action
 }
 
 /// Calculate Gaussian weights for wall actions based on distance to players.
@@ -326,20 +325,21 @@ fn minimax(
 
         best_value = value;
 
-        // Log all evaluated actions from this state
+        // Log all evaluated actions from this state as a single entry
         if let Some(ref log) = log_entries {
-            for (action_vec, action_value) in action_values {
-                let entry = MinimaxLogEntry {
-                    grid: grid.iter().copied().collect(),
-                    current_player,
-                    walls_remaining: walls_remaining.to_vec(),
-                    agent_player,
-                    completed_steps,
-                    action: action_vec,
-                    value: action_value,
-                };
-                log.lock().unwrap().push(entry);
-            }
+            let (actions_vec, values_vec): (Vec<Vec<i32>>, Vec<f32>) =
+                action_values.into_iter().unzip();
+
+            let entry = MinimaxLogEntry {
+                grid: grid.iter().copied().collect(),
+                current_player,
+                walls_remaining: walls_remaining.to_vec(),
+                agent_player,
+                completed_steps,
+                actions: actions_vec,
+                values: values_vec,
+            };
+            log.lock().unwrap().push(entry);
         }
     }
 

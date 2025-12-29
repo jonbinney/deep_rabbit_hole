@@ -285,7 +285,7 @@ fn evaluate_actions<'py>(
 fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str) -> Result<usize, Box<dyn std::error::Error>> {
     let mut conn = Connection::open(Path::new(filename))?;
 
-    // Create table with columns for grid (as blob), walls remaining, completed_steps, action, and value
+    // Create table with columns for grid (as blob), walls remaining, completed_steps, actions (as blob), and action_values (as blob)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS policy (
             id INTEGER PRIMARY KEY,
@@ -295,10 +295,9 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
             walls_p2 INTEGER NOT NULL,
             agent_player INTEGER NOT NULL,
             completed_steps INTEGER NOT NULL,
-            action_row INTEGER NOT NULL,
-            action_col INTEGER NOT NULL,
-            action_type INTEGER NOT NULL,
-            value REAL NOT NULL
+            num_actions INTEGER NOT NULL,
+            actions BLOB NOT NULL,
+            action_values BLOB NOT NULL
         )",
         [],
     )?;
@@ -315,13 +314,26 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
     let tx = conn.transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO policy (grid, current_player, walls_p1, walls_p2, agent_player, completed_steps, action_row, action_col, action_type, value)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+            "INSERT INTO policy (grid, current_player, walls_p1, walls_p2, agent_player, completed_steps, num_actions, actions, action_values)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
         )?;
 
         for entry in entries {
             // Convert grid Vec<i8> to Vec<u8> for blob storage
             let grid_blob: Vec<u8> = entry.grid.iter().map(|&x| x as u8).collect();
+
+            // Flatten actions into a single vector: each action is [row, col, type]
+            let actions_flat: Vec<i32> = entry.actions.into_iter().flatten().collect();
+            let actions_blob: Vec<u8> = actions_flat.iter()
+                .flat_map(|&x| x.to_le_bytes())
+                .collect();
+
+            // Convert values to bytes
+            let values_blob: Vec<u8> = entry.values.iter()
+                .flat_map(|&x| x.to_le_bytes())
+                .collect();
+
+            let num_actions = entry.values.len() as i32;
 
             stmt.execute(params![
                 grid_blob,
@@ -330,10 +342,9 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
                 entry.walls_remaining[1],
                 entry.agent_player,
                 entry.completed_steps,
-                entry.action[0],
-                entry.action[1],
-                entry.action[2],
-                entry.value,
+                num_actions,
+                actions_blob,
+                values_blob,
             ])?;
         }
         // Explicitly drop statement before committing
