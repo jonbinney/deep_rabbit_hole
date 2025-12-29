@@ -286,6 +286,7 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
     let mut conn = Connection::open(Path::new(filename))?;
 
     // Create table with columns for grid (as blob), walls remaining, completed_steps, actions (as blob), and action_values (as blob)
+    // Note: grid is trimmed to exclude 2 outermost rows/cols on each side
     conn.execute(
         "CREATE TABLE IF NOT EXISTS policy (
             id INTEGER PRIMARY KEY,

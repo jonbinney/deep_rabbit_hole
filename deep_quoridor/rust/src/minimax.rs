@@ -330,8 +330,19 @@ fn minimax(
             let (actions_vec, values_vec): (Vec<Vec<i32>>, Vec<f32>) =
                 action_values.into_iter().unzip();
 
+            // Don't bother storing the padding rows and columns around the outside of the grid.
+            let grid_shape = grid.shape();
+            let rows = grid_shape[0];
+            let cols = grid_shape[1];
+            let mut middle_grid = Vec::with_capacity((rows - 4) * (cols - 4));
+            for i in 2..(rows - 2) {
+                for j in 2..(cols - 2) {
+                    middle_grid.push(grid[[i, j]]);
+                }
+            }
+
             let entry = MinimaxLogEntry {
-                grid: grid.iter().copied().collect(),
+                grid: middle_grid,
                 current_player,
                 walls_remaining: walls_remaining.to_vec(),
                 agent_player,
