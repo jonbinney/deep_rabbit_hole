@@ -4,7 +4,7 @@ Create a policy database from minimax evaluations.
 
 This script initializes a Quoridor game and uses the Rust minimax implementation
 to evaluate all possible actions from the initial state, logging the results to
-a parquet file for later analysis or training.
+a SQLite database for later analysis or training.
 """
 
 import argparse
@@ -26,7 +26,7 @@ def create_policy_database(
     wall_sigma: float = 0.5,
     discount_factor: float = 0.99,
     heuristic: int = 1,
-    output_file: str = "policy_db.parquet",
+    output_file: str = "policy_db.sqlite",
 ) -> int:
     """
     Create a policy database by evaluating actions from the initial game state.
@@ -39,7 +39,7 @@ def create_policy_database(
         wall_sigma: Standard deviation for Gaussian sampling of wall placements
         discount_factor: Discount factor for future rewards
         heuristic: Which heuristic to use (0=none, 1=distance+walls)
-        output_file: Path to save the parquet file
+        output_file: Path to save the SQLite database file
 
     Returns:
         Number of entries written to the database
@@ -159,8 +159,8 @@ def main():
         "--output",
         "-o",
         type=str,
-        default="policy_db.parquet",
-        help="Output parquet file path",
+        default="policy_db.sqlite",
+        help="Output SQLite database file path",
     )
 
     args = parser.parse_args()
@@ -182,7 +182,7 @@ def main():
         return 0
 
     except Exception as e:
-        print(f"\n✗ Error: {e}", file=sys.stderr)
+        print(f"\n Error: {e}", file=sys.stderr)
         import traceback
 
         traceback.print_exc()

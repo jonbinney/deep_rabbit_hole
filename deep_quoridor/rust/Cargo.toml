@@ -13,8 +13,7 @@ numpy = "0.22"
 ndarray = "0.16"
 rand = "0.8"
 rayon = "1.10"
-parquet = "53"
-arrow = { version = "53", features = ["ipc"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]

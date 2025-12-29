@@ -1,13 +1,8 @@
 use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
 use pyo3::prelude::*;
 use std::path::Path;
-use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Int32Array, Float32Array, ListArray};
-use arrow::datatypes::{DataType, Field, Schema};
-use arrow::record_batch::RecordBatch;
-use parquet::arrow::ArrowWriter;
-use parquet::file::properties::WriterProperties;
+use rusqlite::{Connection, params};
 
 mod actions;
 mod game_state;
@@ -286,104 +281,67 @@ fn evaluate_actions<'py>(
     ))
 }
 
-/// Convert log entries to an Arrow RecordBatch
-fn log_entries_to_record_batch(entries: Vec<minimax::MinimaxLogEntry>) -> Result<RecordBatch, Box<dyn std::error::Error>> {
-    use arrow::array::{Int8Array, ListBuilder, Int8Builder};
+/// Write log entries to a SQLite database
+fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut conn = Connection::open(Path::new(filename))?;
+
+    // Create table with columns for grid (as blob), walls remaining, completed_steps, action, and value
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS policy (
+            id INTEGER PRIMARY KEY,
+            grid BLOB NOT NULL,
+            current_player INTEGER NOT NULL,
+            walls_p1 INTEGER NOT NULL,
+            walls_p2 INTEGER NOT NULL,
+            agent_player INTEGER NOT NULL,
+            completed_steps INTEGER NOT NULL,
+            action_row INTEGER NOT NULL,
+            action_col INTEGER NOT NULL,
+            action_type INTEGER NOT NULL,
+            value REAL NOT NULL
+        )",
+        [],
+    )?;
+
+    // Create indices for fast lookups by grid, walls, completed_steps, current_player, and agent_player
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lookup ON policy (grid, walls_p1, walls_p2, completed_steps, current_player, agent_player)",
+        [],
+    )?;
 
     let num_entries = entries.len();
 
-    // Create vectors for each column
-    let mut player_pos_p1_row: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut player_pos_p1_col: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut player_pos_p2_row: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut player_pos_p2_col: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut current_players: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut walls_p1: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut walls_p2: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut agent_players: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut action_rows: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut action_cols: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut action_types: Vec<i32> = Vec::with_capacity(num_entries);
-    let mut values: Vec<f32> = Vec::with_capacity(num_entries);
-
-    // Build the grid list array
-    let mut grid_builder = ListBuilder::new(Int8Builder::new());
+    // Insert entries in a transaction for better performance
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO policy (grid, current_player, walls_p1, walls_p2, agent_player, completed_steps, action_row, action_col, action_type, value)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        )?;
 
     for entry in entries {
-        // Add grid as a list
-        let grid_inner = grid_builder.values();
-        for &val in &entry.grid {
-            grid_inner.append_value(val);
-        }
-        grid_builder.append(true);
+            // Convert grid Vec<i8> to Vec<u8> for blob storage
+            let grid_blob: Vec<u8> = entry.grid.iter().map(|&x| x as u8).collect();
 
-        player_pos_p1_row.push(entry.player_positions[0]);
-        player_pos_p1_col.push(entry.player_positions[1]);
-        player_pos_p2_row.push(entry.player_positions[2]);
-        player_pos_p2_col.push(entry.player_positions[3]);
-        current_players.push(entry.current_player);
-        walls_p1.push(entry.walls_remaining[0]);
-        walls_p2.push(entry.walls_remaining[1]);
-        agent_players.push(entry.agent_player);
-        action_rows.push(entry.action[0]);
-        action_cols.push(entry.action[1]);
-        action_types.push(entry.action[2]);
-        values.push(entry.value);
+            stmt.execute(params![
+                grid_blob,
+                entry.current_player,
+                entry.walls_remaining[0],
+                entry.walls_remaining[1],
+                entry.agent_player,
+                entry.completed_steps,
+                entry.action[0],
+                entry.action[1],
+                entry.action[2],
+                entry.value,
+            ])?;
     }
+        // Explicitly drop statement before committing
+        drop(stmt);
+    }
+    tx.commit()?;
 
-    // Create arrays
-    let grid_array = Arc::new(grid_builder.finish()) as ArrayRef;
-    let player_pos_p1_row_array = Arc::new(Int32Array::from(player_pos_p1_row)) as ArrayRef;
-    let player_pos_p1_col_array = Arc::new(Int32Array::from(player_pos_p1_col)) as ArrayRef;
-    let player_pos_p2_row_array = Arc::new(Int32Array::from(player_pos_p2_row)) as ArrayRef;
-    let player_pos_p2_col_array = Arc::new(Int32Array::from(player_pos_p2_col)) as ArrayRef;
-    let current_player_array = Arc::new(Int32Array::from(current_players)) as ArrayRef;
-    let walls_p1_array = Arc::new(Int32Array::from(walls_p1)) as ArrayRef;
-    let walls_p2_array = Arc::new(Int32Array::from(walls_p2)) as ArrayRef;
-    let agent_player_array = Arc::new(Int32Array::from(agent_players)) as ArrayRef;
-    let action_row_array = Arc::new(Int32Array::from(action_rows)) as ArrayRef;
-    let action_col_array = Arc::new(Int32Array::from(action_cols)) as ArrayRef;
-    let action_type_array = Arc::new(Int32Array::from(action_types)) as ArrayRef;
-    let value_array = Arc::new(Float32Array::from(values)) as ArrayRef;
-
-    // Define schema
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("grid", DataType::List(Arc::new(Field::new("item", DataType::Int8, true))), false),
-        Field::new("player_pos_p1_row", DataType::Int32, false),
-        Field::new("player_pos_p1_col", DataType::Int32, false),
-        Field::new("player_pos_p2_row", DataType::Int32, false),
-        Field::new("player_pos_p2_col", DataType::Int32, false),
-        Field::new("current_player", DataType::Int32, false),
-        Field::new("walls_p1", DataType::Int32, false),
-        Field::new("walls_p2", DataType::Int32, false),
-        Field::new("agent_player", DataType::Int32, false),
-        Field::new("action_row", DataType::Int32, false),
-        Field::new("action_col", DataType::Int32, false),
-        Field::new("action_type", DataType::Int32, false),
-        Field::new("value", DataType::Float32, false),
-    ]));
-
-    // Create record batch
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![
-            grid_array,
-            player_pos_p1_row_array,
-            player_pos_p1_col_array,
-            player_pos_p2_row_array,
-            player_pos_p2_col_array,
-            current_player_array,
-            walls_p1_array,
-            walls_p2_array,
-            agent_player_array,
-            action_row_array,
-            action_col_array,
-            action_type_array,
-            value_array,
-        ],
-    )?;
-
-    Ok(batch)
+    Ok(num_entries)
 }
 
 /// Create a policy database by evaluating actions and saving to a parquet file
@@ -418,27 +376,9 @@ fn create_policy_db(
     );
 
     if let Some(entries) = log_entries {
-        let num_entries = entries.len();
-
-        // Convert to RecordBatch
-        let batch = log_entries_to_record_batch(entries)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to create RecordBatch: {}", e)))?;
-
-        // Write to parquet file
-        let file = std::fs::File::create(Path::new(filename))
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to create file: {}", e)))?;
-
-        let props = WriterProperties::builder().build();
-        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to create parquet writer: {}", e)))?;
-
-        writer.write(&batch)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write batch: {}", e)))?;
-
-        writer.close()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to close writer: {}", e)))?;
-
-        Ok(num_entries)
+        // Write entries to SQLite database
+        log_entries_to_sqlite(entries, filename)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write to SQLite database: {}", e)))
     } else {
         Ok(0)
     }
