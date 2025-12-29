@@ -16,10 +16,10 @@ pub const WINNING_REWARD: f32 = 1e6;
 #[derive(Clone)]
 pub struct MinimaxLogEntry {
     pub grid: Vec<i8>,
-    pub player_positions: Vec<i32>,
     pub current_player: i32,
     pub walls_remaining: Vec<i32>,
     pub agent_player: i32,
+    pub completed_steps: i32,
     pub action: Vec<i32>,
     pub value: f32,
 }
@@ -213,7 +213,8 @@ fn minimax(
     goal_rows: &ArrayView1<i32>,
     current_player: i32,
     agent_player: i32,
-    depth: i32,
+    completed_steps: i32,
+    max_steps: i32,
     branching_factor: usize,
     wall_sigma: f32,
     discount_factor: f32,
@@ -253,8 +254,8 @@ fn minimax(
             -WINNING_REWARD
         };
     }
-    // Have we reached the maximum depth?
-    else if depth == 0 {
+    // Have we reached the maximum number of steps?
+    else if completed_steps == max_steps {
         best_value = compute_heuristic_for_game_state(
             &grid.view(),
             &player_positions.view(),
@@ -300,7 +301,8 @@ fn minimax(
                 goal_rows,
                 1 - current_player,
                 agent_player,
-                depth - 1,
+                completed_steps + 1,
+                max_steps,
                 branching_factor,
                 wall_sigma,
                 discount_factor,
@@ -329,13 +331,10 @@ fn minimax(
             for (action_vec, action_value) in action_values {
                 let entry = MinimaxLogEntry {
                     grid: grid.iter().copied().collect(),
-                    player_positions: vec![
-                        player_positions[[0, 0]], player_positions[[0, 1]],
-                        player_positions[[1, 0]], player_positions[[1, 1]],
-                    ],
                     current_player,
                     walls_remaining: walls_remaining.to_vec(),
                     agent_player,
+                    completed_steps,
                     action: action_vec,
                     value: action_value,
                 };
@@ -365,7 +364,7 @@ pub fn evaluate_actions(
     walls_remaining: &ArrayView1<i32>,
     goal_rows: &ArrayView1<i32>,
     current_player: i32,
-    max_depth: i32,
+    max_steps: i32,
     branching_factor: usize,
     wall_sigma: f32,
     discount_factor: f32,
@@ -409,7 +408,8 @@ pub fn evaluate_actions(
                 goal_rows,
                 1 - current_player,
                 current_player, // Assume we are choosing an action for the current player
-                max_depth - 1,
+                0, // completed_steps
+                max_steps,
                 branching_factor,
                 wall_sigma,
                 discount_factor,

@@ -327,6 +327,7 @@ class SimpleAgent(Agent):
         action_mask = observation["action_mask"]
         observation = observation["observation"]
         game, _, _ = construct_game_from_observation(observation)
+        completed_steps = observation["completed_steps"]
 
         # Convert the game state to arrays that can be used by Numba
         grid = game.board._grid
@@ -341,7 +342,7 @@ class SimpleAgent(Agent):
         goal_rows[1] = game.get_goal_row(Player.TWO)
         current_player = int(game.get_current_player())
 
-        max_depth = min(self.params.max_depth, self.max_steps - observation["completed_steps"])
+        max_depth = min(self.params.max_depth, self.max_steps - completed_steps)
 
         # Use either Rust or Numba implementation to evaluate possible actions
         if self.params.use_rust:

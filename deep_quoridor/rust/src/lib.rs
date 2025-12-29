@@ -247,7 +247,7 @@ fn undo_action(
 /// Evaluate all actions for the current player using the minimax algorithm.
 /// This is parallelized using Rayon for better performance.
 #[pyfunction]
-#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic))]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_steps, branching_factor, wall_sigma, discount_factor, heuristic))]
 fn evaluate_actions<'py>(
     py: Python<'py>,
     grid: PyReadonlyArray2<i8>,
@@ -255,7 +255,7 @@ fn evaluate_actions<'py>(
     walls_remaining: PyReadonlyArray1<i32>,
     goal_rows: PyReadonlyArray1<i32>,
     current_player: i32,
-    max_depth: i32,
+    max_steps: i32,
     branching_factor: usize,
     wall_sigma: f32,
     discount_factor: f32,
@@ -267,7 +267,7 @@ fn evaluate_actions<'py>(
         &walls_remaining.as_array(),
         &goal_rows.as_array(),
         current_player,
-        max_depth,
+        max_steps,
         branching_factor,
         wall_sigma,
         discount_factor,
@@ -319,7 +319,7 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         )?;
 
-    for entry in entries {
+        for entry in entries {
             // Convert grid Vec<i8> to Vec<u8> for blob storage
             let grid_blob: Vec<u8> = entry.grid.iter().map(|&x| x as u8).collect();
 
@@ -335,7 +335,7 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
                 entry.action[2],
                 entry.value,
             ])?;
-    }
+        }
         // Explicitly drop statement before committing
         drop(stmt);
     }
@@ -344,16 +344,16 @@ fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str)
     Ok(num_entries)
 }
 
-/// Create a policy database by evaluating actions and saving to a parquet file
+/// Create a policy database by evaluating actions and saving to a SQLite database
 #[pyfunction]
-#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic, filename))]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_steps, branching_factor, wall_sigma, discount_factor, heuristic, filename))]
 fn create_policy_db(
     grid: PyReadonlyArray2<i8>,
     player_positions: PyReadonlyArray2<i32>,
     walls_remaining: PyReadonlyArray1<i32>,
     goal_rows: PyReadonlyArray1<i32>,
     current_player: i32,
-    max_depth: i32,
+    max_steps: i32,
     branching_factor: usize,
     wall_sigma: f32,
     discount_factor: f32,
@@ -367,7 +367,7 @@ fn create_policy_db(
         &walls_remaining.as_array(),
         &goal_rows.as_array(),
         current_player,
-        max_depth,
+        max_steps,
         branching_factor,
         wall_sigma,
         discount_factor,
