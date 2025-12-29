@@ -1,5 +1,13 @@
 use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
 use pyo3::prelude::*;
+use std::path::Path;
+use std::sync::Arc;
+
+use arrow::array::{ArrayRef, Int32Array, Float32Array, ListArray};
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::record_batch::RecordBatch;
+use parquet::arrow::ArrowWriter;
+use parquet::file::properties::WriterProperties;
 
 mod actions;
 mod game_state;
@@ -244,7 +252,7 @@ fn undo_action(
 /// Evaluate all actions for the current player using the minimax algorithm.
 /// This is parallelized using Rayon for better performance.
 #[pyfunction]
-#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic))]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic, enable_logging=false))]
 fn evaluate_actions<'py>(
     py: Python<'py>,
     grid: PyReadonlyArray2<i8>,
@@ -257,8 +265,9 @@ fn evaluate_actions<'py>(
     wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
-) -> (Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>) {
-    let (actions, values) = minimax::evaluate_actions(
+    enable_logging: bool,
+) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>, Option<PyObject>)> {
+    let (actions, values, log_entries) = minimax::evaluate_actions(
         &grid.as_array(),
         &player_positions.as_array(),
         &walls_remaining.as_array(),
@@ -269,11 +278,233 @@ fn evaluate_actions<'py>(
         wall_sigma,
         discount_factor,
         heuristic,
+        enable_logging,
     );
-    (
+
+    // Convert log entries to polars DataFrame if present
+    let df_result = if let Some(entries) = log_entries {
+        Some(convert_log_entries_to_dataframe(py, entries)?)
+    } else {
+        None
+    };
+
+    Ok((
         PyArray2::from_owned_array_bound(py, actions),
         numpy::PyArray1::from_owned_array_bound(py, values),
-    )
+        df_result,
+    ))
+}
+
+/// Convert log entries to a Python dictionary that can be used to create a polars DataFrame
+fn convert_log_entries_to_dataframe(py: Python, entries: Vec<minimax::MinimaxLogEntry>) -> PyResult<PyObject> {
+    use pyo3::types::PyDict;
+
+    let dict = PyDict::new_bound(py);
+
+    // Create vectors for each column
+    let mut grids: Vec<Vec<i8>> = Vec::new();
+    let mut player_pos_p1_row: Vec<i32> = Vec::new();
+    let mut player_pos_p1_col: Vec<i32> = Vec::new();
+    let mut player_pos_p2_row: Vec<i32> = Vec::new();
+    let mut player_pos_p2_col: Vec<i32> = Vec::new();
+    let mut current_players: Vec<i32> = Vec::new();
+    let mut walls_p1: Vec<i32> = Vec::new();
+    let mut walls_p2: Vec<i32> = Vec::new();
+    let mut agent_players: Vec<i32> = Vec::new();
+    let mut action_rows: Vec<i32> = Vec::new();
+    let mut action_cols: Vec<i32> = Vec::new();
+    let mut action_types: Vec<i32> = Vec::new();
+    let mut values: Vec<f32> = Vec::new();
+
+    for entry in entries {
+        grids.push(entry.grid);
+        player_pos_p1_row.push(entry.player_positions[0]);
+        player_pos_p1_col.push(entry.player_positions[1]);
+        player_pos_p2_row.push(entry.player_positions[2]);
+        player_pos_p2_col.push(entry.player_positions[3]);
+        current_players.push(entry.current_player);
+        walls_p1.push(entry.walls_remaining[0]);
+        walls_p2.push(entry.walls_remaining[1]);
+        agent_players.push(entry.agent_player);
+        action_rows.push(entry.action[0]);
+        action_cols.push(entry.action[1]);
+        action_types.push(entry.action[2]);
+        values.push(entry.value);
+    }
+
+    dict.set_item("grid", grids)?;
+    dict.set_item("player_pos_p1_row", player_pos_p1_row)?;
+    dict.set_item("player_pos_p1_col", player_pos_p1_col)?;
+    dict.set_item("player_pos_p2_row", player_pos_p2_row)?;
+    dict.set_item("player_pos_p2_col", player_pos_p2_col)?;
+    dict.set_item("current_player", current_players)?;
+    dict.set_item("walls_p1", walls_p1)?;
+    dict.set_item("walls_p2", walls_p2)?;
+    dict.set_item("agent_player", agent_players)?;
+    dict.set_item("action_row", action_rows)?;
+    dict.set_item("action_col", action_cols)?;
+    dict.set_item("action_type", action_types)?;
+    dict.set_item("value", values)?;
+
+    Ok(dict.into())
+}
+
+/// Convert log entries to an Arrow RecordBatch
+fn log_entries_to_record_batch(entries: Vec<minimax::MinimaxLogEntry>) -> Result<RecordBatch, Box<dyn std::error::Error>> {
+    use arrow::array::{Int8Array, ListBuilder, Int8Builder};
+
+    let num_entries = entries.len();
+
+    // Create vectors for each column
+    let mut player_pos_p1_row: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut player_pos_p1_col: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut player_pos_p2_row: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut player_pos_p2_col: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut current_players: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut walls_p1: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut walls_p2: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut agent_players: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut action_rows: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut action_cols: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut action_types: Vec<i32> = Vec::with_capacity(num_entries);
+    let mut values: Vec<f32> = Vec::with_capacity(num_entries);
+
+    // Build the grid list array
+    let mut grid_builder = ListBuilder::new(Int8Builder::new());
+
+    for entry in entries {
+        // Add grid as a list
+        let grid_inner = grid_builder.values();
+        for &val in &entry.grid {
+            grid_inner.append_value(val);
+        }
+        grid_builder.append(true);
+
+        player_pos_p1_row.push(entry.player_positions[0]);
+        player_pos_p1_col.push(entry.player_positions[1]);
+        player_pos_p2_row.push(entry.player_positions[2]);
+        player_pos_p2_col.push(entry.player_positions[3]);
+        current_players.push(entry.current_player);
+        walls_p1.push(entry.walls_remaining[0]);
+        walls_p2.push(entry.walls_remaining[1]);
+        agent_players.push(entry.agent_player);
+        action_rows.push(entry.action[0]);
+        action_cols.push(entry.action[1]);
+        action_types.push(entry.action[2]);
+        values.push(entry.value);
+    }
+
+    // Create arrays
+    let grid_array = Arc::new(grid_builder.finish()) as ArrayRef;
+    let player_pos_p1_row_array = Arc::new(Int32Array::from(player_pos_p1_row)) as ArrayRef;
+    let player_pos_p1_col_array = Arc::new(Int32Array::from(player_pos_p1_col)) as ArrayRef;
+    let player_pos_p2_row_array = Arc::new(Int32Array::from(player_pos_p2_row)) as ArrayRef;
+    let player_pos_p2_col_array = Arc::new(Int32Array::from(player_pos_p2_col)) as ArrayRef;
+    let current_player_array = Arc::new(Int32Array::from(current_players)) as ArrayRef;
+    let walls_p1_array = Arc::new(Int32Array::from(walls_p1)) as ArrayRef;
+    let walls_p2_array = Arc::new(Int32Array::from(walls_p2)) as ArrayRef;
+    let agent_player_array = Arc::new(Int32Array::from(agent_players)) as ArrayRef;
+    let action_row_array = Arc::new(Int32Array::from(action_rows)) as ArrayRef;
+    let action_col_array = Arc::new(Int32Array::from(action_cols)) as ArrayRef;
+    let action_type_array = Arc::new(Int32Array::from(action_types)) as ArrayRef;
+    let value_array = Arc::new(Float32Array::from(values)) as ArrayRef;
+
+    // Define schema
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("grid", DataType::List(Arc::new(Field::new("item", DataType::Int8, true))), false),
+        Field::new("player_pos_p1_row", DataType::Int32, false),
+        Field::new("player_pos_p1_col", DataType::Int32, false),
+        Field::new("player_pos_p2_row", DataType::Int32, false),
+        Field::new("player_pos_p2_col", DataType::Int32, false),
+        Field::new("current_player", DataType::Int32, false),
+        Field::new("walls_p1", DataType::Int32, false),
+        Field::new("walls_p2", DataType::Int32, false),
+        Field::new("agent_player", DataType::Int32, false),
+        Field::new("action_row", DataType::Int32, false),
+        Field::new("action_col", DataType::Int32, false),
+        Field::new("action_type", DataType::Int32, false),
+        Field::new("value", DataType::Float32, false),
+    ]));
+
+    // Create record batch
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            grid_array,
+            player_pos_p1_row_array,
+            player_pos_p1_col_array,
+            player_pos_p2_row_array,
+            player_pos_p2_col_array,
+            current_player_array,
+            walls_p1_array,
+            walls_p2_array,
+            agent_player_array,
+            action_row_array,
+            action_col_array,
+            action_type_array,
+            value_array,
+        ],
+    )?;
+
+    Ok(batch)
+}
+
+/// Create a policy database by evaluating actions and saving to a parquet file
+#[pyfunction]
+#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_depth, branching_factor, wall_sigma, discount_factor, heuristic, filename))]
+fn create_policy_db(
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+    max_depth: i32,
+    branching_factor: usize,
+    wall_sigma: f32,
+    discount_factor: f32,
+    heuristic: i32,
+    filename: &str,
+) -> PyResult<usize> {
+    // Call evaluate_actions with logging enabled
+    let (_actions, _values, log_entries) = minimax::evaluate_actions(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        &goal_rows.as_array(),
+        current_player,
+        max_depth,
+        branching_factor,
+        wall_sigma,
+        discount_factor,
+        heuristic,
+        true, // enable logging
+    );
+
+    if let Some(entries) = log_entries {
+        let num_entries = entries.len();
+
+        // Convert to RecordBatch
+        let batch = log_entries_to_record_batch(entries)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to create RecordBatch: {}", e)))?;
+
+        // Write to parquet file
+        let file = std::fs::File::create(Path::new(filename))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to create file: {}", e)))?;
+
+        let props = WriterProperties::builder().build();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to create parquet writer: {}", e)))?;
+
+        writer.write(&batch)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write batch: {}", e)))?;
+
+        writer.close()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to close writer: {}", e)))?;
+
+        Ok(num_entries)
+    } else {
+        Ok(0)
+    }
 }
 
 /// A Python module implemented in Rust.
@@ -305,6 +536,7 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
+    m.add_function(wrap_pyfunction!(create_policy_db, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", pathfinding::CELL_FREE)?;

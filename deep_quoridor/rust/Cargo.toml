@@ -13,6 +13,9 @@ numpy = "0.22"
 ndarray = "0.16"
 rand = "0.8"
 rayon = "1.10"
+parquet = "53"
+arrow = { version = "53", features = ["ipc"] }
+serde = { version = "1", features = ["derive"] }
 
 [profile.release]
 # Enable optimizations for better performance
