@@ -1,0 +1,364 @@
+/// Compact bit-packed representation accessor for Quoridor game states.
+///
+/// This struct doesn't store the game state data itself - it only stores the
+/// parameters and computed offsets needed to interpret byte arrays as packed game states.
+/// The data is passed to each method, allowing flexible storage (stack or heap).
+
+use std::fmt;
+
+/// Calculate the number of bits needed to represent a value up to max (inclusive)
+const fn bits_needed(max: usize) -> usize {
+    if max == 0 {
+        1
+    } else {
+        (usize::BITS - max.leading_zeros()) as usize
+    }
+}
+
+/// Accessor for bit-packed Quoridor game states.
+/// Stores parameters and computed offsets, but not the actual game state data.
+#[derive(Clone, Debug)]
+pub struct Quoridor {
+    // Parameters
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+
+    // Computed values
+    num_wall_positions: usize,
+    num_player_positions: usize,
+    position_bits: usize,
+    walls_remaining_bits: usize,
+    steps_bits: usize,
+    total_bits: usize,
+    total_bytes: usize,
+
+    // Bit offsets for each field
+    walls_offset: usize,
+    p1_pos_offset: usize,
+    p2_pos_offset: usize,
+    walls_remaining_offset: usize,
+    current_player_offset: usize,
+    steps_offset: usize,
+}
+
+impl Quoridor {
+    /// Create a new Quoridor state accessor with the given parameters
+    pub fn new(board_size: usize, max_walls: usize, max_steps: usize) -> Self {
+        let num_wall_positions = 2 * (board_size - 1) * (board_size - 1);
+        let num_player_positions = board_size * board_size;
+        let position_bits = bits_needed(num_player_positions - 1);
+        let walls_remaining_bits = bits_needed(max_walls);
+        let steps_bits = bits_needed(max_steps);
+
+        let walls_offset = 0;
+        let p1_pos_offset = walls_offset + num_wall_positions;
+        let p2_pos_offset = p1_pos_offset + position_bits;
+        let walls_remaining_offset = p2_pos_offset + position_bits;
+        let current_player_offset = walls_remaining_offset + walls_remaining_bits;
+        let steps_offset = current_player_offset + 1;
+
+        let total_bits = steps_offset + steps_bits;
+        let total_bytes = (total_bits + 7) / 8;
+
+        Self {
+            board_size,
+            max_walls,
+            max_steps,
+            num_wall_positions,
+            num_player_positions,
+            position_bits,
+            walls_remaining_bits,
+            steps_bits,
+            total_bits,
+            total_bytes,
+            walls_offset,
+            p1_pos_offset,
+            p2_pos_offset,
+            walls_remaining_offset,
+            current_player_offset,
+            steps_offset,
+        }
+    }
+
+    /// Get the size of the packed representation in bytes
+    pub fn size_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    /// Get the number of wall positions
+    pub fn num_wall_positions(&self) -> usize {
+        self.num_wall_positions
+    }
+
+    /// Get the number of player positions
+    pub fn num_player_positions(&self) -> usize {
+        self.num_player_positions
+    }
+
+    /// Create a new byte array for storing a packed state
+    pub fn create_data(&self) -> Vec<u8> {
+        vec![0u8; self.total_bytes]
+    }
+
+    /// Get a bit at the specified position in the data
+    #[inline]
+    fn get_bit(&self, data: &[u8], bit_index: usize) -> bool {
+        debug_assert!(data.len() >= self.total_bytes);
+        let byte_index = bit_index / 8;
+        let bit_offset = bit_index % 8;
+        (data[byte_index] >> bit_offset) & 1 == 1
+    }
+
+    /// Set a bit at the specified position in the data
+    #[inline]
+    fn set_bit(&self, data: &mut [u8], bit_index: usize, value: bool) {
+        debug_assert!(data.len() >= self.total_bytes);
+        let byte_index = bit_index / 8;
+        let bit_offset = bit_index % 8;
+        if value {
+            data[byte_index] |= 1 << bit_offset;
+        } else {
+            data[byte_index] &= !(1 << bit_offset);
+        }
+    }
+
+    /// Get an integer value starting at bit_offset with num_bits bits
+    #[inline]
+    fn get_bits(&self, data: &[u8], bit_offset: usize, num_bits: usize) -> usize {
+        let mut value = 0usize;
+        for i in 0..num_bits {
+            if self.get_bit(data, bit_offset + i) {
+                value |= 1 << i;
+            }
+        }
+        value
+    }
+
+    /// Set an integer value starting at bit_offset with num_bits bits
+    #[inline]
+    fn set_bits(&self, data: &mut [u8], bit_offset: usize, num_bits: usize, value: usize) {
+        for i in 0..num_bits {
+            self.set_bit(data, bit_offset + i, (value >> i) & 1 == 1);
+        }
+    }
+
+    /// Check if a wall is present at the given position
+    pub fn get_wall(&self, data: &[u8], wall_index: usize) -> bool {
+        debug_assert!(wall_index < self.num_wall_positions);
+        self.get_bit(data, self.walls_offset + wall_index)
+    }
+
+    /// Set a wall at the given position
+    pub fn set_wall(&self, data: &mut [u8], wall_index: usize, present: bool) {
+        debug_assert!(wall_index < self.num_wall_positions);
+        self.set_bit(data, self.walls_offset + wall_index, present);
+    }
+
+    /// Get player 1's position (as a flat index from 0 to board_size^2 - 1)
+    pub fn get_p1_position(&self, data: &[u8]) -> usize {
+        self.get_bits(data, self.p1_pos_offset, self.position_bits)
+    }
+
+    /// Set player 1's position
+    pub fn set_p1_position(&self, data: &mut [u8], pos: usize) {
+        debug_assert!(pos < self.num_player_positions);
+        self.set_bits(data, self.p1_pos_offset, self.position_bits, pos);
+    }
+
+    /// Get player 2's position (as a flat index from 0 to board_size^2 - 1)
+    pub fn get_p2_position(&self, data: &[u8]) -> usize {
+        self.get_bits(data, self.p2_pos_offset, self.position_bits)
+    }
+
+    /// Set player 2's position
+    pub fn set_p2_position(&self, data: &mut [u8], pos: usize) {
+        debug_assert!(pos < self.num_player_positions);
+        self.set_bits(data, self.p2_pos_offset, self.position_bits, pos);
+    }
+
+    /// Get player 1's remaining walls
+    pub fn get_p1_walls_remaining(&self, data: &[u8]) -> usize {
+        self.get_bits(data, self.walls_remaining_offset, self.walls_remaining_bits)
+    }
+
+    /// Set player 1's remaining walls
+    pub fn set_p1_walls_remaining(&self, data: &mut [u8], walls: usize) {
+        debug_assert!(walls <= self.max_walls);
+        self.set_bits(data, self.walls_remaining_offset, self.walls_remaining_bits, walls);
+    }
+
+    /// Get player 2's remaining walls (computed from total walls used)
+    pub fn get_p2_walls_remaining(&self, data: &[u8]) -> usize {
+        let p1_walls = self.get_p1_walls_remaining(data);
+        let walls_used = self.count_walls(data);
+        let p1_walls_used = self.max_walls - p1_walls;
+        let p2_walls_used = walls_used.saturating_sub(p1_walls_used);
+        self.max_walls.saturating_sub(p2_walls_used)
+    }
+
+    /// Get the current player (0 or 1)
+    pub fn get_current_player(&self, data: &[u8]) -> usize {
+        if self.get_bit(data, self.current_player_offset) { 1 } else { 0 }
+    }
+
+    /// Set the current player
+    pub fn set_current_player(&self, data: &mut [u8], player: usize) {
+        debug_assert!(player < 2);
+        self.set_bit(data, self.current_player_offset, player == 1);
+    }
+
+    /// Get the number of completed steps
+    pub fn get_completed_steps(&self, data: &[u8]) -> usize {
+        self.get_bits(data, self.steps_offset, self.steps_bits)
+    }
+
+    /// Set the number of completed steps
+    pub fn set_completed_steps(&self, data: &mut [u8], steps: usize) {
+        debug_assert!(steps <= self.max_steps);
+        self.set_bits(data, self.steps_offset, self.steps_bits, steps);
+    }
+
+    /// Count the total number of walls placed on the board
+    pub fn count_walls(&self, data: &[u8]) -> usize {
+        let mut count = 0;
+        for i in 0..self.num_wall_positions {
+            if self.get_wall(data, i) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Convert a (row, col) position to a flat index
+    pub fn position_to_index(&self, row: usize, col: usize) -> usize {
+        debug_assert!(row < self.board_size && col < self.board_size);
+        row * self.board_size + col
+    }
+
+    /// Convert a flat index to (row, col) position
+    pub fn index_to_position(&self, index: usize) -> (usize, usize) {
+        debug_assert!(index < self.num_player_positions);
+        (index / self.board_size, index % self.board_size)
+    }
+
+    /// Get board size
+    pub fn board_size(&self) -> usize {
+        self.board_size
+    }
+
+    /// Get max walls
+    pub fn max_walls(&self) -> usize {
+        self.max_walls
+    }
+
+    /// Get max steps
+    pub fn max_steps(&self) -> usize {
+        self.max_steps
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_size_calculation() {
+        let q = Quoridor::new(5, 10, 100);
+        // 5x5 board: 2*(5-1)*(5-1) = 2*4*4 = 32 wall bits
+        // Positions: ceil(log2(25)) = 5 bits each, 2 players = 10 bits
+        // Walls remaining: ceil(log2(10)) = 4 bits
+        // Current player: 1 bit
+        // Steps: ceil(log2(100)) = 7 bits
+        // Total: 32 + 10 + 4 + 1 + 7 = 54 bits = 7 bytes
+        assert_eq!(q.size_bytes(), 7);
+    }
+
+    #[test]
+    fn test_player_positions() {
+        let q = Quoridor::new(5, 10, 100);
+        let mut data = q.create_data();
+
+        q.set_p1_position(&mut data, q.position_to_index(0, 2));
+        q.set_p2_position(&mut data, q.position_to_index(4, 2));
+
+        assert_eq!(q.get_p1_position(&data), 2);
+        assert_eq!(q.get_p2_position(&data), 22);
+        assert_eq!(q.index_to_position(q.get_p1_position(&data)), (0, 2));
+        assert_eq!(q.index_to_position(q.get_p2_position(&data)), (4, 2));
+    }
+
+    #[test]
+    fn test_walls() {
+        let q = Quoridor::new(5, 10, 100);
+        let mut data = q.create_data();
+
+        assert_eq!(q.count_walls(&data), 0);
+
+        q.set_wall(&mut data, 0, true);
+        q.set_wall(&mut data, 5, true);
+        assert_eq!(q.count_walls(&data), 2);
+        assert!(q.get_wall(&data, 0));
+        assert!(q.get_wall(&data, 5));
+        assert!(!q.get_wall(&data, 1));
+    }
+
+    #[test]
+    fn test_walls_remaining() {
+        let q = Quoridor::new(5, 10, 100);
+        let mut data = q.create_data();
+
+        q.set_p1_walls_remaining(&mut data, 10);
+        assert_eq!(q.get_p1_walls_remaining(&data), 10);
+
+        // Simulate p1 placing 3 walls, p2 placing 2 walls
+        q.set_wall(&mut data, 0, true);
+        q.set_wall(&mut data, 1, true);
+        q.set_wall(&mut data, 2, true);
+        q.set_wall(&mut data, 10, true);
+        q.set_wall(&mut data, 11, true);
+        q.set_p1_walls_remaining(&mut data, 7);
+
+        assert_eq!(q.get_p1_walls_remaining(&data), 7);
+        assert_eq!(q.get_p2_walls_remaining(&data), 8);
+    }
+
+    #[test]
+    fn test_current_player() {
+        let q = Quoridor::new(5, 10, 100);
+        let mut data = q.create_data();
+
+        assert_eq!(q.get_current_player(&data), 0);
+
+        q.set_current_player(&mut data, 1);
+        assert_eq!(q.get_current_player(&data), 1);
+
+        q.set_current_player(&mut data, 0);
+        assert_eq!(q.get_current_player(&data), 0);
+    }
+
+    #[test]
+    fn test_completed_steps() {
+        let q = Quoridor::new(5, 10, 100);
+        let mut data = q.create_data();
+
+        assert_eq!(q.get_completed_steps(&data), 0);
+
+        q.set_completed_steps(&mut data, 42);
+        assert_eq!(q.get_completed_steps(&data), 42);
+    }
+
+    #[test]
+    fn test_stack_allocation() {
+        let q = Quoridor::new(3, 3, 64);
+        let mut data = [0u8; 7]; // Stack-allocated
+
+        q.set_p1_position(&mut data, q.position_to_index(0, 1));
+        q.set_p2_position(&mut data, q.position_to_index(2, 1));
+        q.set_current_player(&mut data, 1);
+
+        assert_eq!(q.get_p1_position(&data), 1);
+        assert_eq!(q.get_p2_position(&data), 7);
+        assert_eq!(q.get_current_player(&data), 1);
+    }
+}
