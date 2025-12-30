@@ -282,8 +282,28 @@ fn evaluate_actions<'py>(
 }
 
 /// Write log entries to a SQLite database
-fn log_entries_to_sqlite(entries: Vec<minimax::MinimaxLogEntry>, filename: &str) -> Result<usize, Box<dyn std::error::Error>> {
+fn log_entries_to_sqlite(
+    entries: Vec<minimax::MinimaxLogEntry>,
+    filename: &str,
+    board_size: i32,
+    max_steps: i32,
+    max_walls: i32,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let mut conn = Connection::open(Path::new(filename))?;
+
+    // Create metadata table for global parameters
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value FLOAT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Insert metadata
+    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('board_size', ?1)", params![board_size as f32])?;
+    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_steps', ?1)", params![max_steps as f32])?;
+    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_walls', ?1)", params![max_walls as f32])?;
 
     // Create table with columns for grid (as blob), walls remaining, completed_steps, actions (as blob), and action_values (as blob)
     // Note: grid is trimmed to exclude 2 outermost rows/cols on each side
@@ -372,11 +392,21 @@ fn create_policy_db(
     heuristic: i32,
     filename: &str,
 ) -> PyResult<usize> {
+    // Calculate board_size from grid dimensions
+    // Grid is (2*board_size + 3) x (2*board_size + 3), so board_size = (rows - 3) / 2
+    let grid_array = grid.as_array();
+    let grid_rows = grid_array.shape()[0] as i32;
+    let board_size = (grid_rows - 3) / 2;
+
+    // Get max_walls from walls_remaining (assumes we start with full walls)
+    let walls_array = walls_remaining.as_array();
+    let max_walls = walls_array[0].max(walls_array[1]);
+
     // Call evaluate_actions with logging enabled
     let (_actions, _values, log_entries) = minimax::evaluate_actions(
-        &grid.as_array(),
+        &grid_array,
         &player_positions.as_array(),
-        &walls_remaining.as_array(),
+        &walls_array,
         &goal_rows.as_array(),
         current_player,
         max_steps,
@@ -388,8 +418,8 @@ fn create_policy_db(
     );
 
     if let Some(entries) = log_entries {
-        // Write entries to SQLite database
-        log_entries_to_sqlite(entries, filename)
+        // Write entries to SQLite database with metadata
+        log_entries_to_sqlite(entries, filename, board_size, max_steps, max_walls)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write to SQLite database: {}", e)))
     } else {
         Ok(0)
