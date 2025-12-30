@@ -8,6 +8,7 @@ mod actions;
 mod game_state;
 mod grid;
 mod minimax;
+mod packed_state;
 mod pathfinding;
 mod validation;
 
