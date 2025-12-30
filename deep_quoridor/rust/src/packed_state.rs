@@ -39,14 +39,15 @@ const fn bytes_needed<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX
     (total_bits + 7) / 8 // Round up to nearest byte
 }
 
-/// Compact bit-packed representation of a Quoridor game state
+/// Compact bit-packed representation of a Quoridor game state.
+/// The SIZE parameter must equal `bytes_needed::<BOARD_SIZE, MAX_WALLS, MAX_STEPS>()`.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PackedState<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize> {
-    data: Vec<u8>,
+pub struct PackedState<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize, const SIZE: usize> {
+    data: [u8; SIZE],
 }
 
-impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize>
-    PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS>
+impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize, const SIZE: usize>
+    PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS, SIZE>
 {
     /// Number of possible wall positions (horizontal + vertical)
     const NUM_WALL_POSITIONS: usize = 2 * (BOARD_SIZE - 1) * (BOARD_SIZE - 1);
@@ -70,6 +71,9 @@ impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize>
                                1 +
                                Self::STEPS_BITS;
 
+    /// Total bytes needed
+    const TOTAL_BYTES: usize = (Self::TOTAL_BITS + 7) / 8;
+
     /// Bit offsets for each field
     const WALLS_OFFSET: usize = 0;
     const P1_POS_OFFSET: usize = Self::WALLS_OFFSET + Self::NUM_WALL_POSITIONS;
@@ -80,9 +84,15 @@ impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize>
 
     /// Create a new packed state with all fields set to zero
     pub fn new() -> Self {
-        let size = bytes_needed::<BOARD_SIZE, MAX_WALLS, MAX_STEPS>();
+        // Compile-time assertion that SIZE matches the calculated size
+        const fn _assert_size_matches<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize, const SIZE: usize>() {
+            let calculated = bytes_needed::<BOARD_SIZE, MAX_WALLS, MAX_STEPS>();
+            assert!(SIZE == calculated, "SIZE parameter must match calculated size");
+        }
+        _assert_size_matches::<BOARD_SIZE, MAX_WALLS, MAX_STEPS, SIZE>();
+
         Self {
-            data: vec![0u8; size],
+            data: [0u8; SIZE],
         }
     }
 
@@ -226,8 +236,8 @@ impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize>
     }
 
     /// Get the size of the packed representation in bytes
-    pub fn size_bytes() -> usize {
-        bytes_needed::<BOARD_SIZE, MAX_WALLS, MAX_STEPS>()
+    pub const fn size_bytes() -> usize {
+        SIZE
     }
 
     /// Get the underlying byte array
@@ -236,23 +246,23 @@ impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize>
     }
 }
 
-impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize> Default
-    for PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS>
+impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize, const SIZE: usize> Default
+    for PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS, SIZE>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize> fmt::Debug
-    for PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS>
+impl<const BOARD_SIZE: usize, const MAX_WALLS: usize, const MAX_STEPS: usize, const SIZE: usize> fmt::Debug
+    for PackedState<BOARD_SIZE, MAX_WALLS, MAX_STEPS, SIZE>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PackedState")
             .field("board_size", &BOARD_SIZE)
             .field("max_walls", &MAX_WALLS)
             .field("max_steps", &MAX_STEPS)
-            .field("size_bytes", &Self::size_bytes())
+            .field("size_bytes", &SIZE)
             .field("p1_pos", &Self::index_to_position(self.get_p1_position()))
             .field("p2_pos", &Self::index_to_position(self.get_p2_position()))
             .field("p1_walls_remaining", &self.get_p1_walls_remaining())
@@ -270,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_size_calculation() {
-        type State5x5 = PackedState<5, 10, 100>;
+        type State5x5 = PackedState<5, 10, 100, 7>;
         // 5x5 board: 2*(5-1)*(5-1) = 2*4*4 = 32 wall bits
         // Positions: ceil(log2(25)) = 5 bits each, 2 players = 10 bits
         // Walls remaining: ceil(log2(10)) = 4 bits
@@ -278,11 +288,12 @@ mod tests {
         // Steps: ceil(log2(100)) = 7 bits
         // Total: 32 + 10 + 4 + 1 + 7 = 54 bits = 7 bytes
         assert_eq!(State5x5::size_bytes(), 7);
+        assert_eq!(State5x5::TOTAL_BYTES, 7);
     }
 
     #[test]
     fn test_player_positions() {
-        type State = PackedState<5, 10, 100>;
+        type State = PackedState<5, 10, 100, 7>;
         let mut state = State::new();
         state.set_p1_position(State::position_to_index(0, 2));
         state.set_p2_position(State::position_to_index(4, 2));
@@ -295,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_walls() {
-        let mut state = PackedState::<5, 10, 100>::new();
+        let mut state = PackedState::<5, 10, 100, 7>::new();
         assert_eq!(state.count_walls(), 0);
 
         state.set_wall(0, true);
@@ -308,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_walls_remaining() {
-        let mut state = PackedState::<5, 10, 100>::new();
+        let mut state = PackedState::<5, 10, 100, 7>::new();
         state.set_p1_walls_remaining(10);
         assert_eq!(state.get_p1_walls_remaining(), 10);
 
@@ -326,7 +337,7 @@ mod tests {
 
     #[test]
     fn test_current_player() {
-        let mut state = PackedState::<5, 10, 100>::new();
+        let mut state = PackedState::<5, 10, 100, 7>::new();
         assert_eq!(state.get_current_player(), 0);
 
         state.set_current_player(1);
@@ -338,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_completed_steps() {
-        let mut state = PackedState::<5, 10, 100>::new();
+        let mut state = PackedState::<5, 10, 100, 7>::new();
         assert_eq!(state.get_completed_steps(), 0);
 
         state.set_completed_steps(42);
