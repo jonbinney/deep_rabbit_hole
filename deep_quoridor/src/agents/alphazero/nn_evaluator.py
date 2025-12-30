@@ -190,9 +190,10 @@ class NNEvaluator:
         self, replay_buffer, validation_ratio: float, test_set_suffixes: set[int]
     ) -> tuple[list, list, list]:
         """
-        Splits the replay buffer into a training set and a validation set.
+        Splits the replay buffer into a training set, a validation set, and a test set.
         There are usually multiple entries with the same input (e.g. the initial state is always repeated in each game),
-        so this function makes sure that all entries with the same input are either in the training set or in the validation set.
+        so this function makes sure that all entries with the same input are either in the training set, in the validation set,
+        or in the test set.
         """
         if validation_ratio == 0.0 and len(test_set_suffixes) == 0:
             return list(replay_buffer), [], []
@@ -286,25 +287,31 @@ class NNEvaluator:
         max_entries=25,
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
-        def make_entry(i, t, p, v, vt=None, vp=None, vv=None):
-            if vt is None or vp is None or vv is None:
-                return {
-                    "step": i,
-                    "completion": float(i) / self.batches_per_iteration,
-                    "loss_total": t.item(),
-                    "loss_policy": p.item(),
-                    "loss_value": v.item(),
-                }
-            return {
+        def make_entry(i, t, p, v, vt=None, vp=None, vv=None, tt=None, tp=None, tv=None):
+            entry = {
                 "step": i,
                 "completion": float(i) / self.batches_per_iteration,
                 "loss_total": t.item(),
                 "loss_policy": p.item(),
                 "loss_value": v.item(),
-                "loss_total_val": vt.item(),
-                "loss_policy_val": vp.item(),
-                "loss_value_val": vv.item(),
             }
+            if vt is not None and vp is not None and vv is not None:
+                entry.update(
+                    {
+                        "loss_total_val": vt.item(),
+                        "loss_policy_val": vp.item(),
+                        "loss_value_val": vv.item(),
+                    }
+                )
+            if tt is not None and tp is not None and tv is not None:
+                entry.update(
+                    {
+                        "loss_total_test": tt.item(),
+                        "loss_policy_test": tp.item(),
+                        "loss_value_test": tv.item(),
+                    }
+                )
+            return entry
 
         assert self.optimizer is not None, "Call train_prepare before training"
         self.cache = LRUCache(max_size=self.max_cache_size)
@@ -326,8 +333,20 @@ class NNEvaluator:
             if i % show_loss_every == 0 and on_new_entry is not None:
                 with torch.no_grad():
                     v_policy_loss, v_value_loss, v_total_loss = self.compute_losses(validation_set)
+                    t_policy_loss, t_value_loss, t_total_loss = self.compute_losses(test_set)
 
-                entry = make_entry(i, total_loss, policy_loss, value_loss, v_total_loss, v_policy_loss, v_value_loss)
+                entry = make_entry(
+                    i,
+                    total_loss,
+                    policy_loss,
+                    value_loss,
+                    v_total_loss,
+                    v_policy_loss,
+                    v_value_loss,
+                    t_total_loss,
+                    t_policy_loss,
+                    t_value_loss,
+                )
                 on_new_entry(entry)
 
             # Backward pass
@@ -340,7 +359,19 @@ class NNEvaluator:
             batch_data = random.sample(training_set, self.batch_size)
             policy_loss, value_loss, total_loss = self.compute_losses(batch_data)
             v_policy_loss, v_value_loss, v_total_loss = self.compute_losses(validation_set)
-            entry = make_entry(i + 1, total_loss, policy_loss, value_loss, v_total_loss, v_policy_loss, v_value_loss)
+            t_policy_loss, t_value_loss, t_total_loss = self.compute_losses(test_set)
+            entry = make_entry(
+                i + 1,
+                total_loss,
+                policy_loss,
+                value_loss,
+                v_total_loss,
+                v_policy_loss,
+                v_value_loss,
+                t_total_loss,
+                t_policy_loss,
+                t_value_loss,
+            )
 
             if on_new_entry is not None:
                 on_new_entry(entry)
