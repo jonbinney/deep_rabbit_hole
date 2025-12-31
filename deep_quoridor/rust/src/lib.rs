@@ -9,6 +9,7 @@ mod game_state;
 mod grid;
 mod minimax;
 mod q_bit_repr;
+mod q_bit_repr_conversions;
 mod pathfinding;
 mod validation;
 
