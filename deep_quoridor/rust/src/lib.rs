@@ -10,6 +10,7 @@ mod grid;
 mod minimax;
 mod q_bit_repr;
 mod q_bit_repr_conversions;
+mod q_game_mechanics;
 mod pathfinding;
 mod validation;
 
