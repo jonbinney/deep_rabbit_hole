@@ -142,14 +142,16 @@ impl QBitRepr {
     }
 
     /// Check if a wall is present at the given position
-    pub fn get_wall(&self, data: &[u8], wall_index: usize) -> bool {
-        debug_assert!(wall_index < self.num_wall_positions);
+    /// orientation: 0 = vertical, 1 = horizontal
+    pub fn get_wall(&self, data: &[u8], row: usize, col: usize, orientation: usize) -> bool {
+        let wall_index = self.wall_position_to_index(row, col, orientation);
         self.get_bit(data, self.walls_offset + wall_index)
     }
 
     /// Set a wall at the given position
-    pub fn set_wall(&self, data: &mut [u8], wall_index: usize, present: bool) {
-        debug_assert!(wall_index < self.num_wall_positions);
+    /// orientation: 0 = vertical, 1 = horizontal
+    pub fn set_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize, present: bool) {
+        let wall_index = self.wall_position_to_index(row, col, orientation);
         self.set_bit(data, self.walls_offset + wall_index, present);
     }
 
@@ -221,7 +223,8 @@ impl QBitRepr {
     pub fn count_walls(&self, data: &[u8]) -> usize {
         let mut count = 0;
         for i in 0..self.num_wall_positions {
-            if self.get_wall(data, i) {
+            let (row, col, orientation) = self.wall_index_to_position(i);
+            if self.get_wall(data, row, col, orientation) {
                 count += 1;
             }
         }
@@ -318,12 +321,14 @@ mod tests {
 
         assert_eq!(q.count_walls(&data), 0);
 
-        q.set_wall(&mut data, 0, true);
-        q.set_wall(&mut data, 5, true);
+        // Set vertical wall at (0, 0)
+        q.set_wall(&mut data, 0, 0, 0, true);
+        // Set vertical wall at (1, 1)
+        q.set_wall(&mut data, 1, 1, 0, true);
         assert_eq!(q.count_walls(&data), 2);
-        assert!(q.get_wall(&data, 0));
-        assert!(q.get_wall(&data, 5));
-        assert!(!q.get_wall(&data, 1));
+        assert!(q.get_wall(&data, 0, 0, 0));
+        assert!(q.get_wall(&data, 1, 1, 0));
+        assert!(!q.get_wall(&data, 0, 1, 0));
     }
 
     #[test]
@@ -335,11 +340,11 @@ mod tests {
         assert_eq!(q.get_p1_walls_remaining(&data), 10);
 
         // Simulate p1 placing 3 walls, p2 placing 2 walls
-        q.set_wall(&mut data, 0, true);
-        q.set_wall(&mut data, 1, true);
-        q.set_wall(&mut data, 2, true);
-        q.set_wall(&mut data, 10, true);
-        q.set_wall(&mut data, 11, true);
+        q.set_wall(&mut data, 0, 0, 0, true); // vertical wall at (0, 0)
+        q.set_wall(&mut data, 0, 1, 0, true); // vertical wall at (0, 1)
+        q.set_wall(&mut data, 0, 2, 0, true); // vertical wall at (0, 2)
+        q.set_wall(&mut data, 2, 2, 0, true); // vertical wall at (2, 2)
+        q.set_wall(&mut data, 2, 3, 0, true); // vertical wall at (2, 3)
         q.set_p1_walls_remaining(&mut data, 7);
 
         assert_eq!(q.get_p1_walls_remaining(&data), 7);

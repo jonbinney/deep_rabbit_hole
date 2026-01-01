@@ -58,13 +58,11 @@ impl QBitRepr {
             for wall_col in 0..(self.board_size() - 1) {
                 // Check vertical wall (orientation 0)
                 if check_wall_cells(grid, wall_row as i32, wall_col as i32, 0, CELL_WALL) {
-                    let wall_idx = self.wall_position_to_index(wall_row, wall_col, 0);
-                    self.set_wall(data, wall_idx, true);
+                    self.set_wall(data, wall_row, wall_col, 0, true);
                 }
                 // Check horizontal wall (orientation 1)
                 if check_wall_cells(grid, wall_row as i32, wall_col as i32, 1, CELL_WALL) {
-                    let wall_idx = self.wall_position_to_index(wall_row, wall_col, 1);
-                    self.set_wall(data, wall_idx, true);
+                    self.set_wall(data, wall_row, wall_col, 1, true);
                 }
             }
         }
@@ -116,8 +114,8 @@ impl QBitRepr {
         // Add placed walls
         use crate::grid::set_wall_cells;
         for wall_idx in 0..self.num_wall_positions() {
-            if self.get_wall(data, wall_idx) {
-                let (wall_row, wall_col, orientation) = self.wall_index_to_position(wall_idx);
+            let (wall_row, wall_col, orientation) = self.wall_index_to_position(wall_idx);
+            if self.get_wall(data, wall_row, wall_col, orientation) {
                 set_wall_cells(
                     &mut grid.view_mut(),
                     wall_row as i32,

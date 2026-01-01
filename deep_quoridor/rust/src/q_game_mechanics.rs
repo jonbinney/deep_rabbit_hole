@@ -72,18 +72,15 @@ impl QGameMechanics {
             return false;
         }
 
-        let wall_idx = self.repr.wall_position_to_index(row, col, orientation);
-
         // Check if this wall position is already occupied
-        if self.repr.get_wall(data, wall_idx) {
+        if self.repr.get_wall(data, row, col, orientation) {
             return false;
         }
 
         // Check for perpendicular wall conflict
         // A vertical wall at (r,c) conflicts with horizontal wall at (r,c)
         // A horizontal wall at (r,c) conflicts with vertical wall at (r,c)
-        let perpendicular_idx = self.repr.wall_position_to_index(row, col, 1 - orientation);
-        if self.repr.get_wall(data, perpendicular_idx) {
+        if self.repr.get_wall(data, row, col, 1 - orientation) {
             return false;
         }
 
@@ -91,15 +88,13 @@ impl QGameMechanics {
         if orientation == WALL_VERTICAL {
             // Check if vertical wall above conflicts (shares middle section)
             if row > 0 {
-                let above_idx = self.repr.wall_position_to_index(row - 1, col, orientation);
-                if self.repr.get_wall(data, above_idx) {
+                if self.repr.get_wall(data, row - 1, col, orientation) {
                     return false;
                 }
             }
             // Check if vertical wall below conflicts (shares middle section)
             if row < board_size - 2 {
-                let below_idx = self.repr.wall_position_to_index(row + 1, col, orientation);
-                if self.repr.get_wall(data, below_idx) {
+                if self.repr.get_wall(data, row + 1, col, orientation) {
                     return false;
                 }
             }
@@ -107,15 +102,13 @@ impl QGameMechanics {
             // WALL_HORIZONTAL
             // Check if horizontal wall to the left conflicts (shares middle section)
             if col > 0 {
-                let left_idx = self.repr.wall_position_to_index(row, col - 1, orientation);
-                if self.repr.get_wall(data, left_idx) {
+                if self.repr.get_wall(data, row, col - 1, orientation) {
                     return false;
                 }
             }
             // Check if horizontal wall to the right conflicts (shares middle section)
             if col < board_size - 2 {
-                let right_idx = self.repr.wall_position_to_index(row, col + 1, orientation);
-                if self.repr.get_wall(data, right_idx) {
+                if self.repr.get_wall(data, row, col + 1, orientation) {
                     return false;
                 }
             }
@@ -127,15 +120,13 @@ impl QGameMechanics {
     /// Place a wall (no validation - use is_wall_placement_valid first)
     #[inline]
     pub fn place_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize) {
-        let wall_idx = self.repr.wall_position_to_index(row, col, orientation);
-        self.repr.set_wall(data, wall_idx, true);
+        self.repr.set_wall(data, row, col, orientation, true);
     }
 
     /// Remove a wall
     #[inline]
     pub fn remove_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize) {
-        let wall_idx = self.repr.wall_position_to_index(row, col, orientation);
-        self.repr.set_wall(data, wall_idx, false);
+        self.repr.set_wall(data, row, col, orientation, false);
     }
 
     /// Check if there's a wall blocking movement between two adjacent cells
@@ -150,15 +141,13 @@ impl QGameMechanics {
                 if from_col < board_size - 1 {
                     // Check wall at (from_row, from_col) vertical
                     if from_row < board_size - 1 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row, from_col, WALL_VERTICAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row, from_col, WALL_VERTICAL) {
                             return true;
                         }
                     }
                     // Check wall at (from_row-1, from_col) vertical (extends downward)
                     if from_row > 0 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row - 1, from_col, WALL_VERTICAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row - 1, from_col, WALL_VERTICAL) {
                             return true;
                         }
                     }
@@ -168,15 +157,13 @@ impl QGameMechanics {
                 if to_col < board_size - 1 {
                     // Check wall at (from_row, to_col) vertical
                     if from_row < board_size - 1 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row, to_col, WALL_VERTICAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row, to_col, WALL_VERTICAL) {
                             return true;
                         }
                     }
                     // Check wall at (from_row-1, to_col) vertical (extends downward)
                     if from_row > 0 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row - 1, to_col, WALL_VERTICAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row - 1, to_col, WALL_VERTICAL) {
                             return true;
                         }
                     }
@@ -189,15 +176,13 @@ impl QGameMechanics {
                 if from_row < board_size - 1 {
                     // Check wall at (from_row, from_col) horizontal
                     if from_col < board_size - 1 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row, from_col, WALL_HORIZONTAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row, from_col, WALL_HORIZONTAL) {
                             return true;
                         }
                     }
                     // Check wall at (from_row, from_col-1) horizontal (extends rightward)
                     if from_col > 0 {
-                        let wall_idx = self.repr.wall_position_to_index(from_row, from_col - 1, WALL_HORIZONTAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, from_row, from_col - 1, WALL_HORIZONTAL) {
                             return true;
                         }
                     }
@@ -207,15 +192,13 @@ impl QGameMechanics {
                 if to_row < board_size - 1 {
                     // Check wall at (to_row, from_col) horizontal
                     if from_col < board_size - 1 {
-                        let wall_idx = self.repr.wall_position_to_index(to_row, from_col, WALL_HORIZONTAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, to_row, from_col, WALL_HORIZONTAL) {
                             return true;
                         }
                     }
                     // Check wall at (to_row, from_col-1) horizontal (extends rightward)
                     if from_col > 0 {
-                        let wall_idx = self.repr.wall_position_to_index(to_row, from_col - 1, WALL_HORIZONTAL);
-                        if self.repr.get_wall(data, wall_idx) {
+                        if self.repr.get_wall(data, to_row, from_col - 1, WALL_HORIZONTAL) {
                             return true;
                         }
                     }
@@ -583,7 +566,7 @@ mod tests {
         mechanics.execute_wall_placement(&mut state, 0, 4, 4, WALL_VERTICAL);
 
         assert_eq!(mechanics.repr.get_p1_walls_remaining(&state), initial_walls - 1);
-        assert!(mechanics.repr.get_wall(&state, mechanics.repr.wall_position_to_index(4, 4, WALL_VERTICAL)));
+        assert!(mechanics.repr.get_wall(&state, 4, 4, WALL_VERTICAL));
     }
 
     #[test]
