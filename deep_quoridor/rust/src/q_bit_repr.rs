@@ -37,8 +37,7 @@ pub struct QBitRepr {
 
     // Bit offsets for each field
     walls_offset: usize,
-    p1_pos_offset: usize,
-    p2_pos_offset: usize,
+    player_pos_offsets: [usize; 2],  // Offset for each player's position
     walls_remaining_offset: usize,
     current_player_offset: usize,
     steps_offset: usize,
@@ -56,6 +55,7 @@ impl QBitRepr {
         let walls_offset = 0;
         let p1_pos_offset = walls_offset + num_wall_positions;
         let p2_pos_offset = p1_pos_offset + position_bits;
+        let player_pos_offsets = [p1_pos_offset, p2_pos_offset];
         let walls_remaining_offset = p2_pos_offset + position_bits;
         let current_player_offset = walls_remaining_offset + walls_remaining_bits;
         let steps_offset = current_player_offset + 1;
@@ -75,8 +75,7 @@ impl QBitRepr {
             total_bits,
             total_bytes,
             walls_offset,
-            p1_pos_offset,
-            p2_pos_offset,
+            player_pos_offsets,
             walls_remaining_offset,
             current_player_offset,
             steps_offset,
@@ -157,26 +156,19 @@ impl QBitRepr {
         self.set_bit(data, self.walls_offset + wall_index, present);
     }
 
-    /// Get player 1's position (as a flat index from 0 to board_size^2 - 1)
-    pub fn get_p1_position(&self, data: &[u8]) -> usize {
-        self.get_bits(data, self.p1_pos_offset, self.position_bits)
+    /// Get a player's position (as a flat index from 0 to board_size^2 - 1)
+    /// player: 0 for player 1, 1 for player 2
+    pub fn get_player_position(&self, data: &[u8], player: usize) -> usize {
+        debug_assert!(player < 2);
+        self.get_bits(data, self.player_pos_offsets[player], self.position_bits)
     }
 
-    /// Set player 1's position
-    pub fn set_p1_position(&self, data: &mut [u8], pos: usize) {
+    /// Set a player's position
+    /// player: 0 for player 1, 1 for player 2
+    pub fn set_player_position(&self, data: &mut [u8], player: usize, pos: usize) {
+        debug_assert!(player < 2);
         debug_assert!(pos < self.num_player_positions);
-        self.set_bits(data, self.p1_pos_offset, self.position_bits, pos);
-    }
-
-    /// Get player 2's position (as a flat index from 0 to board_size^2 - 1)
-    pub fn get_p2_position(&self, data: &[u8]) -> usize {
-        self.get_bits(data, self.p2_pos_offset, self.position_bits)
-    }
-
-    /// Set player 2's position
-    pub fn set_p2_position(&self, data: &mut [u8], pos: usize) {
-        debug_assert!(pos < self.num_player_positions);
-        self.set_bits(data, self.p2_pos_offset, self.position_bits, pos);
+        self.set_bits(data, self.player_pos_offsets[player], self.position_bits, pos);
     }
 
     /// Get player 1's remaining walls
@@ -306,13 +298,13 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
 
-        q.set_p1_position(&mut data, q.position_to_index(0, 2));
-        q.set_p2_position(&mut data, q.position_to_index(4, 2));
+        q.set_player_position(&mut data, 0, q.position_to_index(0, 2));
+        q.set_player_position(&mut data, 1, q.position_to_index(4, 2));
 
-        assert_eq!(q.get_p1_position(&data), 2);
-        assert_eq!(q.get_p2_position(&data), 22);
-        assert_eq!(q.index_to_position(q.get_p1_position(&data)), (0, 2));
-        assert_eq!(q.index_to_position(q.get_p2_position(&data)), (4, 2));
+        assert_eq!(q.get_player_position(&data, 0), 2);
+        assert_eq!(q.get_player_position(&data, 1), 22);
+        assert_eq!(q.index_to_position(q.get_player_position(&data, 0)), (0, 2));
+        assert_eq!(q.index_to_position(q.get_player_position(&data, 1)), (4, 2));
     }
 
     #[test]
@@ -382,12 +374,12 @@ mod tests {
         let q = QBitRepr::new(3, 3, 64);
         let mut data = [0u8; 7]; // Stack-allocated
 
-        q.set_p1_position(&mut data, q.position_to_index(0, 1));
-        q.set_p2_position(&mut data, q.position_to_index(2, 1));
+        q.set_player_position(&mut data, 0, q.position_to_index(0, 1));
+        q.set_player_position(&mut data, 1, q.position_to_index(2, 1));
         q.set_current_player(&mut data, 1);
 
-        assert_eq!(q.get_p1_position(&data), 1);
-        assert_eq!(q.get_p2_position(&data), 7);
+        assert_eq!(q.get_player_position(&data, 0), 1);
+        assert_eq!(q.get_player_position(&data, 1), 7);
         assert_eq!(q.get_current_player(&data), 1);
     }
 

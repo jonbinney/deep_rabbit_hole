@@ -34,8 +34,8 @@ impl QBitRepr {
             player_positions[[1, 0]] as usize,
             player_positions[[1, 1]] as usize,
         );
-        self.set_p1_position(data, p1_pos);
-        self.set_p2_position(data, p2_pos);
+        self.set_player_position(data, 0, p1_pos);
+        self.set_player_position(data, 1, p2_pos);
 
         // Set walls remaining
         self.set_p1_walls_remaining(data, walls_remaining[0] as usize);
@@ -71,8 +71,8 @@ impl QBitRepr {
     /// Extract player positions as a 2x2 array (format used by minimax)
     /// Returns [[p1_row, p1_col], [p2_row, p2_col]]
     pub fn to_player_positions(&self, data: &[u8]) -> Array2<i32> {
-        let p1_index = self.get_p1_position(data);
-        let p2_index = self.get_p2_position(data);
+        let p1_index = self.get_player_position(data, 0);
+        let p2_index = self.get_player_position(data, 1);
         let (p1_row, p1_col) = self.index_to_position(p1_index);
         let (p2_row, p2_col) = self.index_to_position(p2_index);
 
@@ -127,8 +127,8 @@ impl QBitRepr {
         }
 
         // Add players
-        let p1_index = self.get_p1_position(data);
-        let p2_index = self.get_p2_position(data);
+        let p1_index = self.get_player_position(data, 0);
+        let p2_index = self.get_player_position(data, 1);
         let (p1_row, p1_col) = self.index_to_position(p1_index);
         let (p2_row, p2_col) = self.index_to_position(p2_index);
 
@@ -147,9 +147,11 @@ impl QBitRepr {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use ndarray::{Array1, Array2};
+
     #[test]
     fn test_game_state_conversion() {
-        use ndarray::Array1;
 
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
