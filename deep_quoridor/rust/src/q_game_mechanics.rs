@@ -3,11 +3,7 @@
 /// This provides efficient game state operations by working directly with
 /// the bit-packed representation instead of converting to/from grid arrays.
 
-use crate::q_bit_repr::QBitRepr;
-
-// Wall orientations
-pub const WALL_VERTICAL: usize = 0;
-pub const WALL_HORIZONTAL: usize = 1;
+use crate::q_bit_repr::{QBitRepr, WALL_HORIZONTAL, WALL_VERTICAL};
 
 /// Game mechanics for Quoridor using bit-packed state representation
 #[derive(Clone, Debug)]

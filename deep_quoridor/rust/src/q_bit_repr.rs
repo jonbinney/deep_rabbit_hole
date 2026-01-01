@@ -4,6 +4,10 @@
 /// parameters and computed offsets needed to interpret byte arrays as packed game states.
 /// The data is passed to each method, allowing flexible storage (stack or heap).
 
+// Wall orientations
+pub const WALL_VERTICAL: usize = 0;
+pub const WALL_HORIZONTAL: usize = 1;
+
 /// Calculate the number of bits needed to represent a value up to max (inclusive)
 const fn bits_needed(max: usize) -> usize {
     if max == 0 {
@@ -142,14 +146,12 @@ impl QBitRepr {
     }
 
     /// Check if a wall is present at the given position
-    /// orientation: 0 = vertical, 1 = horizontal
     pub fn get_wall(&self, data: &[u8], row: usize, col: usize, orientation: usize) -> bool {
         let wall_index = self.wall_position_to_index(row, col, orientation);
         self.get_bit(data, self.walls_offset + wall_index)
     }
 
     /// Set a wall at the given position
-    /// orientation: 0 = vertical, 1 = horizontal
     pub fn set_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize, present: bool) {
         let wall_index = self.wall_position_to_index(row, col, orientation);
         self.set_bit(data, self.walls_offset + wall_index, present);
@@ -322,13 +324,13 @@ mod tests {
         assert_eq!(q.count_walls(&data), 0);
 
         // Set vertical wall at (0, 0)
-        q.set_wall(&mut data, 0, 0, 0, true);
+        q.set_wall(&mut data, 0, 0, WALL_VERTICAL, true);
         // Set vertical wall at (1, 1)
-        q.set_wall(&mut data, 1, 1, 0, true);
+        q.set_wall(&mut data, 1, 1, WALL_VERTICAL, true);
         assert_eq!(q.count_walls(&data), 2);
-        assert!(q.get_wall(&data, 0, 0, 0));
-        assert!(q.get_wall(&data, 1, 1, 0));
-        assert!(!q.get_wall(&data, 0, 1, 0));
+        assert!(q.get_wall(&data, 0, 0, WALL_VERTICAL));
+        assert!(q.get_wall(&data, 1, 1, WALL_VERTICAL));
+        assert!(!q.get_wall(&data, 0, 1, WALL_VERTICAL));
     }
 
     #[test]
@@ -340,11 +342,11 @@ mod tests {
         assert_eq!(q.get_p1_walls_remaining(&data), 10);
 
         // Simulate p1 placing 3 walls, p2 placing 2 walls
-        q.set_wall(&mut data, 0, 0, 0, true); // vertical wall at (0, 0)
-        q.set_wall(&mut data, 0, 1, 0, true); // vertical wall at (0, 1)
-        q.set_wall(&mut data, 0, 2, 0, true); // vertical wall at (0, 2)
-        q.set_wall(&mut data, 2, 2, 0, true); // vertical wall at (2, 2)
-        q.set_wall(&mut data, 2, 3, 0, true); // vertical wall at (2, 3)
+        q.set_wall(&mut data, 0, 0, WALL_VERTICAL, true); // vertical wall at (0, 0)
+        q.set_wall(&mut data, 0, 1, WALL_VERTICAL, true); // vertical wall at (0, 1)
+        q.set_wall(&mut data, 0, 2, WALL_VERTICAL, true); // vertical wall at (0, 2)
+        q.set_wall(&mut data, 2, 2, WALL_VERTICAL, true); // vertical wall at (2, 2)
+        q.set_wall(&mut data, 2, 3, WALL_VERTICAL, true); // vertical wall at (2, 3)
         q.set_p1_walls_remaining(&mut data, 7);
 
         assert_eq!(q.get_p1_walls_remaining(&data), 7);
@@ -395,14 +397,14 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
 
         // Test vertical wall at (1, 2)
-        let idx = q.wall_position_to_index(1, 2, 0);
+        let idx = q.wall_position_to_index(1, 2, WALL_VERTICAL);
         let (row, col, orientation) = q.wall_index_to_position(idx);
-        assert_eq!((row, col, orientation), (1, 2, 0));
+        assert_eq!((row, col, orientation), (1, 2, WALL_VERTICAL));
 
         // Test horizontal wall at (3, 1)
-        let idx = q.wall_position_to_index(3, 1, 1);
+        let idx = q.wall_position_to_index(3, 1, WALL_HORIZONTAL);
         let (row, col, orientation) = q.wall_index_to_position(idx);
-        assert_eq!((row, col, orientation), (3, 1, 1));
+        assert_eq!((row, col, orientation), (3, 1, WALL_HORIZONTAL));
     }
 
     #[test]
@@ -440,8 +442,8 @@ mod tests {
 
         // Place 2 walls using the grid interface
         use crate::grid::set_wall_cells;
-        set_wall_cells(&mut grid.view_mut(), 0, 0, 0, CELL_WALL); // Vertical wall at (0,0)
-        set_wall_cells(&mut grid.view_mut(), 1, 1, 1, CELL_WALL); // Horizontal wall at (1,1)
+        set_wall_cells(&mut grid.view_mut(), 0, 0, WALL_VERTICAL as i32, CELL_WALL); // Vertical wall at (0,0)
+        set_wall_cells(&mut grid.view_mut(), 1, 1, WALL_HORIZONTAL as i32, CELL_WALL); // Horizontal wall at (1,1)
 
         // Populate packed state
         q.from_game_state(
