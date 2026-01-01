@@ -11,6 +11,7 @@ mod minimax;
 mod q_bit_repr;
 mod q_bit_repr_conversions;
 mod q_game_mechanics;
+mod q_minimax;
 mod pathfinding;
 mod validation;
 
@@ -284,6 +285,71 @@ fn evaluate_actions<'py>(
     ))
 }
 
+/// Evaluate all actions using QBitRepr-based minimax (more efficient).
+/// Takes the same inputs as evaluate_actions but converts to QBitRepr internally.
+#[pyfunction]
+fn q_evaluate_actions<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    _goal_rows: PyReadonlyArray1<i32>,
+    current_player: i32,
+    max_steps: i32,
+    branching_factor: usize,
+    _wall_sigma: f32,
+    discount_factor: f32,
+    heuristic: i32,
+    board_size: usize,
+    max_walls: usize,
+) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
+    use q_bit_repr::QBitRepr;
+    use q_game_mechanics::QGameMechanics;
+
+    // Create QBitRepr and QGameMechanics
+    let repr = QBitRepr::new(board_size, max_walls, max_steps as usize);
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps as usize);
+
+    // Convert game state to QBitRepr format
+    let mut data = repr.create_data();
+    repr.from_game_state(
+        &mut data,
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        current_player,
+        0, // completed_steps - always 0 when evaluating actions
+    );
+
+    // Evaluate actions using QBitRepr minimax
+    let (actions, values, _logs) = q_minimax::evaluate_actions(
+        &mechanics,
+        &data,
+        max_steps as usize,
+        branching_factor,
+        discount_factor,
+        heuristic,
+        false, // don't enable logging
+    );
+
+    // Convert actions back to numpy format
+    // Actions are (row, col, action_type) where action_type: 0=move, 1=vert wall, 2=horiz wall
+    let num_actions = actions.len();
+    let mut actions_array = ndarray::Array2::<i32>::zeros((num_actions, 3));
+    for (i, (row, col, action_type)) in actions.iter().enumerate() {
+        actions_array[[i, 0]] = *row as i32;
+        actions_array[[i, 1]] = *col as i32;
+        actions_array[[i, 2]] = *action_type as i32;
+    }
+
+    let values_array = ndarray::Array1::from(values);
+
+    Ok((
+        PyArray2::from_owned_array_bound(py, actions_array),
+        numpy::PyArray1::from_owned_array_bound(py, values_array),
+    ))
+}
+
 /// Write log entries to a SQLite database
 fn log_entries_to_sqlite(
     entries: Vec<minimax::MinimaxLogEntry>,
@@ -458,6 +524,7 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
+    m.add_function(wrap_pyfunction!(q_evaluate_actions, m)?)?;
     m.add_function(wrap_pyfunction!(create_policy_db, m)?)?;
 
     // Export constants to match qgrid.py

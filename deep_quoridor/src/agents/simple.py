@@ -44,9 +44,11 @@ class SimpleParams(SubargsBase):
     #  1: relative distances to goal, ties broken by relative walls remaining
     heuristic: int = 1
 
-    # Whether to use the Rust implementation of evaluate_actions (True) or the Numba implementation (False).
-    # The Rust implementation is generally faster and doesn't require JIT warmup time.
-    use_rust: bool = False
+    # Which backend to use for minimax evaluation:
+    #  "numba": Numba JIT-compiled implementation (default)
+    #  "rust_grid": Rust implementation using grid representation
+    #  "rust": Rust implementation using QBitRepr (most efficient)
+    backend: str = "numba"
 
 
 @njit(cache=True)
@@ -344,8 +346,9 @@ class SimpleAgent(Agent):
 
         max_depth = min(self.params.max_depth, self.max_steps - completed_steps)
 
-        # Use either Rust or Numba implementation to evaluate possible actions
-        if self.params.use_rust:
+        # Evaluate possible actions using the specified backend
+        if self.params.backend == "rust_grid":
+            # Use Rust implementation with grid representation
             import quoridor_rs
 
             actions, values = quoridor_rs.evaluate_actions(
@@ -360,7 +363,26 @@ class SimpleAgent(Agent):
                 self.params.discount_factor,
                 self.params.heuristic,
             )
+        elif self.params.backend == "rust":
+            # Use Rust implementation with QBitRepr (most efficient)
+            import quoridor_rs
+
+            actions, values = quoridor_rs.q_evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+                self.board_size,
+                game.board.max_walls,
+            )
         else:
+            # Use Numba implementation (default)
             actions, values = evaluate_actions(
                 grid,
                 player_positions,
