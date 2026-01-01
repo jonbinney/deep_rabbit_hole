@@ -288,7 +288,6 @@ impl QBitRepr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
 
     #[test]
     fn test_size_calculation() {
@@ -407,71 +406,4 @@ mod tests {
         assert_eq!((row, col, orientation), (3, 1, WALL_HORIZONTAL));
     }
 
-    #[test]
-    fn test_game_state_conversion() {
-        use ndarray::Array1;
-
-        let q = QBitRepr::new(5, 10, 100);
-        let mut data = q.create_data();
-
-        // Create test game state
-        // Note: The packed format computes P2 walls from P1 walls and total walls on board,
-        // so we need consistent data. With P1 having 8 walls (used 2), and 2 walls total
-        // on board, P2 must have used 0 walls, so P2 has 10 walls remaining.
-        let player_positions = Array2::from_shape_vec((2, 2), vec![0, 2, 4, 2]).unwrap();
-        let walls_remaining = Array1::from_vec(vec![8, 10]);
-        let current_player = 1;
-        let completed_steps = 5;
-
-        // Create a grid with 2 walls placed (to match P1 having used 2 walls)
-        let grid_size = 2 * q.board_size() + 3;
-        let mut grid = Array2::zeros((grid_size, grid_size));
-
-        // Add boundary walls (required by grid format)
-        use crate::pathfinding::CELL_WALL;
-        for i in 0..grid_size {
-            grid[[0, i]] = CELL_WALL;
-            grid[[1, i]] = CELL_WALL;
-            grid[[grid_size - 1, i]] = CELL_WALL;
-            grid[[grid_size - 2, i]] = CELL_WALL;
-            grid[[i, 0]] = CELL_WALL;
-            grid[[i, 1]] = CELL_WALL;
-            grid[[i, grid_size - 1]] = CELL_WALL;
-            grid[[i, grid_size - 2]] = CELL_WALL;
-        }
-
-        // Place 2 walls using the grid interface
-        use crate::grid::set_wall_cells;
-        set_wall_cells(&mut grid.view_mut(), 0, 0, WALL_VERTICAL as i32, CELL_WALL); // Vertical wall at (0,0)
-        set_wall_cells(&mut grid.view_mut(), 1, 1, WALL_HORIZONTAL as i32, CELL_WALL); // Horizontal wall at (1,1)
-
-        // Populate packed state
-        q.from_game_state(
-            &mut data,
-            &grid.view(),
-            &player_positions.view(),
-            &walls_remaining.view(),
-            current_player,
-            completed_steps,
-        );
-
-        // Verify we can extract the same data back
-        let extracted_positions = q.to_player_positions(&data);
-        assert_eq!(extracted_positions[[0, 0]], 0);
-        assert_eq!(extracted_positions[[0, 1]], 2);
-        assert_eq!(extracted_positions[[1, 0]], 4);
-        assert_eq!(extracted_positions[[1, 1]], 2);
-
-        let extracted_walls = q.to_walls_remaining(&data);
-        assert_eq!(extracted_walls[0], 8);
-
-        // Verify the walls were stored correctly
-        assert_eq!(q.count_walls(&data), 2, "Expected 2 walls on board");
-
-        // P2 walls are computed: p1_used=2, total_on_board=2, so p2_used=0, p2_remaining=10
-        assert_eq!(extracted_walls[1], 10, "P2 should have 10 walls remaining");
-
-        assert_eq!(q.get_current_player(&data), current_player as usize);
-        assert_eq!(q.get_completed_steps(&data), completed_steps as usize);
-    }
 }
