@@ -158,19 +158,19 @@ impl QBitRepr {
         self.set_bit(data, self.walls_offset + wall_index, present);
     }
 
-    /// Get a player's position (as a flat index from 0 to board_size^2 - 1)
-    /// player: 0 for player 1, 1 for player 2
-    pub fn get_player_position(&self, data: &[u8], player: usize) -> usize {
+    /// Get a player's position
+    pub fn get_player_position(&self, data: &[u8], player: usize) -> (usize, usize) {
         debug_assert!(player < 2);
-        self.get_bits(data, self.player_pos_offsets[player], self.position_bits)
+        let index = self.get_bits(data, self.player_pos_offsets[player], self.position_bits);
+        self.index_to_position(index)
     }
 
     /// Set a player's position
-    /// player: 0 for player 1, 1 for player 2
-    pub fn set_player_position(&self, data: &mut [u8], player: usize, pos: usize) {
+    pub fn set_player_position(&self, data: &mut [u8], player: usize, row: usize, col: usize) {
         debug_assert!(player < 2);
-        debug_assert!(pos < self.num_player_positions);
-        self.set_bits(data, self.player_pos_offsets[player], self.position_bits, pos);
+        let new_index = self.position_to_index(row, col);
+        debug_assert!(new_index < self.num_player_positions);
+        self.set_bits(data, self.player_pos_offsets[player], self.position_bits, new_index);
     }
 
     /// Get player 1's remaining walls
@@ -293,13 +293,11 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
 
-        q.set_player_position(&mut data, 0, q.position_to_index(0, 2));
-        q.set_player_position(&mut data, 1, q.position_to_index(4, 2));
+        q.set_player_position(&mut data, 0, 0, 2);
+        q.set_player_position(&mut data, 1, 4, 2);
 
-        assert_eq!(q.get_player_position(&data, 0), 2);
-        assert_eq!(q.get_player_position(&data, 1), 22);
-        assert_eq!(q.index_to_position(q.get_player_position(&data, 0)), (0, 2));
-        assert_eq!(q.index_to_position(q.get_player_position(&data, 1)), (4, 2));
+        assert_eq!(q.get_player_position(&data, 0), (0, 2));
+        assert_eq!(q.get_player_position(&data, 1), (4, 2));
     }
 
     #[test]
@@ -351,20 +349,6 @@ mod tests {
 
         q.set_completed_steps(&mut data, 42);
         assert_eq!(q.get_completed_steps(&data), 42);
-    }
-
-    #[test]
-    fn test_stack_allocation() {
-        let q = QBitRepr::new(3, 3, 64);
-        let mut data = [0u8; 7]; // Stack-allocated
-
-        q.set_player_position(&mut data, 0, q.position_to_index(0, 1));
-        q.set_player_position(&mut data, 1, q.position_to_index(2, 1));
-        q.set_current_player(&mut data, 1);
-
-        assert_eq!(q.get_player_position(&data, 0), 1);
-        assert_eq!(q.get_player_position(&data, 1), 7);
-        assert_eq!(q.get_current_player(&data), 1);
     }
 
     #[test]

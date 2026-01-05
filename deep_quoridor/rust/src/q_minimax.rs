@@ -23,8 +23,7 @@ pub struct MinimaxLogEntry {
 
 /// Compute distance to goal for a player using QBitRepr state
 fn distance_to_goal(mechanics: &QGameMechanics, data: &[u8], player: usize) -> i32 {
-    let pos_idx = mechanics.repr().get_player_position(data, player);
-    let (row, col) = mechanics.repr().index_to_position(pos_idx);
+    let (row, col)= mechanics.repr().get_player_position(data, player);
     let board_size = mechanics.repr().board_size();
     let goal_row = if player == 0 { 0 } else { board_size - 1 };
 

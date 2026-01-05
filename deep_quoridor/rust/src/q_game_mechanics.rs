@@ -39,12 +39,10 @@ impl QGameMechanics {
         let board_size = self.repr.board_size();
 
         // Player 1 starts at bottom center
-        let p1_pos = self.repr.position_to_index(board_size - 1, board_size / 2);
-        self.repr.set_player_position(&mut data, 0, p1_pos);
+        self.repr.set_player_position(&mut data, 0, board_size - 1, board_size / 2);
 
         // Player 2 starts at top center
-        let p2_pos = self.repr.position_to_index(0, board_size / 2);
-        self.repr.set_player_position(&mut data, 1, p2_pos);
+        self.repr.set_player_position(&mut data, 1, 0, board_size / 2);
 
         // Both players start with max walls
         self.repr.set_walls_remaining(&mut data, 0, self.repr.max_walls());
@@ -211,9 +209,7 @@ impl QGameMechanics {
         let board_size = self.repr.board_size();
         let goal_row = self.goal_rows[player];
 
-        let pos_idx = self.repr.get_player_position(data, player);
-
-        let (start_row, start_col) = self.repr.index_to_position(pos_idx);
+        let (start_row, start_col) = self.repr.get_player_position(data, player);
 
         // Quick check: if already at goal, return true
         if start_row == goal_row {
@@ -307,13 +303,11 @@ impl QGameMechanics {
         }
 
         // Get current position
-        let current_idx = self.repr.get_player_position(data, player);
-        let (curr_row, curr_col) = self.repr.index_to_position(current_idx);
+        let (curr_row, curr_col)= self.repr.get_player_position(data, player);
 
         // Get opponent position
         let opponent = 1 - player;
-        let opponent_idx = self.repr.get_player_position(data, opponent);
-        let (opp_row, opp_col) = self.repr.index_to_position(opponent_idx);
+        let (opp_row, opp_col)= self.repr.get_player_position(data, opponent);
 
         // Check if destination is occupied by opponent
         if dest_row == opp_row && dest_col == opp_col {
@@ -342,8 +336,7 @@ impl QGameMechanics {
 
     /// Execute a move action
     pub fn execute_move(&self, data: &mut [u8], player: usize, dest_row: usize, dest_col: usize) {
-        let dest_idx = self.repr.position_to_index(dest_row, dest_col);
-        self.repr.set_player_position(data, player, dest_idx);
+        self.repr.set_player_position(data, player, dest_row, dest_col);
     }
 
     /// Execute a wall placement action
@@ -376,8 +369,7 @@ impl QGameMechanics {
 
     /// Check if a player has won
     pub fn check_win(&self, data: &[u8], player: usize) -> bool {
-        let pos_idx = self.repr.get_player_position(data, player);
-        let (row, _col) = self.repr.index_to_position(pos_idx);
+        let (row, _col)= self.repr.get_player_position(data, player);
         row == self.goal_rows[player]
     }
 
@@ -418,8 +410,7 @@ impl QGameMechanics {
         let current_player = self.repr.get_current_player(data);
         let board_size = self.repr.board_size();
 
-        let current_idx = self.repr.get_player_position(data, current_player);
-        let (curr_row, curr_col) = self.repr.index_to_position(current_idx);
+        let (curr_row, curr_col)= self.repr.get_player_position(data, current_player);
 
         let mut valid_moves = Vec::new();
 
@@ -457,10 +448,8 @@ mod tests {
         let state = mechanics.create_initial_state();
 
         // Check player positions
-        let p1_idx = mechanics.repr.get_player_position(&state, 0);
-        let p2_idx = mechanics.repr.get_player_position(&state, 1);
-        let (p1_row, p1_col) = mechanics.repr.index_to_position(p1_idx);
-        let (p2_row, p2_col) = mechanics.repr.index_to_position(p2_idx);
+        let (p1_row, p1_col)= mechanics.repr.get_player_position(&state, 0);
+        let (p2_row, p2_col)= mechanics.repr.get_player_position(&state, 1);
 
         assert_eq!(p1_row, 8); // Bottom
         assert_eq!(p1_col, 4); // Center

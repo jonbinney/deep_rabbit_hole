@@ -25,19 +25,13 @@ impl QBitRepr {
         current_player: i32,
         completed_steps: i32,
     ) {
-        // Set player positions
-        let p1_pos = self.position_to_index(
+        self.set_player_position(data, 0, 
             player_positions[[0, 0]] as usize,
-            player_positions[[0, 1]] as usize,
-        );
-        let p2_pos = self.position_to_index(
+            player_positions[[0, 1]] as usize);
+        self.set_player_position(data, 1, 
             player_positions[[1, 0]] as usize,
-            player_positions[[1, 1]] as usize,
-        );
-        self.set_player_position(data, 0, p1_pos);
-        self.set_player_position(data, 1, p2_pos);
+            player_positions[[1, 1]] as usize);
 
-        // Set walls remaining
         self.set_walls_remaining(data, 0, walls_remaining[0] as usize);
         self.set_walls_remaining(data, 1, walls_remaining[1] as usize);
 
@@ -72,10 +66,8 @@ impl QBitRepr {
     /// Extract player positions as a 2x2 array (format used by minimax)
     /// Returns [[p1_row, p1_col], [p2_row, p2_col]]
     pub fn to_player_positions(&self, data: &[u8]) -> Array2<i32> {
-        let p1_index = self.get_player_position(data, 0);
-        let p2_index = self.get_player_position(data, 1);
-        let (p1_row, p1_col) = self.index_to_position(p1_index);
-        let (p2_row, p2_col) = self.index_to_position(p2_index);
+        let (p1_row, p1_col)= self.get_player_position(data, 0);
+        let (p2_row, p2_col)= self.get_player_position(data, 1);
 
         Array2::from_shape_vec((2, 2), vec![
             p1_row as i32, p1_col as i32,
@@ -128,10 +120,8 @@ impl QBitRepr {
         }
 
         // Add players
-        let p1_index = self.get_player_position(data, 0);
-        let p2_index = self.get_player_position(data, 1);
-        let (p1_row, p1_col) = self.index_to_position(p1_index);
-        let (p2_row, p2_col) = self.index_to_position(p2_index);
+        let (p1_row, p1_col)= self.get_player_position(data, 0);
+        let (p2_row, p2_col)= self.get_player_position(data, 1);
 
         // Convert board coordinates to grid coordinates (with padding)
         let p1_grid_row = 2 + p1_row * 2;
