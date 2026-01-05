@@ -47,7 +47,8 @@ impl QGameMechanics {
         self.repr.set_player_position(&mut data, 1, p2_pos);
 
         // Both players start with max walls
-        self.repr.set_p1_walls_remaining(&mut data, self.repr.max_walls());
+        self.repr.set_walls_remaining(&mut data, 0, self.repr.max_walls());
+        self.repr.set_walls_remaining(&mut data, 1, self.repr.max_walls());
 
         // Current player is 0
         self.repr.set_current_player(&mut data, 0);
@@ -357,16 +358,10 @@ impl QGameMechanics {
         self.place_wall(data, row, col, orientation);
 
         // Decrement walls remaining for the player
-        let current_walls = if player == 0 {
-            self.repr.get_p1_walls_remaining(data)
-        } else {
-            self.repr.get_p2_walls_remaining(data)
-        };
+        let current_walls = 
+            self.repr.get_walls_remaining(data, player);
 
-        if player == 0 {
-            self.repr.set_p1_walls_remaining(data, current_walls.saturating_sub(1));
-        }
-        // Note: P2 walls are computed, so we don't set them explicitly
+        self.repr.set_walls_remaining(data, player, current_walls.saturating_sub(1));
     }
 
     /// Switch to the next player
@@ -396,11 +391,7 @@ impl QGameMechanics {
         let current_player = self.repr.get_current_player(data);
 
         // Check if player has walls remaining
-        let walls_remaining = if current_player == 0 {
-            self.repr.get_p1_walls_remaining(data)
-        } else {
-            self.repr.get_p2_walls_remaining(data)
-        };
+        let walls_remaining = self.repr.get_walls_remaining(data, current_player);
 
         if walls_remaining == 0 {
             return Vec::new();
@@ -477,8 +468,8 @@ mod tests {
         assert_eq!(p2_col, 4); // Center
 
         // Check walls
-        assert_eq!(mechanics.repr.get_p1_walls_remaining(&state), 10);
-        assert_eq!(mechanics.repr.get_p2_walls_remaining(&state), 10);
+        assert_eq!(mechanics.repr.get_walls_remaining(&state, 0), 10);
+        assert_eq!(mechanics.repr.get_walls_remaining(&state, 0), 10);
 
         // Check current player
         assert_eq!(mechanics.repr.get_current_player(&state), 0);
@@ -533,10 +524,10 @@ mod tests {
         let mechanics = QGameMechanics::new(9, 10, 100);
         let mut state = mechanics.create_initial_state();
 
-        let initial_walls = mechanics.repr.get_p1_walls_remaining(&state);
+        let initial_walls = mechanics.repr.get_walls_remaining(&state, 0);
         mechanics.execute_wall_placement(&mut state, 0, 4, 4, WALL_VERTICAL);
 
-        assert_eq!(mechanics.repr.get_p1_walls_remaining(&state), initial_walls - 1);
+        assert_eq!(mechanics.repr.get_walls_remaining(&state, 0), initial_walls - 1);
         assert!(mechanics.repr.get_wall(&state, 4, 4, WALL_VERTICAL));
     }
 

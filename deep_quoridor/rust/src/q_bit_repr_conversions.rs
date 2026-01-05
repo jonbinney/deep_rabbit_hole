@@ -38,7 +38,8 @@ impl QBitRepr {
         self.set_player_position(data, 1, p2_pos);
 
         // Set walls remaining
-        self.set_p1_walls_remaining(data, walls_remaining[0] as usize);
+        self.set_walls_remaining(data, 0, walls_remaining[0] as usize);
+        self.set_walls_remaining(data, 1, walls_remaining[1] as usize);
 
         // Set current player
         self.set_current_player(data, current_player as usize);
@@ -86,8 +87,8 @@ impl QBitRepr {
     /// Returns [p1_walls, p2_walls]
     pub fn to_walls_remaining(&self, data: &[u8]) -> Array1<i32> {
         Array1::from_vec(vec![
-            self.get_p1_walls_remaining(data) as i32,
-            self.get_p2_walls_remaining(data) as i32,
+            self.get_walls_remaining(data, 0) as i32,
+            self.get_walls_remaining(data, 1) as i32,
         ])
     }
 

@@ -112,8 +112,8 @@ fn compute_heuristic(
     }
 
     let distance_reward = (opponent_distance - agent_distance) as f32;
-    let agent_walls = mechanics.repr().get_p1_walls_remaining(data);
-    let opponent_walls = mechanics.repr().get_p2_walls_remaining(data);
+    let agent_walls = mechanics.repr().get_walls_remaining(data, agent_player);
+    let opponent_walls = mechanics.repr().get_walls_remaining(data, opponent);
     let wall_reward = if agent_player == 0 {
         (agent_walls as i32 - opponent_walls as i32) as f32 / 100.0
     } else {

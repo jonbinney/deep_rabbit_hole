@@ -38,7 +38,7 @@ pub struct QBitRepr {
     // Bit offsets for each field
     walls_offset: usize,
     player_pos_offsets: [usize; 2],  // Offset for each player's position
-    walls_remaining_offset: usize,
+    walls_remaining_offsets: [usize; 2],
     current_player_offset: usize,
     steps_offset: usize,
 }
@@ -56,8 +56,10 @@ impl QBitRepr {
         let p1_pos_offset = walls_offset + num_wall_positions;
         let p2_pos_offset = p1_pos_offset + position_bits;
         let player_pos_offsets = [p1_pos_offset, p2_pos_offset];
-        let walls_remaining_offset = p2_pos_offset + position_bits;
-        let current_player_offset = walls_remaining_offset + walls_remaining_bits;
+        let p1_walls_remaining_offset = p2_pos_offset + position_bits;
+        let p2_walls_remaining_offset = p1_walls_remaining_offset + walls_remaining_bits;
+        let walls_remaining_offsets = [p1_walls_remaining_offset, p2_walls_remaining_offset];
+        let current_player_offset = p2_walls_remaining_offset + walls_remaining_bits;
         let steps_offset = current_player_offset + 1;
 
         let total_bits = steps_offset + steps_bits;
@@ -76,7 +78,7 @@ impl QBitRepr {
             total_bytes,
             walls_offset,
             player_pos_offsets,
-            walls_remaining_offset,
+            walls_remaining_offsets,
             current_player_offset,
             steps_offset,
         }
@@ -172,23 +174,16 @@ impl QBitRepr {
     }
 
     /// Get player 1's remaining walls
-    pub fn get_p1_walls_remaining(&self, data: &[u8]) -> usize {
-        self.get_bits(data, self.walls_remaining_offset, self.walls_remaining_bits)
+    pub fn get_walls_remaining(&self, data: &[u8], player: usize) -> usize {
+        debug_assert!(player < 2);
+        self.get_bits(data, self.walls_remaining_offsets[player], self.walls_remaining_bits)
     }
 
     /// Set player 1's remaining walls
-    pub fn set_p1_walls_remaining(&self, data: &mut [u8], walls: usize) {
+    pub fn set_walls_remaining(&self, data: &mut [u8], player: usize, walls: usize) {
+        debug_assert!(player < 2);
         debug_assert!(walls <= self.max_walls);
-        self.set_bits(data, self.walls_remaining_offset, self.walls_remaining_bits, walls);
-    }
-
-    /// Get player 2's remaining walls (computed from total walls used)
-    pub fn get_p2_walls_remaining(&self, data: &[u8]) -> usize {
-        let p1_walls = self.get_p1_walls_remaining(data);
-        let walls_used = self.count_walls(data);
-        let p1_walls_used = self.max_walls - p1_walls;
-        let p2_walls_used = walls_used.saturating_sub(p1_walls_used);
-        self.max_walls.saturating_sub(p2_walls_used)
+        self.set_bits(data, self.walls_remaining_offsets[player], self.walls_remaining_bits, walls);
     }
 
     /// Get the current player (0 or 1)
@@ -286,11 +281,11 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
         // 5x5 board: 2*(5-1)*(5-1) = 2*4*4 = 32 wall bits
         // Positions: ceil(log2(25)) = 5 bits each, 2 players = 10 bits
-        // Walls remaining: ceil(log2(10)) = 4 bits
+        // Walls remaining: ceil(log2(10)) = 4 bits each = 8 bits
         // Current player: 1 bit
         // Steps: ceil(log2(100)) = 7 bits
-        // Total: 32 + 10 + 4 + 1 + 7 = 54 bits = 7 bytes
-        assert_eq!(q.size_bytes(), 7);
+        // Total: 32 + 10 + 8 + 1 + 7 = 58 bits = 8 bytes
+        assert_eq!(q.size_bytes(), 8);
     }
 
     #[test]
@@ -329,19 +324,8 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
 
-        q.set_p1_walls_remaining(&mut data, 10);
-        assert_eq!(q.get_p1_walls_remaining(&data), 10);
-
-        // Simulate p1 placing 3 walls, p2 placing 2 walls
-        q.set_wall(&mut data, 0, 0, WALL_VERTICAL, true); // vertical wall at (0, 0)
-        q.set_wall(&mut data, 0, 1, WALL_VERTICAL, true); // vertical wall at (0, 1)
-        q.set_wall(&mut data, 0, 2, WALL_VERTICAL, true); // vertical wall at (0, 2)
-        q.set_wall(&mut data, 2, 2, WALL_VERTICAL, true); // vertical wall at (2, 2)
-        q.set_wall(&mut data, 2, 3, WALL_VERTICAL, true); // vertical wall at (2, 3)
-        q.set_p1_walls_remaining(&mut data, 7);
-
-        assert_eq!(q.get_p1_walls_remaining(&data), 7);
-        assert_eq!(q.get_p2_walls_remaining(&data), 8);
+        q.set_walls_remaining(&mut data, 0, 10);
+        assert_eq!(q.get_walls_remaining(&data, 0), 10);
     }
 
     #[test]
