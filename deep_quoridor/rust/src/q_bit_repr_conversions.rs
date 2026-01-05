@@ -1,10 +1,9 @@
+use crate::q_bit_repr::QBitRepr;
 /// Conversion functions between QBitRepr packed format and game state arrays.
 ///
 /// This module contains methods for converting between the bit-packed representation
 /// and the array-based game state format used by the minimax algorithm.
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
-use crate::q_bit_repr::QBitRepr;
 
 impl QBitRepr {
     /// Populate the packed state from game state arrays used by minimax
@@ -25,12 +24,18 @@ impl QBitRepr {
         current_player: i32,
         completed_steps: i32,
     ) {
-        self.set_player_position(data, 0, 
+        self.set_player_position(
+            data,
+            0,
             player_positions[[0, 0]] as usize,
-            player_positions[[0, 1]] as usize);
-        self.set_player_position(data, 1, 
+            player_positions[[0, 1]] as usize,
+        );
+        self.set_player_position(
+            data,
+            1,
             player_positions[[1, 0]] as usize,
-            player_positions[[1, 1]] as usize);
+            player_positions[[1, 1]] as usize,
+        );
 
         self.set_walls_remaining(data, 0, walls_remaining[0] as usize);
         self.set_walls_remaining(data, 1, walls_remaining[1] as usize);
@@ -67,13 +72,14 @@ impl QBitRepr {
     /// Returns [[p1_row, p1_col], [p2_row, p2_col]]
     #[allow(dead_code)]
     pub fn to_player_positions(&self, data: &[u8]) -> Array2<i32> {
-        let (p1_row, p1_col)= self.get_player_position(data, 0);
-        let (p2_row, p2_col)= self.get_player_position(data, 1);
+        let (p1_row, p1_col) = self.get_player_position(data, 0);
+        let (p2_row, p2_col) = self.get_player_position(data, 1);
 
-        Array2::from_shape_vec((2, 2), vec![
-            p1_row as i32, p1_col as i32,
-            p2_row as i32, p2_col as i32,
-        ]).unwrap()
+        Array2::from_shape_vec(
+            (2, 2),
+            vec![p1_row as i32, p1_col as i32, p2_row as i32, p2_col as i32],
+        )
+        .unwrap()
     }
 
     /// Extract walls remaining as a 1D array (format used by minimax)
@@ -123,8 +129,8 @@ impl QBitRepr {
         }
 
         // Add players
-        let (p1_row, p1_col)= self.get_player_position(data, 0);
-        let (p2_row, p2_col)= self.get_player_position(data, 1);
+        let (p1_row, p1_col) = self.get_player_position(data, 0);
+        let (p2_row, p2_col) = self.get_player_position(data, 1);
 
         // Convert board coordinates to grid coordinates (with padding)
         let p1_grid_row = 2 + p1_row * 2;
@@ -146,7 +152,6 @@ mod tests {
 
     #[test]
     fn test_game_state_conversion() {
-
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
 

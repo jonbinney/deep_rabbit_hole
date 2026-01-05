@@ -37,7 +37,7 @@ pub struct QBitRepr {
 
     // Bit offsets for each field
     walls_offset: usize,
-    player_pos_offsets: [usize; 2],  // Offset for each player's position
+    player_pos_offsets: [usize; 2], // Offset for each player's position
     walls_remaining_offsets: [usize; 2],
     current_player_offset: usize,
     steps_offset: usize,
@@ -160,7 +160,14 @@ impl QBitRepr {
     }
 
     /// Set a wall at the given position
-    pub fn set_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize, present: bool) {
+    pub fn set_wall(
+        &self,
+        data: &mut [u8],
+        row: usize,
+        col: usize,
+        orientation: usize,
+        present: bool,
+    ) {
         let wall_index = self.wall_position_to_index(row, col, orientation);
         self.set_bit(data, self.walls_offset + wall_index, present);
     }
@@ -177,25 +184,43 @@ impl QBitRepr {
         debug_assert!(player < 2);
         let new_index = self.position_to_index(row, col);
         debug_assert!(new_index < self.num_player_positions);
-        self.set_bits(data, self.player_pos_offsets[player], self.position_bits, new_index);
+        self.set_bits(
+            data,
+            self.player_pos_offsets[player],
+            self.position_bits,
+            new_index,
+        );
     }
 
     /// Get player 1's remaining walls
     pub fn get_walls_remaining(&self, data: &[u8], player: usize) -> usize {
         debug_assert!(player < 2);
-        self.get_bits(data, self.walls_remaining_offsets[player], self.walls_remaining_bits)
+        self.get_bits(
+            data,
+            self.walls_remaining_offsets[player],
+            self.walls_remaining_bits,
+        )
     }
 
     /// Set player 1's remaining walls
     pub fn set_walls_remaining(&self, data: &mut [u8], player: usize, walls: usize) {
         debug_assert!(player < 2);
         debug_assert!(walls <= self.max_walls);
-        self.set_bits(data, self.walls_remaining_offsets[player], self.walls_remaining_bits, walls);
+        self.set_bits(
+            data,
+            self.walls_remaining_offsets[player],
+            self.walls_remaining_bits,
+            walls,
+        );
     }
 
     /// Get the current player (0 or 1)
     pub fn get_current_player(&self, data: &[u8]) -> usize {
-        if self.get_bit(data, self.current_player_offset) { 1 } else { 0 }
+        if self.get_bit(data, self.current_player_offset) {
+            1
+        } else {
+            0
+        }
     }
 
     /// Set the current player
@@ -266,7 +291,6 @@ impl QBitRepr {
         let col = remainder % (self.board_size - 1);
         (row, col, orientation)
     }
-
 }
 
 #[cfg(test)]
@@ -359,5 +383,4 @@ mod tests {
         let (row, col, orientation) = q.wall_index_to_position(idx);
         assert_eq!((row, col, orientation), (3, 1, WALL_HORIZONTAL));
     }
-
 }

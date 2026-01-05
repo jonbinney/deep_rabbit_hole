@@ -2,17 +2,17 @@ use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyR
 use pyo3::prelude::*;
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 mod actions;
 mod game_state;
 mod grid;
 mod minimax;
+mod pathfinding;
 mod q_bit_repr;
 mod q_bit_repr_conversions;
 mod q_game_mechanics;
 mod q_minimax;
-mod pathfinding;
 mod validation;
 
 /// Calculate the shortest distance from a position to a target row.
@@ -59,7 +59,13 @@ fn set_wall_cells(
     cell_value: i8,
 ) {
     let mut grid_mut = grid.as_array_mut();
-    grid::set_wall_cells(&mut grid_mut, wall_row, wall_col, wall_orientation, cell_value);
+    grid::set_wall_cells(
+        &mut grid_mut,
+        wall_row,
+        wall_col,
+        wall_orientation,
+        cell_value,
+    );
 }
 
 /// Check if wall cells equal a specific value.
@@ -71,7 +77,13 @@ fn check_wall_cells(
     wall_orientation: i32,
     cell_value: i8,
 ) -> bool {
-    grid::check_wall_cells(&grid.as_array(), wall_row, wall_col, wall_orientation, cell_value)
+    grid::check_wall_cells(
+        &grid.as_array(),
+        wall_row,
+        wall_col,
+        wall_orientation,
+        cell_value,
+    )
 }
 
 /// Check if a wall could potentially block a player's path.
@@ -173,8 +185,11 @@ fn get_valid_move_actions<'py>(
     player_positions: PyReadonlyArray2<i32>,
     current_player: i32,
 ) -> Bound<'py, PyArray2<i32>> {
-    let actions =
-        actions::get_valid_move_actions(&grid.as_array(), &player_positions.as_array(), current_player);
+    let actions = actions::get_valid_move_actions(
+        &grid.as_array(),
+        &player_positions.as_array(),
+        current_player,
+    );
     PyArray2::from_owned_array_bound(py, actions)
 }
 
@@ -200,7 +215,11 @@ fn get_valid_wall_actions<'py>(
 
 /// Check if a player has won.
 #[pyfunction]
-fn check_win(player_positions: PyReadonlyArray2<i32>, goal_rows: PyReadonlyArray1<i32>, player: i32) -> bool {
+fn check_win(
+    player_positions: PyReadonlyArray2<i32>,
+    goal_rows: PyReadonlyArray1<i32>,
+    player: i32,
+) -> bool {
     game_state::check_win(&player_positions.as_array(), &goal_rows.as_array(), player)
 }
 
@@ -370,9 +389,18 @@ fn log_entries_to_sqlite(
     )?;
 
     // Insert metadata
-    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('board_size', ?1)", params![board_size as f32])?;
-    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_steps', ?1)", params![max_steps as f32])?;
-    conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_walls', ?1)", params![max_walls as f32])?;
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('board_size', ?1)",
+        params![board_size as f32],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_steps', ?1)",
+        params![max_steps as f32],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_walls', ?1)",
+        params![max_walls as f32],
+    )?;
 
     // Create table with columns for grid (as blob), walls remaining, completed_steps, actions (as blob), and action_values (as blob)
     // Note: grid is trimmed to exclude 2 outermost rows/cols on each side
@@ -414,14 +442,11 @@ fn log_entries_to_sqlite(
 
             // Flatten actions into a single vector: each action is [row, col, type]
             let actions_flat: Vec<i32> = entry.actions.into_iter().flatten().collect();
-            let actions_blob: Vec<u8> = actions_flat.iter()
-                .flat_map(|&x| x.to_le_bytes())
-                .collect();
+            let actions_blob: Vec<u8> =
+                actions_flat.iter().flat_map(|&x| x.to_le_bytes()).collect();
 
             // Convert values to bytes
-            let values_blob: Vec<u8> = entry.values.iter()
-                .flat_map(|&x| x.to_le_bytes())
-                .collect();
+            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
 
             let num_actions = entry.values.len() as i32;
 
@@ -488,8 +513,12 @@ fn create_policy_db(
 
     if let Some(entries) = log_entries {
         // Write entries to SQLite database with metadata
-        log_entries_to_sqlite(entries, filename, board_size, max_steps, max_walls)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write to SQLite database: {}", e)))
+        log_entries_to_sqlite(entries, filename, board_size, max_steps, max_walls).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to write to SQLite database: {}",
+                e
+            ))
+        })
     } else {
         Ok(0)
     }

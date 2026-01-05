@@ -32,7 +32,13 @@ pub fn compute_move_action_mask(
 
     for destination_row in row_start..row_end {
         for destination_col in col_start..col_end {
-            if is_move_action_valid(grid, player_positions, current_player, destination_row, destination_col) {
+            if is_move_action_valid(
+                grid,
+                player_positions,
+                current_player,
+                destination_row,
+                destination_col,
+            ) {
                 let index = (destination_row * board_size + destination_col) as usize;
                 action_mask[index] = true;
             }
@@ -200,9 +206,9 @@ pub fn get_valid_wall_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
     use crate::grid::CELL_FREE;
     use crate::pathfinding::CELL_WALL;
+    use ndarray::{Array1, Array2};
 
     fn create_test_game() -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
         let mut grid = Array2::<i8>::from_elem((20, 20), CELL_FREE);
@@ -238,7 +244,12 @@ mod tests {
         let board_size = 9;
         let mut action_mask = Array1::from(vec![false; (board_size * board_size) as usize]);
 
-        compute_move_action_mask(&grid.view(), &player_positions.view(), 0, &mut action_mask.view_mut());
+        compute_move_action_mask(
+            &grid.view(),
+            &player_positions.view(),
+            0,
+            &mut action_mask.view_mut(),
+        );
 
         // Player should have some valid moves
         assert!(action_mask.iter().any(|&x| x));

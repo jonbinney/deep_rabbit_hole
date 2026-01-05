@@ -2,14 +2,13 @@
 ///
 /// This provides efficient game state operations by working directly with
 /// the bit-packed representation instead of converting to/from grid arrays.
-
 use crate::q_bit_repr::{QBitRepr, WALL_HORIZONTAL, WALL_VERTICAL};
 
 /// Game mechanics for Quoridor using bit-packed state representation
 #[derive(Clone, Debug)]
 pub struct QGameMechanics {
     repr: QBitRepr,
-    goal_rows: [usize; 2],  // Goal row for each player
+    goal_rows: [usize; 2], // Goal row for each player
 }
 
 impl QGameMechanics {
@@ -40,14 +39,18 @@ impl QGameMechanics {
         let board_size = self.repr.board_size();
 
         // Player 1 starts at bottom center
-        self.repr.set_player_position(&mut data, 0, board_size - 1, board_size / 2);
+        self.repr
+            .set_player_position(&mut data, 0, board_size - 1, board_size / 2);
 
         // Player 2 starts at top center
-        self.repr.set_player_position(&mut data, 1, 0, board_size / 2);
+        self.repr
+            .set_player_position(&mut data, 1, 0, board_size / 2);
 
         // Both players start with max walls
-        self.repr.set_walls_remaining(&mut data, 0, self.repr.max_walls());
-        self.repr.set_walls_remaining(&mut data, 1, self.repr.max_walls());
+        self.repr
+            .set_walls_remaining(&mut data, 0, self.repr.max_walls());
+        self.repr
+            .set_walls_remaining(&mut data, 1, self.repr.max_walls());
 
         // Current player is 0
         self.repr.set_current_player(&mut data, 0);
@@ -60,7 +63,13 @@ impl QGameMechanics {
 
     /// Check if a wall placement would hit an existing wall
     /// Doesn't check that players can reach their goal still.
-    pub fn is_wall_placement_free(&self, data: &[u8], row: usize, col: usize, orientation: usize) -> bool {
+    pub fn is_wall_placement_free(
+        &self,
+        data: &[u8],
+        row: usize,
+        col: usize,
+        orientation: usize,
+    ) -> bool {
         let board_size = self.repr.board_size();
 
         // Check bounds
@@ -127,7 +136,14 @@ impl QGameMechanics {
     }
 
     /// Check if there's a wall blocking movement between two adjacent cells
-    fn is_wall_between(&self, data: &[u8], from_row: usize, from_col: usize, to_row: usize, to_col: usize) -> bool {
+    fn is_wall_between(
+        &self,
+        data: &[u8],
+        from_row: usize,
+        from_col: usize,
+        to_row: usize,
+        to_col: usize,
+    ) -> bool {
         let board_size = self.repr.board_size();
 
         // Determine wall position based on direction of movement
@@ -144,7 +160,10 @@ impl QGameMechanics {
                     }
                     // Check wall at (from_row-1, from_col) vertical (extends downward)
                     if from_row > 0 {
-                        if self.repr.get_wall(data, from_row - 1, from_col, WALL_VERTICAL) {
+                        if self
+                            .repr
+                            .get_wall(data, from_row - 1, from_col, WALL_VERTICAL)
+                        {
                             return true;
                         }
                     }
@@ -160,7 +179,10 @@ impl QGameMechanics {
                     }
                     // Check wall at (from_row-1, to_col) vertical (extends downward)
                     if from_row > 0 {
-                        if self.repr.get_wall(data, from_row - 1, to_col, WALL_VERTICAL) {
+                        if self
+                            .repr
+                            .get_wall(data, from_row - 1, to_col, WALL_VERTICAL)
+                        {
                             return true;
                         }
                     }
@@ -173,13 +195,19 @@ impl QGameMechanics {
                 if from_row < board_size - 1 {
                     // Check wall at (from_row, from_col) horizontal
                     if from_col < board_size - 1 {
-                        if self.repr.get_wall(data, from_row, from_col, WALL_HORIZONTAL) {
+                        if self
+                            .repr
+                            .get_wall(data, from_row, from_col, WALL_HORIZONTAL)
+                        {
                             return true;
                         }
                     }
                     // Check wall at (from_row, from_col-1) horizontal (extends rightward)
                     if from_col > 0 {
-                        if self.repr.get_wall(data, from_row, from_col - 1, WALL_HORIZONTAL) {
+                        if self
+                            .repr
+                            .get_wall(data, from_row, from_col - 1, WALL_HORIZONTAL)
+                        {
                             return true;
                         }
                     }
@@ -195,7 +223,10 @@ impl QGameMechanics {
                     }
                     // Check wall at (to_row, from_col-1) horizontal (extends rightward)
                     if from_col > 0 {
-                        if self.repr.get_wall(data, to_row, from_col - 1, WALL_HORIZONTAL) {
+                        if self
+                            .repr
+                            .get_wall(data, to_row, from_col - 1, WALL_HORIZONTAL)
+                        {
                             return true;
                         }
                     }
@@ -234,10 +265,10 @@ impl QGameMechanics {
 
             // Explore all 4 adjacent cells
             let directions = [
-                (row.wrapping_sub(1), col),  // Up
-                (row + 1, col),              // Down
-                (row, col.wrapping_sub(1)),  // Left
-                (row, col + 1),              // Right
+                (row.wrapping_sub(1), col), // Up
+                (row + 1, col),             // Down
+                (row, col.wrapping_sub(1)), // Left
+                (row, col + 1),             // Right
             ];
 
             for (new_row, new_col) in directions {
@@ -269,7 +300,13 @@ impl QGameMechanics {
     }
 
     /// Returns true if the wall is valid
-    pub fn is_wall_placement_valid(&self, data: &[u8], row: usize, col: usize, orientation: usize) -> bool {
+    pub fn is_wall_placement_valid(
+        &self,
+        data: &[u8],
+        row: usize,
+        col: usize,
+        orientation: usize,
+    ) -> bool {
         // First check if placement is physically possible
         if !self.is_wall_placement_free(data, row, col, orientation) {
             return false;
@@ -305,11 +342,11 @@ impl QGameMechanics {
         }
 
         // Get current position
-        let (curr_row, curr_col)= self.repr.get_player_position(data, player);
+        let (curr_row, curr_col) = self.repr.get_player_position(data, player);
 
         // Get opponent position
         let opponent = 1 - player;
-        let (opp_row, opp_col)= self.repr.get_player_position(data, opponent);
+        let (opp_row, opp_col) = self.repr.get_player_position(data, opponent);
 
         // Check if destination is occupied by opponent
         if dest_row == opp_row && dest_col == opp_col {
@@ -338,7 +375,8 @@ impl QGameMechanics {
 
     /// Execute a move action
     pub fn execute_move(&self, data: &mut [u8], player: usize, dest_row: usize, dest_col: usize) {
-        self.repr.set_player_position(data, player, dest_row, dest_col);
+        self.repr
+            .set_player_position(data, player, dest_row, dest_col);
     }
 
     /// Execute a wall placement action
@@ -353,10 +391,10 @@ impl QGameMechanics {
         self.place_wall(data, row, col, orientation);
 
         // Decrement walls remaining for the player
-        let current_walls = 
-            self.repr.get_walls_remaining(data, player);
+        let current_walls = self.repr.get_walls_remaining(data, player);
 
-        self.repr.set_walls_remaining(data, player, current_walls.saturating_sub(1));
+        self.repr
+            .set_walls_remaining(data, player, current_walls.saturating_sub(1));
     }
 
     /// Switch to the next player
@@ -371,7 +409,7 @@ impl QGameMechanics {
 
     /// Check if a player has won
     pub fn check_win(&self, data: &[u8], player: usize) -> bool {
-        let (row, _col)= self.repr.get_player_position(data, player);
+        let (row, _col) = self.repr.get_player_position(data, player);
         row == self.goal_rows[player]
     }
 
@@ -413,7 +451,7 @@ impl QGameMechanics {
         let current_player = self.repr.get_current_player(data);
         let board_size = self.repr.board_size();
 
-        let (curr_row, curr_col)= self.repr.get_player_position(data, current_player);
+        let (curr_row, curr_col) = self.repr.get_player_position(data, current_player);
 
         let mut valid_moves = Vec::new();
 
@@ -427,10 +465,13 @@ impl QGameMechanics {
                 let new_row = curr_row as i32 + dr;
                 let new_col = curr_col as i32 + dc;
 
-                if new_row >= 0 && new_row < board_size as i32
-                    && new_col >= 0 && new_col < board_size as i32
+                if new_row >= 0
+                    && new_row < board_size as i32
+                    && new_col >= 0
+                    && new_col < board_size as i32
                 {
-                    if self.is_move_valid(data, current_player, new_row as usize, new_col as usize) {
+                    if self.is_move_valid(data, current_player, new_row as usize, new_col as usize)
+                    {
                         valid_moves.push((new_row as usize, new_col as usize));
                     }
                 }
@@ -451,8 +492,8 @@ mod tests {
         let state = mechanics.create_initial_state();
 
         // Check player positions
-        let (p1_row, p1_col)= mechanics.repr.get_player_position(&state, 0);
-        let (p2_row, p2_col)= mechanics.repr.get_player_position(&state, 1);
+        let (p1_row, p1_col) = mechanics.repr.get_player_position(&state, 0);
+        let (p2_row, p2_col) = mechanics.repr.get_player_position(&state, 1);
 
         assert_eq!(p1_row, 8); // Bottom
         assert_eq!(p1_col, 4); // Center
@@ -519,7 +560,10 @@ mod tests {
         let initial_walls = mechanics.repr.get_walls_remaining(&state, 0);
         mechanics.execute_wall_placement(&mut state, 0, 4, 4, WALL_VERTICAL);
 
-        assert_eq!(mechanics.repr.get_walls_remaining(&state, 0), initial_walls - 1);
+        assert_eq!(
+            mechanics.repr.get_walls_remaining(&state, 0),
+            initial_walls - 1
+        );
         assert!(mechanics.repr.get_wall(&state, 4, 4, WALL_VERTICAL));
     }
 
@@ -539,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_pathfinding_blocks_invalid_walls() {
-        let mechanics = QGameMechanics::new(5, 10, 100);  // Use smaller board for easier testing
+        let mechanics = QGameMechanics::new(5, 10, 100); // Use smaller board for easier testing
         let mut state = mechanics.create_initial_state();
 
         // Place vertical walls to create a barrier with only one gap
@@ -569,7 +613,10 @@ mod tests {
 
         // This wall should still be valid because players can go around via the sides
         let is_valid = mechanics.is_wall_placement_valid(&state, 4, 7, WALL_HORIZONTAL);
-        assert!(is_valid, "Wall should be valid as players can still reach goals");
+        assert!(
+            is_valid,
+            "Wall should be valid as players can still reach goals"
+        );
     }
 
     #[test]
@@ -578,7 +625,13 @@ mod tests {
         let state = mechanics.create_initial_state();
 
         // Both players should be able to reach their goals in initial state
-        assert!(mechanics.can_reach_goal(&state, 0), "Player 1 should reach goal");
-        assert!(mechanics.can_reach_goal(&state, 1), "Player 2 should reach goal");
+        assert!(
+            mechanics.can_reach_goal(&state, 0),
+            "Player 1 should reach goal"
+        );
+        assert!(
+            mechanics.can_reach_goal(&state, 1),
+            "Player 2 should reach goal"
+        );
     }
 }

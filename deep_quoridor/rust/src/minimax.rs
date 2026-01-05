@@ -19,8 +19,8 @@ pub struct MinimaxLogEntry {
     pub walls_remaining: Vec<i32>,
     pub agent_player: i32,
     pub completed_steps: i32,
-    pub actions: Vec<Vec<i32>>,  // Vector of actions, each action is [row, col, type]
-    pub values: Vec<f32>,         // Corresponding values for each action
+    pub actions: Vec<Vec<i32>>, // Vector of actions, each action is [row, col, type]
+    pub values: Vec<f32>,       // Corresponding values for each action
 }
 
 /// Calculate Gaussian weights for wall actions based on distance to players.
@@ -95,7 +95,13 @@ pub fn sample_actions(
     let num_wall_actions_needed = branching_factor - move_actions.nrows();
 
     // Get all valid wall actions
-    let wall_actions = get_valid_wall_actions(grid, player_positions, walls_remaining, goal_rows, current_player);
+    let wall_actions = get_valid_wall_actions(
+        grid,
+        player_positions,
+        walls_remaining,
+        goal_rows,
+        current_player,
+    );
 
     // Combine the actions
     if wall_actions.nrows() <= num_wall_actions_needed {
@@ -118,7 +124,12 @@ pub fn sample_actions(
 
     // Sample wall actions based on distance to players
     let selected_wall_indices = if wall_sigma > 0.0 {
-        let weights = gaussian_wall_weights(&wall_actions.view(), &player_positions.row(0), &player_positions.row(1), wall_sigma);
+        let weights = gaussian_wall_weights(
+            &wall_actions.view(),
+            &player_positions.row(0),
+            &player_positions.row(1),
+            wall_sigma,
+        );
 
         // Sample wall actions using weights (cumulative distribution)
         let mut indices = Vec::with_capacity(num_wall_actions_needed);
@@ -197,7 +208,9 @@ fn compute_heuristic_for_game_state(
 
     // Compute heuristic value based on distances and walls
     let distance_reward = (opponent_distance - agent_distance) as f32;
-    let wall_reward = (walls_remaining[agent_player as usize] - walls_remaining[opponent as usize]) as f32 / 100.0;
+    let wall_reward = (walls_remaining[agent_player as usize] - walls_remaining[opponent as usize])
+        as f32
+        / 100.0;
 
     distance_reward + wall_reward
 }
@@ -419,7 +432,7 @@ pub fn evaluate_actions(
                 goal_rows,
                 1 - current_player,
                 current_player, // Assume we are choosing an action for the current player
-                0, // completed_steps
+                0,              // completed_steps
                 max_steps,
                 branching_factor,
                 wall_sigma,

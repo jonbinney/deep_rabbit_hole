@@ -44,8 +44,7 @@ pub fn are_wall_cells_free(
         grid[[start_i as usize, start_j as usize]] == CELL_FREE
             && grid[[start_i as usize, start_j as usize + 1]] == CELL_FREE
             && grid[[start_i as usize, start_j as usize + 2]] == CELL_FREE
-    }
-    else {
+    } else {
         panic!("Invalid wall orientation: {}", wall_orientation);
     }
 }
@@ -227,8 +226,18 @@ mod tests {
         let grid = create_test_grid();
 
         // Should be free on empty board
-        assert!(are_wall_cells_free(&grid.view(), 0, 0, WALL_ORIENTATION_VERTICAL));
-        assert!(are_wall_cells_free(&grid.view(), 0, 0, WALL_ORIENTATION_HORIZONTAL));
+        assert!(are_wall_cells_free(
+            &grid.view(),
+            0,
+            0,
+            WALL_ORIENTATION_VERTICAL
+        ));
+        assert!(are_wall_cells_free(
+            &grid.view(),
+            0,
+            0,
+            WALL_ORIENTATION_HORIZONTAL
+        ));
     }
 
     #[test]
@@ -236,13 +245,36 @@ mod tests {
         let mut grid = create_test_grid();
 
         // Initially should be free
-        assert!(check_wall_cells(&grid.view(), 0, 0, WALL_ORIENTATION_VERTICAL, CELL_FREE));
+        assert!(check_wall_cells(
+            &grid.view(),
+            0,
+            0,
+            WALL_ORIENTATION_VERTICAL,
+            CELL_FREE
+        ));
 
         // Set to wall
-        set_wall_cells(&mut grid.view_mut(), 0, 0, WALL_ORIENTATION_VERTICAL, CELL_WALL);
+        set_wall_cells(
+            &mut grid.view_mut(),
+            0,
+            0,
+            WALL_ORIENTATION_VERTICAL,
+            CELL_WALL,
+        );
 
         // Now should be wall
-        assert!(check_wall_cells(&grid.view(), 0, 0, WALL_ORIENTATION_VERTICAL, CELL_WALL));
-        assert!(!are_wall_cells_free(&grid.view(), 0, 0, WALL_ORIENTATION_VERTICAL));
+        assert!(check_wall_cells(
+            &grid.view(),
+            0,
+            0,
+            WALL_ORIENTATION_VERTICAL,
+            CELL_WALL
+        ));
+        assert!(!are_wall_cells_free(
+            &grid.view(),
+            0,
+            0,
+            WALL_ORIENTATION_VERTICAL
+        ));
     }
 }

@@ -1,5 +1,4 @@
 /// QBitRepr-based minimax algorithm for Quoridor
-
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -12,15 +11,15 @@ pub const WINNING_REWARD: f32 = 1e6;
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct MinimaxLogEntry {
-    pub data: Vec<u8>,  // Packed game state
+    pub data: Vec<u8>, // Packed game state
     pub agent_player: usize,
-    pub actions: Vec<(usize, usize, usize)>,  // (row, col, action_type) where type: 0=move, 1/2=wall
+    pub actions: Vec<(usize, usize, usize)>, // (row, col, action_type) where type: 0=move, 1/2=wall
     pub values: Vec<f32>,
 }
 
 /// Compute distance to goal for a player using QBitRepr state
 fn distance_to_goal(mechanics: &QGameMechanics, data: &[u8], player: usize) -> i32 {
-    let (row, col)= mechanics.repr().get_player_position(data, player);
+    let (row, col) = mechanics.repr().get_player_position(data, player);
     let board_size = mechanics.repr().board_size();
     let goal_row = if player == 0 { 0 } else { board_size - 1 };
 
@@ -61,18 +60,22 @@ fn distance_to_goal(mechanics: &QGameMechanics, data: &[u8], player: usize) -> i
                 // Moving horizontally - check for vertical wall
                 let wall_col = curr_col.min(next_col);
                 let wall_row = if curr_row > 0 { curr_row - 1 } else { curr_row };
-                (wall_row < board_size - 1 && wall_col < board_size - 1 &&
-                    mechanics.repr().get_wall(data, wall_row, wall_col, 0)) ||
-                (curr_row < board_size - 1 && wall_col < board_size - 1 &&
-                    mechanics.repr().get_wall(data, curr_row, wall_col, 0))
+                (wall_row < board_size - 1
+                    && wall_col < board_size - 1
+                    && mechanics.repr().get_wall(data, wall_row, wall_col, 0))
+                    || (curr_row < board_size - 1
+                        && wall_col < board_size - 1
+                        && mechanics.repr().get_wall(data, curr_row, wall_col, 0))
             } else {
                 // Moving vertically - check for horizontal wall
                 let wall_row = curr_row.min(next_row);
                 let wall_col = if curr_col > 0 { curr_col - 1 } else { curr_col };
-                (wall_row < board_size - 1 && wall_col < board_size - 1 &&
-                    mechanics.repr().get_wall(data, wall_row, wall_col, 1)) ||
-                (wall_row < board_size - 1 && curr_col < board_size - 1 &&
-                    mechanics.repr().get_wall(data, wall_row, curr_col, 1))
+                (wall_row < board_size - 1
+                    && wall_col < board_size - 1
+                    && mechanics.repr().get_wall(data, wall_row, wall_col, 1))
+                    || (wall_row < board_size - 1
+                        && curr_col < board_size - 1
+                        && mechanics.repr().get_wall(data, wall_row, curr_col, 1))
             };
 
             if wall_blocked {
@@ -84,7 +87,7 @@ fn distance_to_goal(mechanics: &QGameMechanics, data: &[u8], player: usize) -> i
         }
     }
 
-    -1  // Unreachable
+    -1 // Unreachable
 }
 
 /// Compute heuristic for QBitRepr state
@@ -129,9 +132,8 @@ fn sample_actions(
 
     // Get valid moves (type 0)
     let moves = mechanics.get_valid_moves(data);
-    let mut actions: Vec<(usize, usize, usize)> = moves.into_iter()
-        .map(|(row, col)| (row, col, 0))
-        .collect();
+    let mut actions: Vec<(usize, usize, usize)> =
+        moves.into_iter().map(|(row, col)| (row, col, 0)).collect();
 
     if actions.len() >= branching_factor {
         actions.shuffle(&mut rng);
@@ -148,7 +150,7 @@ fn sample_actions(
     // Add walls until we reach branching factor
     let num_walls_needed = branching_factor - actions.len();
     for (row, col, orientation) in walls.into_iter().take(num_walls_needed) {
-        actions.push((row, col, orientation + 1));  // Map 0->1, 1->2
+        actions.push((row, col, orientation + 1)); // Map 0->1, 1->2
     }
 
     actions
@@ -218,7 +220,13 @@ fn minimax(
         } else {
             // Wall action (type 1 or 2 indicates orientation)
             let orientation = *action_type - 1;
-            mechanics.execute_wall_placement(&mut new_data, current_player, *row, *col, orientation);
+            mechanics.execute_wall_placement(
+                &mut new_data,
+                current_player,
+                *row,
+                *col,
+                orientation,
+            );
         }
 
         // Switch player
@@ -250,10 +258,10 @@ fn minimax(
 
     // Log if requested
     if let Some(ref log) = log_entries {
-        let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) =
-            action_values.into_iter()
-                .map(|(r, c, t, v)| ((r, c, t), v))
-                .unzip();
+        let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
+            .into_iter()
+            .map(|(r, c, t, v)| ((r, c, t), v))
+            .unzip();
 
         let entry = MinimaxLogEntry {
             data: data.to_vec(),
@@ -276,7 +284,11 @@ pub fn evaluate_actions(
     discount_factor: f32,
     heuristic: i32,
     enable_logging: bool,
-) -> (Vec<(usize, usize, usize)>, Vec<f32>, Option<Vec<MinimaxLogEntry>>) {
+) -> (
+    Vec<(usize, usize, usize)>,
+    Vec<f32>,
+    Option<Vec<MinimaxLogEntry>>,
+) {
     let current_player = mechanics.repr().get_current_player(data);
 
     // Sample actions
@@ -304,7 +316,13 @@ pub fn evaluate_actions(
                 mechanics.execute_move(&mut new_data, current_player, *row, *col);
             } else {
                 let orientation = *action_type - 1;
-                mechanics.execute_wall_placement(&mut new_data, current_player, *row, *col, orientation);
+                mechanics.execute_wall_placement(
+                    &mut new_data,
+                    current_player,
+                    *row,
+                    *col,
+                    orientation,
+                );
             }
 
             // Switch player
@@ -349,18 +367,20 @@ mod tests {
 
         // Evaluate actions
         let (actions, values, _logs) = evaluate_actions(
-            &mechanics,
-            &data,
-            10,  // max_steps
-            5,   // branching_factor
+            &mechanics, &data, 10,    // max_steps
+            5,     // branching_factor
             0.95,  // discount_factor
-            1,   // heuristic
-            false,  // enable_logging
+            1,     // heuristic
+            false, // enable_logging
         );
 
         // Should have some actions
         assert!(!actions.is_empty(), "Should have at least one action");
-        assert_eq!(actions.len(), values.len(), "Actions and values should match");
+        assert_eq!(
+            actions.len(),
+            values.len(),
+            "Actions and values should match"
+        );
 
         // Values should be finite
         for value in &values {

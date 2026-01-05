@@ -6,7 +6,11 @@ use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
 /// Check if a player has won by reaching their goal row.
 ///
 /// This is a direct port of check_win from qgrid.py.
-pub fn check_win(player_positions: &ArrayView2<i32>, goal_rows: &ArrayView1<i32>, player: i32) -> bool {
+pub fn check_win(
+    player_positions: &ArrayView2<i32>,
+    goal_rows: &ArrayView1<i32>,
+    player: i32,
+) -> bool {
     player_positions[[player as usize, 0]] == goal_rows[player as usize]
 }
 
@@ -109,9 +113,9 @@ pub fn undo_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
     use crate::grid::CELL_FREE;
     use crate::pathfinding::CELL_WALL;
+    use ndarray::{Array1, Array2};
 
     fn create_test_game() -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
         let mut grid = Array2::<i8>::from_elem((20, 20), CELL_FREE);

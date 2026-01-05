@@ -1,6 +1,8 @@
 use ndarray::{ArrayView1, ArrayView2};
 
-use crate::grid::{check_wall_cells, is_wall_potential_block, set_wall_cells, CELL_FREE, CELL_WALL};
+use crate::grid::{
+    check_wall_cells, is_wall_potential_block, set_wall_cells, CELL_FREE, CELL_WALL,
+};
 use crate::pathfinding::distance_to_row;
 
 /// Validate whether a move action is legal.
@@ -26,7 +28,11 @@ pub fn is_move_action_valid(
     if player_i < 0 || player_i >= grid_height || player_j < 0 || player_j >= grid_width {
         return false;
     }
-    if destination_i < 0 || destination_i >= grid_height || destination_j < 0 || destination_j >= grid_width {
+    if destination_i < 0
+        || destination_i >= grid_height
+        || destination_j < 0
+        || destination_j >= grid_width
+    {
         return false;
     }
 
@@ -150,7 +156,13 @@ pub fn is_wall_action_valid(
     // Need to check if placing the wall would block any player
     // Make a copy of the grid and temporarily place the wall
     let mut grid_copy = grid.to_owned();
-    set_wall_cells(&mut grid_copy.view_mut(), wall_row, wall_col, wall_orientation, CELL_WALL);
+    set_wall_cells(
+        &mut grid_copy.view_mut(),
+        wall_row,
+        wall_col,
+        wall_orientation,
+        CELL_WALL,
+    );
 
     // Check that all players can still reach their goal
     for player in 0..player_positions.nrows() {
@@ -207,10 +219,22 @@ mod tests {
         let (grid, player_positions, _, _) = create_test_game();
 
         // Player 0 can move down from (0,4) to (1,4)
-        assert!(is_move_action_valid(&grid.view(), &player_positions.view(), 0, 1, 4));
+        assert!(is_move_action_valid(
+            &grid.view(),
+            &player_positions.view(),
+            0,
+            1,
+            4
+        ));
 
         // Player 0 cannot move to (0, 0) - too far
-        assert!(!is_move_action_valid(&grid.view(), &player_positions.view(), 0, 0, 0));
+        assert!(!is_move_action_valid(
+            &grid.view(),
+            &player_positions.view(),
+            0,
+            0,
+            0
+        ));
     }
 
     #[test]
