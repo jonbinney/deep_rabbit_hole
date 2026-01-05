@@ -116,9 +116,9 @@ def array_to_action(action_array: np.ndarray) -> Action:
     if action_array[2] == qgrid.ACTION_MOVE:
         action = MoveAction((action_array[0], action_array[1]))
     elif action_array[2] == qgrid.ACTION_WALL_VERTICAL:
-        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_VERTICAL)
+        action = WallAction((action_array[0], action_array[1]), WallOrientation(qgrid.WALL_ORIENTATION_VERTICAL))
     elif action_array[2] == qgrid.ACTION_WALL_HORIZONTAL:
-        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_HORIZONTAL)
+        action = WallAction((action_array[0], action_array[1]), WallOrientation(qgrid.WALL_ORIENTATION_HORIZONTAL))
     else:
         raise ValueError(f"Invalid action type: {action_array[2]}")
 
@@ -291,7 +291,9 @@ class Board:
 
         raise ValueError("Invalid wall orientation")
 
-    def _get_wall_slice(self, position: tuple[int, int], orientation: WallOrientation) -> tuple[slice, slice]:
+    def _get_wall_slice(
+        self, position: tuple[int, int], orientation: WallOrientation
+    ) -> tuple[int, slice] | tuple[slice, int]:
         """
         Get a tuple of slices that correspond to the wall's cells in the grid.
         """
@@ -438,7 +440,11 @@ class Quoridor:
 
     def get_valid_move_actions(self, player: Optional[Player] = None) -> list[MoveAction]:
         action_mask = self.get_valid_move_actions_vector(player)
-        actions = [self.action_encoder.index_to_action(action_i) for action_i in np.flatnonzero(action_mask)]
+        actions = []
+        for action_i in np.flatnonzero(action_mask):
+            action = self.action_encoder.index_to_action(action_i)
+            assert isinstance(action, MoveAction)  # Keeps linter happy
+            actions.append(action)
         return actions
 
     def get_valid_move_actions_vector(self, player: Optional[Player] = None) -> np.ndarray:
@@ -456,10 +462,11 @@ class Quoridor:
 
     def get_valid_wall_actions(self, player: Optional[Player] = None) -> list[WallAction]:
         action_mask = self.get_valid_wall_actions_vector(player)
-        actions = [
-            self.action_encoder.index_to_action(self.action_encoder.board_size**2 + action_i)
-            for action_i in np.flatnonzero(action_mask)
-        ]
+        actions = []
+        for action_i in np.flatnonzero(action_mask):
+            action = self.action_encoder.index_to_action(self.action_encoder.board_size**2 + action_i)
+            assert isinstance(action, WallAction)  # Keeps linter happy
+            actions.append(action)
         return actions
 
     def get_valid_wall_actions_vector(self, player: Optional[Player] = None) -> np.ndarray:
