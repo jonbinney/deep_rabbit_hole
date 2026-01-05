@@ -65,6 +65,7 @@ impl QBitRepr {
 
     /// Extract player positions as a 2x2 array (format used by minimax)
     /// Returns [[p1_row, p1_col], [p2_row, p2_col]]
+    #[allow(dead_code)]
     pub fn to_player_positions(&self, data: &[u8]) -> Array2<i32> {
         let (p1_row, p1_col)= self.get_player_position(data, 0);
         let (p2_row, p2_col)= self.get_player_position(data, 1);
@@ -77,6 +78,7 @@ impl QBitRepr {
 
     /// Extract walls remaining as a 1D array (format used by minimax)
     /// Returns [p1_walls, p2_walls]
+    #[allow(dead_code)]
     pub fn to_walls_remaining(&self, data: &[u8]) -> Array1<i32> {
         Array1::from_vec(vec![
             self.get_walls_remaining(data, 0) as i32,
@@ -86,6 +88,7 @@ impl QBitRepr {
 
     /// Reconstruct the full grid with walls and player positions
     /// This creates a grid in the format used by minimax: (2*board_size + 3) x (2*board_size + 3)
+    #[allow(dead_code)]
     pub fn to_grid(&self, data: &[u8]) -> Array2<i8> {
         use crate::pathfinding::{CELL_FREE, CELL_PLAYER1, CELL_PLAYER2, CELL_WALL};
 
@@ -197,9 +200,6 @@ mod tests {
 
         let extracted_walls = q.to_walls_remaining(&data);
         assert_eq!(extracted_walls[0], 8);
-
-        // Verify the walls were stored correctly
-        assert_eq!(q.count_walls(&data), 2, "Expected 2 walls on board");
 
         // P2 walls are computed: p1_used=2, total_on_board=2, so p2_used=0, p2_remaining=10
         assert_eq!(extracted_walls[1], 10, "P2 should have 10 walls remaining");

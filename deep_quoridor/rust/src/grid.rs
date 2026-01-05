@@ -1,7 +1,10 @@
-use ndarray::{Array2, ArrayView2, ArrayViewMut2};
+use ndarray::{ArrayView2, ArrayViewMut2};
 
-// Cell values - re-export from pathfinding
-pub use crate::pathfinding::{CELL_FREE, CELL_PLAYER1, CELL_PLAYER2, CELL_WALL};
+// Cell values - must match the Python constants
+pub const CELL_FREE: i8 = -1;
+pub const CELL_PLAYER1: i8 = 0;
+pub const CELL_PLAYER2: i8 = 1;
+pub const CELL_WALL: i8 = 10;
 
 // Wall orientations
 pub const WALL_ORIENTATION_VERTICAL: i32 = 0;
@@ -30,8 +33,7 @@ pub fn are_wall_cells_free(
         grid[[start_i as usize, start_j as usize]] == CELL_FREE
             && grid[[start_i as usize + 1, start_j as usize]] == CELL_FREE
             && grid[[start_i as usize + 2, start_j as usize]] == CELL_FREE
-    } else {
-        // HORIZONTAL
+    } else if wall_orientation == WALL_ORIENTATION_HORIZONTAL {
         let start_i = wall_row * 2 + 3;
         let start_j = wall_col * 2 + 2;
 
@@ -42,6 +44,9 @@ pub fn are_wall_cells_free(
         grid[[start_i as usize, start_j as usize]] == CELL_FREE
             && grid[[start_i as usize, start_j as usize + 1]] == CELL_FREE
             && grid[[start_i as usize, start_j as usize + 2]] == CELL_FREE
+    }
+    else {
+        panic!("Invalid wall orientation: {}", wall_orientation);
     }
 }
 

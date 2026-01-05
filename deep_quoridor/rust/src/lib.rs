@@ -265,7 +265,7 @@ fn evaluate_actions<'py>(
     discount_factor: f32,
     heuristic: i32,
 ) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
-    let (actions, values, log_entries) = minimax::evaluate_actions(
+    let (actions, values, _) = minimax::evaluate_actions(
         &grid.as_array(),
         &player_positions.as_array(),
         &walls_remaining.as_array(),
@@ -528,10 +528,10 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_policy_db, m)?)?;
 
     // Export constants to match qgrid.py
-    m.add("CELL_FREE", pathfinding::CELL_FREE)?;
-    m.add("CELL_PLAYER1", pathfinding::CELL_PLAYER1)?;
-    m.add("CELL_PLAYER2", pathfinding::CELL_PLAYER2)?;
-    m.add("CELL_WALL", pathfinding::CELL_WALL)?;
+    m.add("CELL_FREE", grid::CELL_FREE)?;
+    m.add("CELL_PLAYER1", grid::CELL_PLAYER1)?;
+    m.add("CELL_PLAYER2", grid::CELL_PLAYER2)?;
+    m.add("CELL_WALL", grid::CELL_WALL)?;
 
     // Wall orientations
     m.add("WALL_ORIENTATION_VERTICAL", 0)?;

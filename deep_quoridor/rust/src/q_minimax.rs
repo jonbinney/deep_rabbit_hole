@@ -1,10 +1,6 @@
 /// QBitRepr-based minimax algorithm for Quoridor
-///
-/// This module provides an efficient minimax implementation that works directly
-/// with the bit-packed QBitRepr representation instead of grid arrays.
 
 use rand::seq::SliceRandom;
-use rand::Rng;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +10,7 @@ pub const WINNING_REWARD: f32 = 1e6;
 
 /// Log entry for QBitRepr-based minimax
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct MinimaxLogEntry {
     pub data: Vec<u8>,  // Packed game state
     pub agent_player: usize,

@@ -34,6 +34,7 @@ impl QGameMechanics {
     }
 
     /// Create initial game state
+    #[allow(dead_code)]
     pub fn create_initial_state(&self) -> Vec<u8> {
         let mut data = self.repr.create_data();
         let board_size = self.repr.board_size();
@@ -120,6 +121,7 @@ impl QGameMechanics {
 
     /// Remove a wall
     #[inline]
+    #[allow(dead_code)]
     pub fn remove_wall(&self, data: &mut [u8], row: usize, col: usize, orientation: usize) {
         self.repr.set_wall(data, row, col, orientation, false);
     }
@@ -374,6 +376,7 @@ impl QGameMechanics {
     }
 
     /// Check if the game is a draw (max steps reached)
+    #[allow(dead_code)]
     pub fn is_draw(&self, data: &[u8]) -> bool {
         self.repr.get_completed_steps(data) >= self.repr.max_steps()
     }

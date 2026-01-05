@@ -85,8 +85,14 @@ impl QBitRepr {
     }
 
     /// Get the size of the packed representation in bytes
+    #[allow(dead_code)]
     pub fn size_bytes(&self) -> usize {
         self.total_bytes
+    }
+
+    #[allow(dead_code)]
+    pub fn size_bits(&self) -> usize {
+        self.total_bits
     }
 
     /// Get the number of wall positions
@@ -95,6 +101,7 @@ impl QBitRepr {
     }
 
     /// Get the number of player positions
+    #[allow(dead_code)]
     pub fn num_player_positions(&self) -> usize {
         self.num_player_positions
     }
@@ -208,18 +215,6 @@ impl QBitRepr {
         self.set_bits(data, self.steps_offset, self.steps_bits, steps);
     }
 
-    /// Count the total number of walls placed on the board
-    pub fn count_walls(&self, data: &[u8]) -> usize {
-        let mut count = 0;
-        for i in 0..self.num_wall_positions {
-            let (row, col, orientation) = self.wall_index_to_position(i);
-            if self.get_wall(data, row, col, orientation) {
-                count += 1;
-            }
-        }
-        count
-    }
-
     /// Convert a (row, col) position to a flat index
     pub fn position_to_index(&self, row: usize, col: usize) -> usize {
         debug_assert!(row < self.board_size && col < self.board_size);
@@ -238,11 +233,13 @@ impl QBitRepr {
     }
 
     /// Get max walls
+    #[allow(dead_code)]
     pub fn max_walls(&self) -> usize {
         self.max_walls
     }
 
     /// Get max steps
+    #[allow(dead_code)]
     pub fn max_steps(&self) -> usize {
         self.max_steps
     }
@@ -305,13 +302,10 @@ mod tests {
         let q = QBitRepr::new(5, 10, 100);
         let mut data = q.create_data();
 
-        assert_eq!(q.count_walls(&data), 0);
-
         // Set vertical wall at (0, 0)
         q.set_wall(&mut data, 0, 0, WALL_VERTICAL, true);
         // Set vertical wall at (1, 1)
         q.set_wall(&mut data, 1, 1, WALL_VERTICAL, true);
-        assert_eq!(q.count_walls(&data), 2);
         assert!(q.get_wall(&data, 0, 0, WALL_VERTICAL));
         assert!(q.get_wall(&data, 1, 1, WALL_VERTICAL));
         assert!(!q.get_wall(&data, 0, 1, WALL_VERTICAL));

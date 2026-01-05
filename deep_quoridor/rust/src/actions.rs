@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1};
+use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1};
 
 use crate::validation::{is_move_action_valid, is_wall_action_valid};
 
@@ -106,7 +106,6 @@ pub fn get_valid_move_actions(
     current_player: i32,
 ) -> Array2<i32> {
     let board_size = (grid.ncols() as i32 - 4) / 2 + 1;
-    let max_actions = (board_size * board_size) as usize;
     let mut actions = Vec::new();
 
     // Check all possible moves on the board
@@ -201,7 +200,7 @@ pub fn get_valid_wall_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array2;
+    use ndarray::{Array1, Array2};
     use crate::grid::CELL_FREE;
     use crate::pathfinding::CELL_WALL;
 

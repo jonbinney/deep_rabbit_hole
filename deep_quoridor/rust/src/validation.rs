@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut2};
+use ndarray::{ArrayView1, ArrayView2};
 
 use crate::grid::{check_wall_cells, is_wall_potential_block, set_wall_cells, CELL_FREE, CELL_WALL};
 use crate::pathfinding::distance_to_row;
@@ -170,7 +170,7 @@ pub fn is_wall_action_valid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array2;
+    use ndarray::{Array1, Array2};
 
     fn create_test_game() -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
         let mut grid = Array2::<i8>::from_elem((20, 20), CELL_FREE);

@@ -1,11 +1,7 @@
 use ndarray::{Array2, ArrayView2};
 use std::collections::VecDeque;
 
-// Cell values - must match the Python constants
-pub const CELL_FREE: i8 = -1;
-pub const CELL_PLAYER1: i8 = 0;
-pub const CELL_PLAYER2: i8 = 1;
-pub const CELL_WALL: i8 = 10;
+pub use crate::grid::{CELL_FREE, CELL_PLAYER1, CELL_PLAYER2, CELL_WALL};
 
 /// Calculate the shortest distance from a position to a target row using BFS.
 ///
