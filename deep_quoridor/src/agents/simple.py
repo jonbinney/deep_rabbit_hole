@@ -305,6 +305,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_walls = kwargs["max_walls"]
         self.max_steps = kwargs["max_steps"]
         self.action_encoder = ActionEncoder(self.board_size)
 
@@ -379,7 +380,7 @@ class SimpleAgent(Agent):
                 self.params.discount_factor,
                 self.params.heuristic,
                 self.board_size,
-                game.board.max_walls,
+                self.max_walls,
             )
         else:
             # Use Numba implementation (default)
