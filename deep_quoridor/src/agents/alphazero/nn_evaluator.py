@@ -298,6 +298,8 @@ class NNEvaluator:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
         training_set, validation_set = self.split_data(replay_buffer, validation_ratio)
+        if len(validation_set) > self.batch_size:
+            validation_set = random.sample(validation_set, self.batch_size)
 
         # Show a fixed number of losses
         show_loss_every = max(1, self.batches_per_iteration // (max_entries - 1))
