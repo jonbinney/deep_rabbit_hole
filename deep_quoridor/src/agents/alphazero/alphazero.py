@@ -1,5 +1,6 @@
 import os
 import pickle
+import random
 import shutil
 import tempfile
 from collections import deque
@@ -154,6 +155,11 @@ class AlphaZeroParams(SubargsBase):
     # What fraction of the total moves will be used for validation during training, or 0.0 to not use a validation set
     validation_ratio: float = 0.0
 
+    # What fraction of the total moves will be used for the test set during training, or 0.0 to not use a test set.
+    # Unlike the validation set, the test set remains the same throughout the entire run - it is created at the start
+    # of the run and those states are never used for training.
+    test_ratio: float = 0.0
+
     # What neural network structure to use
     # The options are "mlp" or "resnet"
     nn_type: str = "mlp"
@@ -289,6 +295,10 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.wandb_run = None
 
+        # Generate the set of hash prefixes that are part of the test set. these
+        # are the same for the entire run.
+        self.test_set_suffixes = set(random.sample(range(256), int(round(256 * params.test_ratio))))
+
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
 
@@ -390,6 +400,7 @@ class AlphaZeroAgent(TrainableAgent):
         nn = self.evaluator.network
         model_state = {
             "network_state_dict": nn.state_dict(),
+            "test_set_suffixes": self.test_set_suffixes,
             "episode_count": self.episode_count,
             "board_size": self.board_size,
             "max_walls": self.max_walls,
@@ -507,7 +518,9 @@ class AlphaZeroAgent(TrainableAgent):
             print("==== Training Loss ====")
             print("  Epoch   Total   Policy  Value")
 
-        self.evaluator.train_iteration(self.replay_buffer, self.params.validation_ratio, on_new_entry=log_loss_entry)
+        self.evaluator.train_iteration(
+            self.replay_buffer, self.params.validation_ratio, self.test_set_suffixes, on_new_entry=log_loss_entry
+        )
 
         Timer.finish("training", episode)
 

@@ -186,14 +186,16 @@ class NNEvaluator:
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    def split_data(self, replay_buffer, validation_ratio: float) -> tuple[list, list]:
+    def split_data(
+        self, replay_buffer, validation_ratio: float, test_set_suffixes: set[int]
+    ) -> tuple[list, list, list]:
         """
         Splits the replay buffer into a training set and a validation set.
         There are usually multiple entries with the same input (e.g. the initial state is always repeated in each game),
         so this function makes sure that all entries with the same input are either in the training set or in the validation set.
         """
-        if validation_ratio == 0.0:
-            return list(replay_buffer), []
+        if validation_ratio == 0.0 and len(test_set_suffixes) == 0:
+            return list(replay_buffer), [], []
 
         by_hash = {}
 
@@ -204,9 +206,21 @@ class NNEvaluator:
             else:
                 by_hash[input_hash] = [entry]
 
+        # The test set is deterministic, to make sure we have never seen those elements
+        # in the training set (or the validation set)
+        test_set = []
+        if len(test_set_suffixes) > 0:
+            test_set_keys = []
+            for key in by_hash.keys():
+                if key & 0xFF in test_set_suffixes:
+                    test_set.extend(by_hash[key])
+                    test_set_keys.append(key)
+            for key in test_set_keys:
+                del by_hash[key]
+
+        # The validation set changes each epoch.
         validation_size = int(len(replay_buffer) * validation_ratio)
         validation_set = []
-
         while len(validation_set) < validation_size:
             key = random.choice(list(by_hash.keys()))
             validation_set.extend(by_hash[key])
@@ -216,7 +230,7 @@ class NNEvaluator:
         for entries in by_hash.values():
             training_set.extend(entries)
 
-        return training_set, validation_set
+        return training_set, validation_set, test_set
 
     def compute_losses(self, batch_data):
         if len(batch_data) == 0:
@@ -268,6 +282,7 @@ class NNEvaluator:
         self,
         replay_buffer,
         validation_ratio: float = 0.0,
+        test_set_suffixes: set[int] = set(),
         max_entries=25,
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
@@ -297,7 +312,7 @@ class NNEvaluator:
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
-        training_set, validation_set = self.split_data(replay_buffer, validation_ratio)
+        training_set, validation_set, test_set = self.split_data(replay_buffer, validation_ratio, test_set_suffixes)
 
         # Show a fixed number of losses
         show_loss_every = max(1, self.batches_per_iteration // (max_entries - 1))
