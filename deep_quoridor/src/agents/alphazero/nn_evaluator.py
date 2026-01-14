@@ -186,14 +186,15 @@ class NNEvaluator:
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    def split_data(self, replay_buffer, validation_ratio: float) -> tuple[list, list]:
+    def split_data(self, replay_buffer, validation_ratio: float, test_set_lsbs: set[int]) -> tuple[list, list, list]:
         """
-        Splits the replay buffer into a training set and a validation set.
+        Splits the replay buffer into a training set, a validation set, and a test set.
         There are usually multiple entries with the same input (e.g. the initial state is always repeated in each game),
-        so this function makes sure that all entries with the same input are either in the training set or in the validation set.
+        so this function makes sure that all entries with the same input are either in the training set, in the validation set,
+        or in the test set.
         """
-        if validation_ratio == 0.0:
-            return list(replay_buffer), []
+        if validation_ratio == 0.0 and len(test_set_lsbs) == 0:
+            return list(replay_buffer), [], []
 
         by_hash = {}
 
@@ -204,9 +205,21 @@ class NNEvaluator:
             else:
                 by_hash[input_hash] = [entry]
 
+        # The test set is deterministic, to make sure we have never seen those elements
+        # in the training set (or the validation set)
+        test_set = []
+        if len(test_set_lsbs) > 0:
+            test_set_keys = []
+            for key in by_hash.keys():
+                if key & 0xFF in test_set_lsbs:
+                    test_set.extend(by_hash[key])
+                    test_set_keys.append(key)
+            for key in test_set_keys:
+                del by_hash[key]
+
+        # The validation set changes each epoch.
         validation_size = int(len(replay_buffer) * validation_ratio)
         validation_set = []
-
         while len(validation_set) < validation_size:
             key = random.choice(list(by_hash.keys()))
             validation_set.extend(by_hash[key])
@@ -216,7 +229,7 @@ class NNEvaluator:
         for entries in by_hash.values():
             training_set.extend(entries)
 
-        return training_set, validation_set
+        return training_set, validation_set, test_set
 
     def compute_losses(self, batch_data):
         if len(batch_data) == 0:
@@ -268,28 +281,35 @@ class NNEvaluator:
         self,
         replay_buffer,
         validation_ratio: float = 0.0,
+        test_set_lsbs: set[int] = set(),
         max_entries=25,
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
-        def make_entry(i, t, p, v, vt=None, vp=None, vv=None):
-            if vt is None or vp is None or vv is None:
-                return {
-                    "step": i,
-                    "completion": float(i) / self.batches_per_iteration,
-                    "loss_total": t.item(),
-                    "loss_policy": p.item(),
-                    "loss_value": v.item(),
-                }
-            return {
+        def make_entry(i, t, p, v, vt=None, vp=None, vv=None, tt=None, tp=None, tv=None):
+            entry = {
                 "step": i,
                 "completion": float(i) / self.batches_per_iteration,
                 "loss_total": t.item(),
                 "loss_policy": p.item(),
                 "loss_value": v.item(),
-                "loss_total_val": vt.item(),
-                "loss_policy_val": vp.item(),
-                "loss_value_val": vv.item(),
             }
+            if vt is not None and vp is not None and vv is not None:
+                entry.update(
+                    {
+                        "loss_total_val": vt.item(),
+                        "loss_policy_val": vp.item(),
+                        "loss_value_val": vv.item(),
+                    }
+                )
+            if tt is not None and tp is not None and tv is not None:
+                entry.update(
+                    {
+                        "loss_total_test": tt.item(),
+                        "loss_policy_test": tp.item(),
+                        "loss_value_test": tv.item(),
+                    }
+                )
+            return entry
 
         assert self.optimizer is not None, "Call train_prepare before training"
         self.cache = LRUCache(max_size=self.max_cache_size)
@@ -297,7 +317,7 @@ class NNEvaluator:
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
-        training_set, validation_set = self.split_data(replay_buffer, validation_ratio)
+        training_set, validation_set, test_set = self.split_data(replay_buffer, validation_ratio, test_set_lsbs)
 
         # Show a fixed number of losses
         show_loss_every = max(1, self.batches_per_iteration // (max_entries - 1))
@@ -311,8 +331,20 @@ class NNEvaluator:
             if i % show_loss_every == 0 and on_new_entry is not None:
                 with torch.no_grad():
                     v_policy_loss, v_value_loss, v_total_loss = self.compute_losses(validation_set)
+                    t_policy_loss, t_value_loss, t_total_loss = self.compute_losses(test_set)
 
-                entry = make_entry(i, total_loss, policy_loss, value_loss, v_total_loss, v_policy_loss, v_value_loss)
+                entry = make_entry(
+                    i,
+                    total_loss,
+                    policy_loss,
+                    value_loss,
+                    v_total_loss,
+                    v_policy_loss,
+                    v_value_loss,
+                    t_total_loss,
+                    t_policy_loss,
+                    t_value_loss,
+                )
                 on_new_entry(entry)
 
             # Backward pass
@@ -325,7 +357,19 @@ class NNEvaluator:
             batch_data = random.sample(training_set, self.batch_size)
             policy_loss, value_loss, total_loss = self.compute_losses(batch_data)
             v_policy_loss, v_value_loss, v_total_loss = self.compute_losses(validation_set)
-            entry = make_entry(i + 1, total_loss, policy_loss, value_loss, v_total_loss, v_policy_loss, v_value_loss)
+            t_policy_loss, t_value_loss, t_total_loss = self.compute_losses(test_set)
+            entry = make_entry(
+                i + 1,
+                total_loss,
+                policy_loss,
+                value_loss,
+                v_total_loss,
+                v_policy_loss,
+                v_value_loss,
+                t_total_loss,
+                t_policy_loss,
+                t_value_loss,
+            )
 
             if on_new_entry is not None:
                 on_new_entry(entry)
