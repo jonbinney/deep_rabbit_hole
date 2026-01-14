@@ -295,9 +295,9 @@ class AlphaZeroAgent(TrainableAgent):
 
         self.wandb_run = None
 
-        # Generate the set of hash prefixes that are part of the test set. these
-        # are the same for the entire run.
-        self.test_set_suffixes = set(random.sample(range(256), int(round(256 * params.test_ratio))))
+        # Any game state whose hash has a least significant byte that is in this set is part of the
+        # test set. The test set is the same for the entire run.
+        self.test_set_lsbs = set(random.sample(range(256), int(round(256 * params.test_ratio))))
 
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
@@ -400,7 +400,7 @@ class AlphaZeroAgent(TrainableAgent):
         nn = self.evaluator.network
         model_state = {
             "network_state_dict": nn.state_dict(),
-            "test_set_suffixes": self.test_set_suffixes,
+            "test_set_lsbs": self.test_set_lsbs,
             "episode_count": self.episode_count,
             "board_size": self.board_size,
             "max_walls": self.max_walls,
@@ -519,7 +519,7 @@ class AlphaZeroAgent(TrainableAgent):
             print("  Epoch   Total   Policy  Value")
 
         self.evaluator.train_iteration(
-            self.replay_buffer, self.params.validation_ratio, self.test_set_suffixes, on_new_entry=log_loss_entry
+            self.replay_buffer, self.params.validation_ratio, self.test_set_lsbs, on_new_entry=log_loss_entry
         )
 
         Timer.finish("training", episode)

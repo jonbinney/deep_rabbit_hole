@@ -186,16 +186,14 @@ class NNEvaluator:
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    def split_data(
-        self, replay_buffer, validation_ratio: float, test_set_suffixes: set[int]
-    ) -> tuple[list, list, list]:
+    def split_data(self, replay_buffer, validation_ratio: float, test_set_lsbs: set[int]) -> tuple[list, list, list]:
         """
         Splits the replay buffer into a training set, a validation set, and a test set.
         There are usually multiple entries with the same input (e.g. the initial state is always repeated in each game),
         so this function makes sure that all entries with the same input are either in the training set, in the validation set,
         or in the test set.
         """
-        if validation_ratio == 0.0 and len(test_set_suffixes) == 0:
+        if validation_ratio == 0.0 and len(test_set_lsbs) == 0:
             return list(replay_buffer), [], []
 
         by_hash = {}
@@ -210,10 +208,10 @@ class NNEvaluator:
         # The test set is deterministic, to make sure we have never seen those elements
         # in the training set (or the validation set)
         test_set = []
-        if len(test_set_suffixes) > 0:
+        if len(test_set_lsbs) > 0:
             test_set_keys = []
             for key in by_hash.keys():
-                if key & 0xFF in test_set_suffixes:
+                if key & 0xFF in test_set_lsbs:
                     test_set.extend(by_hash[key])
                     test_set_keys.append(key)
             for key in test_set_keys:
@@ -283,7 +281,7 @@ class NNEvaluator:
         self,
         replay_buffer,
         validation_ratio: float = 0.0,
-        test_set_suffixes: set[int] = set(),
+        test_set_lsbs: set[int] = set(),
         max_entries=25,
         on_new_entry: Optional[Callable[[dict], None]] = None,
     ):
@@ -319,7 +317,7 @@ class NNEvaluator:
         if not self.network.training:
             self.network.train()  # Make sure we aren't in eval mode, which disables dropout
 
-        training_set, validation_set, test_set = self.split_data(replay_buffer, validation_ratio, test_set_suffixes)
+        training_set, validation_set, test_set = self.split_data(replay_buffer, validation_ratio, test_set_lsbs)
 
         # Show a fixed number of losses
         show_loss_every = max(1, self.batches_per_iteration // (max_entries - 1))
