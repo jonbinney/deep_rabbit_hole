@@ -452,31 +452,32 @@ impl QGameMechanics {
         let board_size = self.repr.board_size();
 
         let (curr_row, curr_col) = self.repr.get_player_position(data, current_player);
+        let opponent = 1 - current_player;
+        let (opp_row, opp_col) = self.repr.get_player_position(data, opponent);
 
         let mut valid_moves = Vec::new();
 
-        // Check all positions within 2 squares (for moves and jumps)
-        for dr in -2i32..=2 {
-            for dc in -2i32..=2 {
-                if dr == 0 && dc == 0 {
-                    continue;
-                }
+        let is_adjacent_move_valid = |dest_row, dest_col| {
+            dest_row < board_size
+                && !(opp_row == dest_row && opp_col == curr_col)
+                && !self.is_wall_between(data, curr_row, curr_col, dest_row, dest_col)
+        };
 
-                let new_row = curr_row as i32 + dr;
-                let new_col = curr_col as i32 + dc;
-
-                if new_row >= 0
-                    && new_row < board_size as i32
-                    && new_col >= 0
-                    && new_col < board_size as i32
-                {
-                    if self.is_move_valid(data, current_player, new_row as usize, new_col as usize)
-                    {
-                        valid_moves.push((new_row as usize, new_col as usize));
-                    }
-                }
-            }
+        if curr_row + 1 < board_size && is_adjacent_move_valid(curr_row + 1, curr_col) {
+            valid_moves.push((curr_row + 1, curr_col));
         }
+        if curr_row > 0 && is_adjacent_move_valid(curr_row - 1, curr_col) {
+            valid_moves.push((curr_row - 1, curr_col));
+        }
+        if curr_col + 1 < board_size && is_adjacent_move_valid(curr_row, curr_col + 1) {
+            valid_moves.push((curr_row, curr_col + 1));
+        }
+        if curr_col > 0 && is_adjacent_move_valid(curr_row, curr_col - 1) {
+            valid_moves.push((curr_row, curr_col - 1));
+        }
+
+        // TODO: Straight jumps
+        // TODO: Diagonal jumps
 
         valid_moves
     }
