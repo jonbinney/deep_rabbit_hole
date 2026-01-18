@@ -189,6 +189,9 @@ fn minimax(
     }
 
     let actions = sample_actions(mechanics, data, branching_factor);
+    if actions.is_empty() {
+        mechanics.print(data);
+    }
     assert!(!actions.is_empty());
 
     let is_maximizing = current_player == agent_player;

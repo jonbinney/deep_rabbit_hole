@@ -482,6 +482,15 @@ impl QGameMechanics {
 
         valid_moves
     }
+
+    /// Display the board state as text art
+    pub fn print(&self, data: &[u8]) {
+        println!("{}", self.display(data));
+    }
+
+    pub fn display(&self, data: &[u8]) -> String {
+        self.repr.display(data)
+    }
 }
 
 #[cfg(test)]
@@ -635,6 +644,13 @@ mod tests {
             mechanics.can_reach_goal(&state, 1),
             "Player 2 should reach goal"
         );
+    }
+
+    #[test]
+    fn test_print() {
+        let mechanics = QGameMechanics::new(9, 10, 100);
+        let state = mechanics.create_initial_state();
+        mechanics.print(&state);
     }
 
     /// Helper to parse a board state from a string representation similar to Python tests.

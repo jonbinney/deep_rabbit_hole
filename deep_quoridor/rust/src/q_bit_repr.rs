@@ -291,6 +291,106 @@ impl QBitRepr {
         let col = remainder % (self.board_size - 1);
         (row, col, orientation)
     }
+
+    /// Display the board state as text art
+    pub fn print(&self, data: &[u8]) {
+        println!("{}", self.display(data));
+    }
+
+    /// Create string with text art of the board
+    ///
+    /// Format:
+    /// - '1' and '2' for player positions
+    /// - '.' for empty cells
+    /// - '|' for vertical walls
+    /// - '-' for horizontal walls
+    /// - Metadata (steps, walls) shown on the right side
+    pub fn display(&self, data: &[u8]) -> String {
+        let mut output = String::new();
+
+        // Get metadata
+        let (p0_row, p0_col) = self.get_player_position(data, 0);
+        let (p1_row, p1_col) = self.get_player_position(data, 1);
+        let p0_walls = self.get_walls_remaining(data, 0);
+        let p1_walls = self.get_walls_remaining(data, 1);
+        let current_player = self.get_current_player(data);
+        let steps = self.get_completed_steps(data);
+
+        // Build metadata lines
+        let meta_lines = vec![
+            format!("Steps: {}", steps),
+            format!("Current: P{}", current_player + 1),
+            format!("P1 walls: {}", p0_walls),
+            format!("P2 walls: {}", p1_walls),
+        ];
+
+        let mut line_idx = 0;
+
+        // Print each row with walls between
+        for row in 0..self.board_size {
+            // Print cell row
+            let mut cell_line = String::new();
+            for col in 0..self.board_size {
+                // Print cell content
+                if p0_row == row && p0_col == col {
+                    cell_line.push('1');
+                } else if p1_row == row && p1_col == col {
+                    cell_line.push('2');
+                } else {
+                    cell_line.push('.');
+                }
+
+                // Print vertical wall to the right (if not last column)
+                if col < self.board_size - 1 {
+                    if row < self.board_size - 1 && self.get_wall(data, row, col, WALL_VERTICAL) {
+                        cell_line.push('|');
+                    } else if row > 0 && self.get_wall(data, row - 1, col, WALL_VERTICAL) {
+                        cell_line.push('|');
+                    } else {
+                        cell_line.push(' ');
+                    }
+                }
+            }
+
+            // Append metadata if available
+            if line_idx < meta_lines.len() {
+                output.push_str(&format!("{}  {}\n", cell_line, meta_lines[line_idx]));
+            } else {
+                output.push_str(&format!("{}\n", cell_line));
+            }
+            line_idx += 1;
+
+            // Print horizontal wall row (if not last row)
+            if row < self.board_size - 1 {
+                let mut wall_line = String::new();
+                for col in 0..self.board_size {
+                    // Print horizontal wall below this cell
+                    if col < self.board_size - 1 && self.get_wall(data, row, col, WALL_HORIZONTAL) {
+                        wall_line.push('-');
+                    } else if col > 0 && self.get_wall(data, row, col - 1, WALL_HORIZONTAL) {
+                        wall_line.push('-');
+                    } else {
+                        wall_line.push(' ');
+                    }
+
+                    // Print intersection
+                    if col < self.board_size - 1 {
+                        wall_line.push(' ');
+                    }
+                }
+
+                // Append metadata if available
+                if line_idx < meta_lines.len() {
+                    output.push_str(&format!("{}  {}\n", wall_line, meta_lines[line_idx]));
+                } else {
+                    output.push_str(&format!("{}\n", wall_line));
+                }
+                line_idx += 1;
+            }
+        }
+
+        output
+    }
 }
 
 #[cfg(test)]

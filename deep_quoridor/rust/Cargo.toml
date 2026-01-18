@@ -1,3 +1,7 @@
+[profile.dev]
+# Makes it easier to catch test failures in a debugger
+panic = "abort"
+
 [package]
 name = "quoridor-rs"
 version = "0.1.0"
