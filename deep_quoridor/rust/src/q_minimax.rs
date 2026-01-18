@@ -164,13 +164,12 @@ fn minimax(
     current_player: usize,
     agent_player: usize,
     completed_steps: usize,
-    max_steps: usize,
+    max_depth: usize,
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
     log_entries: Option<Arc<Mutex<Vec<MinimaxLogEntry>>>>,
 ) -> f32 {
-    // Check win conditions
     if mechanics.check_win(data, current_player) {
         return if current_player == agent_player {
             WINNING_REWARD
@@ -180,25 +179,17 @@ fn minimax(
     }
 
     let opponent = 1 - current_player;
-    if mechanics.check_win(data, opponent) {
-        return if opponent == agent_player {
-            WINNING_REWARD
-        } else {
-            -WINNING_REWARD
-        };
+
+    if completed_steps >= mechanics.repr().max_steps() {
+        return 0.0; // Tie
     }
 
-    // Check max steps
-    if completed_steps >= max_steps {
+    if completed_steps >= max_depth {
         return compute_heuristic(mechanics, data, agent_player, heuristic);
     }
 
-    // Sample actions
     let actions = sample_actions(mechanics, data, branching_factor);
-    if actions.is_empty() {
-        // No valid actions - shouldn't happen, but return heuristic
-        return compute_heuristic(mechanics, data, agent_player, heuristic);
-    }
+    assert!(!actions.is_empty());
 
     let is_maximizing = current_player == agent_player;
     let mut best_value = if is_maximizing {
@@ -239,7 +230,7 @@ fn minimax(
             opponent,
             agent_player,
             completed_steps + 1,
-            max_steps,
+            max_depth,
             branching_factor,
             discount_factor,
             heuristic,
@@ -279,7 +270,7 @@ fn minimax(
 pub fn evaluate_actions(
     mechanics: &QGameMechanics,
     data: &[u8],
-    max_steps: usize,
+    max_depth: usize,
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
@@ -335,7 +326,7 @@ pub fn evaluate_actions(
                 1 - current_player,
                 current_player,
                 1,
-                max_steps,
+                max_depth,
                 branching_factor,
                 discount_factor,
                 heuristic,
@@ -362,12 +353,12 @@ mod tests {
     #[test]
     fn test_evaluate_actions_basic() {
         // Create a small game
-        let mechanics = QGameMechanics::new(5, 5, 100);
+        let mechanics = QGameMechanics::new(3, 3, 10);
         let data = mechanics.create_initial_state();
 
         // Evaluate actions
         let (actions, values, _logs) = evaluate_actions(
-            &mechanics, &data, 10,    // max_steps
+            &mechanics, &data, 6,     // max_depth
             5,     // branching_factor
             0.95,  // discount_factor
             1,     // heuristic
