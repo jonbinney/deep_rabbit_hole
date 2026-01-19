@@ -9,11 +9,10 @@ from typing import Optional
 import quoridor_env
 import torch
 import wandb
+from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from plugins.wandb_train import WandbParams
 from utils import my_device, set_deterministic
 from utils.timer import Timer
-
-from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 
 
 @dataclass

@@ -5,13 +5,12 @@ from typing import Callable, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
-from quoridor import ActionEncoder, Player, Quoridor
-from utils.timer import Timer, timer
-
 from agents.alphazero.mlp_network import MLPNetwork
 from agents.alphazero.resnet_network import ResnetConfig, ResnetNetwork
 from agents.core.lru_cache import LRUCache
 from agents.core.rotation import create_rotation_mapping
+from quoridor import ActionEncoder, Player, Quoridor
+from utils.timer import Timer, timer
 
 INVALID_ACTION_VALUE = -1e32
 
@@ -277,6 +276,23 @@ class NNEvaluator:
 
         return policy_loss, value_loss, total_loss
 
+    def train_iteration_v2(self, samples):
+        assert self.optimizer is not None, "Call train_prepare before training"
+
+        if not self.network.training:
+            self.network.train()  # Make sure we aren't in eval mode, which disables dropout
+        self.cache = LRUCache(max_size=self.max_cache_size)
+
+        policy_loss, value_loss, total_loss = self.compute_losses(samples)
+        assert total_loss, "Expected total_loss"
+
+        # Backward pass
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        self.optimizer.step()
+
+        return total_loss.item()
+
     def train_iteration(
         self,
         replay_buffer,
@@ -385,6 +401,7 @@ class NNEvaluator:
 
         self.network = create_network(self.action_encoder, self.device, config)
         self.network.load_state_dict(model_state["network_state_dict"])
+        self.cache = LRUCache(max_size=self.max_cache_size)
 
     @classmethod
     def from_model_file(cls, path: str, device):

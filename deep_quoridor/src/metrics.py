@@ -6,7 +6,6 @@ from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
 from arena_utils import GameResult
 from quoridor_env import env
-from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo, get_opponent_player_id
 
 
@@ -140,7 +139,7 @@ class Metrics:
             if self.benchmarks is None
             else self.benchmarks
         )
-        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, renderers=[MatchResultsRenderer()])
+        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps)
 
         play_encoded_name = AgentRegistry.training_encoded_name_to_playing_encoded_name(agent_encoded_name)
         agent = AgentRegistry.create_from_encoded_name(play_encoded_name, arena.game)

@@ -119,10 +119,10 @@ class Arena:
                         done=True,
                     )
 
-                if truncation:
-                    # Print the game state to help debug.
-                    print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
-                    print(self.game.render())
+                # if truncation:
+                #     # Print the game state to help debug.
+                #     print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
+                #     print(self.game.render())
 
                 break
 
