@@ -1,3 +1,6 @@
+// Old non-QBitRepr pathfinding utilities, kept for backwards compatibility
+#![allow(dead_code)]
+
 use ndarray::{Array2, ArrayView2};
 use std::collections::VecDeque;
 

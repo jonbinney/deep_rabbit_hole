@@ -1,3 +1,7 @@
+// Old non-QBitRepr minimax implementation, kept for backwards compatibility
+// New code should use q_minimax instead
+#![allow(dead_code)]
+
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;

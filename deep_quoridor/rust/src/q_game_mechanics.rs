@@ -22,7 +22,7 @@ impl QGameMechanics {
         let repr = QBitRepr::new(board_size, max_walls, max_steps);
         // Player 1 starts at bottom, aims for top (row 0)
         // Player 2 starts at top, aims for bottom (row board_size-1)
-        let goal_rows = [0, board_size - 1];
+        let goal_rows = [board_size - 1, 0];
 
         Self { repr, goal_rows }
     }
@@ -38,13 +38,11 @@ impl QGameMechanics {
         let mut data = self.repr.create_data();
         let board_size = self.repr.board_size();
 
-        // Player 1 starts at bottom center
         self.repr
-            .set_player_position(&mut data, 0, board_size - 1, board_size / 2);
+            .set_player_position(&mut data, 0, 0, board_size / 2);
 
-        // Player 2 starts at top center
         self.repr
-            .set_player_position(&mut data, 1, 0, board_size / 2);
+            .set_player_position(&mut data, 1, board_size - 1, board_size / 2);
 
         // Both players start with max walls
         self.repr
@@ -458,9 +456,7 @@ impl QGameMechanics {
         let mut valid_moves = Vec::new();
 
         let is_adjacent_move_valid = |dest_row, dest_col| {
-            dest_row < board_size
-                && dest_col < board_size
-                && !(opp_row == dest_row && opp_col == dest_col)
+            !(opp_row == dest_row && opp_col == dest_col)
                 && !self.is_wall_between(data, curr_row, curr_col, dest_row, dest_col)
         };
 
@@ -477,7 +473,55 @@ impl QGameMechanics {
             valid_moves.push((curr_row, curr_col - 1));
         }
 
-        // TODO: Straight jumps
+        let is_straight_jump_valid = |i: i32, j: i32| -> Option<(usize, usize)> {
+            let jump_row = curr_row as i32 + i;
+            let jump_col = curr_col as i32 + j;
+            let dest_row = jump_row + i;
+            let dest_col = jump_col + j;
+            let next_row = dest_row + i;
+            let next_col = dest_col + j;
+            if dest_row > 0
+                && dest_col > 0
+                && dest_row < board_size as i32
+                && dest_col < board_size as i32
+                && opp_row as i32 == jump_row as i32
+                && opp_col as i32 == jump_col as i32
+                && !self.is_wall_between(
+                    data,
+                    curr_row as usize,
+                    curr_col as usize,
+                    jump_row as usize,
+                    jump_col as usize,
+                )
+                && (next_row == board_size as i32
+                    || next_col == board_size as i32
+                    || self.is_wall_between(
+                        data,
+                        dest_row as usize,
+                        dest_col as usize,
+                        next_row as usize,
+                        next_col as usize,
+                    ))
+            {
+                Some((dest_row as usize, dest_col as usize))
+            } else {
+                None
+            }
+        };
+
+        if let Some(dest) = is_straight_jump_valid(1, 0) {
+            valid_moves.push(dest)
+        }
+        if let Some(dest) = is_straight_jump_valid(-1, 0) {
+            valid_moves.push(dest)
+        }
+        if let Some(dest) = is_straight_jump_valid(0, 1) {
+            valid_moves.push(dest)
+        }
+        if let Some(dest) = is_straight_jump_valid(0, -1) {
+            valid_moves.push(dest)
+        }
+
         // TODO: Diagonal jumps
 
         valid_moves
@@ -506,9 +550,9 @@ mod tests {
         let (p1_row, p1_col) = mechanics.repr.get_player_position(&state, 0);
         let (p2_row, p2_col) = mechanics.repr.get_player_position(&state, 1);
 
-        assert_eq!(p1_row, 8); // Bottom
+        assert_eq!(p1_row, 0); // Bottom
         assert_eq!(p1_col, 4); // Center
-        assert_eq!(p2_row, 0); // Top
+        assert_eq!(p2_row, 8); // Top
         assert_eq!(p2_col, 4); // Center
 
         // Check walls
@@ -689,10 +733,10 @@ mod tests {
         // Initialize default positions
         mechanics
             .repr()
-            .set_player_position(&mut state, 0, size - 1, size / 2);
+            .set_player_position(&mut state, 0, 0, size / 2);
         mechanics
             .repr()
-            .set_player_position(&mut state, 1, 0, size / 2);
+            .set_player_position(&mut state, 1, size - 1, size / 2);
         mechanics.repr().set_walls_remaining(&mut state, 0, 10);
         mechanics.repr().set_walls_remaining(&mut state, 1, 10);
         mechanics.repr().set_current_player(&mut state, 0);
@@ -798,11 +842,12 @@ mod tests {
         assert_eq!(
             actual_moves.len(),
             expected_moves.len(),
-            "Expected {} moves, got {}. Expected: {:?}, Got: {:?}",
+            "Expected {} moves, got {}. Expected: {:?}, Got: {:?} \n{}",
             expected_moves.len(),
             actual_moves.len(),
             expected_moves,
-            actual_moves
+            actual_moves,
+            mechanics.display(&state),
         );
 
         for expected in &expected_moves {
@@ -921,22 +966,20 @@ mod tests {
         );
     }
 
-    // TODO: Fix these tests - they're failing due to wall placement parsing issues
     #[test]
-    #[ignore]
     fn test_movements_with_walls() {
         test_pawn_movements(
             "
-            1 . .
+            1 * .
             - -
-            * . .
+            . . .
             . . 2
         ",
         );
 
         test_pawn_movements(
             "
-            1 .|.
+            1 *|.
             - -+
             . . .
             . . 2
@@ -947,7 +990,7 @@ mod tests {
             "
             1 * .
               - -
-            . .|.
+            * .|.
             . .|2
         ",
         );
@@ -955,7 +998,7 @@ mod tests {
         test_pawn_movements(
             "
             . * .
-            . 1|.
+            * 1|.
             . *|.
             . . 2
         ",
@@ -1007,7 +1050,6 @@ mod tests {
             . .|1|. .
               > >
             . .|.|. .
-              > >
             . . . . .
             . . . . .
             . . 2 . .
@@ -1016,9 +1058,9 @@ mod tests {
 
         test_wall_placements(
             "
-            . . 1v.v.
+            . . 1 . .
             .v. .v. .
-            -+- -+-
+            - - - -
             . . . . .
             . . . . .
             . . 2 . .

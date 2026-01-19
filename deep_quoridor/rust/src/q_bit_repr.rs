@@ -326,10 +326,17 @@ impl QBitRepr {
 
         let mut line_idx = 0;
 
+        // Print column labels
+        output.push_str(" ");
+        for col in 0..self.board_size {
+            output.push_str(&format!(" {}", (b'a' + col as u8) as char));
+        }
+        output.push_str("\n");
+
         // Print each row with walls between
-        for row in 0..self.board_size {
-            // Print cell row
+        for row in (self.board_size - 1)..0 {
             let mut cell_line = String::new();
+            cell_line.push_str(&format!("{} ", self.board_size - row));
             for col in 0..self.board_size {
                 // Print cell content
                 if p0_row == row && p0_col == col {

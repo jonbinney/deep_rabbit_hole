@@ -388,6 +388,7 @@ fn q_evaluate_actions<'py>(
 }
 
 /// Write QBitRepr-based log entries to a SQLite database
+#[allow(dead_code)]
 pub fn q_log_entries_to_sqlite(
     entries: Vec<q_minimax::MinimaxLogEntry>,
     filename: &str,
@@ -489,7 +490,8 @@ pub fn q_log_entries_to_sqlite(
     Ok(num_entries)
 }
 
-/// Write log entries to a SQLite database
+/// Write log entries to a SQLite database (old non-QBitRepr version)
+#[allow(dead_code)]
 fn log_entries_to_sqlite(
     entries: Vec<minimax::MinimaxLogEntry>,
     filename: &str,

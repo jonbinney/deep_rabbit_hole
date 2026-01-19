@@ -1,3 +1,6 @@
+// Old non-QBitRepr action utilities, kept for backwards compatibility
+#![allow(dead_code)]
+
 use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1};
 
 use crate::validation::{is_move_action_valid, is_wall_action_valid};

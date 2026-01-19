@@ -1,3 +1,6 @@
+// Old non-QBitRepr game state utilities, kept for backwards compatibility
+#![allow(dead_code)]
+
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
 use crate::actions::{ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL};
