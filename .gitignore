@@ -188,3 +188,7 @@ videos
 
 # Contents of the replay buffer for debugging
 replay_buffers
+
+# Rust
+target
+Cargo.lock
