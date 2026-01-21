@@ -11,11 +11,6 @@ edition = "2021"
 name = "quoridor_rs"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "create_policy_db"
-path = "src/bin/create_policy_db.rs"
-required-features = ["binary"]
-
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 numpy = { version = "0.22", optional = true }
@@ -24,12 +19,9 @@ rand = "0.8"
 rayon = "1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
-clap = { version = "4.5", features = ["derive"], optional = true }
-
 [features]
 default = ["python"]
 python = ["pyo3", "numpy"]
-binary = ["clap"]
 
 [profile.release]
 # Enable optimizations for better performance
