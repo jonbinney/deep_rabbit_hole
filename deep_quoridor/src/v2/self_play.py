@@ -5,11 +5,10 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Annotated, Literal, Optional, Union
 
 import numpy as np
 import wandb
-import yaml
+from config import Config, load_config_and_setup_run
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 
 # TO DO
@@ -19,8 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from metrics import Metrics
-from pydantic import BaseModel, ConfigDict, Field
-from utils import Timer
+from pydantic import BaseModel
 from utils.subargs import override_subargs, parse_subargs
 
 azparams_str = """training_mode=true,nn_type=resnet,nn_resnet_num_blocks=2,mcts_ucb_c=1.2,\
@@ -29,35 +27,13 @@ learning_rate=0.001,batch_size=2048,optimizer_iterations=1"""
 
 azparams = parse_subargs(azparams_str, AlphaZeroParams)
 
-run_name = "mock7"
 
-run_dir = Path("/Users/amarcu/code/deep_rabbit_hole/runs") / run_name
-run_dir.mkdir(parents=True, exist_ok=True)  # just for convenience
-
-models_dir = run_dir / "models"
-
-checkpoints_dir = models_dir / "checkpoints"
-checkpoints_dir.mkdir(parents=True, exist_ok=True)
-
-replay_buffers_dir = run_dir / "replay_buffers"
-ready_replay_buffers_dir = replay_buffers_dir / "ready"
-tmp_replay_buffers_dir = ready_replay_buffers_dir / "tmp"
-tmp_replay_buffers_dir.mkdir(parents=True, exist_ok=True)
-
-logs_dir = run_dir / "logs"
-logs_dir.mkdir(parents=True, exist_ok=True)
-
-
-class StrictBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class LatestModel(StrictBaseModel):
+class LatestModel(BaseModel):
     filename: str
     version: int
 
 
-def self_play():
+def self_play(config: Config):
     n = 8
     environments = [
         quoridor_env.env(
@@ -76,19 +52,19 @@ def self_play():
     )
     current_model_version = -1
 
-    run_id = f"mock-self-play-{os.getpid()}"
-    wandb_run = wandb.init(
-        project="v2",
-        job_type="self-play",
-        group=run_name,
-        name=run_id,
-        id=run_id,
-        resume="allow",
-    )
-    Timer.set_wandb_run(wandb_run)
+    # run_id = f"mock-self-play-{os.getpid()}"
+    # wandb_run = wandb.init(
+    #     project="v2",
+    #     job_type="self-play",
+    #     group=run_name,
+    #     name=run_id,
+    #     id=run_id,
+    #     resume="allow",
+    # )
+    # Timer.set_wandb_run(wandb_run)
 
     while True:
-        latest = parse_yaml_file_as(LatestModel, models_dir / "latest.yaml")
+        latest = parse_yaml_file_as(LatestModel, config.paths.latest_model_yaml)
 
         if latest.version != current_model_version:
             print(f"Loading model version {latest.version} - {os.getpid()}")
@@ -130,11 +106,13 @@ def self_play():
                 # game_actions[env_idx + game_i].append(action_index)
 
         t1 = time.time()
-        filenames = alphazero_agent.end_game_batch_and_save_replay_buffers(tmp_replay_buffers_dir)
+        filenames = alphazero_agent.end_game_batch_and_save_replay_buffers(config.paths.replay_buffers_tmp)
         for i, f in enumerate(filenames):
             # TODO maybe pad with 0 the version
             os.rename(
-                f, ready_replay_buffers_dir / f"game_model_{latest.version}_{os.getpid()}_{int(t0 * 1000)}_{i}.pkl"
+                f,
+                config.paths.replay_buffers_ready
+                / f"game_model_{latest.version}_{os.getpid()}_{int(t0 * 1000)}_{i}.pkl",
             )
 
         num_truncated = n - len(finished_in)
@@ -145,43 +123,57 @@ def self_play():
         # )
 
 
-def train():
+# TO DO: we need to pass a specific subconfig as well, because the alphazero params may be overriden
+def create_alphazero(config: Config) -> AlphaZeroAgent:
+    params = AlphaZeroParams(  # we may need more params, e.g. mcts_noise when it's for self-play
+        mcts_n=config.alphazero.mcts_n,
+        mcts_ucb_c=config.alphazero.mcts_c_puct,
+        training_mode=True,
+    )
+    return AlphaZeroAgent(
+        config.quoridor.board_size,
+        config.quoridor.max_walls,
+        config.quoridor.max_steps,
+        params=params,
+    )
+
+
+def train(config: Config):
     global azparams
-    batch_size = 2048
+    batch_size = config.training.batch_size
     training_iterations = 1
     min_new_games = 25
 
-    run_id = f"mock-trainer-{os.getpid()}"
-    wandb_run = wandb.init(
-        project="v2",
-        job_type="trainer",
-        group=run_name,
-        name=run_id,
-        id=run_id,
-        resume="allow",
-    )
+    if config.wandb:
+        run_id = f"{config.run_id}-training"
+        wandb_run = wandb.init(
+            project=config.wandb.project,
+            job_type="training",
+            group=config.run_id,
+            name=run_id,
+            id=run_id,
+            resume="allow",
+        )
+    else:
+        wandb_run = None
 
-    alphazero_agent = AlphaZeroAgent(
-        5,
-        3,
-        30,
-        params=azparams,
-    )
-    filename = checkpoints_dir / "model_0.pt"
+    alphazero_agent = create_alphazero(config)
+
+    filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
     latest = LatestModel(
         filename=str(filename),
         version=0,
     )
 
-    to_yaml_file(models_dir / "latest.yaml", latest)
+    to_yaml_file(config.paths.latest_model_yaml, latest)
 
     last_game = 0
     model_version = 1
     moves_per_game = []
     while True:
         while True:
-            ready = [f for f in sorted(ready_replay_buffers_dir.iterdir()) if f.is_file()]
+            ready = [f for f in sorted(config.paths.replay_buffers_ready.iterdir()) if f.is_file()]
             if len(ready) >= min_new_games:
                 break
             time.sleep(1)
@@ -191,7 +183,7 @@ def train():
             last_game += 1
             # TO DO: include model version in the name
             # TO DO: send it to a dir based on % 1000
-            new_name = replay_buffers_dir / f"game_{last_game}.pkl"
+            new_name = config.paths.replay_buffers / f"game_{last_game}.pkl"
             os.rename(f, new_name)
             with open(new_name, "rb") as f:
                 data = pickle.load(f)
@@ -211,7 +203,7 @@ def train():
             games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
             samples_per_game = Counter(games)
             for game_number in samples_per_game:
-                file = replay_buffers_dir / f"game_{game_number + 1}.pkl"
+                file = config.paths.replay_buffers / f"game_{game_number + 1}.pkl"
                 with open(file, "rb") as f:
                     data = pickle.load(f)
 
@@ -227,7 +219,7 @@ def train():
         t1 = time.time()
         print(f"Sampling and training took {t1 - t0}")
 
-        new_model_filename = checkpoints_dir / f"model_{model_version}.pt"
+        new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
         alphazero_agent.save_model(new_model_filename)
         latest = LatestModel(
             filename=str(new_model_filename),
@@ -235,23 +227,27 @@ def train():
         )
         model_version += 1
 
-        to_yaml_file(models_dir / "latest.yaml", latest)
+        to_yaml_file(config.paths.latest_model_yaml, latest)
 
 
-def benchmarks():
-    latest_yaml_path = models_dir / "latest.yaml"
+def benchmarks(config: Config):
     time.sleep(10)  # to do, just wait until it's available or a trigger
-    run_id = f"mock-benchmark-{os.getpid()}"
-    wandb_run = wandb.init(
-        project="v2",
-        job_type="self_play_worker",
-        group=run_name,
-        name=run_id,
-        id=run_id,
-        resume="allow",
-    )
+
+    if config.wandb:
+        run_id = f"{config.run_id}-training"
+        wandb_run = wandb.init(
+            project=config.wandb.project,
+            job_type="benchmark",
+            group=config.run_id,
+            name=run_id,
+            id=run_id,
+            resume="allow",
+        )
+    else:
+        wandb_run = None
+
     while True:
-        latest = parse_yaml_file_as(LatestModel, latest_yaml_path)
+        latest = parse_yaml_file_as(LatestModel, config.paths.latest_model_yaml)
 
         az_params_override = override_subargs(
             azparams_str, {"mcts_n": 0, "model_filename": latest.filename, "training_mode": False}
@@ -288,235 +284,33 @@ def benchmarks():
         time.sleep(60)
 
 
-class QuoridorConfig(StrictBaseModel):
-    board_size: int
-    max_walls: int
-    max_steps: int
-
-
-class MLPConfig(StrictBaseModel):
-    type: Literal["mlp"] = "mlp"
-    mask_training_predictions: bool = False
-
-
-class ResnetConfig(StrictBaseModel):
-    type: Literal["resnet"] = "resnet"
-    num_blocks: Optional[int] = None
-    num_channels: int
-    mask_training_predictions: bool = False
-
-
-NetworkConfig = Union[MLPConfig, ResnetConfig]
-
-
-# class MCTSConfig(StrictBaseModel):
-#     n: int
-#     c_puct: float
-
-
-# class MCTSNoiseConfig(StrictBaseModel):
-#     epsilon: float
-#     alpha: Optional[float] = None
-
-
-class AlphaZeroBaseConfig(StrictBaseModel):
-    network: NetworkConfig = Field(default_factory=MLPConfig, discriminator="type")
-    # mcts: MCTSConfig
-    mcts_n: int
-    mcts_c_puct: float
-
-
-class WandbConfig(StrictBaseModel):
-    project: str
-
-
-class AlphaZeroPlayConfig(StrictBaseModel):
-    #    mcts: MCTSConfig
-    # temperature here or where
-    mcts_n: Optional[int] = None
-    mcts_c_puct: Optional[float] = None
-
-
-class AlphaZeroSelfPlayConfig(StrictBaseModel):
-    # mcts_noise: Optional[MCTSNoiseConfig] = None
-    mcts_noise_epsilon: float
-    mcts_noise_alpha: Optional[float] = None
-
-
-class SelfPlayConfig(StrictBaseModel):
-    num_workers: int
-    parallel_games: int
-    alphazero: Optional[AlphaZeroSelfPlayConfig] = None
-
-
-class TrainingConfig(StrictBaseModel):
-    games_per_training_step: float
-    learning_rate: float
-    batch_size: int
-    weight_decay: float
-    replay_buffer_size: int
-
-
-class TournamentBenchmarkConfig(StrictBaseModel):
-    type: Literal["tournament"] = "tournament"
-    alphazero: Optional[AlphaZeroPlayConfig] = None
-    prefix: str
-    times: int
-    opponents: list[str]
-
-
-class DumbScoreBenchmarkConfig(StrictBaseModel):
-    type: Literal["dumb_score"] = "dumb_score"
-    alphazero: Optional[AlphaZeroPlayConfig] = None
-    prefix: str
-
-
-class AgentEvolutionBenchmarkConfig(StrictBaseModel):
-    type: Literal["agent_evolution"] = "agent_evolution"
-    alphazero: Optional[AlphaZeroPlayConfig] = None
-    prefix: str
-    times: int
-    top_n: int
-
-
-BenchmarkJobConfig = Annotated[
-    Union[
-        TournamentBenchmarkConfig,
-        DumbScoreBenchmarkConfig,
-        AgentEvolutionBenchmarkConfig,
-    ],
-    Field(discriminator="type"),
-]
-
-
-class BenchmarkScheduleConfig(StrictBaseModel):
-    every: str
-    jobs: list[BenchmarkJobConfig]
-
-
-class Config(StrictBaseModel):
-    """A normal pydantic model that can be used as an inner class."""
-
-    run_id: str
-    quoridor: QuoridorConfig
-    alphazero: AlphaZeroBaseConfig
-    wandb: Optional[WandbConfig] = None
-    self_play: SelfPlayConfig
-    training: TrainingConfig
-    benchmarks: Optional[list[BenchmarkScheduleConfig]] = None
-
-
-def to_yaml_str_ordered(model: BaseModel) -> str:
-    return yaml.safe_dump(model.model_dump(by_alias=True), sort_keys=False)
-
-
-def _merge_dicts(base: dict, override: dict) -> dict:
-    merged = dict(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _merge_dicts(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def _load_config_data(file: str) -> dict:
-    contents = Path(file).read_text()
-    data = yaml.safe_load(contents) or {}
-    extend = data.pop("extend", None)
-    if extend:
-        extend_path = Path(extend)
-        if not extend_path.is_absolute():
-            extend_path = Path(file).parent / extend_path
-        base = _load_config_data(str(extend_path))
-        data = _merge_dicts(base, data)
-    return data
-
-
-def load_config(file: str) -> Config:
-    data = _load_config_data(file)
-    return Config.model_validate(data)
-
-
 if __name__ == "__main__":
-    # c = parse_yaml_file_as(Config, "deep_quoridor/src/v2/config.yaml")
-    # print(to_yaml_str_ordered(c))
-    c = load_config("deep_quoridor/experiments/B5W3/demo.yaml")
-    print(c)
-
-# if __name__ == "__main__2":
-#     c = Config(
-#         run_id="my-test-run",
-#         quoridor=QuoridorConfig(board_size=5, max_walls=3, max_steps=50),
-#         alphazero=AlphaZeroBaseConfig(network=ResnetConfig(num_channels=4), mcts=MCTSConfig(n=500, c_puct=1.25)),
-#         self_play=SelfPlayConfig(
-#             num_workers=2,
-#             parallel_games=8,
-#             alphazero=AlphaZeroSelfPlayConfig(mcts_noise=MCTSNoiseConfig(epsilon=0.25)),
-#         ),
-#         training=TrainingConfig(
-#             games_per_training_step=25,
-#             learning_rate=0.001,
-#             batch_size=2048,
-#             weight_decay=0.0001,
-#             replay_buffer_size=100000,
-#         ),
-#         wandb=WandbConfig(project="v2"),
-#         benchmarks=[
-#             BenchmarkScheduleConfig(
-#                 every="1 hour",
-#                 jobs=[
-#                     TournamentBenchmarkConfig(
-#                         prefix="quick-tourney",
-#                         times=50,
-#                         opponents=["greedy", "random"],
-#                     ),
-#                     DumbScoreBenchmarkConfig(prefix="dumbscore-basic"),
-#                 ],
-#             ),
-#             BenchmarkScheduleConfig(
-#                 every="6 hours",
-#                 jobs=[
-#                     TournamentBenchmarkConfig(
-#                         prefix="deep-tourney",
-#                         times=200,
-#                         opponents=[
-#                             "simple:branching_factor=8,nick=simple-bf8",
-#                             "simple:branching_factor=16,nick=simple-bf16",
-#                         ],
-#                     ),
-#                 ],
-#             ),
-#         ],
-#     )
-#     print(to_yaml_str_ordered(c))
-
-
-if __name__ == "__main__x":
+    config = load_config_and_setup_run(
+        "deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole"
+    )
     mp.set_start_method("spawn", force=True)
 
     processes = []
 
-    p = mp.Process(target=train)
+    p = mp.Process(target=train, args=[config])
     p.start()
     processes.append(p)
 
-    p = mp.Process(target=benchmarks)
+    p = mp.Process(target=benchmarks, args=[config])
     p.start()
     processes.append(p)
 
     # Waiting for latest.yaml to exist
     timeout = 60  # seconds
     start_time = time.time()
-    latest_yaml_path = models_dir / "latest.yaml"
-    while not latest_yaml_path.exists():
+    while not config.paths.latest_model_yaml.exists():
         if time.time() - start_time > timeout:
-            raise RuntimeError(f"Timeout: {latest_yaml_path} not found after {timeout} seconds.")
+            raise RuntimeError(f"Timeout: {config.paths.latest_model_yaml} not found after {timeout} seconds.")
         time.sleep(1)
 
     num_workers = 2
     for i in range(num_workers):
-        p = mp.Process(target=self_play)
+        p = mp.Process(target=self_play, args=[config])
         p.start()
         processes.append(p)
 

@@ -1,1 +1,5 @@
-# This file makes the v2 directory a Python package
+__all__ = [
+    "load_config",
+]
+
+from config import load_config

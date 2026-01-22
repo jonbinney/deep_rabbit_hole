@@ -1,4 +1,8 @@
 extend: base.yaml
-run_id: my-test-run2
+run_id: cucu-4
+
 alphazero:
-  mcts_n: 1000
+  mcts_n: 500
+
+training:
+  batch_size: 2048
