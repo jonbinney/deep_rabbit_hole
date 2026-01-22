@@ -1,0 +1,4 @@
+extend: base.yaml
+run_id: my-test-run2
+alphazero:
+  mcts_n: 1000

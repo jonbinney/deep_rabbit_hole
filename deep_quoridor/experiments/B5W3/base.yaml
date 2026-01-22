@@ -1,0 +1,55 @@
+quoridor:
+  board_size: 5
+  max_walls: 3
+  max_steps: 50
+alphazero:
+  network:
+    type: resnet
+    num_channels: 4
+    mask_training_predictions: false
+  mcts_n: 500
+  mcts_c_puct: 1.25
+wandb:
+  project: v2
+self_play:
+  num_workers: 2
+  parallel_games: 8
+  alphazero:
+    mcts_noise_epsilon: 0.25
+training:
+  games_per_training_step: 25.0
+  learning_rate: 0.001
+  batch_size: 2048
+  weight_decay: 0.0001
+  replay_buffer_size: 1000000
+benchmarks:
+  - every: 1 hour
+    jobs:
+      - type: tournament
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+        times: 100
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: dumb_score
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+  - every: 6 hours
+    jobs:
+      - type: tournament
+        prefix: full
+        times: 100
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16

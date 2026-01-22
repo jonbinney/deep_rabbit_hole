@@ -474,7 +474,7 @@ class AlphaZeroAgent(TrainableAgent):
             #     "entries": processed_replay_buffer
             # }
 
-            filenames.append(temp_dir / f"game_{int(time.time() * 1000)}_{i}.pkl")
+            filenames.append(temp_dir / f"game_{int(time.time() * 1000)}_{i}_{os.getpid()}.pkl")
             with open(filenames[-1], "wb") as f:
                 pickle.dump(processed_replay_buffer, f)
 

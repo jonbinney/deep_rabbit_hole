@@ -5,9 +5,11 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from typing import Annotated, Literal, Optional, Union
 
 import numpy as np
 import wandb
+import yaml
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 
 # TO DO
@@ -17,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
 from metrics import Metrics
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from utils import Timer
 from utils.subargs import override_subargs, parse_subargs
 
@@ -46,7 +48,11 @@ logs_dir = run_dir / "logs"
 logs_dir.mkdir(parents=True, exist_ok=True)
 
 
-class LatestModel(BaseModel):
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LatestModel(StrictBaseModel):
     filename: str
     version: int
 
@@ -282,7 +288,213 @@ def benchmarks():
         time.sleep(60)
 
 
+class QuoridorConfig(StrictBaseModel):
+    board_size: int
+    max_walls: int
+    max_steps: int
+
+
+class MLPConfig(StrictBaseModel):
+    type: Literal["mlp"] = "mlp"
+    mask_training_predictions: bool = False
+
+
+class ResnetConfig(StrictBaseModel):
+    type: Literal["resnet"] = "resnet"
+    num_blocks: Optional[int] = None
+    num_channels: int
+    mask_training_predictions: bool = False
+
+
+NetworkConfig = Union[MLPConfig, ResnetConfig]
+
+
+# class MCTSConfig(StrictBaseModel):
+#     n: int
+#     c_puct: float
+
+
+# class MCTSNoiseConfig(StrictBaseModel):
+#     epsilon: float
+#     alpha: Optional[float] = None
+
+
+class AlphaZeroBaseConfig(StrictBaseModel):
+    network: NetworkConfig = Field(default_factory=MLPConfig, discriminator="type")
+    # mcts: MCTSConfig
+    mcts_n: int
+    mcts_c_puct: float
+
+
+class WandbConfig(StrictBaseModel):
+    project: str
+
+
+class AlphaZeroPlayConfig(StrictBaseModel):
+    #    mcts: MCTSConfig
+    # temperature here or where
+    mcts_n: Optional[int] = None
+    mcts_c_puct: Optional[float] = None
+
+
+class AlphaZeroSelfPlayConfig(StrictBaseModel):
+    # mcts_noise: Optional[MCTSNoiseConfig] = None
+    mcts_noise_epsilon: float
+    mcts_noise_alpha: Optional[float] = None
+
+
+class SelfPlayConfig(StrictBaseModel):
+    num_workers: int
+    parallel_games: int
+    alphazero: Optional[AlphaZeroSelfPlayConfig] = None
+
+
+class TrainingConfig(StrictBaseModel):
+    games_per_training_step: float
+    learning_rate: float
+    batch_size: int
+    weight_decay: float
+    replay_buffer_size: int
+
+
+class TournamentBenchmarkConfig(StrictBaseModel):
+    type: Literal["tournament"] = "tournament"
+    alphazero: Optional[AlphaZeroPlayConfig] = None
+    prefix: str
+    times: int
+    opponents: list[str]
+
+
+class DumbScoreBenchmarkConfig(StrictBaseModel):
+    type: Literal["dumb_score"] = "dumb_score"
+    alphazero: Optional[AlphaZeroPlayConfig] = None
+    prefix: str
+
+
+class AgentEvolutionBenchmarkConfig(StrictBaseModel):
+    type: Literal["agent_evolution"] = "agent_evolution"
+    alphazero: Optional[AlphaZeroPlayConfig] = None
+    prefix: str
+    times: int
+    top_n: int
+
+
+BenchmarkJobConfig = Annotated[
+    Union[
+        TournamentBenchmarkConfig,
+        DumbScoreBenchmarkConfig,
+        AgentEvolutionBenchmarkConfig,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class BenchmarkScheduleConfig(StrictBaseModel):
+    every: str
+    jobs: list[BenchmarkJobConfig]
+
+
+class Config(StrictBaseModel):
+    """A normal pydantic model that can be used as an inner class."""
+
+    run_id: str
+    quoridor: QuoridorConfig
+    alphazero: AlphaZeroBaseConfig
+    wandb: Optional[WandbConfig] = None
+    self_play: SelfPlayConfig
+    training: TrainingConfig
+    benchmarks: Optional[list[BenchmarkScheduleConfig]] = None
+
+
+def to_yaml_str_ordered(model: BaseModel) -> str:
+    return yaml.safe_dump(model.model_dump(by_alias=True), sort_keys=False)
+
+
+def _merge_dicts(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_config_data(file: str) -> dict:
+    contents = Path(file).read_text()
+    data = yaml.safe_load(contents) or {}
+    extend = data.pop("extend", None)
+    if extend:
+        extend_path = Path(extend)
+        if not extend_path.is_absolute():
+            extend_path = Path(file).parent / extend_path
+        base = _load_config_data(str(extend_path))
+        data = _merge_dicts(base, data)
+    return data
+
+
+def load_config(file: str) -> Config:
+    data = _load_config_data(file)
+    return Config.model_validate(data)
+
+
 if __name__ == "__main__":
+    # c = parse_yaml_file_as(Config, "deep_quoridor/src/v2/config.yaml")
+    # print(to_yaml_str_ordered(c))
+    c = load_config("deep_quoridor/experiments/B5W3/demo.yaml")
+    print(c)
+
+# if __name__ == "__main__2":
+#     c = Config(
+#         run_id="my-test-run",
+#         quoridor=QuoridorConfig(board_size=5, max_walls=3, max_steps=50),
+#         alphazero=AlphaZeroBaseConfig(network=ResnetConfig(num_channels=4), mcts=MCTSConfig(n=500, c_puct=1.25)),
+#         self_play=SelfPlayConfig(
+#             num_workers=2,
+#             parallel_games=8,
+#             alphazero=AlphaZeroSelfPlayConfig(mcts_noise=MCTSNoiseConfig(epsilon=0.25)),
+#         ),
+#         training=TrainingConfig(
+#             games_per_training_step=25,
+#             learning_rate=0.001,
+#             batch_size=2048,
+#             weight_decay=0.0001,
+#             replay_buffer_size=100000,
+#         ),
+#         wandb=WandbConfig(project="v2"),
+#         benchmarks=[
+#             BenchmarkScheduleConfig(
+#                 every="1 hour",
+#                 jobs=[
+#                     TournamentBenchmarkConfig(
+#                         prefix="quick-tourney",
+#                         times=50,
+#                         opponents=["greedy", "random"],
+#                     ),
+#                     DumbScoreBenchmarkConfig(prefix="dumbscore-basic"),
+#                 ],
+#             ),
+#             BenchmarkScheduleConfig(
+#                 every="6 hours",
+#                 jobs=[
+#                     TournamentBenchmarkConfig(
+#                         prefix="deep-tourney",
+#                         times=200,
+#                         opponents=[
+#                             "simple:branching_factor=8,nick=simple-bf8",
+#                             "simple:branching_factor=16,nick=simple-bf16",
+#                         ],
+#                     ),
+#                 ],
+#             ),
+#         ],
+#     )
+#     print(to_yaml_str_ordered(c))
+
+
+if __name__ == "__main__x":
+    mp.set_start_method("spawn", force=True)
+
     processes = []
 
     p = mp.Process(target=train)
