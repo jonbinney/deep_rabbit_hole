@@ -14,6 +14,12 @@ from utils import SubargsBase
 
 from agents.core import Agent
 
+try:
+    import quoridor_rs
+    RUST_AVAILABLE = True
+except ImportError:
+    RUST_AVAILABLE = False
+
 # We use a large reward to encourage the agent to win the game, but we can't use infinity
 # because then multiplying by a discount factor won't decrease the reward.
 WINNING_REWARD = 1e6
@@ -43,6 +49,9 @@ class SimpleParams(SubargsBase):
     #  0: no heuristic, just return zero
     #  1: relative distances to goal, ties broken by relative walls remaining
     heuristic: int = 1
+
+    # Use Rust implementation for evaluate_actions (faster than Numba)
+    use_rust: bool = False
 
 
 @njit(cache=True)
@@ -339,19 +348,36 @@ class SimpleAgent(Agent):
 
         max_depth = min(self.params.max_depth, self.max_steps - observation["completed_steps"])
 
-        # Use Numba-optimized minimax to evaluate possible actions
-        actions, values = evaluate_actions(
-            grid,
-            player_positions,
-            walls_remaining,
-            goal_rows,
-            current_player,
-            max_depth,
-            self.params.branching_factor,
-            self.params.wall_sigma,
-            self.params.discount_factor,
-            self.params.heuristic,
-        )
+        # Evaluate possible actions using minimax
+        if self.params.use_rust:
+            if not RUST_AVAILABLE:
+                raise RuntimeError("Rust extension (quoridor_rs) not available. Install with: cd rust && maturin develop --release")
+            actions, values = quoridor_rs.evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+            )
+        else:
+            # Use Numba-optimized minimax
+            actions, values = evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+            )
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them
         best_value = np.max(values)
