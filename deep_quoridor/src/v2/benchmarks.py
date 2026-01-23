@@ -1,7 +1,5 @@
 import multiprocessing as mp
-import re
 import time
-from typing import Optional
 
 import wandb
 from config import (
@@ -10,9 +8,10 @@ from config import (
     Config,
     DumbScoreBenchmarkConfig,
     TournamentBenchmarkConfig,
+    load_config_and_setup_run,
 )
 from pydantic_yaml import parse_yaml_file_as
-from v2.common import create_alphazero
+from v2.common import JobTrigger, LatestModel, create_alphazero
 
 # from self_play import LatestModel
 
@@ -71,56 +70,6 @@ def benchmarks(config: Config):
         time.sleep(60)
 
 
-# TODO: move to common.py, split into 2 classes, one for time and another for model, that extend the
-# same base class.  The base class will have an abstract "wait" method, and the static constructor.
-# Also, figure out a better name for the classes (e.g. TimeTrigger and ModelTrigger ? or Scheduler?)
-class RunFrequency:
-    def __init__(self, every_s: Optional[int] = None, every_models: Optional[int] = None):
-        assert every_s or every_models, "Either every_s or every_models need to be set"
-        # only one
-        self.every_s = every_s
-        self.every_models = every_models
-        self.next = None
-
-    @classmethod
-    def from_string(cls, s: str) -> "RunFrequency":
-        match = re.match(r"^\s*(\d+)\s*(second|seconds|minute|minutes|hour|hours|model|models)\s*$", s.lower())
-        if not match:
-            raise ValueError(f"Invalid frequency string: {s!r}")
-
-        value = int(match.group(1))
-        if value <= 0:
-            raise ValueError(f"Frequency must be a positive integer, got {value}")
-
-        unit = match.group(2)
-        if unit in ("model", "models"):
-            return cls(every_models=value)
-
-        seconds_per_unit = {
-            "second": 1,
-            "seconds": 1,
-            "minute": 60,
-            "minutes": 60,
-            "hour": 3600,
-            "hours": 3600,
-        }
-        return cls(every_s=value * seconds_per_unit[unit])
-
-    def wait(self):
-        if self.every_s:
-            t = time.time()
-            if self.next is None:
-                self.next = t + self.every_s
-                return
-
-            if t < self.next:
-                time.sleep(self.next - t)
-
-            self.next = time.time() + self.every_s
-
-        # TODO every_models
-
-
 def run_tournament_benchmark(config: Config, job: TournamentBenchmarkConfig) -> None:
     print(f"Running tournament benchmark: {job.prefix}")
 
@@ -153,7 +102,7 @@ def run_benchmark_job(config: Config, job) -> None:
 
 
 def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
-    freq = RunFrequency.from_string(benchmark.every)
+    freq = JobTrigger.from_string(config, benchmark.every)
 
     while True:
         freq.wait()
@@ -170,6 +119,13 @@ def create_benchmark_processes(config: Config) -> list[mp.Process]:
     return ps
 
 
-# config = load_config_and_setup_run("deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole")
+if __name__ == "__main__":
+    config = load_config_and_setup_run(
+        "deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole"
+    )
 
-# run_benchmark(config, config.benchmarks[0])
+    # run_benchmark(config, config.benchmarks[0])
+    freq = JobTrigger.from_string(config, "10 models")
+    while True:
+        freq.wait()
+        print(LatestModel.load(config).version)

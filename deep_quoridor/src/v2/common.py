@@ -1,5 +1,7 @@
+import re
 import sys
 import time
+from abc import abstractmethod
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +34,67 @@ class LatestModel(BaseModel):
             if time.time() - start_time > timeout:
                 raise RuntimeError(f"Timeout: {config.paths.latest_model_yaml} not found after {timeout} seconds.")
         time.sleep(1)
+
+
+class JobTrigger:
+    @classmethod
+    def from_string(cls, config: Config, s: str):
+        match = re.match(r"^\s*(\d+)\s*(second|seconds|minute|minutes|hour|hours|model|models)\s*$", s.lower())
+        if not match:
+            raise ValueError(f"Invalid frequency string: {s!r}")
+
+        value = int(match.group(1))
+        if value <= 0:
+            raise ValueError(f"Frequency must be a positive integer, got {value}")
+
+        unit = match.group(2)
+        if unit in ("model", "models"):
+            return ModelJobTrigger(config, value)
+
+        seconds_per_unit = {
+            "second": 1,
+            "seconds": 1,
+            "minute": 60,
+            "minutes": 60,
+            "hour": 3600,
+            "hours": 3600,
+        }
+        return TimeJobTrigger(value * seconds_per_unit[unit])
+
+    @abstractmethod
+    def wait(self):
+        pass
+
+
+class TimeJobTrigger:
+    def __init__(self, every_s: int):
+        self.every_s = every_s
+        self.next_time = None
+
+    def wait(self):
+        if self.next_time is not None and time.time() < self.next_time:
+            time.sleep(self.next_time - time.time())
+
+        self.next_time = time.time() + self.every_s
+
+
+class ModelJobTrigger:
+    def __init__(self, config: Config, every_model: int):
+        self.every_model = every_model
+        self.next_model = None
+        self.config = config
+
+    def wait(self):
+        current_model = LatestModel.load(self.config).version
+
+        while self.next_model is not None and current_model < self.next_model:
+            models_left = self.next_model - current_model
+            # We assume each model will take at least 1s to be created to avoid
+            # re-opening the file too often
+            time.sleep(1.0 * models_left)
+            current_model = LatestModel.load(self.config).version
+
+        self.next_model = current_model + self.every_model
 
 
 def create_alphazero(
