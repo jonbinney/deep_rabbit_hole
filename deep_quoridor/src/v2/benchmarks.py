@@ -73,7 +73,7 @@ def benchmarks(config: Config):
 
 # TODO: move to common.py, split into 2 classes, one for time and another for model, that extend the
 # same base class.  The base class will have an abstract "wait" method, and the static constructor.
-# Also, figure out a better name for the classes
+# Also, figure out a better name for the classes (e.g. TimeTrigger and ModelTrigger ? or Scheduler?)
 class RunFrequency:
     def __init__(self, every_s: Optional[int] = None, every_models: Optional[int] = None):
         assert every_s or every_models, "Either every_s or every_models need to be set"

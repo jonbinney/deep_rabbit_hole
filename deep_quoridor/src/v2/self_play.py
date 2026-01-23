@@ -9,8 +9,7 @@ from pathlib import Path
 import numpy as np
 import wandb
 from config import Config, load_config_and_setup_run
-from pydantic_yaml import parse_yaml_file_as, to_yaml_file
-from v2 import benchmarks
+from v2 import LatestModel, benchmarks
 
 # TO DO
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -18,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import quoridor_env
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from pydantic import BaseModel
 from utils.subargs import parse_subargs
 
 azparams_str = """training_mode=true,nn_type=resnet,nn_resnet_num_blocks=2,mcts_ucb_c=1.2,\
@@ -28,12 +26,8 @@ learning_rate=0.001,batch_size=2048,optimizer_iterations=1"""
 azparams = parse_subargs(azparams_str, AlphaZeroParams)
 
 
-class LatestModel(BaseModel):
-    filename: str
-    version: int
-
-
 def self_play(config: Config):
+    LatestModel.wait_for_creation(config)
     n = 8
     environments = [
         quoridor_env.env(
@@ -64,7 +58,7 @@ def self_play(config: Config):
     # Timer.set_wandb_run(wandb_run)
 
     while True:
-        latest = parse_yaml_file_as(LatestModel, config.paths.latest_model_yaml)
+        latest = LatestModel.load(config)
 
         if latest.version != current_model_version:
             print(f"Loading model version {latest.version} - {os.getpid()}")
@@ -161,12 +155,7 @@ def train(config: Config):
 
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
-    latest = LatestModel(
-        filename=str(filename),
-        version=0,
-    )
-
-    to_yaml_file(config.paths.latest_model_yaml, latest)
+    LatestModel.write(config, str(filename), 0)
 
     last_game = 0
     model_version = 1
@@ -221,13 +210,8 @@ def train(config: Config):
 
         new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
         alphazero_agent.save_model(new_model_filename)
-        latest = LatestModel(
-            filename=str(new_model_filename),
-            version=model_version,
-        )
+        LatestModel.write(config, str(new_model_filename), model_version)
         model_version += 1
-
-        to_yaml_file(config.paths.latest_model_yaml, latest)
 
 
 if __name__ == "__main__":
@@ -245,14 +229,6 @@ if __name__ == "__main__":
     ps = benchmarks.create_benchmark_processes(config)
     [p.start() for p in ps]
     processes.extend(ps)
-
-    # Waiting for latest.yaml to exist
-    timeout = 60  # seconds
-    start_time = time.time()
-    while not config.paths.latest_model_yaml.exists():
-        if time.time() - start_time > timeout:
-            raise RuntimeError(f"Timeout: {config.paths.latest_model_yaml} not found after {timeout} seconds.")
-        time.sleep(1)
 
     num_workers = 2
     for i in range(num_workers):
