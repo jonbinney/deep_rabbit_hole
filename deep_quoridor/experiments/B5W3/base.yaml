@@ -15,7 +15,8 @@ self_play:
   num_workers: 2
   parallel_games: 8
   alphazero:
-    mcts_noise_epsilon: 0.25
+    mcts_noise_epsilon: 0.12
+    mcts_noise_alpha: 0.67
 training:
   games_per_training_step: 25.0
   learning_rate: 0.001
@@ -23,7 +24,7 @@ training:
   weight_decay: 0.0001
   replay_buffer_size: 1000000
 benchmarks:
-  - every: 1 hour
+  - every: 5 seconds
     jobs:
       - type: tournament
         prefix: raw
@@ -41,7 +42,7 @@ benchmarks:
         prefix: raw
         alphazero:
           mcts_n: 0
-  - every: 6 hours
+  - every: 20 seconds
     jobs:
       - type: tournament
         prefix: full
