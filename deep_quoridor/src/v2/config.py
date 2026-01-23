@@ -50,12 +50,15 @@ class AlphaZeroPlayConfig(StrictBaseModel):
     # temperature here or where
     mcts_n: Optional[int] = None
     mcts_c_puct: Optional[float] = None
+    drop_t_on_step: Optional[int] = None
+    temperature: Optional[float] = None
 
 
 class AlphaZeroSelfPlayConfig(StrictBaseModel):
-    # mcts_noise: Optional[MCTSNoiseConfig] = None
     mcts_noise_epsilon: float
     mcts_noise_alpha: Optional[float] = None
+    drop_t_on_step: Optional[int] = None
+    temperature: Optional[float] = None
 
 
 class SelfPlayConfig(StrictBaseModel):

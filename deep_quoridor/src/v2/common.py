@@ -10,7 +10,7 @@ from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 sys.path.insert(0, str(Path(__file__).parent.parent))  # noqa: F821
 
 from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config, load_config_and_setup_run
+from config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
 from pydantic import BaseModel
 
 
@@ -104,7 +104,10 @@ def create_alphazero(
 ) -> AlphaZeroAgent:
     mcts_n = config.alphazero.mcts_n
     mcts_ucb_c = config.alphazero.mcts_c_puct
-    # TODO temperature
+    temperature = None
+    drop_t_on_step = None
+    mcts_noise_epsilon = 0.25
+    mcts_noise_alpha = None
 
     if config.alphazero.network.type == "mlp":
         nn_type = "mlp"
@@ -126,13 +129,14 @@ def create_alphazero(
             mcts_n = sub_config.mcts_n
         if sub_config.mcts_c_puct is not None:
             mcts_ucb_c = sub_config.mcts_c_puct
+        temperature = sub_config.temperature
+        drop_t_on_step = sub_config.drop_t_on_step
 
     if isinstance(sub_config, AlphaZeroSelfPlayConfig):
         mcts_noise_epsilon = sub_config.mcts_noise_epsilon
         mcts_noise_alpha = sub_config.mcts_noise_alpha
-    else:
-        mcts_noise_epsilon = 0.25
-        mcts_noise_alpha = None
+        temperature = sub_config.temperature
+        drop_t_on_step = sub_config.drop_t_on_step
 
     params = AlphaZeroParams(
         mcts_n=mcts_n,
@@ -144,6 +148,8 @@ def create_alphazero(
         nn_resnet_num_channels=nn_resnet_num_channels,
         mcts_noise_epsilon=mcts_noise_epsilon,
         mcts_noise_alpha=mcts_noise_alpha,
+        temperature=temperature,
+        drop_t_on_step=drop_t_on_step,
     )
     return AlphaZeroAgent(
         config.quoridor.board_size,
@@ -151,11 +157,3 @@ def create_alphazero(
         config.quoridor.max_steps,
         params=params,
     )
-
-
-config = load_config_and_setup_run("deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole")
-
-az = create_alphazero(config, config.benchmarks[0].jobs[0].alphazero, True)
-print(az.__dict__)
-
-print(LatestModel.load(config))

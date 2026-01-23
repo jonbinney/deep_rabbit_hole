@@ -15,8 +15,8 @@ self_play:
   num_workers: 2
   parallel_games: 8
   alphazero:
-    mcts_noise_epsilon: 0.12
-    mcts_noise_alpha: 0.67
+    mcts_noise_epsilon: 0.2
+    drop_t_on_step: 12
 training:
   games_per_training_step: 25.0
   learning_rate: 0.001
@@ -30,6 +30,8 @@ benchmarks:
         prefix: raw
         alphazero:
           mcts_n: 0
+          temperature: 0.5
+          drop_t_on_step: 8
         times: 100
         opponents:
           - random
