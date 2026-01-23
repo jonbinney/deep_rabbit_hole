@@ -24,7 +24,7 @@ training:
   weight_decay: 0.0001
   replay_buffer_size: 1000000
 benchmarks:
-  - every: 5 seconds
+  - every: 2 models
     jobs:
       - type: tournament
         prefix: raw
@@ -44,7 +44,7 @@ benchmarks:
         prefix: raw
         alphazero:
           mcts_n: 0
-  - every: 20 seconds
+  - every: 20 minutes
     jobs:
       - type: tournament
         prefix: full

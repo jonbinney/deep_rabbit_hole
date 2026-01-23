@@ -1,6 +1,9 @@
 import multiprocessing as mp
+import os
 import time
+from abc import abstractmethod
 
+import torch
 import wandb
 from config import (
     AgentEvolutionBenchmarkConfig,
@@ -10,6 +13,7 @@ from config import (
     TournamentBenchmarkConfig,
     load_config_and_setup_run,
 )
+from metrics import Metrics
 from pydantic_yaml import parse_yaml_file_as
 from v2.common import JobTrigger, LatestModel, create_alphazero
 
@@ -71,43 +75,80 @@ def benchmarks(config: Config):
 
 
 def run_tournament_benchmark(config: Config, job: TournamentBenchmarkConfig) -> None:
+    # don't forget to re-use the Metrics class, which also needs to be different per job
     print(f"Running tournament benchmark: {job.prefix}")
 
 
-def run_dumb_score_benchmark(config: Config, job: DumbScoreBenchmarkConfig) -> None:
-    print(f"Running dumb score benchmark: {job.prefix}")
+class BenchmarkJob:
+    @classmethod
+    def from_job_config(cls, config: Config, job_config):
+        if isinstance(job_config, TournamentBenchmarkConfig):
+            return TournamentBenchmarkJob(config, job_config)
+
+        if isinstance(job_config, DumbScoreBenchmarkConfig):
+            return DumbScoreBenchmarkJob(config, job_config)
+
+        if isinstance(job_config, AgentEvolutionBenchmarkConfig):
+            return AgentEvolutionBenchmarkJob(config, job_config)
+
+        raise ValueError(f"Unknown job config type: {job_config}")
+
+    @abstractmethod
+    def run(self, model_filename: str):
+        pass
 
 
-def run_agent_evolution_benchmark(config: Config, job: AgentEvolutionBenchmarkConfig) -> None:
-    print(f"Running agent evolution benchmark: {job.prefix}")
+class TournamentBenchmarkJob(BenchmarkJob):
+    def __init__(self, config: Config, job_config: TournamentBenchmarkConfig):
+        self.job_config = job_config
+
+    def run(self, model_filename: str):
+        print(f"Tournamet score:, prefix: {self.job_config}, filename {model_filename}")
+
+        pass
 
 
-def run_benchmark_job(config: Config, job) -> None:
-    # pass filename, needs to come from args
-    agent = create_alphazero(config, job.alphazero, training_mode=False)
+class DumbScoreBenchmarkJob(BenchmarkJob):
+    def __init__(self, config: Config, job_config: DumbScoreBenchmarkConfig):
+        self.config = config
+        self.job_config = job_config
+        self.metrics = Metrics(config.quoridor.board_size, config.quoridor.max_walls)  # antyhing else important?
 
-    if isinstance(job, TournamentBenchmarkConfig):
-        run_tournament_benchmark(config, job)
-        return
+    def run(self, model_filename: str):
+        agent = create_alphazero(
+            self.config, self.job_config.alphazero, training_mode=False, model_filename=model_filename
+        )
 
-    if isinstance(job, DumbScoreBenchmarkConfig):
-        run_dumb_score_benchmark(config, job)
-        return
+        score = self.metrics.dumb_score(agent, verbose=False)
+        print(f"Dumb score: {score}, prefix: {self.job_config.prefix}, {agent.params.model_filename}")
 
-    if isinstance(job, AgentEvolutionBenchmarkConfig):
-        run_agent_evolution_benchmark(config, job)
-        return
+        del agent
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-    raise ValueError(f"Unknown benchmark job type: {type(job).__name__}")
+
+class AgentEvolutionBenchmarkJob(BenchmarkJob):
+    def __init__(self, config: Config, job_config: AgentEvolutionBenchmarkConfig):
+        pass
+
+    def run(self, model_filename: str):
+        pass
 
 
 def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
     freq = JobTrigger.from_string(config, benchmark.every)
+    LatestModel.wait_for_creation(config)
+
+    jobs = [BenchmarkJob.from_job_config(config, job_config) for job_config in benchmark.jobs]
 
     while True:
         freq.wait()
-        for job in benchmark.jobs:
-            run_benchmark_job(config, job)
+        # We get the model filename here so that all the jobs run with the same model
+        model_filename = LatestModel.load(config).filename
+
+        print(f"=== ({os.getpid()} running benchmark with {model_filename} ===")
+        for job in jobs:
+            job.run(model_filename)
 
 
 def create_benchmark_processes(config: Config) -> list[mp.Process]:

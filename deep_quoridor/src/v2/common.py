@@ -101,6 +101,7 @@ def create_alphazero(
     config: Config,
     sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig],
     training_mode: bool,
+    model_filename: Optional[str] = None,
 ) -> AlphaZeroAgent:
     mcts_n = config.alphazero.mcts_n
     mcts_ucb_c = config.alphazero.mcts_c_puct
@@ -150,6 +151,7 @@ def create_alphazero(
         mcts_noise_alpha=mcts_noise_alpha,
         temperature=temperature,
         drop_t_on_step=drop_t_on_step,
+        model_filename=model_filename,
     )
     return AlphaZeroAgent(
         config.quoridor.board_size,

@@ -2,7 +2,7 @@ extend: base.yaml
 run_id: cucu-4
 
 alphazero:
-  mcts_n: 500
+  mcts_n: 200
 
 training:
-  batch_size: 2048
+  batch_size: 16
