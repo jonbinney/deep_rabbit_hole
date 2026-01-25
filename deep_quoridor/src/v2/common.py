@@ -186,3 +186,14 @@ def create_alphazero(
         config.quoridor.max_steps,
         params=params,
     )
+
+
+class MockWandb:
+    def log(
+        self,
+        data: dict[str, Any],
+        step: int | None = None,
+        commit: bool | None = None,
+    ) -> None:
+        data_str = ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in data.items())
+        print(f"[MockWandb] step={step} | {data_str}")

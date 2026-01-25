@@ -1,5 +1,4 @@
 import multiprocessing as mp
-import os
 import time
 from abc import abstractmethod
 
@@ -11,11 +10,10 @@ from config import (
     Config,
     DumbScoreBenchmarkConfig,
     TournamentBenchmarkConfig,
-    load_config_and_setup_run,
 )
 from metrics import Metrics
 from pydantic_yaml import parse_yaml_file_as
-from v2.common import JobTrigger, LatestModel, create_alphazero
+from v2.common import JobTrigger, LatestModel, MockWandb, create_alphazero
 
 # from self_play import LatestModel
 
@@ -76,51 +74,55 @@ def benchmarks(config: Config):
 
 class BenchmarkJob:
     @classmethod
-    def from_job_config(cls, config: Config, job_config):
+    def from_job_config(cls, config: Config, job_config, wandb_run):
         if isinstance(job_config, TournamentBenchmarkConfig):
-            return TournamentBenchmarkJob(config, job_config)
+            return TournamentBenchmarkJob(config, job_config, wandb_run)
 
         if isinstance(job_config, DumbScoreBenchmarkConfig):
-            return DumbScoreBenchmarkJob(config, job_config)
+            return DumbScoreBenchmarkJob(config, job_config, wandb_run)
 
         if isinstance(job_config, AgentEvolutionBenchmarkConfig):
-            return AgentEvolutionBenchmarkJob(config, job_config)
+            return AgentEvolutionBenchmarkJob(config, job_config, wandb_run)
 
         raise ValueError(f"Unknown job config type: {job_config}")
 
     @abstractmethod
-    def run(self, model_filename: str):
+    def run(self, latest: LatestModel):
         pass
 
 
 class TournamentBenchmarkJob(BenchmarkJob):
-    def __init__(self, config: Config, job_config: TournamentBenchmarkConfig):
+    def __init__(self, config: Config, job_config: TournamentBenchmarkConfig, wandb_run):
+        self.config = config
         self.job_config = job_config
+        self.wandb_run = wandb_run
 
-    def run(self, model_filename: str):
-        print(f"Tournamet score:, prefix: {self.job_config}, filename {model_filename}")
+    def run(self, latest: LatestModel):
+        print(f"Tournament score:, prefix: {self.job_config}, filename {latest.filename}")
 
         pass
 
 
 class DumbScoreBenchmarkJob(BenchmarkJob):
-    def __init__(self, config: Config, job_config: DumbScoreBenchmarkConfig):
+    def __init__(self, config: Config, job_config: DumbScoreBenchmarkConfig, wandb_run):
         self.config = config
         self.job_config = job_config
-        self.metrics = Metrics(config.quoridor.board_size, config.quoridor.max_walls)  # antyhing else important?
+        self.wandb_run = wandb_run
+        self.metrics = Metrics(config.quoridor.board_size, config.quoridor.max_walls)
 
-    def run(self, model_filename: str):
+    def run(self, latest: LatestModel):
         # We create the agent with temperature 0 for Dumb Score, since we want to see it in its best behavior.
         # In real playing, the temperature should be 0 or have dropped to 0 before getting to a terminal situation
         # like the ones in dumb score.
         agent = create_alphazero(
-            self.config, self.job_config.alphazero, overrides={"model_filename": model_filename, "temperature": 0}
+            self.config, self.job_config.alphazero, overrides={"model_filename": latest.filename, "temperature": 0}
         )
-
         score = self.metrics.dumb_score(agent, verbose=False)
-        print(f"Dumb score: {score}, prefix: {self.job_config.prefix}, {agent.params.model_filename}")
 
-        # TODO log to wandb
+        prefix = self.job_config.prefix
+        if prefix != "":
+            prefix = prefix + "_"
+        self.wandb_run.log({f"{prefix}dumb_score": score}, step=latest.version)
 
         del agent
         if torch.cuda.is_available():
@@ -128,27 +130,41 @@ class DumbScoreBenchmarkJob(BenchmarkJob):
 
 
 class AgentEvolutionBenchmarkJob(BenchmarkJob):
-    def __init__(self, config: Config, job_config: AgentEvolutionBenchmarkConfig):
-        pass
+    def __init__(self, config: Config, job_config: AgentEvolutionBenchmarkConfig, wandb_run):
+        self.config = config
+        self.job_config = job_config
+        self.wandb_run = wandb_run
 
-    def run(self, model_filename: str):
+    def run(self, latest: LatestModel):
         pass
 
 
 def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
     freq = JobTrigger.from_string(config, benchmark.every)
     LatestModel.wait_for_creation(config)
+    if config.wandb:
+        idx = config.benchmarks.index(benchmark)
+        run_id = f"{config.run_id}-benchmark-{idx}"
+        wandb_run = wandb.init(
+            project=config.wandb.project,
+            job_type="benchmark",
+            group=config.run_id,
+            name=run_id,
+            id=run_id,
+            resume="allow",
+        )
+    else:
+        wandb_run = MockWandb()
 
-    jobs = [BenchmarkJob.from_job_config(config, job_config) for job_config in benchmark.jobs]
+    jobs = [BenchmarkJob.from_job_config(config, job_config, wandb_run) for job_config in benchmark.jobs]
 
     while True:
         freq.wait()
         # We get the model filename here so that all the jobs run with the same model
-        model_filename = LatestModel.load(config).filename
+        latest = LatestModel.load(config)
 
-        print(f"=== ({os.getpid()} running benchmark with {model_filename} ===")
         for job in jobs:
-            job.run(model_filename)
+            job.run(latest)
 
 
 def create_benchmark_processes(config: Config) -> list[mp.Process]:
@@ -158,15 +174,3 @@ def create_benchmark_processes(config: Config) -> list[mp.Process]:
         ps.append(p)
 
     return ps
-
-
-if __name__ == "__main__":
-    config = load_config_and_setup_run(
-        "deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole"
-    )
-
-    # run_benchmark(config, config.benchmarks[0])
-    freq = JobTrigger.from_string(config, "10 models")
-    while True:
-        freq.wait()
-        print(LatestModel.load(config).version)

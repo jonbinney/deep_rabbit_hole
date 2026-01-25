@@ -10,6 +10,7 @@ import numpy as np
 import wandb
 from config import Config, load_config_and_setup_run
 from v2 import LatestModel, benchmarks, create_alphazero
+from v2.common import MockWandb
 
 # TO DO
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -134,13 +135,9 @@ def train(config: Config):
             resume="allow",
         )
     else:
-        wandb_run = None
+        wandb_run = MockWandb()
 
-    alphazero_agent = create_alphazero(
-        config,
-        config.self_play.alphazero,
-        overrides={'training_mode': True}
-    )
+    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
@@ -191,7 +188,7 @@ def train(config: Config):
 
             # Train
             loss = alphazero_agent.evaluator.train_iteration_v2(samples)
-            wandb_run.log({"loss": loss, "games_played": last_game}, step=model_version + 1, commit=True)
+            wandb_run.log({"loss": loss, "games_played": last_game}, step=model_version, commit=True)
 
         print(f"Loss: {loss}")
         t1 = time.time()
