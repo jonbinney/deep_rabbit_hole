@@ -254,17 +254,9 @@ fn minimax(
 
     let best_value: f32;
 
-    // Did we win?
-    if check_win(&player_positions.view(), goal_rows, current_player) {
-        best_value = if current_player == agent_player {
-            WINNING_REWARD
-        } else {
-            -WINNING_REWARD
-        };
-    }
-    // Did the opponent win?
-    else if check_win(&player_positions.view(), goal_rows, opponent) {
-        best_value = if current_player == agent_player {
+    // Did the opponent just win?
+    if check_win(&player_positions.view(), goal_rows, opponent) {
+        best_value = if opponent == agent_player {
             WINNING_REWARD
         } else {
             -WINNING_REWARD
