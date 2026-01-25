@@ -74,11 +74,6 @@ def benchmarks(config: Config):
         time.sleep(60)
 
 
-def run_tournament_benchmark(config: Config, job: TournamentBenchmarkConfig) -> None:
-    # don't forget to re-use the Metrics class, which also needs to be different per job
-    print(f"Running tournament benchmark: {job.prefix}")
-
-
 class BenchmarkJob:
     @classmethod
     def from_job_config(cls, config: Config, job_config):
@@ -115,12 +110,17 @@ class DumbScoreBenchmarkJob(BenchmarkJob):
         self.metrics = Metrics(config.quoridor.board_size, config.quoridor.max_walls)  # antyhing else important?
 
     def run(self, model_filename: str):
+        # We create the agent with temperature 0 for Dumb Score, since we want to see it in its best behavior.
+        # In real playing, the temperature should be 0 or have dropped to 0 before getting to a terminal situation
+        # like the ones in dumb score.
         agent = create_alphazero(
-            self.config, self.job_config.alphazero, training_mode=False, model_filename=model_filename
+            self.config, self.job_config.alphazero, overrides={"model_filename": model_filename, "temperature": 0}
         )
 
         score = self.metrics.dumb_score(agent, verbose=False)
         print(f"Dumb score: {score}, prefix: {self.job_config.prefix}, {agent.params.model_filename}")
+
+        # TODO log to wandb
 
         del agent
         if torch.cuda.is_available():

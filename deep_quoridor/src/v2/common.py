@@ -3,7 +3,7 @@ import sys
 import time
 from abc import abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 
@@ -97,62 +97,89 @@ class ModelJobTrigger:
         self.next_model = current_model + self.every_model
 
 
+def _validate_overrides(overrides: dict[str, Any]) -> None:
+    """Validate that override keys are valid AlphaZeroParams fields."""
+    if not overrides:
+        return
+
+    from dataclasses import fields
+
+    valid_fields = {f.name for f in fields(AlphaZeroParams)}
+    invalid_keys = set(overrides.keys()) - valid_fields
+
+    if invalid_keys:
+        raise ValueError(f"Invalid override keys: {invalid_keys}. Valid AlphaZeroParams fields: {sorted(valid_fields)}")
+
+
 def create_alphazero(
     config: Config,
-    sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig],
-    training_mode: bool,
-    model_filename: Optional[str] = None,
+    sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig] = None,
+    overrides: Optional[dict[str, Any]] = None,
 ) -> AlphaZeroAgent:
-    mcts_n = config.alphazero.mcts_n
-    mcts_ucb_c = config.alphazero.mcts_c_puct
-    temperature = None
-    drop_t_on_step = None
-    mcts_noise_epsilon = 0.25
-    mcts_noise_alpha = None
+    """
+    Create an AlphaZero agent with configurable parameters.
 
+    Parameters are merged with precedence: config < sub_config < overrides
+
+    Args:
+        config: Base configuration
+        sub_config: Optional play or self-play specific config
+        overrides: Optional dict to override any AlphaZeroParams field
+
+    Returns:
+        Configured AlphaZeroAgent
+    """
+    # Normalize overrides to avoid None checks
+    overrides = overrides or {}
+
+    # Validate overrides early
+    _validate_overrides(overrides)
+
+    # Build params dict from config
+    params_dict = {
+        "mcts_n": config.alphazero.mcts_n,
+        "mcts_ucb_c": config.alphazero.mcts_c_puct,
+    }
+
+    # Add network config
     if config.alphazero.network.type == "mlp":
-        nn_type = "mlp"
-        nn_mask_training_predictions = config.alphazero.network.mask_training_predictions
-        # Those 2 are not needed for ml
-        nn_resnet_num_blocks = None
-        nn_resnet_num_channels = 32
+        params_dict.update(
+            {
+                "nn_type": "mlp",
+                "nn_mask_training_predictions": config.alphazero.network.mask_training_predictions,
+            }
+        )
     elif config.alphazero.network.type == "resnet":
-        nn_type = "resnet"
-        nn_mask_training_predictions = config.alphazero.network.mask_training_predictions
-        nn_resnet_num_blocks = config.alphazero.network.num_blocks
-        nn_resnet_num_channels = config.alphazero.network.num_channels
-
+        params_dict.update(
+            {
+                "nn_type": "resnet",
+                "nn_mask_training_predictions": config.alphazero.network.mask_training_predictions,
+                "nn_resnet_num_blocks": config.alphazero.network.num_blocks,
+                "nn_resnet_num_channels": config.alphazero.network.num_channels,
+            }
+        )
     else:
         raise ValueError(f"Unknown nn_type {config.alphazero.network.type}")
 
+    # Apply sub_config overrides
     if isinstance(sub_config, AlphaZeroPlayConfig):
         if sub_config.mcts_n is not None:
-            mcts_n = sub_config.mcts_n
+            params_dict["mcts_n"] = sub_config.mcts_n
         if sub_config.mcts_c_puct is not None:
-            mcts_ucb_c = sub_config.mcts_c_puct
-        temperature = sub_config.temperature
-        drop_t_on_step = sub_config.drop_t_on_step
+            params_dict["mcts_ucb_c"] = sub_config.mcts_c_puct
+        params_dict["temperature"] = sub_config.temperature
+        params_dict["drop_t_on_step"] = sub_config.drop_t_on_step
 
     if isinstance(sub_config, AlphaZeroSelfPlayConfig):
-        mcts_noise_epsilon = sub_config.mcts_noise_epsilon
-        mcts_noise_alpha = sub_config.mcts_noise_alpha
-        temperature = sub_config.temperature
-        drop_t_on_step = sub_config.drop_t_on_step
+        params_dict["mcts_noise_epsilon"] = sub_config.mcts_noise_epsilon
+        params_dict["mcts_noise_alpha"] = sub_config.mcts_noise_alpha
+        params_dict["temperature"] = sub_config.temperature
+        params_dict["drop_t_on_step"] = sub_config.drop_t_on_step
 
-    params = AlphaZeroParams(
-        mcts_n=mcts_n,
-        mcts_ucb_c=mcts_ucb_c,
-        training_mode=training_mode,
-        nn_type=nn_type,
-        nn_mask_training_predictions=nn_mask_training_predictions,
-        nn_resnet_num_blocks=nn_resnet_num_blocks,
-        nn_resnet_num_channels=nn_resnet_num_channels,
-        mcts_noise_epsilon=mcts_noise_epsilon,
-        mcts_noise_alpha=mcts_noise_alpha,
-        temperature=temperature,
-        drop_t_on_step=drop_t_on_step,
-        model_filename=model_filename,
-    )
+    # Apply overrides (highest priority)
+    params_dict.update(overrides)
+
+    params = AlphaZeroParams(**params_dict)
     return AlphaZeroAgent(
         config.quoridor.board_size,
         config.quoridor.max_walls,

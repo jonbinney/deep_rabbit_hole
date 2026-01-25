@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import wandb
 from config import Config, load_config_and_setup_run
-from v2 import LatestModel, benchmarks
+from v2 import LatestModel, benchmarks, create_alphazero
 
 # TO DO
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -117,21 +117,6 @@ def self_play(config: Config):
         # )
 
 
-# TO DO: we need to pass a specific subconfig as well, because the alphazero params may be overriden
-def create_alphazero(config: Config) -> AlphaZeroAgent:
-    params = AlphaZeroParams(  # we may need more params, e.g. mcts_noise when it's for self-play
-        mcts_n=config.alphazero.mcts_n,
-        mcts_ucb_c=config.alphazero.mcts_c_puct,
-        training_mode=True,
-    )
-    return AlphaZeroAgent(
-        config.quoridor.board_size,
-        config.quoridor.max_walls,
-        config.quoridor.max_steps,
-        params=params,
-    )
-
-
 def train(config: Config):
     global azparams
     batch_size = config.training.batch_size
@@ -151,7 +136,11 @@ def train(config: Config):
     else:
         wandb_run = None
 
-    alphazero_agent = create_alphazero(config)
+    alphazero_agent = create_alphazero(
+        config,
+        config.self_play.alphazero,
+        overrides={'training_mode': True}
+    )
 
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
