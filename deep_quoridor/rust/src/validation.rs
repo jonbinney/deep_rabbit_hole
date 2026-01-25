@@ -1,4 +1,3 @@
-// Old non-QBitRepr validation utilities, kept for backwards compatibility
 #![allow(dead_code)]
 
 use ndarray::{ArrayView1, ArrayView2};

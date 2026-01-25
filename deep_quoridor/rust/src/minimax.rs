@@ -1,12 +1,9 @@
-// Old non-QBitRepr minimax implementation, kept for backwards compatibility
-// New code should use q_minimax instead
 #![allow(dead_code)]
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
 
 use crate::actions::get_valid_move_actions;
 use crate::actions::get_valid_wall_actions;
@@ -235,7 +232,6 @@ fn minimax(
     wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
-    log_entries: Option<Arc<Mutex<Vec<MinimaxLogEntry>>>>,
 ) -> f32 {
     let opponent = 1 - current_player;
     let opponent_old_position = Array1::from(vec![
@@ -315,7 +311,6 @@ fn minimax(
                 wall_sigma,
                 discount_factor,
                 heuristic,
-                log_entries.clone(),
             );
 
             // Apply discount factor
@@ -333,34 +328,6 @@ fn minimax(
         }
 
         best_value = value;
-
-        // Log all evaluated actions from this state as a single entry
-        if let Some(ref log) = log_entries {
-            let (actions_vec, values_vec): (Vec<Vec<i32>>, Vec<f32>) =
-                action_values.into_iter().unzip();
-
-            // Don't bother storing the padding rows and columns around the outside of the grid.
-            let grid_shape = grid.shape();
-            let rows = grid_shape[0];
-            let cols = grid_shape[1];
-            let mut middle_grid = Vec::with_capacity((rows - 4) * (cols - 4));
-            for i in 2..(rows - 2) {
-                for j in 2..(cols - 2) {
-                    middle_grid.push(grid[[i, j]]);
-                }
-            }
-
-            let entry = MinimaxLogEntry {
-                grid: middle_grid,
-                current_player,
-                walls_remaining: walls_remaining.to_vec(),
-                agent_player,
-                completed_steps,
-                actions: actions_vec,
-                values: values_vec,
-            };
-            log.lock().unwrap().push(entry);
-        }
     }
 
     // Undo action
@@ -389,8 +356,7 @@ pub fn evaluate_actions(
     wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
-    enable_logging: bool,
-) -> (Array2<i32>, Array1<f32>, Option<Vec<MinimaxLogEntry>>) {
+) -> (Array2<i32>, Array1<f32>) {
     // Sample actions to evaluate
     let actions = sample_actions(
         grid,
@@ -402,13 +368,6 @@ pub fn evaluate_actions(
         wall_sigma,
     );
     assert!(actions.nrows() > 0, "No valid actions found");
-
-    // Create log collector if logging is enabled
-    let log_collector = if enable_logging {
-        Some(Arc::new(Mutex::new(Vec::new())))
-    } else {
-        None
-    };
 
     // Evaluate all actions in parallel
     let values: Vec<f32> = (0..actions.nrows())
@@ -434,20 +393,11 @@ pub fn evaluate_actions(
                 wall_sigma,
                 discount_factor,
                 heuristic,
-                log_collector.clone(),
             )
         })
         .collect();
 
     let values_array = Array1::from(values);
 
-    // Extract log entries if logging was enabled
-    let log_entries = log_collector.map(|collector| {
-        Arc::try_unwrap(collector)
-            .ok()
-            .and_then(|mutex| mutex.into_inner().ok())
-            .unwrap_or_else(|| Vec::new())
-    });
-
-    (actions, values_array, log_entries)
+    (actions, values_array)
 }

@@ -1,12 +1,11 @@
-// Old non-QBitRepr pathfinding utilities, kept for backwards compatibility
 #![allow(dead_code)]
 
 use ndarray::{Array2, ArrayView2};
 use std::collections::VecDeque;
 
-pub use crate::grid::CELL_WALL;
 #[cfg(test)]
 use crate::grid::CELL_FREE;
+pub use crate::grid::CELL_WALL;
 
 /// Calculate the shortest distance from a position to a target row using BFS.
 ///

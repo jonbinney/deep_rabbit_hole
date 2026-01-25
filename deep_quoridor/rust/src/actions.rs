@@ -1,4 +1,3 @@
-// Old non-QBitRepr action utilities, kept for backwards compatibility
 #![allow(dead_code)]
 
 use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1};

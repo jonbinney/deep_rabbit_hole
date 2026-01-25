@@ -1,4 +1,3 @@
-// Old non-QBitRepr grid utilities, kept for backwards compatibility
 #![allow(dead_code)]
 
 use ndarray::{ArrayView2, ArrayViewMut2};

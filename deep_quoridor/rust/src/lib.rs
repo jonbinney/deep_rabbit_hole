@@ -3,9 +3,6 @@ use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyR
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use rusqlite::{params, Connection};
-use std::path::Path;
-
 mod actions;
 mod game_state;
 mod grid;
@@ -297,7 +294,7 @@ fn evaluate_actions<'py>(
     discount_factor: f32,
     heuristic: i32,
 ) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
-    let (actions, values, _) = minimax::evaluate_actions(
+    let (actions, values) = minimax::evaluate_actions(
         &grid.as_array(),
         &player_positions.as_array(),
         &walls_remaining.as_array(),
@@ -308,170 +305,12 @@ fn evaluate_actions<'py>(
         wall_sigma,
         discount_factor,
         heuristic,
-        false, // don't enable logging of the policy
     );
 
     Ok((
         PyArray2::from_owned_array_bound(py, actions),
         numpy::PyArray1::from_owned_array_bound(py, values),
     ))
-}
-
-/// Write log entries to a SQLite database
-#[allow(dead_code)]
-fn log_entries_to_sqlite(
-    entries: Vec<minimax::MinimaxLogEntry>,
-    filename: &str,
-    board_size: i32,
-    max_steps: i32,
-    max_walls: i32,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut conn = Connection::open(Path::new(filename))?;
-
-    // Create metadata table for global parameters
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS metadata (
-            key TEXT PRIMARY KEY,
-            value FLOAT NOT NULL
-        )",
-        [],
-    )?;
-
-    // Insert metadata
-    conn.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('board_size', ?1)",
-        params![board_size as f32],
-    )?;
-    conn.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_steps', ?1)",
-        params![max_steps as f32],
-    )?;
-    conn.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('max_walls', ?1)",
-        params![max_walls as f32],
-    )?;
-
-    // Create table with columns for grid (as blob), walls remaining, completed_steps, actions (as blob), and action_values (as blob)
-    // Note: grid is trimmed to exclude 2 outermost rows/cols on each side
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS policy (
-            id INTEGER PRIMARY KEY,
-            grid BLOB NOT NULL,
-            current_player INTEGER NOT NULL,
-            walls_p1 INTEGER NOT NULL,
-            walls_p2 INTEGER NOT NULL,
-            agent_player INTEGER NOT NULL,
-            completed_steps INTEGER NOT NULL,
-            num_actions INTEGER NOT NULL,
-            actions BLOB NOT NULL,
-            action_values BLOB NOT NULL
-        )",
-        [],
-    )?;
-
-    // Create indices for fast lookups by grid, walls, completed_steps, current_player, and agent_player
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lookup ON policy (grid, walls_p1, walls_p2, completed_steps, current_player, agent_player)",
-        [],
-    )?;
-
-    let num_entries = entries.len();
-
-    // Insert entries in a transaction for better performance
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
-            "INSERT INTO policy (grid, current_player, walls_p1, walls_p2, agent_player, completed_steps, num_actions, actions, action_values)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
-        )?;
-
-        for entry in entries {
-            // Convert grid Vec<i8> to Vec<u8> for blob storage
-            let grid_blob: Vec<u8> = entry.grid.iter().map(|&x| x as u8).collect();
-
-            // Flatten actions into a single vector: each action is [row, col, type]
-            let actions_flat: Vec<i32> = entry.actions.into_iter().flatten().collect();
-            let actions_blob: Vec<u8> =
-                actions_flat.iter().flat_map(|&x| x.to_le_bytes()).collect();
-
-            // Convert values to bytes
-            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
-
-            let num_actions = entry.values.len() as i32;
-
-            stmt.execute(params![
-                grid_blob,
-                entry.current_player,
-                entry.walls_remaining[0],
-                entry.walls_remaining[1],
-                entry.agent_player,
-                entry.completed_steps,
-                num_actions,
-                actions_blob,
-                values_blob,
-            ])?;
-        }
-        // Explicitly drop statement before committing
-        drop(stmt);
-    }
-    tx.commit()?;
-
-    Ok(num_entries)
-}
-
-/// Create a policy database by evaluating actions and saving to a SQLite database
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(signature = (grid, player_positions, walls_remaining, goal_rows, current_player, max_steps, branching_factor, wall_sigma, discount_factor, heuristic, filename))]
-fn create_policy_db(
-    grid: PyReadonlyArray2<i8>,
-    player_positions: PyReadonlyArray2<i32>,
-    walls_remaining: PyReadonlyArray1<i32>,
-    goal_rows: PyReadonlyArray1<i32>,
-    current_player: i32,
-    max_steps: i32,
-    branching_factor: usize,
-    wall_sigma: f32,
-    discount_factor: f32,
-    heuristic: i32,
-    filename: &str,
-) -> PyResult<usize> {
-    // Calculate board_size from grid dimensions
-    // Grid is (2*board_size + 3) x (2*board_size + 3), so board_size = (rows - 3) / 2
-    let grid_array = grid.as_array();
-    let grid_rows = grid_array.shape()[0] as i32;
-    let board_size = (grid_rows - 3) / 2;
-
-    // Get max_walls from walls_remaining (assumes we start with full walls)
-    let walls_array = walls_remaining.as_array();
-    let max_walls = walls_array[0].max(walls_array[1]);
-
-    // Call evaluate_actions with logging enabled
-    let (_actions, _values, log_entries) = minimax::evaluate_actions(
-        &grid_array,
-        &player_positions.as_array(),
-        &walls_array,
-        &goal_rows.as_array(),
-        current_player,
-        max_steps,
-        branching_factor,
-        wall_sigma,
-        discount_factor,
-        heuristic,
-        true, // enable logging
-    );
-
-    if let Some(entries) = log_entries {
-        // Write entries to SQLite database with metadata
-        log_entries_to_sqlite(entries, filename, board_size, max_steps, max_walls).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to write to SQLite database: {}",
-                e
-            ))
-        })
-    } else {
-        Ok(0)
-    }
 }
 
 /// A Python module implemented in Rust.
@@ -504,7 +343,6 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
-    m.add_function(wrap_pyfunction!(create_policy_db, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;
