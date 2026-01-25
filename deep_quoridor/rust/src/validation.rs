@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2};
 
 use crate::grid::{
     check_wall_cells, is_wall_potential_block, set_wall_cells, CELL_FREE, CELL_WALL,
@@ -179,6 +179,56 @@ pub fn is_wall_action_valid(
     }
 
     true
+}
+
+/// Validate whether a wall placement is legal (mutable version).
+/// This version modifies the grid in place and restores it, avoiding allocation.
+pub fn is_wall_action_valid_mut(
+    grid: &mut ArrayViewMut2<i8>,
+    player_positions: &ArrayView2<i32>,
+    walls_remaining: &ArrayView1<i32>,
+    goal_rows: &ArrayView1<i32>,
+    current_player: i32,
+    wall_row: i32,
+    wall_col: i32,
+    wall_orientation: i32,
+) -> bool {
+    // Check if player has walls remaining
+    if walls_remaining[current_player as usize] <= 0 {
+        return false;
+    }
+
+    // Check if wall cells are free
+    if !check_wall_cells(&grid.view(), wall_row, wall_col, wall_orientation, CELL_FREE) {
+        return false;
+    }
+
+    // If wall doesn't touch existing walls at 2+ points, it can't block
+    if !is_wall_potential_block(&grid.view(), wall_row, wall_col, wall_orientation) {
+        return true;
+    }
+
+    // Place the wall temporarily
+    set_wall_cells(grid, wall_row, wall_col, wall_orientation, CELL_WALL);
+
+    // Check that all players can still reach their goal
+    let mut valid = true;
+    for player in 0..player_positions.nrows() {
+        let player_row = player_positions[[player, 0]];
+        let player_col = player_positions[[player, 1]];
+        let goal_row = goal_rows[player];
+
+        let dist = distance_to_row(&grid.view(), player_row, player_col, goal_row);
+        if dist == -1 {
+            valid = false;
+            break;
+        }
+    }
+
+    // Restore the grid
+    set_wall_cells(grid, wall_row, wall_col, wall_orientation, CELL_FREE);
+
+    valid
 }
 
 #[cfg(test)]

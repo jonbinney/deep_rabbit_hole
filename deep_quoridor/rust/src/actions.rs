@@ -2,7 +2,7 @@
 
 use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1};
 
-use crate::validation::{is_move_action_valid, is_wall_action_valid};
+use crate::validation::{is_move_action_valid, is_wall_action_valid, is_wall_action_valid_mut};
 
 // Action types
 pub const ACTION_WALL_VERTICAL: i32 = 0;
@@ -156,12 +156,15 @@ pub fn get_valid_wall_actions(
     let wall_size = board_size - 1;
     let mut actions = Vec::new();
 
+    // Make a mutable copy of the grid for in-place validation
+    let mut grid_copy = grid.to_owned();
+
     // Check all possible wall placements
     for wall_row in 0..wall_size {
         for wall_col in 0..wall_size {
             // Check vertical walls
-            if is_wall_action_valid(
-                grid,
+            if is_wall_action_valid_mut(
+                &mut grid_copy.view_mut(),
                 player_positions,
                 walls_remaining,
                 goal_rows,
@@ -174,8 +177,8 @@ pub fn get_valid_wall_actions(
             }
 
             // Check horizontal walls
-            if is_wall_action_valid(
-                grid,
+            if is_wall_action_valid_mut(
+                &mut grid_copy.view_mut(),
                 player_positions,
                 walls_remaining,
                 goal_rows,

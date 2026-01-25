@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use ndarray::{Array2, ArrayView2};
-use std::collections::VecDeque;
+use ndarray::ArrayView2;
 
 #[cfg(test)]
 use crate::grid::CELL_FREE;
@@ -9,7 +8,8 @@ pub use crate::grid::CELL_WALL;
 
 /// Calculate the shortest distance from a position to a target row using BFS.
 ///
-/// This is a direct port of the Numba implementation from qgrid.py.
+/// This is an optimized version that avoids heap allocations by using fixed-size
+/// arrays for the visited set and BFS queue.
 ///
 /// # Arguments
 /// * `grid` - The game grid (includes walls and border)
@@ -25,86 +25,114 @@ pub fn distance_to_row(
     start_col: i32,
     target_row: i32,
 ) -> i32 {
-    let grid_height = grid.nrows() as i32;
-    let grid_width = grid.ncols() as i32;
+    let grid_height = grid.nrows();
+    let grid_width = grid.ncols();
 
     // Convert board coordinates to grid coordinates
-    let start_i = start_row * 2 + 2;
-    let start_j = start_col * 2 + 2;
-    let target_i = target_row * 2 + 2;
+    let start_i = (start_row * 2 + 2) as usize;
+    let start_j = (start_col * 2 + 2) as usize;
+    let target_i = (target_row * 2 + 2) as usize;
 
     // Already at target
     if target_i == start_i {
         return 0;
     }
 
-    // Track visited positions
-    let mut visited = Array2::<bool>::default((grid_height as usize, grid_width as usize));
-    visited[[start_i as usize, start_j as usize]] = true;
+    // Use a fixed-size visited array on the stack (supports up to 20x20 grid)
+    // For a 9x9 board, grid is 20x20 (2*9 + 2 border on each side)
+    const MAX_GRID_SIZE: usize = 24;
+    let mut visited = [[false; MAX_GRID_SIZE]; MAX_GRID_SIZE];
+    visited[start_i][start_j] = true;
 
-    // BFS queue: (i, j, steps)
-    let mut queue = VecDeque::new();
-    queue.push_back((start_i, start_j, 0));
+    // Use a fixed-size ring buffer for BFS queue
+    // Maximum positions = board_size^2 = 81 for 9x9, use 128 for safety
+    const MAX_QUEUE_SIZE: usize = 128;
+    let mut queue_i = [0usize; MAX_QUEUE_SIZE];
+    let mut queue_j = [0usize; MAX_QUEUE_SIZE];
+    let mut queue_steps = [0i32; MAX_QUEUE_SIZE];
+    let mut queue_head: usize = 0;
+    let mut queue_tail: usize = 0;
 
-    while let Some((i, j, steps)) = queue.pop_front() {
-        // Try all 4 directions
-        // This is done explicitly (not in a loop) to match the Numba implementation
-        // which unrolls the loop for better performance
+    // Enqueue start position
+    queue_i[queue_tail] = start_i;
+    queue_j[queue_tail] = start_j;
+    queue_steps[queue_tail] = 0;
+    queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
+
+    while queue_head != queue_tail {
+        let i = queue_i[queue_head];
+        let j = queue_j[queue_head];
+        let steps = queue_steps[queue_head];
+        queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
+
+        // Try all 4 directions with early return on finding target row
 
         // Down
         let new_i = i + 2;
-        let wall_i = i + 1;
-        if new_i < grid_height
-            && !visited[[new_i as usize, j as usize]]
-            && grid[[wall_i as usize, j as usize]] != CELL_WALL
-        {
-            visited[[new_i as usize, j as usize]] = true;
-            if target_i == new_i {
-                return steps + 1;
+        if new_i < grid_height && !visited[new_i][j] {
+            let wall_i = i + 1;
+            if grid[[wall_i, j]] != CELL_WALL {
+                visited[new_i][j] = true;
+                if new_i == target_i {
+                    return steps + 1;
+                }
+                queue_i[queue_tail] = new_i;
+                queue_j[queue_tail] = j;
+                queue_steps[queue_tail] = steps + 1;
+                queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
             }
-            queue.push_back((new_i, j, steps + 1));
         }
 
         // Up
-        let new_i = i - 2;
-        let wall_i = i - 1;
-        if new_i >= 0
-            && !visited[[new_i as usize, j as usize]]
-            && grid[[wall_i as usize, j as usize]] != CELL_WALL
-        {
-            visited[[new_i as usize, j as usize]] = true;
-            if target_i == new_i {
-                return steps + 1;
+        if i >= 2 {
+            let new_i = i - 2;
+            if !visited[new_i][j] {
+                let wall_i = i - 1;
+                if grid[[wall_i, j]] != CELL_WALL {
+                    visited[new_i][j] = true;
+                    if new_i == target_i {
+                        return steps + 1;
+                    }
+                    queue_i[queue_tail] = new_i;
+                    queue_j[queue_tail] = j;
+                    queue_steps[queue_tail] = steps + 1;
+                    queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
+                }
             }
-            queue.push_back((new_i, j, steps + 1));
         }
 
         // Right
         let new_j = j + 2;
-        let wall_j = j + 1;
-        if new_j < grid_width
-            && !visited[[i as usize, new_j as usize]]
-            && grid[[i as usize, wall_j as usize]] != CELL_WALL
-        {
-            visited[[i as usize, new_j as usize]] = true;
-            if target_i == i {
-                return steps + 1;
+        if new_j < grid_width && !visited[i][new_j] {
+            let wall_j = j + 1;
+            if grid[[i, wall_j]] != CELL_WALL {
+                visited[i][new_j] = true;
+                if i == target_i {
+                    return steps + 1;
+                }
+                queue_i[queue_tail] = i;
+                queue_j[queue_tail] = new_j;
+                queue_steps[queue_tail] = steps + 1;
+                queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
             }
-            queue.push_back((i, new_j, steps + 1));
         }
 
         // Left
-        let new_j = j - 2;
-        let wall_j = j - 1;
-        if new_j >= 0
-            && !visited[[i as usize, new_j as usize]]
-            && grid[[i as usize, wall_j as usize]] != CELL_WALL
-        {
-            visited[[i as usize, new_j as usize]] = true;
-            if target_i == i {
-                return steps + 1;
+        if j >= 2 {
+            let new_j = j - 2;
+            if !visited[i][new_j] {
+                let wall_j = j - 1;
+                if grid[[i, wall_j]] != CELL_WALL {
+                    visited[i][new_j] = true;
+                    if i == target_i {
+                        return steps + 1;
+                    }
+                    queue_i[queue_tail] = i;
+                    queue_j[queue_tail] = new_j;
+                    queue_steps[queue_tail] = steps + 1;
+                    queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
+                }
             }
-            queue.push_back((i, new_j, steps + 1));
         }
     }
 
@@ -115,6 +143,7 @@ pub fn distance_to_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::Array2;
 
     #[test]
     fn test_distance_to_row_simple() {
