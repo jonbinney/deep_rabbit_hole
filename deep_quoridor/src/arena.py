@@ -219,7 +219,12 @@ class Arena:
 
         return games_to_play
 
-    def _play_games(self, players: list[str], times: int, mode: PlayMode, num_workers: int = 0) -> list[GameResult]:
+    def _play_games(
+        self, players: list[str], times: int, mode: PlayMode, num_workers: int = 0, agent_map: dict[str, Agent] = {}
+    ) -> list[GameResult]:
+        """
+        Use agent_map if you want to provide Agent classes for any of the players instead of having them created from their encoded names.
+        """
         games_to_play = self._list_of_games_to_play(players, times, mode)
         self.plugins.start_arena(self.game, total_games=len(games_to_play))
 
@@ -230,7 +235,10 @@ class Arena:
                 # play in this process
                 agents = {}
                 for p in players:
-                    agents[p] = AgentRegistry.create_from_encoded_name(p, self.game)
+                    if p in agent_map:
+                        agents[p] = agent_map[p]
+                    else:
+                        agents[p] = AgentRegistry.create_from_encoded_name(p, self.game)
 
                 for p1, p2, game_id in games_to_play:
                     result = self._play_game(agents[p1], agents[p2], game_id)

@@ -134,6 +134,10 @@ def train(config: Config):
             id=run_id,
             resume="allow",
         )
+        wandb.define_metric("Game num", hidden=True)
+        wandb.define_metric("Model version", hidden=True)
+        wandb.define_metric("game_length", "Game num")
+        wandb.define_metric("*", "Model version")
     else:
         wandb_run = MockWandb()
 
@@ -162,7 +166,9 @@ def train(config: Config):
             os.rename(f, new_name)
             with open(new_name, "rb") as f:
                 data = pickle.load(f)
-                moves_per_game.append(len(list(data)))
+                game_length = len(list(data))
+                moves_per_game.append(game_length)
+                wandb_run.log({"game_length": game_length, "Game num": last_game, "Model version": model_version})
 
         total_moves = sum(moves_per_game)
         if total_moves < batch_size:
@@ -188,7 +194,7 @@ def train(config: Config):
 
             # Train
             loss = alphazero_agent.evaluator.train_iteration_v2(samples)
-            wandb_run.log({"loss": loss, "games_played": last_game}, step=model_version, commit=True)
+            wandb_run.log({"loss": loss, "games_played": last_game, "Model version": model_version}, commit=True)
 
         print(f"Loss: {loss}")
         t1 = time.time()
@@ -202,7 +208,7 @@ def train(config: Config):
 
 if __name__ == "__main__":
     config = load_config_and_setup_run(
-        "deep_quoridor/experiments/B5W3/demo.yaml", "/Users/amarcu/code/deep_rabbit_hole"
+        "deep_quoridor/experiments/B5W3/base.yaml", "/Users/amarcu/code/deep_rabbit_hole"
     )
     mp.set_start_method("spawn", force=True)
 
