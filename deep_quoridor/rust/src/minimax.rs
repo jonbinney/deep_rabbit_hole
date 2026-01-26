@@ -216,7 +216,7 @@ fn compute_heuristic_for_game_state(
     distance_reward + wall_reward
 }
 
-/// Minimax algorithm for evaluating a single action.
+/// Minimax algorithm with alpha-beta pruning for evaluating a single action.
 #[allow(clippy::too_many_arguments)]
 fn minimax(
     action: &ArrayView1<i32>,
@@ -232,12 +232,14 @@ fn minimax(
     wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
+    mut alpha: f32,
+    mut beta: f32,
 ) -> f32 {
     let opponent = 1 - current_player;
-    let opponent_old_position = Array1::from(vec![
+    let opponent_old_position: [i32; 2] = [
         player_positions[[opponent as usize, 0]],
         player_positions[[opponent as usize, 1]],
-    ]);
+    ];
 
     // Apply the action the opponent just took
     apply_action(
@@ -291,8 +293,7 @@ fn minimax(
             WINNING_REWARD * 2.0
         };
 
-        // Evaluate all actions and collect their values for logging
-        let mut action_values = Vec::new();
+        // Evaluate actions with alpha-beta pruning
         for i in 0..next_actions.nrows() {
             let next_action = next_actions.row(i);
 
@@ -311,19 +312,26 @@ fn minimax(
                 wall_sigma,
                 discount_factor,
                 heuristic,
+                alpha,
+                beta,
             );
 
             // Apply discount factor
             let discounted_eval = eval * discount_factor;
 
-            // Store the action and its value for logging
-            action_values.push((next_action.to_vec(), discounted_eval));
-
-            // Update best value
+            // Update best value and alpha/beta with pruning
             if is_maximizing {
                 value = value.max(discounted_eval);
+                alpha = alpha.max(value);
+                if beta <= alpha {
+                    break; // Beta cutoff
+                }
             } else {
                 value = value.min(discounted_eval);
+                beta = beta.min(value);
+                if beta <= alpha {
+                    break; // Alpha cutoff
+                }
             }
         }
 
@@ -331,13 +339,14 @@ fn minimax(
     }
 
     // Undo action
+    let prev_pos = Array1::from(opponent_old_position.to_vec());
     undo_action(
         &mut grid.view_mut(),
         &mut player_positions.view_mut(),
         &mut walls_remaining.view_mut(),
         opponent,
         action,
-        &opponent_old_position.view(),
+        &prev_pos.view(),
     );
 
     best_value
@@ -393,6 +402,8 @@ pub fn evaluate_actions(
                 wall_sigma,
                 discount_factor,
                 heuristic,
+                f32::NEG_INFINITY, // alpha
+                f32::INFINITY,     // beta
             )
         })
         .collect();
