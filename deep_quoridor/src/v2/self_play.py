@@ -222,8 +222,7 @@ if __name__ == "__main__":
     [p.start() for p in ps]
     processes.extend(ps)
 
-    num_workers = 2
-    for i in range(num_workers):
+    for i in range(config.self_play.num_workers):
         p = mp.Process(target=self_play, args=[config])
         p.start()
         processes.append(p)
