@@ -27,5 +27,8 @@
     "ruff.trace.server": "messages",
     "editor.codeActionsOnSave": {
         "source.organizeImports": "explicit"
-    }
+    },
+    "rust-analyzer.linkedProjects": [
+        "./deep_quoridor/rust/Cargo.toml"
+    ]
 }
