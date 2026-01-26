@@ -1,0 +1,29 @@
+[profile.dev]
+# Makes it easier to catch test failures in a debugger
+panic = "abort"
+
+[package]
+name = "quoridor-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "quoridor_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
+numpy = { version = "0.22", optional = true }
+ndarray = "0.16"
+rand = "0.8"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+[features]
+default = ["python"]
+python = ["pyo3", "numpy"]
+
+[profile.release]
+# Enable optimizations for better performance
+opt-level = 3
+lto = true
+codegen-units = 1
