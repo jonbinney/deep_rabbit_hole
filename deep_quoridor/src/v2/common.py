@@ -1,17 +1,12 @@
 import re
-import sys
 import time
 from abc import abstractmethod
-from pathlib import Path
 from typing import Any, Optional
 
-from pydantic_yaml import parse_yaml_file_as, to_yaml_file
-
-sys.path.insert(0, str(Path(__file__).parent.parent))  # noqa: F821
-
-from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
+from agents.alphazero import AlphaZeroAgent, AlphaZeroParams
 from config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
 from pydantic import BaseModel
+from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 
 
 class LatestModel(BaseModel):

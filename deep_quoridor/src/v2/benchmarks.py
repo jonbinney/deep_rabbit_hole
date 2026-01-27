@@ -3,6 +3,7 @@ from abc import abstractmethod
 
 import torch
 import wandb
+from common import JobTrigger, LatestModel, MockWandb, create_alphazero
 from config import (
     AgentEvolutionBenchmarkConfig,
     BenchmarkScheduleConfig,
@@ -11,9 +12,6 @@ from config import (
     TournamentBenchmarkConfig,
 )
 from metrics import Metrics
-from v2.common import JobTrigger, LatestModel, MockWandb, create_alphazero
-
-# from self_play import LatestModel
 
 
 class BenchmarkJob:

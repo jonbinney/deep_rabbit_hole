@@ -426,6 +426,9 @@ class AlphaZeroAgent(TrainableAgent):
     def start_game_batch(self, envs):
         self.visited_states.clear()
         self.game_envs = envs
+        for e in self.game_envs:
+            e.reset()
+
         self.replay_buffers_in_progress = [[] for _ in range(len(envs))]
 
     def end_game_batch(self, env=None):
@@ -451,7 +454,7 @@ class AlphaZeroAgent(TrainableAgent):
 
             self.episode_count += 1
 
-    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path):
+    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path) -> list[Path]:
         if not self.params.training_mode:
             return []
 

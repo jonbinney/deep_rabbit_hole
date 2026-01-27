@@ -3,7 +3,6 @@ from typing import Optional
 
 import wandb
 import wandb.wandb_run
-
 from utils.misc import format_time
 
 
@@ -40,10 +39,10 @@ class Timer:
         cls.starts[name] = time.perf_counter()
 
     @classmethod
-    def finish(cls, name: str, episode: Optional[int] = None):
+    def finish(cls, name: str, episode: Optional[int] = None) -> str:
         if name not in cls.starts:
             print(f"TIMER: WARNING - timer for {name} was not started but trying to finish")
-            return
+            return ""
 
         elapsed = time.perf_counter() - cls.starts[name]
         del cls.starts[name]
@@ -54,6 +53,8 @@ class Timer:
             print(f"TIMER: [{episode}] {name} took {format_time(elapsed)}")
             if cls.wandb_run:
                 cls.wandb_run.log({f"time-{name}": elapsed, "Episode": episode})
+
+        return format_time(elapsed)
 
     @classmethod
     def log_cumulative(cls, x_name: str, x_value: int | float):

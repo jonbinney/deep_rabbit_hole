@@ -1,13 +1,7 @@
-import sys
 from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
 import yaml
-
-# TO DO
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
