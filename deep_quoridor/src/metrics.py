@@ -178,6 +178,67 @@ class Metrics:
             dumb_score,
         )
 
+    def tournament(self, agent: Agent):
+        """
+        Runs a tournament for the given agent against predefined benchmarks.  This was created for v2
+        architecture, and has some duplicated code from compute().
+        """
+        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, renderers=[MatchResultsRenderer()])
+        # We store the elos of the opponents playing against each other so we don't have to play those matches
+        # every time
+        if not self.stored_elos:
+            results = arena._play_games(self.benchmarks, self.benchmarks_t, PlayMode.ALL_VS_ALL)
+            self.stored_elos = compute_elo(results)
+
+        results = arena._play_games(
+            ["alphazero"] + self.benchmarks,
+            self.benchmarks_t,
+            PlayMode.FIRST_VS_ALL,
+            agent_map={"alphazero": agent},
+        )
+
+        elo_table = compute_elo(results, initial_elos=self.stored_elos.copy())
+        relative_elo = self._compute_relative_elo(elo_table, agent.name())
+
+        overall_win_percentage, p1_stats, p2_stats = self._compute_stats(results, agent.name())
+        absolute_elo = elo_table[agent.name()]
+
+        del agent
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return (
+            elo_table,
+            relative_elo,
+            overall_win_percentage,
+            p1_stats,
+            p2_stats,
+            int(absolute_elo),
+        )
+
+    def metrics_from_stats(
+        self, prefix: str, p1_stats: dict[str, MatchupStats], p2_stats: dict[str, MatchupStats]
+    ) -> dict[str, float]:
+        metrics = {}
+        for pn, stats in [("p1", p1_stats), ("p2", p2_stats)]:
+            # Log total win/loss/tie percentages as player pn
+            pn_totals = sum(stats.values(), start=MatchupStats())
+            metrics[f"{prefix}{pn}_win_perc"] = 100 * pn_totals.wins / pn_totals.total()
+            metrics[f"{prefix}{pn}_loss_perc"] = 100 * pn_totals.losses / pn_totals.total()
+            metrics[f"{prefix}{pn}_tie_perc"] = 100 * pn_totals.ties / pn_totals.total()
+
+            # Log average "value" as pn. This is the value as alphazero computes it, with a win counting
+            # as +1, a tie counting as 0, and a loss counting as -1.
+            metrics[f"{prefix}{pn}_avg_value"] = (pn_totals.wins - pn_totals.losses) / pn_totals.total()
+
+            # Log win/loss/tie percentages as pn against each opponent
+            for opponent, opp_stats in stats.items():
+                metrics[f"{prefix}{pn}_win_perc_vs_{opponent}"] = 100 * opp_stats.wins / opp_stats.total()
+                metrics[f"{prefix}{pn}_loss_perc_vs_{opponent}"] = 100 * opp_stats.losses / opp_stats.total()
+                metrics[f"{prefix}{pn}_tie_perc_vs_{opponent}"] = 100 * opp_stats.ties / opp_stats.total()
+
+        return metrics
+
     def dumb_score(self, agent: Agent, verbose: bool = False):
         def print_fail(initial: str, current: str):
             print("Initial position:")

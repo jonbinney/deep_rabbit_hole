@@ -1,0 +1,75 @@
+run_id: cucu-26b
+quoridor:
+  board_size: 5
+  max_walls: 3
+  max_steps: 100
+alphazero:
+  network:
+    type: resnet
+    num_blocks: 2
+    num_channels: 32
+  mcts_n: 500
+  mcts_c_puct: 1.2
+wandb:
+  project: v2
+  #upload_model_every: 1 hour
+self_play:
+  num_workers: 2
+  parallel_games: 8
+  alphazero:
+    mcts_noise_epsilon: 0.25
+training:
+  games_per_training_step: 25.0
+  learning_rate: 0.001
+  batch_size: 2048
+  weight_decay: 0.0001
+  replay_buffer_size: 1000000
+benchmarks:
+  - every: 100 models
+    jobs:
+      - type: tournament
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+        times: 100
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: dumb_score
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+  - every: 60 minutes
+    jobs:
+      - type: tournament
+        prefix: ""
+        #upload_model_when_max: win_perc, p2_win_perc
+        times: 20
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: tournament
+        prefix: dt6
+        alphazero:
+          drop_t_on_step: 6
+        times: 20
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: tournament
+        prefix: "hard"
+        times: 4
+        opponents:
+          - simple:branching_factor=256,nick=simple,max_depth=6

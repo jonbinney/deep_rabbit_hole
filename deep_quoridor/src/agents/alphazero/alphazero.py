@@ -3,6 +3,7 @@ import pickle
 import random
 import shutil
 import tempfile
+import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,13 +13,12 @@ import numpy as np
 import torch
 import wandb
 import wandb.wandb_run
-from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
-from utils import Timer, get_initial_random_seed, my_device, resolve_path
-from utils.subargs import SubargsBase
-
 from agents.alphazero.mcts import MCTS, QuoridorKey
 from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core import TrainableAgent
+from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
+from utils import Timer, get_initial_random_seed, my_device, resolve_path
+from utils.subargs import SubargsBase
 
 
 @dataclass
@@ -428,10 +428,12 @@ class AlphaZeroAgent(TrainableAgent):
         self.game_envs = envs
         self.replay_buffers_in_progress = [[] for _ in range(len(envs))]
 
-    def end_game_batch(self):
+    def end_game_batch(self, env=None):
         if not self.params.training_mode:
             return
 
+        if env:
+            self.game_envs = [env]
         for i, env in enumerate(self.game_envs):
             # Assign the final game outcome to all positions in this episode
             # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
@@ -449,12 +451,37 @@ class AlphaZeroAgent(TrainableAgent):
 
             self.episode_count += 1
 
+    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path):
+        if not self.params.training_mode:
+            return []
+
+        filenames = []
+        for i, env in enumerate(self.game_envs):
+            # Assign the final game outcome to all positions in this episode
+            # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
+            processed_replay_buffer = []
+            replay_buffer = self.replay_buffers_in_progress[i]
+            while replay_buffer and replay_buffer[-1]["value"] is None:
+                position = replay_buffer.pop()
+                agent = env.player_to_agent[position["player"]]
+                factor = 1 + self.params.game_length_bonus_factor * (1 - env.game.completed_steps / env.max_steps)
+                position["value"] = factor * env.rewards[agent]
+                processed_replay_buffer.append(position)
+
+            processed_replay_buffer = reversed(processed_replay_buffer)
+
+            filenames.append(temp_dir / f"game_{int(time.time() * 1000)}_{i}_{os.getpid()}.pkl")
+            with open(filenames[-1], "wb") as f:
+                pickle.dump(processed_replay_buffer, f)
+
+        return filenames
+
     def start_game(self, game, player_id):
         self.visited_states.clear()
         self.replay_buffers_in_progress = [[]]
 
     def end_game(self, env):
-        self.end_game_batch()
+        self.end_game_batch(env)
 
         # This is just used when we use the old train.py script
         if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:

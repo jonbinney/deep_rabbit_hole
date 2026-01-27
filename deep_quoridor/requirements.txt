@@ -14,4 +14,5 @@ torch
 wandb
 sb3_contrib
 stable_baselines3
-pyyaml
+pydantic
+pydantic-yaml
