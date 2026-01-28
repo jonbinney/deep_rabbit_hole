@@ -20,7 +20,6 @@ from pydantic_yaml import to_yaml_file
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import Timer, get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
-from v2.yaml_models import GameInfo
 
 
 @dataclass
@@ -459,6 +458,8 @@ class AlphaZeroAgent(TrainableAgent):
     def end_game_batch_and_save_replay_buffers(self, temp_dir: Path, ready_dir: Path, model_version: int):
         if not self.params.training_mode:
             return
+
+        from v2.yaml_models import GameInfo
 
         for i, env in enumerate(self.game_envs):
             # Assign the final game outcome to all positions in this episode
