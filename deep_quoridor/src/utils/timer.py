@@ -39,7 +39,7 @@ class Timer:
         cls.starts[name] = time.perf_counter()
 
     @classmethod
-    def finish(cls, name: str, episode: Optional[int] = None) -> str:
+    def finish(cls, name: str, episode: Optional[int] = None) -> float:
         if name not in cls.starts:
             print(f"TIMER: WARNING - timer for {name} was not started but trying to finish")
             return ""
@@ -54,7 +54,7 @@ class Timer:
             if cls.wandb_run:
                 cls.wandb_run.log({f"time-{name}": elapsed, "Episode": episode})
 
-        return format_time(elapsed)
+        return elapsed
 
     @classmethod
     def log_cumulative(cls, x_name: str, x_value: int | float):

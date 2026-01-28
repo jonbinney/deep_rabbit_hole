@@ -284,6 +284,8 @@ class NNEvaluator:
         self.cache = LRUCache(max_size=self.max_cache_size)
 
         policy_loss, value_loss, total_loss = self.compute_losses(samples)
+        assert policy_loss, "Expected policy_loss"
+        assert value_loss, "Expected value_loss"
         assert total_loss, "Expected total_loss"
 
         # Backward pass
@@ -291,7 +293,7 @@ class NNEvaluator:
         total_loss.backward()
         self.optimizer.step()
 
-        return total_loss.item()
+        return policy_loss.item(), value_loss.item(), total_loss.item()
 
     def train_iteration(
         self,

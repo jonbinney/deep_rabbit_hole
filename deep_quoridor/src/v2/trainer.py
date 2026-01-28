@@ -4,16 +4,15 @@ from collections import Counter
 
 import numpy as np
 import wandb
+from pydantic_yaml import parse_yaml_file_as
+from utils import Timer
 from v2.common import MockWandb, create_alphazero
 from v2.config import Config
-from v2.yaml_models import LatestModel
+from v2.yaml_models import GameInfo, LatestModel
 
 
 def train(config: Config):
-    global azparams
     batch_size = config.training.batch_size
-    training_iterations = 1
-    min_new_games = 25
 
     if config.wandb:
         run_id = f"{config.run_id}-training"
@@ -38,19 +37,17 @@ def train(config: Config):
     alphazero_agent.save_model(filename)
     LatestModel.write(config, str(filename), 0)
 
+    training_steps = 0
     last_game = 0
     model_version = 1
     moves_per_game = []
     game_filename = []
 
+    Timer.start("waiting-to-train")
     while True:
-        while True:
-            ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
-            if len(ready) >= min_new_games:
-                break
-            time.sleep(1)
+        # Process new games: find new files, move them and extract the info used for training
+        ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
 
-        # Process new games
         for f in ready:
             last_game += 1
 
@@ -59,44 +56,68 @@ def train(config: Config):
             yaml_file = f.with_suffix(".yaml")
             new_yaml_name = new_name.with_suffix(".yaml")
             yaml_file.rename(new_yaml_name)
+            game_info = parse_yaml_file_as(GameInfo, new_yaml_name)
 
             f.rename(new_name)
             with open(new_name, "rb") as f:
                 data = pickle.load(f)
-                game_length = len(list(data))
-                moves_per_game.append(game_length)
+                moves_per_game.append(game_info.game_length)
                 game_filename.append(f.name)
-                wandb_run.log({"game_length": game_length, "Game num": last_game, "Model version": model_version})
+                wandb_run.log(
+                    {
+                        "game_length": game_info.game_length,
+                        "model_lag": model_version - 1 - game_info.model_version,
+                        "Game num": last_game,
+                        "Model version": model_version,
+                    }
+                )
 
         total_moves = sum(moves_per_game)
-        if total_moves < batch_size:
+
+        games_needed_to_train = config.training.games_per_training_step * (training_steps + 1)
+
+        if total_moves < batch_size or games_needed_to_train > last_game:
+            time.sleep(1)
             continue
 
-        t0 = time.time()
-        for _ in range(training_iterations):
-            # Sample
-            # TO DO, we need to roll out games when it's longer that the replay buffer size
-            # TO DO probably we want to sample for all the training iterations together to make it faster
-            samples = []
+        time_waiting_to_train = Timer.finish("waiting-to-train")
 
-            games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
-            samples_per_game = Counter(games)
-            for game_number in samples_per_game:
-                file = config.paths.replay_buffers / game_filename[game_number]
-                with open(file, "rb") as f:
-                    data = pickle.load(f)
+        # Sample moves from the replay buffer files
+        Timer.start("sample")
+        samples = []
 
-                samples.extend(np.random.choice(list(data), samples_per_game[game_number]))
+        games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
+        samples_per_game = Counter(games)
+        for game_number in samples_per_game:
+            file = config.paths.replay_buffers / game_filename[game_number]
+            with open(file, "rb") as f:
+                data = pickle.load(f)
 
-                # print(f"{game_number}: {samples_per_game[game_number]}, {len(entries)}")
+            samples.extend(np.random.choice(list(data), samples_per_game[game_number]))
+        time_sample = Timer.finish("sample")
 
-            # Train
-            loss = alphazero_agent.evaluator.train_iteration_v2(samples)
-            wandb_run.log({"loss": loss, "games_played": last_game, "Model version": model_version}, commit=True)
+        # Train the network for one step using the samples
+        Timer.start("train")
+        policy_loss, value_loss, total_loss = alphazero_agent.evaluator.train_iteration_v2(samples)
+        training_steps += 1
+        time_train = Timer.finish("train")
 
-        print(f"Loss: {loss}")
-        t1 = time.time()
-        print(f"Sampling and training took {t1 - t0}")
+        wandb_run.log(
+            {
+                "policy_loss": policy_loss,
+                "value_loss": value_loss,
+                "total_loss": total_loss,
+                "games_played": last_game,
+                "time-sample": time_sample,
+                "time-train": time_train,
+                "time-waiting-to-train": time_waiting_to_train,
+                "Model version": model_version,
+            },
+            commit=True,
+        )
+        Timer.start("waiting-to-train")
+
+        print(f"Sampling and training took {time_sample}, {time_train}")
 
         new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
         alphazero_agent.save_model(new_model_filename)
