@@ -3,6 +3,7 @@ from abc import abstractmethod
 
 import torch
 import wandb
+from metrics import Metrics
 from v2.common import JobTrigger, MockWandb, create_alphazero
 from v2.config import (
     AgentEvolutionBenchmarkConfig,

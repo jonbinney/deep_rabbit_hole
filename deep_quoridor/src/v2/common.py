@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from agents.alphazero import AlphaZeroAgent, AlphaZeroParams
 from v2.config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
+from v2.yaml_models import LatestModel
 
 
 class JobTrigger:
