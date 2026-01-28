@@ -43,8 +43,9 @@ def train(config: Config):
     moves_per_game = []
     game_filename = []
 
-    Timer.start("waiting-to-train")
     while True:
+        Timer.start("waiting-to-train")
+
         # Process new games: find new files, move them and extract the info used for training
         ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
 
@@ -115,7 +116,6 @@ def train(config: Config):
             },
             commit=True,
         )
-        Timer.start("waiting-to-train")
 
         print(f"Sampling and training took {time_sample}, {time_train}")
 
