@@ -1,9 +1,6 @@
 import multiprocessing as mp
 
-import benchmarks
-import self_play
-import train
-from config import load_config_and_setup_run
+from v2 import benchmarks, load_config_and_setup_run, self_play, train
 
 if __name__ == "__main__":
     config = load_config_and_setup_run(

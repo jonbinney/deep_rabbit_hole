@@ -4,9 +4,9 @@ from collections import Counter
 
 import numpy as np
 import wandb
-from config import Config
-from v2 import LatestModel, create_alphazero
-from v2.common import MockWandb
+from v2.common import MockWandb, create_alphazero
+from v2.config import Config
+from v2.yaml_models import LatestModel
 
 
 def train(config: Config):
@@ -41,9 +41,11 @@ def train(config: Config):
     last_game = 0
     model_version = 1
     moves_per_game = []
+    game_filename = []
+
     while True:
         while True:
-            ready = [f for f in sorted(config.paths.replay_buffers_ready.iterdir()) if f.is_file()]
+            ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
             if len(ready) >= min_new_games:
                 break
             time.sleep(1)
@@ -51,13 +53,19 @@ def train(config: Config):
         # Process new games
         for f in ready:
             last_game += 1
-            # Keep the first part of the name, which contains the model version, and append the game number
-            new_name = f"{f.name.split('-')[0]}_{last_game}.pkl"
+
+            new_name = config.paths.replay_buffers / f"game_{last_game:07d}.pkl"
+
+            yaml_file = f.with_suffix(".yaml")
+            new_yaml_name = new_name.with_suffix(".yaml")
+            yaml_file.rename(new_yaml_name)
+
             f.rename(new_name)
             with open(new_name, "rb") as f:
                 data = pickle.load(f)
                 game_length = len(list(data))
                 moves_per_game.append(game_length)
+                game_filename.append(f.name)
                 wandb_run.log({"game_length": game_length, "Game num": last_game, "Model version": model_version})
 
         total_moves = sum(moves_per_game)
@@ -74,7 +82,7 @@ def train(config: Config):
             games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
             samples_per_game = Counter(games)
             for game_number in samples_per_game:
-                file = config.paths.replay_buffers / f"game_{game_number + 1}.pkl"
+                file = config.paths.replay_buffers / game_filename[game_number]
                 with open(file, "rb") as f:
                     data = pickle.load(f)
 

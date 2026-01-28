@@ -1,11 +1,10 @@
 import os
-import time
 
 import quoridor_env
-from config import Config
 from utils import Timer
-from v2 import LatestModel
 from v2.common import create_alphazero
+from v2.config import Config
+from v2.yaml_models import LatestModel
 
 
 def self_play(config: Config):
@@ -63,13 +62,9 @@ def self_play(config: Config):
                     continue
                 environments[env_idx].step(action_index)
 
-        filenames = agent.end_game_batch_and_save_replay_buffers(config.paths.replay_buffers_tmp)
-        for i, f in enumerate(filenames):
-            # Everything after '-' will be discarded after renaming, but we just need something to make
-            # the name unique across this and other processes
-            new_filename = f"game_m{latest.version:06d}-{os.getpid()}_{int(time.time() * 1000)}_{i}.pkl"
-            f.rename(config.paths.replay_buffers_ready / new_filename)
-
+        agent.end_game_batch_and_save_replay_buffers(
+            config.paths.replay_buffers_tmp, config.paths.replay_buffers_ready, current_model_version
+        )
         num_truncated = n - len(finished_in)
         elapsed = Timer.finish("self-play")
         print(f"{os.getpid()} - finsihed in {elapsed} {sorted(finished_in)}, {num_truncated}")

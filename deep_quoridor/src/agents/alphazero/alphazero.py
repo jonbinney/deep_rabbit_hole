@@ -16,9 +16,11 @@ import wandb.wandb_run
 from agents.alphazero.mcts import MCTS, QuoridorKey
 from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core import TrainableAgent
+from pydantic_yaml import to_yaml_file
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import Timer, get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
+from v2.yaml_models import GameInfo
 
 
 @dataclass
@@ -454,11 +456,10 @@ class AlphaZeroAgent(TrainableAgent):
 
             self.episode_count += 1
 
-    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path) -> list[Path]:
+    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path, ready_dir: Path, model_version: int):
         if not self.params.training_mode:
-            return []
+            return
 
-        filenames = []
         for i, env in enumerate(self.game_envs):
             # Assign the final game outcome to all positions in this episode
             # For Quoridor: reward = 1 for win, -1 for loss, 0 for draw
@@ -471,13 +472,23 @@ class AlphaZeroAgent(TrainableAgent):
                 position["value"] = factor * env.rewards[agent]
                 processed_replay_buffer.append(position)
 
-            processed_replay_buffer = reversed(processed_replay_buffer)
+            processed_replay_buffer = list(reversed(processed_replay_buffer))
 
-            filenames.append(temp_dir / f"game_{int(time.time() * 1000)}_{i}_{os.getpid()}.pkl")
-            with open(filenames[-1], "wb") as f:
+            filename = f"game_{int(time.time() * 1000)}_{i}_{os.getpid()}"
+
+            # We first save the game info to the ready directory; the trainer will look for the pkl file
+            # first, so there's no risk of partial reads or race conditions
+            game_info = GameInfo(
+                model_version=model_version, game_length=len(processed_replay_buffer), creator=str(os.getpid())
+            )
+            to_yaml_file(ready_dir / f"{filename}.yaml", game_info)
+
+            # For the binary, we first save it in a temp directory and move it right away, to avoid partial reads
+            pkl_filename = temp_dir / f"{filename}.pkl"
+            with open(pkl_filename, "wb") as f:
                 pickle.dump(processed_replay_buffer, f)
 
-        return filenames
+            pkl_filename.rename(ready_dir / pkl_filename.name)
 
     def start_game(self, game, player_id):
         self.visited_states.clear()
