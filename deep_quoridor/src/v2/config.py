@@ -1,14 +1,9 @@
-import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
 import yaml
-
-# TO DO
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictBaseModel(BaseModel):
@@ -123,8 +118,18 @@ class UserConfig(StrictBaseModel):
     training: TrainingConfig
     benchmarks: list[BenchmarkScheduleConfig] = []
 
+    @field_validator("run_id")
+    @classmethod
+    def replace_datetime_placeholder(cls, v: str) -> str:
+        """Replace $DATETIME with current datetime in format YYYYMMDD-HHMM."""
+        if "$DATETIME" in v:
+            current_datetime = datetime.now().strftime("%Y%m%d-%H%M")
+            return v.replace("$DATETIME", current_datetime)
+        return v
+
 
 class PathsConfig(StrictBaseModel):
+    run_dir: Path
     models: Path
     latest_model_yaml: Path
     checkpoints: Path
@@ -148,6 +153,7 @@ class PathsConfig(StrictBaseModel):
                 path.mkdir(parents=True, exist_ok=True)
 
         return cls(
+            run_dir=run_dir,
             models=models,
             latest_model_yaml=latest_model_yaml,
             checkpoints=checkpoints,
@@ -167,7 +173,7 @@ class Config(UserConfig):
 
 
 def to_yaml_str_ordered(model: BaseModel) -> str:
-    return yaml.safe_dump(model.model_dump(by_alias=True), sort_keys=False)
+    return yaml.safe_dump(model.model_dump(by_alias=True, exclude_none=True, exclude_unset=True), sort_keys=False)
 
 
 def _merge_dicts(base: dict, override: dict) -> dict:
@@ -200,4 +206,11 @@ def load_user_config(file: str) -> UserConfig:
 
 def load_config_and_setup_run(file: str, base_dir: str, create_dirs: bool = True) -> Config:
     user_config = load_user_config(file)
-    return Config.from_user(user_config, base_dir, create_dirs=create_dirs)
+    config = Config.from_user(user_config, base_dir, create_dirs=create_dirs)
+
+    config_filename = config.paths.run_dir / "config.yaml"
+
+    with config_filename.open(mode="w") as f:
+        f.write(to_yaml_str_ordered(user_config))
+
+    return config

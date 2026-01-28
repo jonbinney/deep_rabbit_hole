@@ -1,39 +1,11 @@
 import re
-import sys
 import time
 from abc import abstractmethod
-from pathlib import Path
 from typing import Any, Optional
 
-from pydantic_yaml import parse_yaml_file_as, to_yaml_file
-
-sys.path.insert(0, str(Path(__file__).parent.parent))  # noqa: F821
-
-from agents.alphazero.alphazero import AlphaZeroAgent, AlphaZeroParams
-from config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
-from pydantic import BaseModel
-
-
-class LatestModel(BaseModel):
-    filename: str
-    version: int
-
-    @classmethod
-    def load(cls, config: Config):
-        return parse_yaml_file_as(cls, config.paths.latest_model_yaml)
-
-    @classmethod
-    def write(cls, config: Config, filename: str, version: int):
-        latest = LatestModel(filename=filename, version=version)
-        to_yaml_file(config.paths.latest_model_yaml, latest)
-
-    @classmethod
-    def wait_for_creation(cls, config: Config, timeout: int = 60):
-        start_time = time.time()
-        while not config.paths.latest_model_yaml.exists():
-            if time.time() - start_time > timeout:
-                raise RuntimeError(f"Timeout: {config.paths.latest_model_yaml} not found after {timeout} seconds.")
-        time.sleep(1)
+from agents.alphazero import AlphaZeroAgent, AlphaZeroParams
+from v2.config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
+from v2.yaml_models import LatestModel
 
 
 class JobTrigger:
