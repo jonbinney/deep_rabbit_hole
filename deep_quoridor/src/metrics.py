@@ -183,7 +183,7 @@ class Metrics:
         Runs a tournament for the given agent against predefined benchmarks.  This was created for v2
         architecture, and has some duplicated code from compute().
         """
-        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, renderers=[MatchResultsRenderer()])
+        arena = Arena(self.board_size, self.max_walls, max_steps=self.max_steps, verbose=False)
         # We store the elos of the opponents playing against each other so we don't have to play those matches
         # every time
         if not self.stored_elos:

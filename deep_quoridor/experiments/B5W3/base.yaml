@@ -1,4 +1,4 @@
-run_id: cucu-26b
+run_id: cucu-28d
 quoridor:
   board_size: 5
   max_walls: 3

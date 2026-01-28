@@ -71,6 +71,7 @@ class Arena:
         plugins: list[ArenaPlugin] = [],
         swap_players: bool = True,
         max_steps: int = 1000,
+        verbose: bool = True,
     ):
         self.board_size = board_size
         self.max_walls = max_walls
@@ -81,6 +82,7 @@ class Arena:
 
         self.renderers = renderers
         self.plugins = CompositeArenaPlugin([p for p in plugins + renderers + [saver] if p is not None])
+        self.verbose = verbose
 
     def _play_game(self, agent1: Agent, agent2: Agent, game_id: str) -> GameResult:
         self.game.reset()
@@ -119,7 +121,7 @@ class Arena:
                         done=True,
                     )
 
-                if truncation:
+                if truncation and self.verbose:
                     # Print the game state to help debug.
                     print(f"\nP1: {agent1.name()} P2: {agent2.name()}")
                     print(self.game.render())
