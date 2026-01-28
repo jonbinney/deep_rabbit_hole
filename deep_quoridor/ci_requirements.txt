@@ -16,3 +16,5 @@ tensorflow
 torch==2.9.1+cpu
 wandb
 pyyaml
+pydantic
+pydantic-yaml
