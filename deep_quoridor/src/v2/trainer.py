@@ -1,14 +1,33 @@
 import pickle
 import time
 from collections import Counter
+from threading import Thread
 
 import numpy as np
 import wandb
 from pydantic_yaml import parse_yaml_file_as
 from utils import Timer
-from v2.common import MockWandb, create_alphazero
+from v2.common import JobTrigger, MockWandb, create_alphazero
 from v2.config import Config
 from v2.yaml_models import GameInfo, LatestModel
+
+
+def model_uploader(config: Config):
+    LatestModel.wait_for_creation(config)
+
+    every = config.wandb.upload_model.every
+    if not every:
+        return
+    trigger = JobTrigger.from_string(config, every)
+    while True:
+        trigger.wait()
+        print(f"Time to upload model! {time.time()}")
+        latest_model_filename = LatestModel.load(config).filename
+        artifact = wandb.Artifact("alphazero_B5W3_mv1.0", type="model")
+        artifact.add_file(local_path=latest_model_filename)
+        artifact.save()
+
+        print(f"Uploaded! {time.time}")
 
 
 def train(config: Config):
@@ -28,6 +47,11 @@ def train(config: Config):
         wandb.define_metric("Model version", hidden=True)
         wandb.define_metric("game_length", "Game num")
         wandb.define_metric("*", "Model version")
+
+        if config.wandb.upload_model:
+            upload_model_thread = Thread(target=model_uploader, args=(config,))
+            upload_model_thread.start()
+
     else:
         wandb_run = MockWandb()
 
@@ -44,7 +68,7 @@ def train(config: Config):
     game_filename = []
 
     while True:
-        Timer.start("waiting-to-train")
+        Timer.start("waiting-to-train", ignore_if_running=True)
 
         # Process new games: find new files, move them and extract the info used for training
         ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
@@ -123,3 +147,5 @@ def train(config: Config):
         alphazero_agent.save_model(new_model_filename)
         LatestModel.write(config, str(new_model_filename), model_version)
         model_version += 1
+
+    # TODO shutdown upload_model_thread

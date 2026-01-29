@@ -37,8 +37,14 @@ class AlphaZeroBaseConfig(StrictBaseModel):
     mcts_c_puct: float
 
 
+class UploadModel(StrictBaseModel):
+    every: Optional[str] = ""
+    when_max: list[str] = []
+
+
 class WandbConfig(StrictBaseModel):
     project: str
+    upload_model: Optional[UploadModel] = None
 
 
 class AlphaZeroPlayConfig(StrictBaseModel):
