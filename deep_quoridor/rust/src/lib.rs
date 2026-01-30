@@ -439,10 +439,7 @@ pub fn q_log_entries_to_sqlite(
     )?;
 
     // Create index for fast lookups by state
-    conn.execute(
-        "CREATE INDEX idx_state ON policy (state)",
-        [],
-    )?;
+    conn.execute("CREATE INDEX idx_state ON policy (state)", [])?;
 
     let num_entries = entries.len();
 
@@ -451,7 +448,7 @@ pub fn q_log_entries_to_sqlite(
     {
         let mut stmt = tx.prepare(
             "INSERT INTO policy (state, agent_player, num_actions, actions, action_values)
-             VALUES (?1, ?2, ?3, ?4, ?5)"
+             VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
 
         for entry in entries {
@@ -459,17 +456,18 @@ pub fn q_log_entries_to_sqlite(
             let state_blob = entry.data;
 
             // Flatten actions into a single vector: each action is (row, col, action_type)
-            let actions_flat: Vec<usize> = entry.actions.into_iter()
+            let actions_flat: Vec<usize> = entry
+                .actions
+                .into_iter()
                 .flat_map(|(r, c, t)| vec![r, c, t])
                 .collect();
-            let actions_blob: Vec<u8> = actions_flat.iter()
+            let actions_blob: Vec<u8> = actions_flat
+                .iter()
                 .flat_map(|&x| (x as u32).to_le_bytes())
                 .collect();
 
             // Convert values to bytes
-            let values_blob: Vec<u8> = entry.values.iter()
-                .flat_map(|&x| x.to_le_bytes())
-                .collect();
+            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
 
             let num_actions = entry.values.len() as i32;
 
@@ -519,7 +517,6 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
     m.add_function(wrap_pyfunction!(q_evaluate_actions, m)?)?;
-    m.add_function(wrap_pyfunction!(create_policy_db, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;

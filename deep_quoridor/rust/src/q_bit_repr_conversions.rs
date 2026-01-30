@@ -52,7 +52,7 @@ impl QBitRepr {
         // We use check_wall_cells to verify that the cells are specifically set to CELL_WALL
         // (not just occupied by boundary walls or other things)
         use crate::grid::check_wall_cells;
-        use crate::pathfinding::CELL_WALL;
+        use crate::grid::CELL_WALL;
 
         for wall_row in 0..(self.board_size() - 1) {
             for wall_col in 0..(self.board_size() - 1) {
@@ -96,7 +96,7 @@ impl QBitRepr {
     /// This creates a grid in the format used by minimax: (2*board_size + 3) x (2*board_size + 3)
     #[allow(dead_code)]
     pub fn to_grid(&self, data: &[u8]) -> Array2<i8> {
-        use crate::pathfinding::{CELL_FREE, CELL_PLAYER1, CELL_PLAYER2, CELL_WALL};
+        use crate::grid::{CELL_FREE, CELL_PLAYER1, CELL_PLAYER2, CELL_WALL};
 
         let grid_size = 2 * self.board_size() + 3;
         let mut grid = Array2::from_elem((grid_size, grid_size), CELL_FREE);
@@ -169,7 +169,7 @@ mod tests {
         let mut grid = Array2::zeros((grid_size, grid_size));
 
         // Add boundary walls (required by grid format)
-        use crate::pathfinding::CELL_WALL;
+        use crate::grid::CELL_WALL;
         for i in 0..grid_size {
             grid[[0, i]] = CELL_WALL;
             grid[[1, i]] = CELL_WALL;

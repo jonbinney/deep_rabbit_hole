@@ -724,7 +724,6 @@ mod tests {
         Vec<(usize, usize)>,
         Vec<(usize, usize, usize)>,
     ) {
-        let lines = Vec<&str>::new();
         let lines: Vec<&str> = board_str.lines().filter(|l| !l.trim().is_empty()).collect();
 
         // Count cell rows (not horizontal wall rows)

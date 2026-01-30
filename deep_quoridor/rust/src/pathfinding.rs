@@ -4,7 +4,8 @@ use ndarray::ArrayView2;
 
 #[cfg(test)]
 use crate::grid::CELL_FREE;
-pub use crate::grid::CELL_WALL;
+
+use crate::grid::CELL_WALL;
 
 /// Calculate the shortest distance from a position to a target row using BFS.
 ///
