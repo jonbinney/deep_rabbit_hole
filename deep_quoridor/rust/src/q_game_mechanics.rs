@@ -1055,7 +1055,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_forbidden_walls_overlap() {
         test_wall_placements(
             "
