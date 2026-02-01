@@ -526,7 +526,79 @@ impl QGameMechanics {
             valid_moves.push(dest)
         }
 
-        // TODO: Diagonal jumps
+        // Diagonal jumps: when opponent is adjacent and straight jump is blocked
+        // (di, dj) is the direction to opponent, (perp1, perp2) are perpendicular directions
+        let get_diagonal_jumps = |di: i32, dj: i32| -> Vec<(usize, usize)> {
+            let mut jumps = Vec::new();
+
+            // Check if opponent is adjacent in this direction
+            if opp_row as i32 != curr_row as i32 + di || opp_col as i32 != curr_col as i32 + dj {
+                return jumps;
+            }
+
+            // Check no wall between current player and opponent
+            if self.is_wall_between(data, curr_row, curr_col, opp_row, opp_col) {
+                return jumps;
+            }
+
+            // Check if straight jump is blocked (wall behind opponent or edge)
+            let straight_dest_row = opp_row as i32 + di;
+            let straight_dest_col = opp_col as i32 + dj;
+            let straight_blocked = straight_dest_row < 0
+                || straight_dest_col < 0
+                || straight_dest_row >= board_size as i32
+                || straight_dest_col >= board_size as i32
+                || self.is_wall_between(
+                    data,
+                    opp_row,
+                    opp_col,
+                    straight_dest_row as usize,
+                    straight_dest_col as usize,
+                );
+
+            if !straight_blocked {
+                return jumps;
+            }
+
+            // Straight jump is blocked, check diagonal options
+            // Perpendicular directions depend on whether we're moving vertically or horizontally
+            let perp_dirs: [(i32, i32); 2] = if di != 0 {
+                [(0, 1), (0, -1)] // Moving vertically, perpendicular is horizontal
+            } else {
+                [(1, 0), (-1, 0)] // Moving horizontally, perpendicular is vertical
+            };
+
+            for (pi, pj) in perp_dirs {
+                let diag_row = opp_row as i32 + pi;
+                let diag_col = opp_col as i32 + pj;
+
+                // Check in bounds
+                if diag_row < 0
+                    || diag_col < 0
+                    || diag_row >= board_size as i32
+                    || diag_col >= board_size as i32
+                {
+                    continue;
+                }
+
+                // Check no wall between opponent and diagonal destination
+                if self.is_wall_between(data, opp_row, opp_col, diag_row as usize, diag_col as usize)
+                {
+                    continue;
+                }
+
+                jumps.push((diag_row as usize, diag_col as usize));
+            }
+
+            jumps
+        };
+
+        // Check diagonal jumps in all four directions
+        for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dest in get_diagonal_jumps(di, dj) {
+                valid_moves.push(dest);
+            }
+        }
 
         valid_moves
     }
@@ -1149,6 +1221,50 @@ mod tests {
             . * .
             . 2 .
             * 1 *
+        ",
+        );
+    }
+
+    #[test]
+    fn test_jumps_with_walls() {
+        // Wall blocks straight jump right, so diagonal jumps are allowed
+        test_pawn_movements(
+            "
+            * *|.
+            1 2|.
+            * * .
+        ",
+        );
+
+        // Wall blocks straight jump right, diagonal up-right allowed
+        test_pawn_movements(
+            "
+            . * *|.
+            * 1 2|.
+              - -
+            . . . .
+            . . . .
+        ",
+        );
+
+        // More complex wall configuration
+        test_pawn_movements(
+            "
+            . . *|.
+            -+-  +
+            * 1 2|.
+              -+-
+            . . . .
+            . . . .
+        ",
+        );
+
+        // Opponent directly above, wall blocks straight jump up
+        test_pawn_movements(
+            "
+            . * .
+            * 1 *
+            * 2 *
         ",
         );
     }
