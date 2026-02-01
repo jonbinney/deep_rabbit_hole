@@ -1,4 +1,4 @@
-use crate::q_bit_repr::QBitRepr;
+use super::q_bit_repr::QBitRepr;
 /// Conversion functions between QBitRepr packed format and game state arrays.
 ///
 /// This module contains methods for converting between the bit-packed representation

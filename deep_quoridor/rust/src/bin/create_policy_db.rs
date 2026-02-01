@@ -6,7 +6,8 @@
 //! a SQLite database for later analysis or training.
 
 use clap::Parser;
-use quoridor_rs::{q_game_mechanics::QGameMechanics, q_log_entries_to_sqlite, q_minimax};
+use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
+use quoridor_rs::q_log_entries_to_sqlite;
 use std::env;
 
 #[derive(Parser, Debug)]

@@ -7,14 +7,11 @@ use rusqlite::{params, Connection};
 use std::path::Path;
 
 mod actions;
+pub mod compact;
 mod game_state;
 mod grid;
 mod minimax;
 mod pathfinding;
-pub mod q_bit_repr;
-mod q_bit_repr_conversions;
-pub mod q_game_mechanics;
-pub mod q_minimax;
 mod validation;
 
 /// Calculate the shortest distance from a position to a target row.
@@ -339,8 +336,8 @@ fn q_evaluate_actions<'py>(
     board_size: usize,
     max_walls: usize,
 ) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
-    use q_bit_repr::QBitRepr;
-    use q_game_mechanics::QGameMechanics;
+    use compact::q_bit_repr::QBitRepr;
+    use compact::q_game_mechanics::QGameMechanics;
 
     // Create QBitRepr and QGameMechanics
     let repr = QBitRepr::new(board_size, max_walls, max_steps as usize);
@@ -358,7 +355,7 @@ fn q_evaluate_actions<'py>(
     );
 
     // Evaluate actions using QBitRepr minimax
-    let (actions, values, _logs) = q_minimax::evaluate_actions(
+    let (actions, values, _logs) = compact::q_minimax::evaluate_actions(
         &mechanics,
         &data,
         max_steps as usize,
@@ -389,7 +386,7 @@ fn q_evaluate_actions<'py>(
 /// Write QBitRepr-based log entries to a SQLite database
 #[allow(dead_code)]
 pub fn q_log_entries_to_sqlite(
-    entries: Vec<q_minimax::MinimaxLogEntry>,
+    entries: Vec<compact::q_minimax::MinimaxLogEntry>,
     filename: &str,
     board_size: usize,
     max_steps: usize,

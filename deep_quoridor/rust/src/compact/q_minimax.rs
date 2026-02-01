@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
-use crate::q_game_mechanics::QGameMechanics;
+use super::q_game_mechanics::QGameMechanics;
 
 pub const WINNING_REWARD: f32 = 1e6;
 
