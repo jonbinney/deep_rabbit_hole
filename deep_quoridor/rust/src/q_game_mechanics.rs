@@ -478,40 +478,39 @@ impl QGameMechanics {
             valid_moves.push((curr_row, curr_col - 1));
         }
 
+        // Check if a straight jump over the opponent is valid
+        // i, j are the direction of movement (-1, 0, or 1)
         let is_straight_jump_valid = |i: i32, j: i32| -> Option<(usize, usize)> {
-            let jump_row = curr_row as i32 + i;
-            let jump_col = curr_col as i32 + j;
-            let dest_row = jump_row + i;
-            let dest_col = jump_col + j;
-            let next_row = dest_row + i;
-            let next_col = dest_col + j;
-            if dest_row > 0
-                && dest_col > 0
-                && dest_row < board_size as i32
-                && dest_col < board_size as i32
-                && opp_row as i32 == jump_row as i32
-                && opp_col as i32 == jump_col as i32
-                && !self.is_wall_between(
-                    data,
-                    curr_row as usize,
-                    curr_col as usize,
-                    jump_row as usize,
-                    jump_col as usize,
-                )
-                && (next_row == board_size as i32
-                    || next_col == board_size as i32
-                    || self.is_wall_between(
-                        data,
-                        dest_row as usize,
-                        dest_col as usize,
-                        next_row as usize,
-                        next_col as usize,
-                    ))
+            let opp_row_i = curr_row as i32 + i;
+            let opp_col_i = curr_col as i32 + j;
+            let dest_row = opp_row_i + i;
+            let dest_col = opp_col_i + j;
+
+            // Check destination is in bounds
+            if dest_row < 0
+                || dest_col < 0
+                || dest_row >= board_size as i32
+                || dest_col >= board_size as i32
             {
-                Some((dest_row as usize, dest_col as usize))
-            } else {
-                None
+                return None;
             }
+
+            // Check opponent is adjacent in this direction
+            if opp_row as i32 != opp_row_i || opp_col as i32 != opp_col_i {
+                return None;
+            }
+
+            // Check no wall between current player and opponent
+            if self.is_wall_between(data, curr_row, curr_col, opp_row, opp_col) {
+                return None;
+            }
+
+            // Check no wall between opponent and landing square
+            if self.is_wall_between(data, opp_row, opp_col, dest_row as usize, dest_col as usize) {
+                return None;
+            }
+
+            Some((dest_row as usize, dest_col as usize))
         };
 
         if let Some(dest) = is_straight_jump_valid(1, 0) {
@@ -1111,6 +1110,45 @@ mod tests {
             . . . . .
             . . . . .
             . . 2 . .
+        ",
+        );
+    }
+
+    #[test]
+    fn test_simple_jumps() {
+        // Jump right over opponent
+        test_pawn_movements(
+            "
+            * . .
+            1 2 *
+            * . .
+        ",
+        );
+
+        // Jump down over opponent
+        test_pawn_movements(
+            "
+            * 1 *
+            . 2 .
+            . * .
+        ",
+        );
+
+        // Jump left over opponent
+        test_pawn_movements(
+            "
+            . . *
+            * 2 1
+            . . *
+        ",
+        );
+
+        // Jump up over opponent
+        test_pawn_movements(
+            "
+            . * .
+            . 2 .
+            * 1 *
         ",
         );
     }
