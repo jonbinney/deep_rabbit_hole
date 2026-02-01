@@ -354,7 +354,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore]
     fn test_evaluate_actions_basic() {
         // Create a small game
         let mechanics = QGameMechanics::new(3, 3, 10);
