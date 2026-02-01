@@ -732,6 +732,20 @@ mod tests {
             .filter(|l| l.chars().any(|c| "12.*|v".contains(c)))
             .count();
 
+        // Cound the amount of blank space to remove at the start of each line
+        let num_leading_spaces = lines
+            .iter()
+            .map(|line| line.chars().take_while(|c| *c == ' ').count())
+            .min()
+            .unwrap_or(0);
+
+        let stripped_lines: Vec<String> = lines
+            .iter()
+            .map(|line| line[num_leading_spaces..].to_owned())
+            .collect();
+
+        dbg!(&stripped_lines);
+
         let mechanics = QGameMechanics::new(size, 10, 100);
         let mut state = mechanics.repr().create_data();
 
@@ -751,84 +765,116 @@ mod tests {
         let mut forbidden_walls = Vec::new();
 
         let mut row_n = 0;
-        let mut col_positions = std::collections::HashMap::new();
 
-        for line in lines {
+        for line_stripped in stripped_lines {
             // A horizontal wall row contains '-' or '>' but NOT cell markers
-            let is_cell_row = line.chars().all(|c| " 12.*|v+".contains(c));
-            let is_h_wall_row = line.chars().all(|c| " ->".contains(c));
-            assert!(is_cell_row || is_h_wall_row, "Bad row in test: {}", line);
+            let is_cell_row = line_stripped.chars().all(|c| " 12.*|v".contains(c));
+            let is_h_wall_row = line_stripped.chars().all(|c| " ->+".contains(c));
+            assert!(
+                is_cell_row || is_h_wall_row,
+                "Bad row in test: {}",
+                line_stripped
+            );
 
             if is_h_wall_row {
                 // Process horizontal walls
-                for (&i, &col_n) in &col_positions {
-                    if i >= line.len() {
-                        continue;
-                    }
-                    let ch = line.chars().nth(i).unwrap_or(' ');
-                    if ch == '-' {
-                        // Place horizontal wall at (row_n - 1, col_n)
-                        // Check if wall can be placed to avoid duplicates (like Python version)
-                        if row_n > 0
-                            && col_n < size - 1
-                            && mechanics.is_wall_placement_free(
-                                &state,
-                                row_n - 1,
-                                col_n,
-                                WALL_HORIZONTAL,
-                            )
-                        {
-                            mechanics.place_wall(&mut state, row_n - 1, col_n, WALL_HORIZONTAL);
-                        }
-                    }
-                    if ch == '>' || ch == '-' {
-                        if row_n > 0 && col_n < size - 1 {
+                for (ch_i, ch) in line_stripped.chars().enumerate() {
+                    if ch_i % 2 == 0 {
+                        let col_n = ch_i / 2;
+                        if ch == '-' {
+                            // Place horizontal wall at (row_n - 1, col_n)
+                            // Check if wall can be placed to avoid duplicates (like Python version)
+                            if row_n > 0
+                                && col_n < size - 1
+                                && mechanics.is_wall_placement_free(
+                                    &state,
+                                    row_n - 1,
+                                    col_n,
+                                    WALL_HORIZONTAL,
+                                )
+                            {
+                                mechanics.place_wall(&mut state, row_n - 1, col_n, WALL_HORIZONTAL);
+                            }
                             forbidden_walls.push((row_n - 1, col_n, WALL_HORIZONTAL));
+                        } else if ch == '>' {
+                            forbidden_walls.push((row_n - 1, col_n, WALL_HORIZONTAL));
+                        } else {
+                            assert!(
+                                ch == ' ',
+                                "Invalid character '{}' at index {} of horizontal wall row",
+                                ch,
+                                ch_i
+                            );
                         }
+                    } else {
+                        assert!(
+                            ch == ' ' || ch == '+',
+                            "Invalid character '{}' at index {} of horizontal wall row",
+                            ch,
+                            ch_i
+                        );
                     }
                 }
-                col_positions.clear();
             } else if is_cell_row {
-                // Process cell row
-                let mut col_n = 0;
-                for (i, ch) in line.chars().enumerate() {
-                    if ch == ' ' || ch == '+' {
-                        continue;
-                    }
+                assert!(
+                    line_stripped.len() == 2 * size - 1,
+                    "Wrong number characters ({}) in line: '{}' for board size {}",
+                    line_stripped.len(),
+                    line_stripped,
+                    size,
+                );
 
-                    if ch == 'v' || ch == '|' {
-                        if col_n > 0 && row_n < size - 1 {
-                            forbidden_walls.push((row_n, col_n - 1, WALL_VERTICAL));
+                for (ch_i, ch) in line_stripped.chars().enumerate() {
+                    if ch_i % 2 == 0 {
+                        // This character is a potential pawn position
+                        let col_n = ch_i / 2;
+
+                        if ch == '*' {
+                            valid_moves.push((row_n, col_n));
+                        } else if ch == '1' {
+                            mechanics
+                                .repr()
+                                .set_player_position(&mut state, 0, row_n, col_n);
+                        } else if ch == '2' {
+                            mechanics
+                                .repr()
+                                .set_player_position(&mut state, 1, row_n, col_n);
+                        } else {
+                            assert!(
+                                ch == '.',
+                                "Invalid character '{}' at index {} of cell row: '{}'",
+                                ch,
+                                ch_i,
+                                line_stripped,
+                            );
                         }
-                        if ch == '|'
-                            && col_n > 0
-                            && row_n < size - 1
-                            && mechanics.is_wall_placement_free(
-                                &state,
-                                row_n,
-                                col_n - 1,
-                                WALL_VERTICAL,
-                            )
-                        {
-                            mechanics.place_wall(&mut state, row_n, col_n - 1, WALL_VERTICAL);
+                    } else {
+                        // This character is a potential vertical wall position
+                        let wall_col_n = (ch_i - 1) / 2;
+                        if ch == 'v' || ch == '|' {
+                            forbidden_walls.push((row_n, wall_col_n, WALL_VERTICAL));
+                            if ch == '|'
+                                && row_n < size - 1
+                                && mechanics.is_wall_placement_free(
+                                    &state,
+                                    row_n,
+                                    wall_col_n,
+                                    WALL_VERTICAL,
+                                )
+                            {
+                                mechanics.place_wall(&mut state, row_n, wall_col_n, WALL_VERTICAL);
+                            }
+                        } else {
+                            assert!(
+                                ch == ' ',
+                                "Invalid character '{}' at index {} of cell row: '{}'",
+                                ch,
+                                ch_i,
+                                line_stripped,
+                            );
+                            continue;
                         }
-                        continue;
                     }
-
-                    if ch == '*' {
-                        valid_moves.push((row_n, col_n));
-                    } else if ch == '1' {
-                        mechanics
-                            .repr()
-                            .set_player_position(&mut state, 0, row_n, col_n);
-                    } else if ch == '2' {
-                        mechanics
-                            .repr()
-                            .set_player_position(&mut state, 1, row_n, col_n);
-                    }
-
-                    col_positions.insert(i, col_n);
-                    col_n += 1;
                 }
                 row_n += 1;
             }
@@ -1002,9 +1048,8 @@ mod tests {
         test_pawn_movements(
             "
             . * .
-            * 1|.
+            * 1|2
             . *|.
-            . . 2
         ",
         );
     }
