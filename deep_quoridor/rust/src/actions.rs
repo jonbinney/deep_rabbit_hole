@@ -211,8 +211,7 @@ pub fn get_valid_wall_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grid::CELL_FREE;
-    use crate::pathfinding::CELL_WALL;
+    use crate::grid::{CELL_FREE, CELL_WALL};
     use ndarray::{Array1, Array2};
 
     fn create_test_game() -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
