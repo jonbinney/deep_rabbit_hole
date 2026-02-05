@@ -3,6 +3,7 @@ use image::{DynamicImage, ImageReader};
 use ndarray::Array;
 use ort::session::{Session, SessionOutputs};
 use std::path::Path;
+use std::time::Instant;
 
 /// Preprocesses an image for ONNX model inference.
 ///
@@ -57,6 +58,9 @@ fn softmax_vec(logits: &[f32]) -> Vec<f32> {
 }
 
 fn main() -> Result<()> {
+    // Enable ONNX Runtime verbose logging to see execution provider details
+    std::env::set_var("ORT_LOG_SEVERITY_LEVEL", "1"); // 1 = INFO level
+
     // From https://huggingface.co/Xenova/resnet-152/blob/main/onnx/model.onnx
     // ResNet-152 trained on ImageNet-1k with ONNX saved in HuggingFace transformers compatible format
     let model_path = "../../models/onnx/resnet-152.onnx";
@@ -77,12 +81,22 @@ fn main() -> Result<()> {
     }
 
     println!("Loading model from {}...", model_path);
+
+    // --- Configure session with CUDA (GPU) execution provider ONLY ---
+    // Disable fallback to CPU by only specifying CUDA provider
+    // If CUDA is not available, the session creation will fail instead of falling back to CPU
     let mut session = Session::builder()
         .context("Failed to create session builder")?
+        .with_execution_providers([
+            ort::execution_providers::CUDAExecutionProvider::default().build(),
+        ])
+        .context("Failed to configure CUDA execution provider - ensure CUDA/GPU is available")?
         .commit_from_file(model_path)
         .context("Failed to load ONNX model")?;
     
-    println!("Model loaded successfully.");
+    println!("✓ Model loaded successfully!");
+    println!("✓ CUDA execution provider configured (GPU acceleration enabled)");
+    println!("✓ CPU fallback is DISABLED - will fail if GPU is not available\n");
 
     // --- 2. Process each sample image ---
     for image_file in sample_images {
@@ -100,7 +114,8 @@ fn main() -> Result<()> {
             .context(format!("Failed to preprocess {}", image_file))?;
 
         // --- 4. Run inference ---
-        println!("Running inference...");
+        println!("Running inference on GPU...");
+        let start = Instant::now();
         
         // Convert ndarray to Vec and create an ort Value with shape
         let shape = input_tensor.shape().to_vec();
@@ -111,6 +126,9 @@ fn main() -> Result<()> {
         let outputs: SessionOutputs = session
             .run(ort::inputs!["pixel_values" => input_value])
             .context("Failed to run inference")?;
+
+        let elapsed = start.elapsed();
+        println!("Inference completed in {:.2?}", elapsed);
 
         // --- 5. Post-process the result ---
         // Get the output tensor (logits)
