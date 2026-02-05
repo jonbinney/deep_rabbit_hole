@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 import onnxruntime as ort
@@ -78,12 +79,23 @@ def main():
         input_tensor = preprocess(image_path)
 
         # --- 4. Run inference ---
-        print("Running inference...")
-        result = session.run(None, {input_name: input_tensor})
-        output_tensor = result[0]
+        print("Running inference 100 times...")
+
+        total_duration = 0.0
+        last_output = None
+
+        for _ in range(100):
+            start = time.time()
+            result = session.run(None, {input_name: input_tensor})
+            elapsed = time.time() - start
+            total_duration += elapsed
+            last_output = result[0]
+
+        print(f"Inference completed 100 times in {total_duration:.4f}s")
+        print(f"Average time per inference: {(total_duration / 100) * 1000:.2f}ms")
 
         # --- 5. Post-process the result ---
-        probabilities = softmax(output_tensor)[0]
+        probabilities = softmax(last_output)[0]
         predicted_class_index = np.argmax(probabilities)
         confidence = probabilities[predicted_class_index]
 
