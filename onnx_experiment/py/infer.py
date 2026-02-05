@@ -62,9 +62,26 @@ def main():
         return
 
     print(f"Loading model from {model_path}...")
-    session = ort.InferenceSession(model_path)
+
+    # --- Configure session with CUDA (GPU) execution provider ONLY ---
+    # Disable fallback to CPU by only specifying CUDA provider
+    # If CUDA is not available, the session creation will fail instead of falling back to CPU
+    providers = ["CUDAExecutionProvider"]
+
+    # Check if CUDA is available
+    available_providers = ort.get_available_providers()
+    if "CUDAExecutionProvider" not in available_providers:
+        print("Error: CUDA execution provider not available.")
+        print(f"Available providers: {available_providers}")
+        print("Please ensure CUDA/GPU is available and onnxruntime-gpu is installed.")
+        return
+
+    session = ort.InferenceSession(model_path, providers=providers)
     input_name = session.get_inputs()[0].name
-    print("Model loaded successfully.")
+
+    print("✓ Model loaded successfully!")
+    print("✓ CUDA execution provider configured (GPU acceleration enabled)")
+    print("✓ CPU fallback is DISABLED - will fail if GPU is not available\n")
 
     # --- 2. Process each sample image ---
     for image_file in sample_images:
