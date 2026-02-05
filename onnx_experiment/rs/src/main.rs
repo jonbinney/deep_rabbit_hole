@@ -88,7 +88,10 @@ fn main() -> Result<()> {
     let mut session = Session::builder()
         .context("Failed to create session builder")?
         .with_execution_providers([
-            ort::execution_providers::CUDAExecutionProvider::default().build(),
+            ort::execution_providers::CUDAExecutionProvider::default()
+                .with_device_id(0)
+                .build()
+                .error_on_failure(),  // This will cause an error if CUDA provider fails to initialize
         ])
         .context("Failed to configure CUDA execution provider - ensure CUDA/GPU is available")?
         .commit_from_file(model_path)
