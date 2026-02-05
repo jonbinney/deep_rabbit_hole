@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use image::{DynamicImage, ImageReader};
 use ndarray::Array;
-use ort::session::{Session, SessionOutputs};
+use ort::session::{Session};
 use std::path::Path;
 use std::time::Instant;
 
@@ -114,33 +114,41 @@ fn main() -> Result<()> {
             .context(format!("Failed to preprocess {}", image_file))?;
 
         // --- 4. Run inference ---
-        println!("Running inference on GPU...");
-        let start = Instant::now();
+        println!("Running inference on GPU 100 times...");
         
         // Convert ndarray to Vec and create an ort Value with shape
         let shape = input_tensor.shape().to_vec();
-        let data: Vec<f32> = input_tensor.into_iter().collect();
-        let input_value = ort::value::Value::from_array((shape.as_slice(), data))
-            .context("Failed to create input value")?;
+        let mut last_outputs = None;
+        let mut duration : std::time::Duration = std::time::Duration::new(0, 0);
         
-        let outputs: SessionOutputs = session
-            .run(ort::inputs!["pixel_values" => input_value])
-            .context("Failed to run inference")?;
+        for _i in 0..100 {
+            let data: Vec<f32> = input_tensor.iter().copied().collect();
+            let input_value = ort::value::Value::from_array((shape.as_slice(), data))
+                .context("Failed to create input value")?;
+            
+            let start = Instant::now();
+            let outputs = session
+                .run(ort::inputs!["pixel_values" => input_value])
+                .context("Failed to run inference")?;
+            let elapsed = start.elapsed();
+            duration += elapsed;
+            
+            // Extract and store the output data to avoid lifetime issues
+            let output_data = outputs["logits"]
+                .try_extract_tensor::<f32>()
+                .context("Failed to extract output tensor")?;
+            let (_shape, logits_slice) = output_data;
+            last_outputs = Some(logits_slice.to_vec());
+        }
 
-        let elapsed = start.elapsed();
-        println!("Inference completed in {:.2?}", elapsed);
+        println!("Inference completed 100 times in {:.2?}", duration);
+        println!("Average time per inference: {:.2?}", duration / 100);
 
         // --- 5. Post-process the result ---
-        // Get the output tensor (logits)
-        let output_data = outputs["logits"]
-            .try_extract_tensor::<f32>()
-            .context("Failed to extract output tensor")?;
-
-        // The output is (shape, data_slice)
-        let (_shape, logits_slice) = output_data;
+        let logits = last_outputs.unwrap();
         
         // Apply softmax to get probabilities
-        let probabilities = softmax_vec(logits_slice);
+        let probabilities = softmax_vec(&logits);
         
         // Find the predicted class and confidence
         let (predicted_class_index, &confidence) = probabilities
