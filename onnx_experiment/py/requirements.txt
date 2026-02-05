@@ -1,2 +1,3 @@
 onnxruntime
 onnxruntime-gpu
+torchvision
