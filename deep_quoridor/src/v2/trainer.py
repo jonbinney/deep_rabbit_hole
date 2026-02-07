@@ -12,26 +12,26 @@ from v2.config import Config
 from v2.yaml_models import GameInfo, LatestModel
 
 
-def model_uploader(config: Config):
+def model_uploader(config: Config, every: str, model_id: str, wandb_run):
     LatestModel.wait_for_creation(config)
 
-    every = config.wandb.upload_model.every
-    if not every:
-        return
     trigger = JobTrigger.from_string(config, every)
     while True:
         trigger.wait()
-        print(f"Time to upload model! {time.time()}")
-        latest_model_filename = LatestModel.load(config).filename
-        artifact = wandb.Artifact("alphazero_B5W3_mv1.0", type="model")
-        artifact.add_file(local_path=latest_model_filename)
-        artifact.save()
+        latest = LatestModel.load(config)
 
-        print(f"Uploaded! {time.time}")
+        try:
+            artifact = wandb.Artifact(model_id, type="model")
+            artifact.add_file(local_path=latest.filename)
+            wandb_run.log_artifact(artifact, aliases=[f"m{latest.version}-{config.run_id}"])
+        except Exception as e:
+            print(f"!!! Exception during wandb upload: {e}")
 
 
 def train(config: Config):
     batch_size = config.training.batch_size
+
+    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     if config.wandb:
         run_id = f"{config.run_id}-training"
@@ -48,14 +48,15 @@ def train(config: Config):
         wandb.define_metric("game_length", "Game num")
         wandb.define_metric("*", "Model version")
 
-        if config.wandb.upload_model:
-            upload_model_thread = Thread(target=model_uploader, args=(config,))
+        if config.wandb.upload_model and config.wandb.upload_model.every:
+            upload_model_thread = Thread(
+                target=model_uploader,
+                args=(config, config.wandb.upload_model.every, alphazero_agent.model_id(), wandb_run),
+            )
             upload_model_thread.start()
 
     else:
         wandb_run = MockWandb()
-
-    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)

@@ -16,6 +16,12 @@ from v2.yaml_models import LatestModel
 
 
 class BenchmarkJob:
+    def __init__(self, config: Config, wandb_run):
+        self.config = config
+        self.wandb_run = wandb_run
+        self.metrics_max = {}
+        self.metrics_min = {}
+
     @classmethod
     def from_job_config(cls, config: Config, job_config, wandb_run):
         if isinstance(job_config, TournamentBenchmarkConfig):
@@ -33,12 +39,42 @@ class BenchmarkJob:
     def run(self, latest: LatestModel):
         pass
 
+    def upload_model_if_needed(self, metrics, model: LatestModel, model_id: str):
+        if not (self.config.wandb and self.config.wandb.upload_model):
+            return
+
+        tags = []
+        for metric_name in self.config.wandb.upload_model.when_max:
+            if metric_name not in metrics:
+                continue
+
+            if metric_name not in self.metrics_max or metrics[metric_name] > self.metrics_max[metric_name]:
+                self.metrics_max[metric_name] = metrics[metric_name]
+                tags.append(f"max-{metric_name}-{self.config.run_id}")
+
+        for metric_name in self.config.wandb.upload_model.when_min:
+            if metric_name not in metrics:
+                continue
+
+            if metric_name not in self.metrics_min or metrics[metric_name] < self.metrics_min[metric_name]:
+                self.metrics_min[metric_name] = metrics[metric_name]
+                tags.append(f"min-{metric_name}-{self.config.run_id}")
+
+        if tags:
+            tags.append(f"m{model.version}-{self.config.run_id}")
+            print(f"Uploading {model.filename} with tags {tags}")
+            try:
+                artifact = wandb.Artifact(model_id, type="model")
+                artifact.add_file(local_path=model.filename)
+                self.wandb_run.log_artifact(artifact, aliases=tags)
+            except Exception as e:
+                print(f"!!! Exception during wandb upload: {e}")
+
 
 class TournamentBenchmarkJob(BenchmarkJob):
     def __init__(self, config: Config, job_config: TournamentBenchmarkConfig, wandb_run):
-        self.config = config
+        super().__init__(config, wandb_run)
         self.job_config = job_config
-        self.wandb_run = wandb_run
         self.metrics = Metrics(
             config.quoridor.board_size,
             config.quoridor.max_walls,
@@ -47,8 +83,8 @@ class TournamentBenchmarkJob(BenchmarkJob):
             max_steps=config.quoridor.max_steps,
         )
 
-    def run(self, latest: LatestModel):
-        agent = create_alphazero(self.config, self.job_config.alphazero, overrides={"model_filename": latest.filename})
+    def run(self, model: LatestModel):
+        agent = create_alphazero(self.config, self.job_config.alphazero, overrides={"model_filename": model.filename})
         (
             _,
             relative_elo,
@@ -65,19 +101,19 @@ class TournamentBenchmarkJob(BenchmarkJob):
             f"{prefix}relative_elo": relative_elo,
             f"{prefix}win_perc": win_perc,
             f"{prefix}absolute_elo": absolute_elo,
-            "Model version": latest.version,
+            "Model version": model.version,
         }
 
         metrics.update(self.metrics.metrics_from_stats(prefix, p1_stats, p2_stats))
 
         self.wandb_run.log(metrics)
+        self.upload_model_if_needed(metrics, model, agent.model_id())
 
 
 class DumbScoreBenchmarkJob(BenchmarkJob):
     def __init__(self, config: Config, job_config: DumbScoreBenchmarkConfig, wandb_run):
-        self.config = config
+        super().__init__(config, wandb_run)
         self.job_config = job_config
-        self.wandb_run = wandb_run
         self.metrics = Metrics(config.quoridor.board_size, config.quoridor.max_walls)
 
     def run(self, latest: LatestModel):
@@ -92,7 +128,10 @@ class DumbScoreBenchmarkJob(BenchmarkJob):
         prefix = self.job_config.prefix
         if prefix != "":
             prefix = prefix + "_"
-        self.wandb_run.log({f"{prefix}dumb_score": score, "Model version": latest.version})
+
+        metrics = {f"{prefix}dumb_score": score, "Model version": latest.version}
+        self.wandb_run.log(metrics)
+        self.upload_model_if_needed(metrics, latest, agent.model_id())
 
         del agent
         if torch.cuda.is_available():
@@ -101,9 +140,8 @@ class DumbScoreBenchmarkJob(BenchmarkJob):
 
 class AgentEvolutionBenchmarkJob(BenchmarkJob):
     def __init__(self, config: Config, job_config: AgentEvolutionBenchmarkConfig, wandb_run):
-        self.config = config
+        super().__init__(config, wandb_run)
         self.job_config = job_config
-        self.wandb_run = wandb_run
 
     def run(self, latest: LatestModel):
         pass

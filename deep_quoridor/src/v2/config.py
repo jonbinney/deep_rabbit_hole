@@ -40,6 +40,7 @@ class AlphaZeroBaseConfig(StrictBaseModel):
 class UploadModel(StrictBaseModel):
     every: Optional[str] = ""
     when_max: list[str] = []
+    when_min: list[str] = []
 
 
 class WandbConfig(StrictBaseModel):
