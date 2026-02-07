@@ -5,13 +5,19 @@ quoridor:
   max_steps: 50
 alphazero:
   network:
-    type: resnet
-    num_blocks: 2
-    num_channels: 32
+    type: mlp
   mcts_n: 300
   mcts_c_puct: 1.2
 wandb:
   project: example
+  upload_model:
+    every: 20 models
+    when_max:
+      - raw_win_perc
+      - p2_win_perc
+      - elo_score
+    when_min:
+      - dumb_score
 self_play:
   num_workers: 2
   parallel_games: 8
@@ -30,7 +36,7 @@ benchmarks:
         alphazero:
           mcts_n: 0
         prefix: raw
-        times: 20
+        times: 10
         opponents:
           - random
           - greedy:p_random=0.3,nick=greedy-03
@@ -46,9 +52,12 @@ benchmarks:
     jobs:
       - type: tournament
         prefix: ""
-        times: 20
+        times: 10
         opponents:
           - greedy:p_random=0.1,nick=greedy-01
           - greedy
           - simple:branching_factor=8,nick=simple-bf8
           - simple:branching_factor=16,nick=simple-bf16
+      - type: dumb_score
+        alphazero:
+        prefix: ""

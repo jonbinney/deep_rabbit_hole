@@ -1,18 +1,37 @@
 import pickle
 import time
 from collections import Counter
+from threading import Thread
 
 import numpy as np
 import wandb
 from pydantic_yaml import parse_yaml_file_as
 from utils import Timer
-from v2.common import MockWandb, create_alphazero
+from v2.common import JobTrigger, MockWandb, create_alphazero
 from v2.config import Config
 from v2.yaml_models import GameInfo, LatestModel
 
 
+def model_uploader(config: Config, every: str, model_id: str, wandb_run):
+    LatestModel.wait_for_creation(config)
+
+    trigger = JobTrigger.from_string(config, every)
+    while True:
+        trigger.wait()
+        latest = LatestModel.load(config)
+
+        try:
+            artifact = wandb.Artifact(model_id, type="model")
+            artifact.add_file(local_path=latest.filename)
+            wandb_run.log_artifact(artifact, aliases=[f"m{latest.version}-{config.run_id}"])
+        except Exception as e:
+            print(f"!!! Exception during wandb upload: {e}")
+
+
 def train(config: Config):
     batch_size = config.training.batch_size
+
+    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     if config.wandb:
         run_id = f"{config.run_id}-training"
@@ -28,10 +47,16 @@ def train(config: Config):
         wandb.define_metric("Model version", hidden=True)
         wandb.define_metric("game_length", "Game num")
         wandb.define_metric("*", "Model version")
+
+        if config.wandb.upload_model and config.wandb.upload_model.every:
+            upload_model_thread = Thread(
+                target=model_uploader,
+                args=(config, config.wandb.upload_model.every, alphazero_agent.model_id(), wandb_run),
+            )
+            upload_model_thread.start()
+
     else:
         wandb_run = MockWandb()
-
-    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
@@ -44,7 +69,7 @@ def train(config: Config):
     game_filename = []
 
     while True:
-        Timer.start("waiting-to-train")
+        Timer.start("waiting-to-train", ignore_if_running=True)
 
         # Process new games: find new files, move them and extract the info used for training
         ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
@@ -123,3 +148,5 @@ def train(config: Config):
         alphazero_agent.save_model(new_model_filename)
         LatestModel.write(config, str(new_model_filename), model_version)
         model_version += 1
+
+    # TODO shutdown upload_model_thread

@@ -12,10 +12,12 @@
 
 - Use a schedule for the learning rate
 - Use a logger class rather than just printing out.
+- Instead of drop_t_on_step, do near-tie-randomness, e.g. if the second best choice is 95% or more of the first, pick between them.
 
 # Performance
 
 - In train, sample from all the training iterations together
+- Allow num_workers in benchmarks if we want to run them faster, or at least run jobs in parallel
 - For the replay buffer files, either:
   - Move them in directories based on their game number (e.g. games_1000)
   - Join multiple games in one file (a bit more tricky with sampling and race conditions)

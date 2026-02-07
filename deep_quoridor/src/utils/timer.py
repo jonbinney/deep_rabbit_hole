@@ -32,8 +32,10 @@ class Timer:
         cls.wandb_run = wandb_run
 
     @classmethod
-    def start(cls, name: str):
+    def start(cls, name: str, ignore_if_running: bool = False):
         if name in cls.starts:
+            if ignore_if_running:
+                return
             print(f"TIMER: WARNING - timer for {name} was already started")
 
         cls.starts[name] = time.perf_counter()

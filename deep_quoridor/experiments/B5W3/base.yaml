@@ -12,7 +12,13 @@ alphazero:
   mcts_c_puct: 1.2
 wandb:
   project: v2
-  #upload_model_every: 1 hour
+  upload_model:
+    every: 100 models
+    when_max:
+      - raw_win_perc
+      - p2_win_perc
+    when_min:
+      - dumb_score
 self_play:
   num_workers: 2
   parallel_games: 8
@@ -47,7 +53,6 @@ benchmarks:
     jobs:
       - type: tournament
         prefix: ""
-        #upload_model_when_max: win_perc, p2_win_perc
         times: 20
         opponents:
           - random
