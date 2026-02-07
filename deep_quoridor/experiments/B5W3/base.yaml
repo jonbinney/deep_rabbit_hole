@@ -1,4 +1,4 @@
-run_id: cucu-28f
+run_id: cucu-28d
 quoridor:
   board_size: 5
   max_walls: 3
@@ -13,10 +13,12 @@ alphazero:
 wandb:
   project: v2
   upload_model:
-    every: 15 minutes
-    # when_max:
-    #   - raw_win_perc
-    #   - p2_win_perc
+    every: 100 models
+    when_max:
+      - raw_win_perc
+      - p2_win_perc
+    when_min:
+      - dumb_score
 self_play:
   num_workers: 2
   parallel_games: 8
