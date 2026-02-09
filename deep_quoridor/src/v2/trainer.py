@@ -142,11 +142,15 @@ def train(config: Config):
             commit=True,
         )
 
-        print(f"Sampling and training took {time_sample}, {time_train}")
-
+        Timer.start("save-model")
         new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
         alphazero_agent.save_model(new_model_filename)
         LatestModel.write(config, str(new_model_filename), model_version)
+        time_save_model = Timer.finish("save-model")
+        
+        if config.training.model_save_timing:
+            print(f"Saving model took {time_save_model:.4f}s")
+        
         model_version += 1
 
     # TODO shutdown upload_model_thread

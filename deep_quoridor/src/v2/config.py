@@ -75,6 +75,7 @@ class TrainingConfig(StrictBaseModel):
     batch_size: int
     weight_decay: float
     replay_buffer_size: int
+    model_save_timing: bool = False
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):
