@@ -352,7 +352,6 @@ fn q_evaluate_actions<'py>(
         current_player,
         completed_steps,
     );
-    mechanics.print(&data);
 
     // Evaluate actions using QBitRepr minimax
     let (actions, values, _logs) = compact::q_minimax::evaluate_actions(
@@ -376,9 +375,6 @@ fn q_evaluate_actions<'py>(
     }
 
     let values_array = ndarray::Array1::from(values);
-
-    dbg!(&actions_array);
-    dbg!(&values_array);
 
     Ok((
         PyArray2::from_owned_array_bound(py, actions_array),
