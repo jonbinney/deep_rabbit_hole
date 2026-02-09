@@ -46,8 +46,8 @@ def main():
 
     # From https://huggingface.co/Xenova/resnet-152/blob/main/onnx/model.onnx
     # ResNet-152 trained on ImageNet-1k with ONNX saved in HuggingFace transformers compatible format
-    model_path = "../models/onnx/resnet-152.onnx"
-    image_dir = "."
+    model_path = "../../../models/onnx/resnet-152.onnx"
+    image_dir = ".."
     sample_images = ["cat.jpg", "dog.jpg"]
 
     # Key Imagenet-1k classes:

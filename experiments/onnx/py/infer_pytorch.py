@@ -44,8 +44,8 @@ def main():
     # Model path - using safetensors format
     # If you have a .safetensors file, specify it here
     # Otherwise, we'll use pretrained weights from torchvision
-    safetensor_path = "../../models/weights/resnet-152.safetensors"
-    image_dir = "."
+    safetensor_path = "../../../models/weights/resnet-152.safetensors"
+    image_dir = ".."
     sample_images = ["cat.jpg", "dog.jpg"]
 
     # Key Imagenet-1k classes:

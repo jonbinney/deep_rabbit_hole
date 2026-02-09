@@ -63,7 +63,7 @@ fn main() -> Result<()> {
 
     // From https://huggingface.co/Xenova/resnet-152/blob/main/onnx/model.onnx
     // ResNet-152 trained on ImageNet-1k with ONNX saved in HuggingFace transformers compatible format
-    let model_path = "../../models/onnx/resnet-152.onnx";
+    let model_path = "../../../models/onnx/resnet-152.onnx";
     let image_dir = "..";
     let sample_images = vec!["cat.jpg", "dog.jpg"];
 
