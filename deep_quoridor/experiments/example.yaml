@@ -24,6 +24,7 @@ self_play:
   alphazero:
     mcts_noise_epsilon: 0.25
 training:
+  finish_after: 100 models
   games_per_training_step: 25.0
   learning_rate: 0.001
   batch_size: 256

@@ -1,5 +1,5 @@
 extend: base.yaml
-run_id: cucu-4
+run_id: demo-$DATETIME
 
 alphazero:
   mcts_n: 200

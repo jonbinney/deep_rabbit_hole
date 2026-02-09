@@ -75,6 +75,7 @@ class TrainingConfig(StrictBaseModel):
     batch_size: int
     weight_decay: float
     replay_buffer_size: int
+    finish_after: Optional[str] = None
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):
@@ -143,11 +144,13 @@ class PathsConfig(StrictBaseModel):
     replay_buffers: Path
     replay_buffers_ready: Path
     replay_buffers_tmp: Path
+    config_file: Path
 
     @classmethod
     def create(cls, base_dir: str, run_id: str, create_dirs: bool = True) -> "PathsConfig":
         run_root = Path(base_dir) / "runs"
         run_dir = run_root / run_id
+        config_file = run_dir / "config.yaml"
         models = run_dir / "models"
         latest_model_yaml = models / "latest.yaml"
         checkpoints = models / "checkpoints"
@@ -167,6 +170,7 @@ class PathsConfig(StrictBaseModel):
             replay_buffers=replay_buffers,
             replay_buffers_ready=replay_buffers_ready,
             replay_buffers_tmp=replay_buffers_tmp,
+            config_file=config_file,
         )
 
 
@@ -215,8 +219,7 @@ def load_config_and_setup_run(file: str, base_dir: str, create_dirs: bool = True
     user_config = load_user_config(file)
     config = Config.from_user(user_config, base_dir, create_dirs=create_dirs)
 
-    config_filename = config.paths.run_dir / "config.yaml"
-
+    config_filename = config.paths.config_file
     with config_filename.open(mode="w") as f:
         f.write(to_yaml_str_ordered(user_config))
 

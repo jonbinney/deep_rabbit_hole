@@ -4,7 +4,7 @@ from abc import abstractmethod
 import torch
 import wandb
 from metrics import Metrics
-from v2.common import JobTrigger, MockWandb, create_alphazero
+from v2.common import JobTrigger, MockWandb, ShutdownSignal, create_alphazero, upload_model
 from v2.config import (
     AgentEvolutionBenchmarkConfig,
     BenchmarkScheduleConfig,
@@ -62,13 +62,7 @@ class BenchmarkJob:
 
         if tags:
             tags.append(f"m{model.version}-{self.config.run_id}")
-            print(f"Uploading {model.filename} with tags {tags}")
-            try:
-                artifact = wandb.Artifact(model_id, type="model")
-                artifact.add_file(local_path=model.filename)
-                self.wandb_run.log_artifact(artifact, aliases=tags)
-            except Exception as e:
-                print(f"!!! Exception during wandb upload: {e}")
+            upload_model(self.wandb_run, self.config, model, model_id, tags)
 
 
 class TournamentBenchmarkJob(BenchmarkJob):
@@ -148,8 +142,8 @@ class AgentEvolutionBenchmarkJob(BenchmarkJob):
 
 
 def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
-    freq = JobTrigger.from_string(config, benchmark.every)
     LatestModel.wait_for_creation(config)
+    freq = JobTrigger.from_string(config, benchmark.every)
     if config.wandb:
         idx = config.benchmarks.index(benchmark)
         run_id = f"{config.run_id}-benchmark-{idx}"
@@ -168,8 +162,7 @@ def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
 
     jobs = [BenchmarkJob.from_job_config(config, job_config, wandb_run) for job_config in benchmark.jobs]
 
-    while True:
-        freq.wait()
+    while not ShutdownSignal.is_set(config):
         # We get the model filename here so that all the jobs run with the same model
         latest = LatestModel.load(config)
 
@@ -177,6 +170,7 @@ def run_benchmark(config: Config, benchmark: BenchmarkScheduleConfig):
             job.run(latest)
 
         wandb_run.log({"Model version": latest.version}, commit=True)
+        freq.wait(lambda: ShutdownSignal.is_set(config))
 
 
 def create_benchmark_processes(config: Config) -> list[mp.Process]:
