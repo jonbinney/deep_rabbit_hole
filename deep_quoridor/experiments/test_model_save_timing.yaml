@@ -21,4 +21,6 @@ training:
   weight_decay: 0.0001
   replay_buffer_size: 1000
   model_save_timing: true  # Set to true to test timing output
+  save_pytorch: true  # Save in PyTorch format (default)
+  save_onnx: true  # Set to true to also save in ONNX format
 benchmarks: []  # No benchmarks for testing

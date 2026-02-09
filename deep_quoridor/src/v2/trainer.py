@@ -58,9 +58,15 @@ def train(config: Config):
     else:
         wandb_run = MockWandb()
 
-    filename = config.paths.checkpoints / "model_0.pt"
-    alphazero_agent.save_model(filename)
-    LatestModel.write(config, str(filename), 0)
+    # Save initial model (model_0)
+    if config.training.save_pytorch:
+        filename = config.paths.checkpoints / "model_0.pt"
+        alphazero_agent.save_model(filename)
+        LatestModel.write(config, str(filename), 0)
+    
+    if config.training.save_onnx:
+        onnx_filename = config.paths.checkpoints / "model_0.onnx"
+        alphazero_agent.save_model_onnx(onnx_filename)
 
     training_steps = 0
     last_game = 0
@@ -143,13 +149,28 @@ def train(config: Config):
         )
 
         Timer.start("save-model")
-        new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
-        alphazero_agent.save_model(new_model_filename)
-        LatestModel.write(config, str(new_model_filename), model_version)
+        
+        # Save in PyTorch format if enabled
+        if config.training.save_pytorch:
+            new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
+            alphazero_agent.save_model(new_model_filename)
+            LatestModel.write(config, str(new_model_filename), model_version)
+        
+        # Save in ONNX format if enabled
+        if config.training.save_onnx:
+            onnx_model_filename = config.paths.checkpoints / f"model_{model_version}.onnx"
+            alphazero_agent.save_model_onnx(onnx_model_filename)
+        
         time_save_model = Timer.finish("save-model")
         
         if config.training.model_save_timing:
-            print(f"Saving model took {time_save_model:.4f}s")
+            formats = []
+            if config.training.save_pytorch:
+                formats.append("PyTorch")
+            if config.training.save_onnx:
+                formats.append("ONNX")
+            format_str = " and ".join(formats) if formats else "no format"
+            print(f"Saving model ({format_str}) took {time_save_model:.4f}s")
         
         model_version += 1
 

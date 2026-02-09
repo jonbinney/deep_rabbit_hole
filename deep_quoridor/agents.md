@@ -1,0 +1,1 @@
+Whenever you commit to git, create the commit message starting with "vibe: " and then a one line summary of the changes.
