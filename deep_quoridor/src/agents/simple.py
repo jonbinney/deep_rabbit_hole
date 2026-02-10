@@ -16,6 +16,7 @@ from agents.core import Agent
 
 try:
     import quoridor_rs
+
     RUST_AVAILABLE = True
 except ImportError:
     RUST_AVAILABLE = False
@@ -50,8 +51,8 @@ class SimpleParams(SubargsBase):
     #  1: relative distances to goal, ties broken by relative walls remaining
     heuristic: int = 1
 
-    # Use Rust implementation for evaluate_actions (faster than Numba)
-    use_rust: bool = False
+    # Which minimax backend to use. "numba", "rust_grid" or rust_qbitrepr
+    backend: str = "numba"
 
 
 @njit(cache=True)
@@ -308,6 +309,7 @@ class SimpleAgent(Agent):
         super().__init__()
         self.params = params
         self.board_size = kwargs["board_size"]
+        self.max_walls = kwargs["max_walls"]
         self.max_steps = kwargs["max_steps"]
         self.action_encoder = ActionEncoder(self.board_size)
 
@@ -345,26 +347,12 @@ class SimpleAgent(Agent):
         goal_rows[0] = game.get_goal_row(Player.ONE)
         goal_rows[1] = game.get_goal_row(Player.TWO)
         current_player = int(game.get_current_player())
+        completed_steps = game.completed_steps
 
         max_depth = min(self.params.max_depth, self.max_steps - observation["completed_steps"])
 
         # Evaluate possible actions using minimax
-        if self.params.use_rust:
-            if not RUST_AVAILABLE:
-                raise RuntimeError("Rust extension (quoridor_rs) not available. Install with: cd rust && maturin develop --release")
-            actions, values = quoridor_rs.evaluate_actions(
-                grid,
-                player_positions,
-                walls_remaining,
-                goal_rows,
-                current_player,
-                max_depth,
-                self.params.branching_factor,
-                self.params.wall_sigma,
-                self.params.discount_factor,
-                self.params.heuristic,
-            )
-        else:
+        if self.params.backend == "numba":
             # Use Numba-optimized minimax
             actions, values = evaluate_actions(
                 grid,
@@ -378,6 +366,46 @@ class SimpleAgent(Agent):
                 self.params.discount_factor,
                 self.params.heuristic,
             )
+        elif self.params.backend == "rust_grid":
+            if not RUST_AVAILABLE:
+                raise RuntimeError(
+                    "Rust extension (quoridor_rs) not available. Install with: cd rust && maturin develop --release"
+                )
+            actions, values = quoridor_rs.evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+            )
+        elif self.params.backend == "rust_qbitrepr":
+            if not RUST_AVAILABLE:
+                raise RuntimeError(
+                    "Rust extension (quoridor_rs) not available. Install with: cd rust && maturin develop --release"
+                )
+            actions, values = quoridor_rs.q_evaluate_actions(
+                grid,
+                player_positions,
+                walls_remaining,
+                goal_rows,
+                current_player,
+                completed_steps,
+                self.params.max_depth,
+                self.params.branching_factor,
+                self.params.wall_sigma,
+                self.params.discount_factor,
+                self.params.heuristic,
+                self.board_size,
+                self.max_walls,
+                self.max_steps,
+            )
+        else:
+            raise ValueError(f"Bad value for SimpleAgent backend: {self.params.backend}")
 
         # Choose the best action. If multiple actions have the same value, choose randomly among them
         best_value = np.max(values)
@@ -397,7 +425,7 @@ class SimpleAgent(Agent):
             self.action_log.action_score_ranking(action_score_dict)
 
         # Sanity checks
-        assert game.is_action_valid(chosen_action), "The chosen action is not valid."
+        assert game.is_action_valid(chosen_action), f"The chosen action {chosen_action} is not valid."
         action_id = self.action_encoder.action_to_index(chosen_action)
         assert action_mask[action_id] == 1, "The action is not valid according to the action mask."
 

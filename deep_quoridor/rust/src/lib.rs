@@ -328,37 +328,36 @@ fn q_evaluate_actions<'py>(
     walls_remaining: PyReadonlyArray1<i32>,
     _goal_rows: PyReadonlyArray1<i32>,
     current_player: i32,
-    max_steps: i32,
+    completed_steps: i32,
+    max_search_depth: usize,
     branching_factor: usize,
     _wall_sigma: f32,
     discount_factor: f32,
     heuristic: i32,
     board_size: usize,
     max_walls: usize,
+    max_steps: usize,
 ) -> PyResult<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)> {
-    use compact::q_bit_repr::QBitRepr;
     use compact::q_game_mechanics::QGameMechanics;
 
-    // Create QBitRepr and QGameMechanics
-    let repr = QBitRepr::new(board_size, max_walls, max_steps as usize);
-    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps as usize);
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
 
     // Convert game state to QBitRepr format
-    let mut data = repr.create_data();
-    repr.from_game_state(
+    let mut data = mechanics.repr().create_data();
+    mechanics.repr().from_game_state(
         &mut data,
         &grid.as_array(),
         &player_positions.as_array(),
         &walls_remaining.as_array(),
         current_player,
-        0, // completed_steps - always 0 when evaluating actions
+        completed_steps,
     );
 
     // Evaluate actions using QBitRepr minimax
     let (actions, values, _logs) = compact::q_minimax::evaluate_actions(
         &mechanics,
         &data,
-        max_steps as usize,
+        max_search_depth,
         branching_factor,
         discount_factor,
         heuristic,

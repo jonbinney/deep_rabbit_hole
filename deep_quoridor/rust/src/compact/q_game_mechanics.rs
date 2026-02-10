@@ -329,53 +329,6 @@ impl QGameMechanics {
         true
     }
 
-    /// Check if a move from current position to destination is valid
-    pub fn is_move_valid(
-        &self,
-        data: &[u8],
-        player: usize,
-        dest_row: usize,
-        dest_col: usize,
-    ) -> bool {
-        let board_size = self.repr.board_size();
-
-        // Check bounds
-        if dest_row >= board_size || dest_col >= board_size {
-            return false;
-        }
-
-        // Get current position
-        let (curr_row, curr_col) = self.repr.get_player_position(data, player);
-
-        // Get opponent position
-        let opponent = 1 - player;
-        let (opp_row, opp_col) = self.repr.get_player_position(data, opponent);
-
-        // Check if destination is occupied by opponent
-        if dest_row == opp_row && dest_col == opp_col {
-            return false;
-        }
-
-        // For now, use simple adjacency check
-        // A more complete implementation would check walls and jumps
-        let row_diff = (dest_row as i32 - curr_row as i32).abs();
-        let col_diff = (dest_col as i32 - curr_col as i32).abs();
-
-        // Must move exactly 1 space (or 2 for jump)
-        if row_diff + col_diff > 2 {
-            return false;
-        }
-
-        // For complete validation, would need to check:
-        // 1. No walls blocking the path
-        // 2. Valid jump over opponent
-        // 3. Diagonal moves only when jumping
-
-        // TODO: Implement full move validation with wall checking
-
-        true
-    }
-
     /// Execute a move action
     pub fn execute_move(&self, data: &mut [u8], player: usize, dest_row: usize, dest_col: usize) {
         self.repr
@@ -582,8 +535,13 @@ impl QGameMechanics {
                 }
 
                 // Check no wall between opponent and diagonal destination
-                if self.is_wall_between(data, opp_row, opp_col, diag_row as usize, diag_col as usize)
-                {
+                if self.is_wall_between(
+                    data,
+                    opp_row,
+                    opp_col,
+                    diag_row as usize,
+                    diag_col as usize,
+                ) {
                     continue;
                 }
 

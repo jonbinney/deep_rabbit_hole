@@ -31,7 +31,7 @@ pub struct QBitRepr {
     num_player_positions: usize,
     position_bits: usize,
     walls_remaining_bits: usize,
-    steps_bits: usize,
+    completed_steps_bits: usize,
     total_bits: usize,
     total_bytes: usize,
 
@@ -40,7 +40,7 @@ pub struct QBitRepr {
     player_pos_offsets: [usize; 2], // Offset for each player's position
     walls_remaining_offsets: [usize; 2],
     current_player_offset: usize,
-    steps_offset: usize,
+    completed_steps_offset: usize,
 }
 
 impl QBitRepr {
@@ -50,7 +50,7 @@ impl QBitRepr {
         let num_player_positions = board_size * board_size;
         let position_bits = bits_needed(num_player_positions - 1);
         let walls_remaining_bits = bits_needed(max_walls);
-        let steps_bits = bits_needed(max_steps);
+        let completed_steps_bits = bits_needed(max_steps);
 
         let walls_offset = 0;
         let p1_pos_offset = walls_offset + num_wall_positions;
@@ -60,9 +60,9 @@ impl QBitRepr {
         let p2_walls_remaining_offset = p1_walls_remaining_offset + walls_remaining_bits;
         let walls_remaining_offsets = [p1_walls_remaining_offset, p2_walls_remaining_offset];
         let current_player_offset = p2_walls_remaining_offset + walls_remaining_bits;
-        let steps_offset = current_player_offset + 1;
+        let completed_steps_offset = current_player_offset + 1;
 
-        let total_bits = steps_offset + steps_bits;
+        let total_bits = completed_steps_offset + completed_steps_bits;
         let total_bytes = (total_bits + 7) / 8;
 
         Self {
@@ -73,14 +73,14 @@ impl QBitRepr {
             num_player_positions,
             position_bits,
             walls_remaining_bits,
-            steps_bits,
+            completed_steps_bits,
             total_bits,
             total_bytes,
             walls_offset,
             player_pos_offsets,
             walls_remaining_offsets,
             current_player_offset,
-            steps_offset,
+            completed_steps_offset,
         }
     }
 
@@ -231,13 +231,18 @@ impl QBitRepr {
 
     /// Get the number of completed steps
     pub fn get_completed_steps(&self, data: &[u8]) -> usize {
-        self.get_bits(data, self.steps_offset, self.steps_bits)
+        self.get_bits(data, self.completed_steps_offset, self.completed_steps_bits)
     }
 
     /// Set the number of completed steps
     pub fn set_completed_steps(&self, data: &mut [u8], steps: usize) {
         debug_assert!(steps <= self.max_steps);
-        self.set_bits(data, self.steps_offset, self.steps_bits, steps);
+        self.set_bits(
+            data,
+            self.completed_steps_offset,
+            self.completed_steps_bits,
+            steps,
+        );
     }
 
     /// Convert a (row, col) position to a flat index
@@ -322,6 +327,7 @@ impl QBitRepr {
             format!("Current: P{}", current_player + 1),
             format!("P1 walls: {}", p0_walls),
             format!("P2 walls: {}", p1_walls),
+            format!("Max steps: {}", self.max_steps),
         ];
 
         let mut line_idx = 0;
