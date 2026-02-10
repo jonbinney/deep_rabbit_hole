@@ -75,6 +75,9 @@ class TrainingConfig(StrictBaseModel):
     batch_size: int
     weight_decay: float
     replay_buffer_size: int
+    model_save_timing: bool = False
+    save_pytorch: bool = True
+    save_onnx: bool = False
     finish_after: Optional[str] = None
 
 

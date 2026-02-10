@@ -12,3 +12,7 @@ anyhow = "1.0"
 [[bin]]
 name = "infer"
 path = "src/main.rs"
+
+[[bin]]
+name = "infer_quoridor"
+path = "src/infer_quoridor.rs"

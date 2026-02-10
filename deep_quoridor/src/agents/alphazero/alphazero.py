@@ -416,6 +416,38 @@ class AlphaZeroAgent(TrainableAgent):
         torch.save(model_state, path)
         print(f"AlphaZero model saved to {path}")
 
+    def save_model_onnx(self, path):
+        """Export the model to ONNX format."""
+        import torch.onnx
+        
+        # Create directory for saving models if it doesn't exist
+        os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
+        
+        # Set the network to evaluation mode
+        self.evaluator.network.eval()
+        
+        # Create a dummy input tensor with the correct shape
+        # The input size is determined by the network's input_size attribute
+        dummy_input = torch.randn(1, self.evaluator.network.input_size, device=self.device)
+        
+        # Export the model with opset 17 (widely supported, avoids version conversion issues)
+        torch.onnx.export(
+            self.evaluator.network,
+            (dummy_input,),  # Args must be a tuple
+            path,
+            export_params=True,
+            opset_version=17,  # Use 17 instead of 11 to avoid conversion issues
+            do_constant_folding=True,
+            input_names=["input"],
+            output_names=["policy_logits", "value"],
+            dynamic_axes={
+                "input": {0: "batch_size"},
+                "policy_logits": {0: "batch_size"},
+                "value": {0: "batch_size"},
+            },
+        )
+        print(f"AlphaZero model exported to ONNX at {path}")
+
     def save_model_with_suffix(self, suffix: str) -> Path:
         path = resolve_path(self.params.model_dir, self.resolve_filename(suffix))
         self.save_model(path)
