@@ -1,8 +1,9 @@
 import re
 import time
 from abc import abstractmethod
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
+import wandb
 from agents.alphazero import AlphaZeroAgent, AlphaZeroParams
 from v2.config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
 from v2.yaml_models import LatestModel
@@ -34,39 +35,57 @@ class JobTrigger:
         return TimeJobTrigger(value * seconds_per_unit[unit])
 
     @abstractmethod
-    def wait(self):
+    def wait(self, should_exit: Callable[[], bool] = lambda: False) -> bool:
+        pass
+
+    @abstractmethod
+    def is_ready(self):
         pass
 
 
 class TimeJobTrigger:
     def __init__(self, every_s: int):
         self.every_s = every_s
-        self.next_time = None
+        self.next_time = time.time() + self.every_s
 
-    def wait(self):
-        if self.next_time is not None and time.time() < self.next_time:
-            time.sleep(self.next_time - time.time())
+    def wait(self, should_exit: Callable[[], bool] = lambda: False) -> bool:
+        while time.time() < self.next_time:
+            sleep_time = min(1.0, self.next_time - time.time())
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            if should_exit():
+                return False
 
         self.next_time = time.time() + self.every_s
+        return True
+
+    def is_ready(self):
+        return self.next_time < time.time()
 
 
 class ModelJobTrigger:
     def __init__(self, config: Config, every_model: int):
         self.every_model = every_model
-        self.next_model = None
         self.config = config
+        LatestModel.wait_for_creation(config)
+        current_model = LatestModel.load(config).version
+        self.next_model = current_model + every_model
 
-    def wait(self):
+    def wait(self, should_exit: Callable[[], bool] = lambda: False) -> bool:
         current_model = LatestModel.load(self.config).version
 
-        while self.next_model is not None and current_model < self.next_model:
-            models_left = self.next_model - current_model
-            # We assume each model will take at least 1s to be created to avoid
-            # re-opening the file too often
-            time.sleep(1.0 * models_left)
+        while current_model < self.next_model:
+            time.sleep(5.0)
             current_model = LatestModel.load(self.config).version
+            if should_exit():
+                return False
 
         self.next_model = current_model + self.every_model
+        return True
+
+    def is_ready(self):
+        current_model = LatestModel.load(self.config).version
+        return self.next_model <= current_model
 
 
 def _validate_overrides(overrides: dict[str, Any]) -> None:
@@ -169,3 +188,33 @@ class MockWandb:
     ) -> None:
         data_str = ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in data.items())
         print(f"[MockWandb] step={step} | {data_str}")
+
+
+class ShutdownSignal:
+    @staticmethod
+    def file_path(config: Config):
+        return config.paths.run_dir / ".shutdown"
+
+    @staticmethod
+    def signal(config: Config):
+        ShutdownSignal.file_path(config).touch()
+
+    @staticmethod
+    def is_set(config: Config):
+        return ShutdownSignal.file_path(config).exists()
+
+    @staticmethod
+    def clear(config: Config):
+        ShutdownSignal.file_path(config).unlink(missing_ok=True)
+
+
+def upload_model(wandb_run, config: Config, model: LatestModel, model_id, aliases: list[str]):
+    print(f"Uploading {model.filename} with aliases {aliases}")
+    try:
+        metadata = {"model_version": model.version}
+        artifact = wandb.Artifact(model_id, type="model", metadata=metadata)
+        artifact.add_file(local_path=model.filename)
+        artifact.add_file(local_path=str(config.paths.config_file))
+        wandb_run.log_artifact(artifact, aliases=aliases)
+    except Exception as e:
+        print(f"!!! Exception during wandb upload: {e}")
