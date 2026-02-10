@@ -1,8 +1,8 @@
-run_id: cucu-28d
+run_id: run-$DATETIME
 quoridor:
   board_size: 5
   max_walls: 3
-  max_steps: 100
+  max_steps: 50
 alphazero:
   network:
     type: resnet
@@ -11,7 +11,7 @@ alphazero:
   mcts_n: 500
   mcts_c_puct: 1.2
 wandb:
-  project: v2
+  project: B5W3
   upload_model:
     every: 100 models
     when_max:
@@ -31,7 +31,7 @@ training:
   weight_decay: 0.0001
   replay_buffer_size: 1000000
 benchmarks:
-  - every: 100 models
+  - every: 10 models
     jobs:
       - type: tournament
         prefix: raw
@@ -49,7 +49,7 @@ benchmarks:
         prefix: raw
         alphazero:
           mcts_n: 0
-  - every: 60 minutes
+  - every: 100 models
     jobs:
       - type: tournament
         prefix: ""
@@ -61,20 +61,13 @@ benchmarks:
           - greedy
           - simple:branching_factor=8,nick=simple-bf8
           - simple:branching_factor=16,nick=simple-bf16
-      - type: tournament
-        prefix: dt6
+      - type: dumb_score
+        prefix: ""
         alphazero:
-          drop_t_on_step: 6
-        times: 20
-        opponents:
-          - random
-          - greedy:p_random=0.3,nick=greedy-03
-          - greedy:p_random=0.1,nick=greedy-01
-          - greedy
-          - simple:branching_factor=8,nick=simple-bf8
-          - simple:branching_factor=16,nick=simple-bf16
+  - every: 100 models
+    jobs:
       - type: tournament
         prefix: "hard"
-        times: 4
+        times: 2
         opponents:
           - simple:branching_factor=256,nick=simple,max_depth=6

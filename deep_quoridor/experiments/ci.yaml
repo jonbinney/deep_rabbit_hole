@@ -1,0 +1,39 @@
+run_id: ci-$DATETIME
+quoridor:
+  board_size: 5
+  max_walls: 1
+  max_steps: 50
+alphazero:
+  network:
+    type: mlp
+  mcts_n: 50
+  mcts_c_puct: 1.2
+self_play:
+  num_workers: 2
+  parallel_games: 2
+  alphazero:
+    mcts_noise_epsilon: 0.25
+training:
+  finish_after: 2 minutes
+  games_per_training_step: 8.0
+  learning_rate: 0.001
+  batch_size: 16
+  weight_decay: 0.0001
+  replay_buffer_size: 1000000
+benchmarks:
+  - every: 2 models
+    jobs:
+      - type: tournament
+        alphazero:
+          mcts_n: 0
+        prefix: raw
+        times: 4
+        opponents:
+          - random
+          - greedy
+  - every: 1 minute
+    jobs:
+      - type: dumb_score
+        alphazero:
+          mcts_n: 0
+        prefix: raw

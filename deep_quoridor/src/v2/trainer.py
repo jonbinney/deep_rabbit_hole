@@ -1,4 +1,5 @@
 import pickle
+import threading
 import time
 from collections import Counter
 from threading import Thread
@@ -7,25 +8,26 @@ import numpy as np
 import wandb
 from pydantic_yaml import parse_yaml_file_as
 from utils import Timer
-from v2.common import JobTrigger, MockWandb, create_alphazero
+from v2.common import JobTrigger, MockWandb, ShutdownSignal, create_alphazero, upload_model
 from v2.config import Config
 from v2.yaml_models import GameInfo, LatestModel
 
 
-def model_uploader(config: Config, every: str, model_id: str, wandb_run):
+def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdown_event: threading.Event):
     LatestModel.wait_for_creation(config)
 
     trigger = JobTrigger.from_string(config, every)
     while True:
-        trigger.wait()
         latest = LatestModel.load(config)
+        aliases = [f"m{latest.version}-{config.run_id}"]
+        upload_model(wandb_run, config, latest, model_id, aliases)
 
-        try:
-            artifact = wandb.Artifact(model_id, type="model")
-            artifact.add_file(local_path=latest.filename)
-            wandb_run.log_artifact(artifact, aliases=[f"m{latest.version}-{config.run_id}"])
-        except Exception as e:
-            print(f"!!! Exception during wandb upload: {e}")
+        if shutdown_event.is_set():
+            return
+
+        # wait until the next time that we need to upload a model or for the shutdown signal.
+        # If we get the shutdown signal, we'll do 1 more loop of the while to upload the last model.
+        trigger.wait(lambda: shutdown_event.is_set())
 
 
 def train(config: Config):
@@ -33,6 +35,8 @@ def train(config: Config):
 
     alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
+    upload_model_thread = None
+    shutdown_event = None
     if config.wandb:
         run_id = f"{config.run_id}-training"
         wandb_run = wandb.init(
@@ -49,9 +53,10 @@ def train(config: Config):
         wandb.define_metric("*", "Model version")
 
         if config.wandb.upload_model and config.wandb.upload_model.every:
+            shutdown_event = threading.Event()
             upload_model_thread = Thread(
                 target=model_uploader,
-                args=(config, config.wandb.upload_model.every, alphazero_agent.model_id(), wandb_run),
+                args=(config, config.wandb.upload_model.every, alphazero_agent.model_id(), wandb_run, shutdown_event),
             )
             upload_model_thread.start()
 
@@ -68,6 +73,10 @@ def train(config: Config):
         onnx_filename = config.paths.checkpoints / "model_0.onnx"
         alphazero_agent.save_model_onnx(onnx_filename)
 
+    finish_condition = None
+    if config.training.finish_after:
+        finish_condition = JobTrigger.from_string(config, config.training.finish_after)
+
     training_steps = 0
     last_game = 0
     model_version = 1
@@ -75,6 +84,14 @@ def train(config: Config):
     game_filename = []
 
     while True:
+        if finish_condition and finish_condition.is_ready():
+            print(f"Trainer: reached out finish condition: {config.training.finish_after}")
+            break
+
+        if ShutdownSignal.is_set(config):
+            print("Shutdown file found.  Finishing training")
+            break
+
         Timer.start("waiting-to-train", ignore_if_running=True)
 
         # Process new games: find new files, move them and extract the info used for training
@@ -174,4 +191,7 @@ def train(config: Config):
         
         model_version += 1
 
-    # TODO shutdown upload_model_thread
+    ShutdownSignal.signal(config)
+    if upload_model_thread and shutdown_event:
+        shutdown_event.set()
+        upload_model_thread.join()

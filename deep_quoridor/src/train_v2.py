@@ -1,8 +1,10 @@
 import argparse
 import multiprocessing as mp
+import time
 from pathlib import Path
 
 from v2 import benchmarks, load_config_and_setup_run, self_play, train
+from v2.common import ShutdownSignal
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Quoridor agent")
@@ -21,20 +23,35 @@ if __name__ == "__main__":
     config = load_config_and_setup_run(args.config_file, runs_dir)
     mp.set_start_method("spawn", force=True)
 
-    processes = []
+    # Make sure we don't have the shutdown signal from a previous run
+    ShutdownSignal.clear(config)
 
-    p = mp.Process(target=train, args=[config])
-    p.start()
-    processes.append(p)
+    train_process = mp.Process(target=train, args=[config])
+    train_process.start()
 
-    ps = benchmarks.create_benchmark_processes(config)
-    [p.start() for p in ps]
-    processes.extend(ps)
+    benchmark_processes = benchmarks.create_benchmark_processes(config)
+    [p.start() for p in benchmark_processes]
 
+    self_play_processes = []
     for i in range(config.self_play.num_workers):
         p = mp.Process(target=self_play, args=[config])
         p.start()
-        processes.append(p)
+        self_play_processes.append(p)
 
-    for worker in processes:
-        worker.join()
+    train_process.join()
+    ShutdownSignal.signal(config)
+    print("Shutting down!")
+
+    b_count_prev, sf_count_prev = -1, -1
+    while True:
+        b_count = sum([p.is_alive() for p in benchmark_processes])
+        sf_count = sum([p.is_alive() for p in self_play_processes])
+        if b_count_prev != b_count or sf_count_prev != sf_count:
+            print(f"Waiting for {b_count} benchmark processes and {sf_count} self_play processes")
+            b_count_prev, sf_count_prev = b_count, sf_count
+
+        if (b_count + sf_count) == 0:
+            break
+        time.sleep(1)
+
+    ShutdownSignal.clear(config)

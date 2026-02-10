@@ -116,9 +116,9 @@ def array_to_action(action_array: np.ndarray) -> Action:
     if action_array[2] == qgrid.ACTION_MOVE:
         action = MoveAction((action_array[0], action_array[1]))
     elif action_array[2] == qgrid.ACTION_WALL_VERTICAL:
-        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_VERTICAL)
+        action = WallAction((action_array[0], action_array[1]), WallOrientation.VERTICAL)
     elif action_array[2] == qgrid.ACTION_WALL_HORIZONTAL:
-        action = WallAction((action_array[0], action_array[1]), qgrid.WALL_ORIENTATION_HORIZONTAL)
+        action = WallAction((action_array[0], action_array[1]), WallOrientation.HORIZONTAL)
     else:
         raise ValueError(f"Invalid action type: {action_array[2]}")
 

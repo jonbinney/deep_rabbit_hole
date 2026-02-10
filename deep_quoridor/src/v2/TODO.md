@@ -2,11 +2,8 @@
 
 - Replay buffer length: righ now we're not rolling out old games to respect the length
 - Agent Evolution benchmark
-- Allow to set a finish point (e.g. maximum number of models or games)
-- Include a CI test
 - Overrides from the command line
 - Continuation
-- Upload models to wandb
 
 # Other improvements and new features
 

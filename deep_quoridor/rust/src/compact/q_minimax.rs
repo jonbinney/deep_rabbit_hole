@@ -133,7 +133,7 @@ fn sample_actions(
     // Get valid moves (type 0)
     let moves = mechanics.get_valid_moves(data);
     let mut actions: Vec<(usize, usize, usize)> =
-        moves.into_iter().map(|(row, col)| (row, col, 0)).collect();
+        moves.into_iter().map(|(row, col)| (row, col, 2)).collect();
 
     if actions.len() >= branching_factor {
         actions.shuffle(&mut rng);
@@ -150,7 +150,7 @@ fn sample_actions(
     // Add walls until we reach branching factor
     let num_walls_needed = branching_factor - actions.len();
     for (row, col, orientation) in walls.into_iter().take(num_walls_needed) {
-        actions.push((row, col, orientation + 1)); // Map 0->1, 1->2
+        actions.push((row, col, orientation));
     }
 
     actions
@@ -163,8 +163,8 @@ fn minimax(
     data: &[u8],
     current_player: usize,
     agent_player: usize,
-    completed_steps: usize,
-    max_depth: usize,
+    search_depth: usize,
+    max_search_depth: usize,
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
@@ -180,19 +180,19 @@ fn minimax(
 
     let opponent = 1 - current_player;
 
-    if completed_steps >= mechanics.repr().max_steps() {
+    if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
         return 0.0; // Tie
     }
 
-    if completed_steps >= max_depth {
+    if search_depth >= max_search_depth {
         return compute_heuristic(mechanics, data, agent_player, heuristic);
     }
 
     let actions = sample_actions(mechanics, data, branching_factor);
     if actions.is_empty() {
         mechanics.print(data);
+        assert!(false, "No valid actions - should never happen");
     }
-    assert!(!actions.is_empty());
 
     let is_maximizing = current_player == agent_player;
     let mut best_value = if is_maximizing {
@@ -208,12 +208,12 @@ fn minimax(
         let mut new_data = data.to_vec();
 
         // Apply action
-        if *action_type == 0 {
+        if *action_type == 2 {
             // Move action
             mechanics.execute_move(&mut new_data, current_player, *row, *col);
         } else {
             // Wall action (type 1 or 2 indicates orientation)
-            let orientation = *action_type - 1;
+            let orientation = *action_type;
             mechanics.execute_wall_placement(
                 &mut new_data,
                 current_player,
@@ -232,8 +232,8 @@ fn minimax(
             &new_data,
             opponent,
             agent_player,
-            completed_steps + 1,
-            max_depth,
+            search_depth + 1,
+            max_search_depth,
             branching_factor,
             discount_factor,
             heuristic,
@@ -273,7 +273,7 @@ fn minimax(
 pub fn evaluate_actions(
     mechanics: &QGameMechanics,
     data: &[u8],
-    max_depth: usize,
+    max_search_depth: usize,
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
@@ -306,10 +306,10 @@ pub fn evaluate_actions(
             let mut new_data = data.to_vec();
 
             // Apply action
-            if *action_type == 0 {
+            if *action_type == 2 {
                 mechanics.execute_move(&mut new_data, current_player, *row, *col);
             } else {
-                let orientation = *action_type - 1;
+                let orientation = *action_type;
                 mechanics.execute_wall_placement(
                     &mut new_data,
                     current_player,
@@ -328,8 +328,8 @@ pub fn evaluate_actions(
                 &new_data,
                 1 - current_player,
                 current_player,
-                1,
-                max_depth,
+                1, // search_depth
+                max_search_depth,
                 branching_factor,
                 discount_factor,
                 heuristic,

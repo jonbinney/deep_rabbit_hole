@@ -2,7 +2,7 @@ import os
 
 import quoridor_env
 from utils import Timer
-from v2.common import create_alphazero
+from v2.common import ShutdownSignal, create_alphazero
 from v2.config import Config
 from v2.yaml_models import LatestModel
 
@@ -24,7 +24,7 @@ def self_play(config: Config):
 
     current_model_version = -1
 
-    while True:
+    while not ShutdownSignal.is_set(config):
         latest = LatestModel.load(config)
 
         if latest.version != current_model_version:
@@ -40,6 +40,10 @@ def self_play(config: Config):
 
         Timer.start("self-play")
         while not all(finished):
+            if ShutdownSignal.is_set(config):
+                print(f"self-play process {os.getpid()} - Interrupted by shutdown signal")
+                return
+
             observations = []
             for i in range(n):
                 if finished[i]:
