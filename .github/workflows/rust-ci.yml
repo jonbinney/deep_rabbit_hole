@@ -2,9 +2,13 @@ name: Rust CI
 
 on:
   push:
-    branches: ["main"]
+    paths:
+      - 'deep_quoridor/rust/**'
+      - '.github/workflows/rust-ci.yml'
   pull_request:
-    branches: ["main"]
+    paths:
+      - 'deep_quoridor/rust/**'
+      - '.github/workflows/rust-ci.yml'
   workflow_dispatch:
 
 permissions:
