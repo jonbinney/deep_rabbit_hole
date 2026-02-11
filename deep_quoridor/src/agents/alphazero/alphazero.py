@@ -419,17 +419,23 @@ class AlphaZeroAgent(TrainableAgent):
     def save_model_onnx(self, path):
         """Export the model to ONNX format."""
         import torch.onnx
-        
+
         # Create directory for saving models if it doesn't exist
         os.makedirs(Path(path).absolute().parents[0], exist_ok=True)
-        
+
         # Set the network to evaluation mode
         self.evaluator.network.eval()
-        
+
         # Create a dummy input tensor with the correct shape
-        # The input size is determined by the network's input_size attribute
-        dummy_input = torch.randn(1, self.evaluator.network.input_size, device=self.device)
-        
+        # The shape depends on the network type
+        network = self.evaluator.network
+        if hasattr(network, "__class__") and network.__class__.__name__ == "ResnetNetwork":
+            # ResNet expects input of shape (batch_size, 5, input_size, input_size)
+            dummy_input = torch.randn(1, 5, network.input_size, network.input_size, device=self.device)
+        else:
+            # MLP expects input of shape (batch_size, input_size)
+            dummy_input = torch.randn(1, network.input_size, device=self.device)
+
         # Export the model with opset 17 (widely supported, avoids version conversion issues)
         torch.onnx.export(
             self.evaluator.network,

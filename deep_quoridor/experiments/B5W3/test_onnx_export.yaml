@@ -1,0 +1,16 @@
+extend: base.yaml
+run_id: sample-onnx-export-$DATETIME
+
+alphazero:
+  mcts_n: 50
+wandb: null  # Disable wandb for testing
+self_play:
+  num_workers: 1
+  parallel_games: 2
+  alphazero:
+    mcts_noise_epsilon: 0.25
+training:
+  finish_after: 10 models
+  model_save_timing: true 
+  save_onnx: true
+benchmarks: []
