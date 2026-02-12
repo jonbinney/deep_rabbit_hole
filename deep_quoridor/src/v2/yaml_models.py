@@ -1,3 +1,5 @@
+import os
+import tempfile
 import time
 
 from pydantic import BaseModel
@@ -16,7 +18,15 @@ class LatestModel(BaseModel):
     @classmethod
     def write(cls, config: Config, filename: str, version: int):
         latest = LatestModel(filename=filename, version=version)
-        to_yaml_file(config.paths.latest_model_yaml, latest)
+        dest = config.paths.latest_model_yaml
+        fd, tmp_path = tempfile.mkstemp(dir=dest.parent, suffix=".tmp")
+        os.close(fd)
+        try:
+            to_yaml_file(tmp_path, latest)
+            os.replace(tmp_path, dest)
+        except BaseException:
+            os.unlink(tmp_path)
+            raise
 
     @classmethod
     def wait_for_creation(cls, config: Config, timeout: int = 60):
