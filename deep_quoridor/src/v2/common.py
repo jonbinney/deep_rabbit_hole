@@ -102,13 +102,13 @@ def _validate_overrides(overrides: dict[str, Any]) -> None:
         raise ValueError(f"Invalid override keys: {invalid_keys}. Valid AlphaZeroParams fields: {sorted(valid_fields)}")
 
 
-def create_alphazero(
+def alphazero_params_dict_from_config(
     config: Config,
     sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig] = None,
     overrides: Optional[dict[str, Any]] = None,
-) -> AlphaZeroAgent:
+) -> dict:
     """
-    Create an AlphaZero agent with configurable parameters.
+    Returns a dict of alphazero params based on config.
 
     Parameters are merged with precedence: config < sub_config < overrides
 
@@ -116,9 +116,6 @@ def create_alphazero(
         config: Base configuration
         sub_config: Optional play or self-play specific config
         overrides: Optional dict to override any AlphaZeroParams field
-
-    Returns:
-        Configured AlphaZeroAgent
     """
     # Normalize overrides to avoid None checks
     overrides = overrides or {}
@@ -170,6 +167,28 @@ def create_alphazero(
     # Apply overrides (highest priority)
     params_dict.update(overrides)
 
+    return params_dict
+
+
+def create_alphazero(
+    config: Config,
+    sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig] = None,
+    overrides: Optional[dict[str, Any]] = None,
+) -> AlphaZeroAgent:
+    """
+    Create an AlphaZero agent with configurable parameters.
+
+    Parameters are merged with precedence: config < sub_config < overrides
+
+    Args:
+        config: Base configuration
+        sub_config: Optional play or self-play specific config
+        overrides: Optional dict to override any AlphaZeroParams field
+
+    Returns:
+        Configured AlphaZeroAgent
+    """
+    params_dict = alphazero_params_dict_from_config(config, sub_config, overrides)
     params = AlphaZeroParams(**params_dict)
     return AlphaZeroAgent(
         config.quoridor.board_size,
@@ -177,6 +196,16 @@ def create_alphazero(
         config.quoridor.max_steps,
         params=params,
     )
+
+
+def alphazero_encoded_name_from_config(
+    config: Config,
+    sub_config: Optional[AlphaZeroPlayConfig | AlphaZeroSelfPlayConfig] = None,
+    overrides: Optional[dict[str, Any]] = None,
+) -> str:
+    params_dict = alphazero_params_dict_from_config(config, sub_config, overrides)
+    params = ",".join(f"{k}={v}" for k, v in sorted(params_dict.items()) if v is not None)
+    return f"alphazero:{params}"
 
 
 class MockWandb:

@@ -44,7 +44,7 @@ class Timer:
     def finish(cls, name: str, episode: Optional[int] = None) -> float:
         if name not in cls.starts:
             print(f"TIMER: WARNING - timer for {name} was not started but trying to finish")
-            return ""
+            return 0.0
 
         elapsed = time.perf_counter() - cls.starts[name]
         del cls.starts[name]
