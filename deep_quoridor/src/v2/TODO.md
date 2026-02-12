@@ -1,7 +1,6 @@
 # V1 Parity
 
 - Replay buffer length: righ now we're not rolling out old games to respect the length
-- Agent Evolution benchmark
 - Overrides from the command line
 - Continuation
 
@@ -25,3 +24,4 @@
 - Allow to dynamically change the number of workers and parallel games, to experiment with performance
 - Mount the run directory and make other processes play from another computer
 - The processes could write status files and we could have a script to watch the status (e.g. elapsed time.)
+- Tuning: a script that would take a list of num-workers and a list of parallel games, as well as time to run, and will execute the different combinations for that time and output how many games were played in each combination, to find the fastest one.

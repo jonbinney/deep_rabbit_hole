@@ -51,6 +51,14 @@ benchmarks:
           mcts_n: 0
   - every: 100 models
     jobs:
+      - type: agent_evolution
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+        top_n: 5
+        times: 10
+  - every: 100 models
+    jobs:
       - type: tournament
         prefix: ""
         times: 20
@@ -63,7 +71,6 @@ benchmarks:
           - simple:branching_factor=16,nick=simple-bf16
       - type: dumb_score
         prefix: ""
-        alphazero:
   - every: 100 models
     jobs:
       - type: tournament

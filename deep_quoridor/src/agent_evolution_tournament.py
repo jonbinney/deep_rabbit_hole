@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from agents.core.agent import AgentRegistry
 from arena import Arena, PlayMode
+from arena_utils import ArenaPlugin
 from renderers.match_results import MatchResultsRenderer
 from utils.misc import compute_elo
 from utils.subargs import SubargsBase
@@ -32,12 +33,14 @@ class AgentEvolutionTournament:
         max_steps: int = 200,
         num_workers: int = 0,
         params: AgentEvolutionTournamentParams = AgentEvolutionTournamentParams(),
+        verbose: bool = True,
     ):
         self.agents = {}
         self.elos = {}
         self.params = params
         self.num_workers = num_workers
-        self.arena = Arena(board_size, max_walls, max_steps=max_steps, renderers=[MatchResultsRenderer()])
+        renderers: list[ArenaPlugin] = [MatchResultsRenderer()] if verbose else []
+        self.arena = Arena(board_size, max_walls, max_steps=max_steps, renderers=renderers, verbose=verbose)
 
     def add_agent_and_compute(self, agent_encoded_name: str):
         play_encoded_name = AgentRegistry.training_encoded_name_to_playing_encoded_name(agent_encoded_name)
