@@ -431,6 +431,7 @@ class AlphaZeroAgent(TrainableAgent):
         network = self.evaluator.network
         if hasattr(network, "__class__") and network.__class__.__name__ == "ResnetNetwork":
             # ResNet expects input of shape (batch_size, 5, input_size, input_size)
+            # NOTE: input_size is board_size * 2 + 3, which is the dimension of the combined grid input, not the original board size
             dummy_input = torch.randn(1, 5, network.input_size, network.input_size, device=self.device)
         else:
             # MLP expects input of shape (batch_size, input_size)
