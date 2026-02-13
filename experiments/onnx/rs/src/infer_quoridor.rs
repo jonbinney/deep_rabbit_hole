@@ -4,6 +4,9 @@ use ort::session::Session;
 use std::path::Path;
 use std::time::Instant;
 
+//  This file is just an experiment to make sure a saved ONNX model can be loaded and run inference on with the Rust ONNX Runtime bindings.
+//  The QuoridorState and related functions are only for testing purposes in this file and are not intended to be a full implementation of the game state or rules.
+
 /// Represents a Quoridor game state for a 5x5 board with 1 wall per player
 struct QuoridorState {
     board_size: usize,
