@@ -245,7 +245,7 @@ fn main() -> Result<()> {
 
     // --- 4. Run MLP inference multiple times for benchmarking ---
     println!("=== MLP Model Inference ===");
-    let num_runs = 1000;
+    let num_runs = 20000;
     println!("Running MLP inference {} times...", num_runs);
     
     let start = Instant::now();
