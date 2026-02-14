@@ -1,0 +1,96 @@
+name: Rust CI
+
+on:
+  push:
+    paths:
+      - 'deep_quoridor/rust/**'
+      - '.github/workflows/rust-ci.yml'
+  pull_request:
+    paths:
+      - 'deep_quoridor/rust/**'
+      - '.github/workflows/rust-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+      
+      - name: Check formatting
+        working-directory: deep_quoridor/rust
+        run: cargo fmt --all -- --check
+      
+      - name: Run clippy
+        working-directory: deep_quoridor/rust
+        run: cargo clippy --all-targets --all-features
+      
+      - name: Build
+        working-directory: deep_quoridor/rust
+        run: cargo build --verbose
+
+      - name: Run tests with all features
+        working-directory: deep_quoridor/rust
+        env:
+          RUST_BACKTRACE: 1
+        run: cargo test --all-features --verbose
+
+      - name: Build release
+        working-directory: deep_quoridor/rust
+        run: cargo build --release --verbose
+
+  build-python-extension:
+    name: Build Python Extension
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install maturin
+        run: pip install maturin
+      
+      - name: Build Python wheel
+        working-directory: deep_quoridor/rust
+        run: maturin build --release
+      
+      - name: Test Python import
+        working-directory: deep_quoridor/rust
+        run: |
+          pip install target/wheels/*.whl
+          python -c "import quoridor_rs; print('Successfully imported quoridor_rs')"

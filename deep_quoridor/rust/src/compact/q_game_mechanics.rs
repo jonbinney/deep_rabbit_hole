@@ -685,8 +685,12 @@ mod tests {
         // This should be invalid if it blocks the only remaining path
         // (depends on whether there's still a way around)
 
-        // For now, just test that pathfinding completes without error
-        assert!(is_valid || !is_valid, "Pathfinding should complete");
+        // Log the result to verify pathfinding completed
+        eprintln!(
+            "Pathfinding completed successfully: wall at (2,1) is {}",
+            if is_valid { "valid" } else { "invalid" }
+        );
+        // Test passes as long as we get here without panic
     }
 
     #[test]
