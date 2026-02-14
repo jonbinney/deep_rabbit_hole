@@ -4,6 +4,9 @@ use ort::session::Session;
 use std::path::Path;
 use std::time::Instant;
 
+//  This file is just an experiment to make sure a saved ONNX model can be loaded and run inference on with the Rust ONNX Runtime bindings.
+//  The QuoridorState and related functions are only for testing purposes in this file and are not intended to be a full implementation of the game state or rules.
+
 /// Represents a Quoridor game state for a 5x5 board with 1 wall per player
 struct QuoridorState {
     board_size: usize,
@@ -38,6 +41,70 @@ impl QuoridorState {
             walls_remaining,
             current_player: 0,
         }
+    }
+    
+    /// Convert the game state to ResNet input format
+    /// 
+    /// ResNet expects input of shape (batch_size, 5, M, M) where M = board_size * 2 + 3
+    /// The 5 channels are:
+    /// 1. Walls (1 where there is a wall, 0 otherwise)
+    /// 2. Current player's position (1-hot encoding)
+    /// 3. Opponent's position (1-hot encoding)
+    /// 4. Current player walls remaining (same value for entire plane)
+    /// 5. Opponent walls remaining (same value for entire plane)
+    fn to_resnet_input_tensor(&self) -> ndarray::Array4<f32> {
+        let opponent = 1 - self.current_player;
+        let grid_size = self.board_size * 2 + 3; // Combined grid representation
+        
+        let mut input = ndarray::Array4::<f32>::zeros((1, 5, grid_size, grid_size));
+        
+        // Channel 0: Walls - we need to map the wall array to the combined grid
+        // For a 5x5 board, the combined grid is 13x13
+        // Walls are placed at odd positions (1, 3, 5, 7, 9, 11) in both dimensions
+        for i in 0..(self.board_size - 1) {
+            for j in 0..(self.board_size - 1) {
+                let grid_i = i * 2 + 1;
+                let grid_j = j * 2 + 1;
+                
+                // Horizontal wall
+                if self.walls[[i, j, 0]] == 1 {
+                    input[[0, 0, grid_i, grid_j]] = 1.0;
+                    input[[0, 0, grid_i, grid_j + 1]] = 1.0;
+                    input[[0, 0, grid_i, grid_j + 2]] = 1.0;
+                }
+                
+                // Vertical wall
+                if self.walls[[i, j, 1]] == 1 {
+                    input[[0, 0, grid_i, grid_j]] = 1.0;
+                    input[[0, 0, grid_i + 1, grid_j]] = 1.0;
+                    input[[0, 0, grid_i + 2, grid_j]] = 1.0;
+                }
+            }
+        }
+        
+        // Channel 1: Current player position (1-hot encoding)
+        let player_row = self.player_positions[[self.current_player, 0]] as usize;
+        let player_col = self.player_positions[[self.current_player, 1]] as usize;
+        let player_grid_row = player_row * 2;
+        let player_grid_col = player_col * 2;
+        input[[0, 1, player_grid_row, player_grid_col]] = 1.0;
+        
+        // Channel 2: Opponent position (1-hot encoding)
+        let opponent_row = self.player_positions[[opponent, 0]] as usize;
+        let opponent_col = self.player_positions[[opponent, 1]] as usize;
+        let opponent_grid_row = opponent_row * 2;
+        let opponent_grid_col = opponent_col * 2;
+        input[[0, 2, opponent_grid_row, opponent_grid_col]] = 1.0;
+        
+        // Channel 3: Current player walls remaining (same value for entire plane)
+        let my_walls = self.walls_remaining[self.current_player] as f32;
+        input.slice_mut(ndarray::s![0, 3, .., ..]).fill(my_walls);
+        
+        // Channel 4: Opponent walls remaining (same value for entire plane)
+        let opp_walls = self.walls_remaining[opponent] as f32;
+        input.slice_mut(ndarray::s![0, 4, .., ..]).fill(opp_walls);
+        
+        input
     }
     
     /// Convert the game state to the input format expected by the neural network
@@ -108,6 +175,11 @@ fn array2d_to_vec(arr: &Array<f32, ndarray::Ix2>) -> Vec<f32> {
     arr.iter().copied().collect()
 }
 
+/// Convert 4D array to 1D vector for ONNX input
+fn array4d_to_vec(arr: &ndarray::Array4<f32>) -> Vec<f32> {
+    arr.iter().copied().collect()
+}
+
 /// Compute softmax values for policy logits
 fn softmax(logits: &[f32]) -> Vec<f32> {
     let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
@@ -120,25 +192,26 @@ fn main() -> Result<()> {
     // Enable ONNX Runtime verbose logging
     std::env::set_var("ORT_LOG_SEVERITY_LEVEL", "1"); // 1 = INFO level
 
-    let model_path = "../model_6.onnx";
+    let mlp_model_path = "../B5W3_mlp_sample.onnx";
+    let resnet_model_path = "../B5W3_resnet_sample.onnx";
     
     // Board configuration (must match the trained model)
     let board_size = 5;
-    let max_walls = 1;
+    let max_walls = 3;
 
-    // --- 1. Load the ONNX model ---
-    if !Path::new(model_path).exists() {
+    // --- 1. Load the MLP ONNX model ---
+    if !Path::new(mlp_model_path).exists() {
         anyhow::bail!(
-            "Error: Model not found at {}\nPlease ensure the ONNX model file exists.",
-            model_path
+            "Error: MLP model not found at {}\nPlease ensure the ONNX model file exists.",
+            mlp_model_path
         );
     }
 
-    println!("Loading Quoridor model from {}...", model_path);
+    println!("Loading Quoridor MLP model from {}...", mlp_model_path);
     println!("Board size: {}x{}, Max walls: {}\n", board_size, board_size, max_walls);
 
     // Configure session with CUDA (GPU) execution provider
-    let mut session = Session::builder()
+    let mut mlp_session = Session::builder()
         .context("Failed to create session builder")?
         .with_execution_providers([
             ort::execution_providers::CUDAExecutionProvider::default()
@@ -147,10 +220,10 @@ fn main() -> Result<()> {
                 .error_on_failure(),
         ])
         .context("Failed to configure CUDA execution provider - ensure CUDA/GPU is available")?
-        .commit_from_file(model_path)
-        .context("Failed to load ONNX model")?;
+        .commit_from_file(mlp_model_path)
+        .context("Failed to load MLP ONNX model")?;
     
-    println!("✓ Model loaded successfully!");
+    println!("✓ MLP Model loaded successfully!");
     println!("✓ CUDA execution provider configured (GPU acceleration enabled)\n");
 
     // --- 2. Create an initial game state ---
@@ -173,9 +246,10 @@ fn main() -> Result<()> {
     println!("Input tensor shape: {:?}", input_tensor.shape());
     println!("Input tensor size: {}\n", input_tensor.len());
 
-    // --- 4. Run inference multiple times for benchmarking ---
-    let num_runs = 1000;
-    println!("Running inference {} times...", num_runs);
+    // --- 4. Run MLP inference multiple times for benchmarking ---
+    println!("=== MLP Model Inference ===");
+    let num_runs = 20000;
+    println!("Running MLP inference {} times...", num_runs);
     
     let start = Instant::now();
     let mut last_policy_logits = None;
@@ -188,7 +262,7 @@ fn main() -> Result<()> {
         let input_value = ort::value::Value::from_array((shape.as_slice(), data))
             .context("Failed to create input value")?;
         
-        let outputs = session
+        let outputs = mlp_session
             .run(ort::inputs!["input" => input_value])
             .context("Failed to run inference")?;
         
@@ -252,6 +326,100 @@ fn main() -> Result<()> {
             (board_size - 1) * (board_size - 1),
             num_move_actions + (board_size - 1) * (board_size - 1),
             total_actions - 1);
+    }
+
+    // --- 6. Load ResNet model and run inference ---
+    println!("\n\n=== ResNet Model Inference ===");
+    
+    if !Path::new(resnet_model_path).exists() {
+        anyhow::bail!(
+            "Error: ResNet model not found at {}\nPlease ensure the ONNX model file exists.",
+            resnet_model_path
+        );
+    }
+
+    println!("Loading Quoridor ResNet model from {}...", resnet_model_path);
+    
+    let mut resnet_session = Session::builder()
+        .context("Failed to create ResNet session builder")?
+        .with_execution_providers([
+            ort::execution_providers::CUDAExecutionProvider::default()
+                .with_device_id(0)
+                .build()
+                .error_on_failure(),
+        ])
+        .context("Failed to configure CUDA execution provider for ResNet")?
+        .commit_from_file(resnet_model_path)
+        .context("Failed to load ResNet ONNX model")?;
+    
+    println!("✓ ResNet Model loaded successfully!\n");
+
+    // Convert game state to ResNet input format
+    let resnet_input_tensor = game_state.to_resnet_input_tensor();
+    let grid_size = board_size * 2 + 3;
+    println!("ResNet input tensor shape: {:?}", resnet_input_tensor.shape());
+    println!("Expected: (1, 5, {}, {})\n", grid_size, grid_size);
+
+    // Run ResNet inference
+    println!("Running ResNet inference {} times...", num_runs);
+    
+    let start = Instant::now();
+    let mut last_policy_logits = None;
+    let mut last_value = None;
+    
+    for _ in 0..num_runs {
+        // Convert ndarray to Vec and create an ort Value with shape (1, 5, M, M)
+        let shape = resnet_input_tensor.shape().to_vec();
+        let data = array4d_to_vec(&resnet_input_tensor);
+        let input_value = ort::value::Value::from_array((shape.as_slice(), data))
+            .context("Failed to create ResNet input value")?;
+        
+        let outputs = resnet_session
+            .run(ort::inputs!["input" => input_value])
+            .context("Failed to run ResNet inference")?;
+        
+        // Extract and store the output data
+        let policy_output = outputs["policy_logits"]
+            .try_extract_tensor::<f32>()
+            .context("Failed to extract ResNet policy tensor")?;
+        let value_output = outputs["value"]
+            .try_extract_tensor::<f32>()
+            .context("Failed to extract ResNet value tensor")?;
+        
+        last_policy_logits = Some(policy_output.1.to_vec());
+        last_value = Some(value_output.1.to_vec());
+    }
+    
+    let duration = start.elapsed();
+    let avg_time = duration.as_secs_f64() / num_runs as f64;
+    
+    println!("✓ Completed {} ResNet inferences", num_runs);
+    println!("Total time: {:.4}s", duration.as_secs_f64());
+    println!("Average time per inference: {:.6}s ({:.2} inferences/sec)\n", 
+        avg_time, 1.0 / avg_time);
+
+    // Process ResNet output
+    if let (Some(policy_logits), Some(value)) = (last_policy_logits, last_value) {
+        println!("=== ResNet Model Output ===");
+        println!("Policy logits length: {}", policy_logits.len());
+        println!("Value length: {}", value.len());
+        println!("Position value: {:.4} (range: -1 to 1, positive favors current player)\n", 
+            value[0]);
+        
+        // Convert policy logits to probabilities using softmax
+        let policy_probs = softmax(&policy_logits);
+        
+        // Find top 5 actions
+        let mut indexed_probs: Vec<(usize, f32)> = policy_probs.iter()
+            .enumerate()
+            .map(|(i, &p)| (i, p))
+            .collect();
+        indexed_probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        
+        println!("=== Top 5 Recommended Actions (ResNet) ===");
+        for (i, (action_idx, prob)) in indexed_probs.iter().take(5).enumerate() {
+            println!("{}. Action index: {}, Probability: {:.4}", i + 1, action_idx, prob);
+        }
     }
 
     Ok(())
