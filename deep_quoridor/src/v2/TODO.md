@@ -1,7 +1,6 @@
 # V1 Parity
 
 - Replay buffer length: righ now we're not rolling out old games to respect the length
-- Overrides from the command line
 - Continuation
 
 # Other improvements and new features

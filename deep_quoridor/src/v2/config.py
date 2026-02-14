@@ -213,13 +213,85 @@ def _load_config_data(file: str) -> dict:
     return data
 
 
-def load_user_config(file: str) -> UserConfig:
+def _parse_override_value(value: str):
+    """Parse a string value into an appropriate Python type."""
+    if value.lower() == "none":
+        return None
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_override_value(item.strip()) for item in inner.split(",")]
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
+def _as_index(part: str) -> int:
+    try:
+        return int(part)
+    except ValueError:
+        raise ValueError(f"Expected a numeric index for list, got '{part}'")
+
+
+def _ensure_and_navigate(target, part: str):
+    """Navigate into an intermediate path part, creating a dict if the key is missing."""
+    if isinstance(target, list):
+        return target[_as_index(part)]
+    if part not in target:
+        target[part] = {}
+    return target[part]
+
+
+def _set_value(target, part: str, value):
+    """Set a value on a dict key or list index."""
+    if isinstance(target, list):
+        target[_as_index(part)] = value
+    else:
+        target[part] = value
+
+
+def _apply_overrides(data: dict, overrides: list[str]) -> dict:
+    """Apply dotted-key overrides (e.g. 'alphazero.mcts_n=250', 'wandb=None') to a config dict.
+
+    Supports numeric indices for lists: 'benchmarks.0.every=5m'
+    """
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"Invalid override format '{override}', expected 'key=value'")
+        key, value = override.split("=", 1)
+        parts = key.split(".")
+        parsed_value = _parse_override_value(value)
+
+        target = data
+        for part in parts[:-1]:
+            target = _ensure_and_navigate(target, part)
+        _set_value(target, parts[-1], parsed_value)
+
+    return data
+
+
+def load_user_config(file: str, overrides: list[str] | None = None) -> UserConfig:
     data = _load_config_data(file)
+    if overrides:
+        _apply_overrides(data, overrides)
     return UserConfig.model_validate(data)
 
 
-def load_config_and_setup_run(file: str, base_dir: str, create_dirs: bool = True) -> Config:
-    user_config = load_user_config(file)
+def load_config_and_setup_run(
+    file: str, base_dir: str, overrides: list[str] | None = None, create_dirs: bool = True
+) -> Config:
+    user_config = load_user_config(file, overrides=overrides)
     config = Config.from_user(user_config, base_dir, create_dirs=create_dirs)
 
     config_filename = config.paths.config_file
