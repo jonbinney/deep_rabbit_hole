@@ -5,9 +5,19 @@ name: Python application
 
 on:
   push:
-    branches: ["main"]
+    paths:
+      - 'deep_quoridor/src/**'
+      - 'deep_quoridor/test/**'
+      - 'deep_quoridor/experiments/**'
+      - 'deep_quoridor/*requirements.txt'
+      - '.github/workflows/python-app.yml'
   pull_request:
-    branches: ["main"]
+    paths:
+      - 'deep_quoridor/src/**'
+      - 'deep_quoridor/test/**'
+      - 'deep_quoridor/experiments/**'
+      - 'deep_quoridor/*requirements.txt'
+      - '.github/workflows/python-app.yml'
   workflow_dispatch:
     inputs:
       debug_enabled:

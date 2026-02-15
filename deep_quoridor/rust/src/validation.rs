@@ -199,7 +199,13 @@ pub fn is_wall_action_valid_mut(
     }
 
     // Check if wall cells are free
-    if !check_wall_cells(&grid.view(), wall_row, wall_col, wall_orientation, CELL_FREE) {
+    if !check_wall_cells(
+        &grid.view(),
+        wall_row,
+        wall_col,
+        wall_orientation,
+        CELL_FREE,
+    ) {
         return false;
     }
 
