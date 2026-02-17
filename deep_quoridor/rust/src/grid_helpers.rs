@@ -65,7 +65,7 @@ pub fn create_initial_board(
     (grid, player_positions, walls_remaining, goal_rows)
 }
 
-/// Convert a game grid to ResNet input format
+/// Convert a single-channel board state to 5-channel ResNet input format
 ///
 /// ResNet expects input of shape (batch_size, 5, M, M) where M = board_size * 2 + 3
 /// For a 5x5 board, M = 13
@@ -75,6 +75,12 @@ pub fn create_initial_board(
 /// 3. Opponent's position (1-hot encoding)
 /// 4. Current player walls remaining (same value for entire plane)
 /// 5. Opponent walls remaining (same value for entire plane)
+///
+/// The grid is a 2D array where:
+/// - Border walls are represented as 10
+/// - Player 0's position is represented as 0
+/// - Player 1's position is represented as 1
+/// - Empty cells are represented as -1
 pub fn board_to_resnet_input(
     grid: &ArrayView2<i8>,
     player_positions: &ArrayView2<i32>,
