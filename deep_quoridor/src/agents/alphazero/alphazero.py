@@ -452,6 +452,7 @@ class AlphaZeroAgent(TrainableAgent):
                 "policy_logits": {0: "batch_size"},
                 "value": {0: "batch_size"},
             },
+            external_data=False,  # Don't use external data format for simplicity; model should be small enough to fit in a single file
         )
         print(f"AlphaZero model exported to ONNX at {path}")
 

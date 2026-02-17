@@ -166,11 +166,10 @@ def train(config: Config):
 
         Timer.start("save-model")
 
-        # Save in PyTorch format if enabled
-        if config.training.save_pytorch:
-            new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
-            alphazero_agent.save_model(new_model_filename)
-            LatestModel.write(config, str(new_model_filename), model_version)
+        # Save in PyTorch format
+        new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
+        alphazero_agent.save_model(new_model_filename)
+        LatestModel.write(config, str(new_model_filename), model_version)
 
         # Save in ONNX format if enabled
         if config.training.save_onnx:
@@ -181,8 +180,7 @@ def train(config: Config):
 
         if config.training.model_save_timing:
             formats = []
-            if config.training.save_pytorch:
-                formats.append("PyTorch")
+            formats.append("PyTorch")
             if config.training.save_onnx:
                 formats.append("ONNX")
             format_str = " and ".join(formats) if formats else "no format"
