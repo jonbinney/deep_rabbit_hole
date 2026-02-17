@@ -117,9 +117,7 @@ pub fn board_to_resnet_input(
 
     // Channel 3: Current player walls remaining (same value for entire plane)
     let my_walls = walls_remaining[current_player as usize] as f32;
-    input
-        .slice_mut(ndarray::s![0, 3, .., ..])
-        .fill(my_walls);
+    input.slice_mut(ndarray::s![0, 3, .., ..]).fill(my_walls);
 
     // Channel 4: Opponent walls remaining (same value for entire plane)
     let opp_walls = walls_remaining[opponent as usize] as f32;
@@ -135,9 +133,7 @@ mod tests {
     use ndarray::{Array1, Array2};
 
     /// Helper function to create a test game board
-    fn create_test_board(
-        board_size: i32,
-    ) -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
+    fn create_test_board(board_size: i32) -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
         let grid_size = (board_size * 2 + 3) as usize;
         let mut grid = Array2::<i8>::from_elem((grid_size, grid_size), CELL_FREE);
 
@@ -525,11 +521,23 @@ mod tests {
         // Check that players are placed on grid at correct positions
         let p0_grid_row = (player_positions[[0, 0]] * 2 + 2) as usize;
         let p0_grid_col = (player_positions[[0, 1]] * 2 + 2) as usize;
-        assert_eq!(grid[[p0_grid_row, p0_grid_col]], 0, "Player 0 should be at grid ({}, {})", p0_grid_row, p0_grid_col);
+        assert_eq!(
+            grid[[p0_grid_row, p0_grid_col]],
+            0,
+            "Player 0 should be at grid ({}, {})",
+            p0_grid_row,
+            p0_grid_col
+        );
 
         let p1_grid_row = (player_positions[[1, 0]] * 2 + 2) as usize;
         let p1_grid_col = (player_positions[[1, 1]] * 2 + 2) as usize;
-        assert_eq!(grid[[p1_grid_row, p1_grid_col]], 1, "Player 1 should be at grid ({}, {})", p1_grid_row, p1_grid_col);
+        assert_eq!(
+            grid[[p1_grid_row, p1_grid_col]],
+            1,
+            "Player 1 should be at grid ({}, {})",
+            p1_grid_row,
+            p1_grid_col
+        );
     }
 
     #[test]
@@ -566,12 +574,14 @@ mod tests {
             let expected_center = board_size / 2;
 
             assert_eq!(
-                player_positions[[0, 1]], expected_center,
+                player_positions[[0, 1]],
+                expected_center,
                 "Player 0 should be at center column for board size {}",
                 board_size
             );
             assert_eq!(
-                player_positions[[1, 1]], expected_center,
+                player_positions[[1, 1]],
+                expected_center,
                 "Player 1 should be at center column for board size {}",
                 board_size
             );
