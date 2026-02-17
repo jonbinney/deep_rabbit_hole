@@ -2,7 +2,7 @@
 
 ## Summary
 
-Added configuration options to save AlphaZero models in PyTorch and/or ONNX formats during training.
+Added configuration options to save AlphaZero models in ONNX format during training. PyTorch format (.pt files) is always saved.
 
 ## Configuration Options
 
@@ -12,13 +12,12 @@ Add these parameters to the `training` section of your YAML configuration:
 training:
   # ... other training parameters ...
   model_save_timing: false  # Set to true to print timing information for model saving
-  save_pytorch: true        # Save models in PyTorch format (.pt files) - DEFAULT
   save_onnx: false          # Save models in ONNX format (.onnx files) - DEFAULT
 ```
 
 ## Default Behavior
 
-- **PyTorch format**: Enabled by default (`save_pytorch: true`)
+- **PyTorch format**: Always enabled (cannot be disabled)
 - **ONNX format**: Disabled by default (`save_onnx: false`)
 - **Timing output**: Disabled by default (`model_save_timing: false`)
 
@@ -29,23 +28,14 @@ This ensures backward compatibility with existing configurations.
 ### Example 1: Save only PyTorch format (default)
 ```yaml
 training:
-  save_pytorch: true
   save_onnx: false
 ```
 
 ### Example 2: Save both PyTorch and ONNX formats
 ```yaml
 training:
-  save_pytorch: true
   save_onnx: true
   model_save_timing: true  # See timing for both formats
-```
-
-### Example 3: Save only ONNX format
-```yaml
-training:
-  save_pytorch: false
-  save_onnx: true
 ```
 
 ## Test Configurations
@@ -53,7 +43,7 @@ training:
 Two test configurations are provided:
 
 1. **`experiments/test_model_save_timing.yaml`** - Basic test with PyTorch only
-2. **`experiments/test_onnx_export.yaml`** - Test with both PyTorch and ONNX export enabled
+2. **`experiments/test_onnx_export.yaml`** - Test with ONNX export enabled
 
 ## ONNX Export Details
 
@@ -67,11 +57,11 @@ The ONNX export includes:
 ## Files Modified
 
 1. **`src/v2/config.py`**
-   - Added `save_pytorch`, `save_onnx`, and `model_save_timing` to `TrainingConfig`
+   - Added `save_onnx` and `model_save_timing` to `TrainingConfig`
 
 2. **`src/v2/trainer.py`**
-   - Updated initial model save (model_0) to support both formats
-   - Updated training loop model saves to support both formats
+   - Updated initial model save (model_0) to support ONNX format
+   - Updated training loop model saves to support ONNX format
    - Enhanced timing output to show which formats were saved
 
 3. **`src/agents/alphazero/alphazero.py`**
