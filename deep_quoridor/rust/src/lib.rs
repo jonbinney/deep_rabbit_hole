@@ -6,10 +6,10 @@ use pyo3::prelude::*;
 use rusqlite::{params, Connection};
 use std::path::Path;
 
-mod actions;
+pub mod actions;
 pub mod compact;
-mod game_state;
-mod grid;
+pub mod game_state;
+pub mod grid;
 mod minimax;
 mod pathfinding;
 mod validation;
