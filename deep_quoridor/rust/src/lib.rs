@@ -10,6 +10,7 @@ pub mod actions;
 pub mod compact;
 pub mod game_state;
 pub mod grid;
+pub mod grid_helpers;
 mod minimax;
 mod pathfinding;
 mod validation;
