@@ -9,8 +9,8 @@ use ndarray::Array1;
 use ort::session::Session;
 
 use quoridor_rs::actions::{get_valid_move_actions, get_valid_wall_actions};
-use quoridor_rs::game_state::apply_action;
-use quoridor_rs::grid_helpers::{board_to_resnet_input, create_initial_board};
+use quoridor_rs::game_state::{apply_action, create_initial_state};
+use quoridor_rs::grid_helpers::grid_game_state_to_resnet_input;
 
 /// Convert 4D array to 1D vector for ONNX input
 fn array4d_to_vec(arr: &ndarray::Array4<f32>) -> Vec<f32> {
@@ -18,6 +18,12 @@ fn array4d_to_vec(arr: &ndarray::Array4<f32>) -> Vec<f32> {
 }
 
 /// Compute softmax values for policy logits
+///
+/// Note: While ORT's OrtOwnedTensor has a softmax method, using it would require
+/// copying the logits from the borrowed slice (&[f32]) returned by try_extract_tensor
+/// into an owned OrtOwnedTensor structure. This data copy would be inefficient and
+/// defeat the purpose of using a pre-built library function, so we implement softmax
+/// directly on the borrowed slice instead.
 fn softmax(logits: &[f32]) -> Vec<f32> {
     let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let exp_values: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
@@ -38,7 +44,7 @@ fn evaluate_action(
 ) -> Result<Array1<i32>> {
     // Convert game state to ResNet input format
     let resnet_input_tensor =
-        board_to_resnet_input(grid, player_positions, walls_remaining, current_player);
+        grid_game_state_to_resnet_input(grid, player_positions, walls_remaining, current_player);
 
     // Convert to ONNX input format
     let shape = resnet_input_tensor.shape().to_vec();
@@ -52,12 +58,12 @@ fn evaluate_action(
         .context("Failed to run ResNet inference")?;
 
     // Extract policy logits
-    let policy_logits_tuple = outputs["policy_logits"]
+    let policy_logits = outputs["policy_logits"]
         .try_extract_tensor::<f32>()
         .context("Failed to extract policy logits")?;
 
     // Convert to probabilities
-    let policy_probs = softmax(policy_logits_tuple.1);
+    let policy_probs = softmax(policy_logits.1);
 
     // Get all valid actions
     let move_actions = get_valid_move_actions(grid, player_positions, current_player);
@@ -192,16 +198,16 @@ fn main() -> Result<()> {
 
     // Game configuration (must match the trained model)
     let board_size = 5;
-    let walls_per_player = 3;
+    let max_walls = 3;
 
     println!(
         "Game configuration: {}x{} board, {} walls per player\n",
-        board_size, board_size, walls_per_player
+        board_size, board_size, max_walls
     );
 
-    // Create initial board
+    // Create initial game state
     let (mut grid, mut player_positions, mut walls_remaining, goal_rows) =
-        create_initial_board(board_size, walls_per_player);
+        create_initial_state(board_size, max_walls);
     let current_player = 0;
 
     println!("Initial board:");

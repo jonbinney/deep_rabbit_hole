@@ -1,71 +1,10 @@
 #![allow(dead_code)]
 
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2};
 
-use crate::grid::{CELL_FREE, CELL_WALL};
+use crate::grid::CELL_WALL;
 
-/// Initialize a game board with configurable size and walls
-///
-/// Creates the initial game state for a Quoridor board with:
-/// - A grid of size (board_size * 2 + 3) x (board_size * 2 + 3)
-/// - Border walls around the perimeter
-/// - Players positioned at top and bottom center
-/// - Specified number of walls for each player
-///
-/// # Arguments
-/// * `board_size` - The size of the board (e.g., 5 for a 5x5 board, 9 for standard Quoridor)
-/// * `walls_per_player` - Number of walls each player starts with
-///
-/// # Returns
-/// A tuple containing:
-/// * `grid` - The game grid with border walls and player positions
-/// * `player_positions` - Array of player positions [player_id, [row, col]]
-/// * `walls_remaining` - Array of walls remaining for each player
-/// * `goal_rows` - Array of goal rows for each player
-pub fn create_initial_board(
-    board_size: i32,
-    walls_per_player: i32,
-) -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
-    let grid_size = (board_size * 2 + 3) as usize;
-
-    let mut grid = Array2::<i8>::from_elem((grid_size, grid_size), CELL_FREE);
-
-    // Add border walls
-    for i in 0..2 {
-        for j in 0..grid_size {
-            grid[[i, j]] = CELL_WALL;
-            grid[[grid_size - 1 - i, j]] = CELL_WALL;
-            grid[[j, i]] = CELL_WALL;
-            grid[[j, grid_size - 1 - i]] = CELL_WALL;
-        }
-    }
-
-    let mut player_positions = Array2::<i32>::zeros((2, 2));
-    let center_col = board_size / 2;
-
-    // Player 0 starts at top center
-    player_positions[[0, 0]] = 0;
-    player_positions[[0, 1]] = center_col;
-    // Player 1 starts at bottom center
-    player_positions[[1, 0]] = board_size - 1;
-    player_positions[[1, 1]] = center_col;
-
-    // Place players on grid (grid coords are board_coords * 2 + 2)
-    let p0_grid_row = (player_positions[[0, 0]] * 2 + 2) as usize;
-    let p0_grid_col = (player_positions[[0, 1]] * 2 + 2) as usize;
-    let p1_grid_row = (player_positions[[1, 0]] * 2 + 2) as usize;
-    let p1_grid_col = (player_positions[[1, 1]] * 2 + 2) as usize;
-
-    grid[[p0_grid_row, p0_grid_col]] = 0;
-    grid[[p1_grid_row, p1_grid_col]] = 1;
-
-    let walls_remaining = Array1::from(vec![walls_per_player, walls_per_player]);
-    let goal_rows = Array1::from(vec![board_size - 1, 0]); // Player 0 wants bottom, Player 1 wants top
-
-    (grid, player_positions, walls_remaining, goal_rows)
-}
-
-/// Convert a single-channel board state to 5-channel ResNet input format
+/// Convert grid-based game state to 5-channel ResNet input format
 ///
 /// ResNet expects input of shape (batch_size, 5, M, M) where M = board_size * 2 + 3
 /// For a 5x5 board, M = 13
@@ -81,7 +20,7 @@ pub fn create_initial_board(
 /// - Player 0's position is represented as 0
 /// - Player 1's position is represented as 1
 /// - Empty cells are represented as -1
-pub fn board_to_resnet_input(
+pub fn grid_game_state_to_resnet_input(
     grid: &ArrayView2<i8>,
     player_positions: &ArrayView2<i32>,
     walls_remaining: &ArrayView1<i32>,
@@ -129,47 +68,13 @@ pub fn board_to_resnet_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::create_initial_state;
     use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
     use ndarray::{Array1, Array2};
 
     /// Helper function to create a test game board
     fn create_test_board(board_size: i32) -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
-        let grid_size = (board_size * 2 + 3) as usize;
-        let mut grid = Array2::<i8>::from_elem((grid_size, grid_size), CELL_FREE);
-
-        // Add border walls
-        for i in 0..2 {
-            for j in 0..grid_size {
-                grid[[i, j]] = CELL_WALL;
-                grid[[grid_size - 1 - i, j]] = CELL_WALL;
-                grid[[j, i]] = CELL_WALL;
-                grid[[j, grid_size - 1 - i]] = CELL_WALL;
-            }
-        }
-
-        let mut player_positions = Array2::<i32>::zeros((2, 2));
-        let center_col = board_size / 2;
-
-        // Player 0 at top center
-        player_positions[[0, 0]] = 0;
-        player_positions[[0, 1]] = center_col;
-        // Player 1 at bottom center
-        player_positions[[1, 0]] = board_size - 1;
-        player_positions[[1, 1]] = center_col;
-
-        // Place players on grid
-        let p0_grid_row = (player_positions[[0, 0]] * 2 + 2) as usize;
-        let p0_grid_col = (player_positions[[0, 1]] * 2 + 2) as usize;
-        let p1_grid_row = (player_positions[[1, 0]] * 2 + 2) as usize;
-        let p1_grid_col = (player_positions[[1, 1]] * 2 + 2) as usize;
-
-        grid[[p0_grid_row, p0_grid_col]] = 0;
-        grid[[p1_grid_row, p1_grid_col]] = 1;
-
-        let walls_remaining = Array1::from(vec![3, 3]);
-        let goal_rows = Array1::from(vec![board_size - 1, 0]);
-
-        (grid, player_positions, walls_remaining, goal_rows)
+        create_initial_state(board_size, 3)
     }
 
     #[test]
@@ -177,7 +82,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -196,7 +101,7 @@ mod tests {
         // Add a vertical wall at position (0, 0)
         set_wall_cells(&mut grid.view_mut(), 0, 0, 0, CELL_WALL);
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -224,7 +129,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -245,7 +150,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -266,7 +171,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -284,7 +189,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -302,7 +207,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(5);
 
         // Get input from player 0's perspective
-        let input_p0 = board_to_resnet_input(
+        let input_p0 = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -310,7 +215,7 @@ mod tests {
         );
 
         // Get input from player 1's perspective
-        let input_p1 = board_to_resnet_input(
+        let input_p1 = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -337,7 +242,7 @@ mod tests {
         let walls_remaining = Array1::from(vec![5, 1]); // Different wall counts
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -359,7 +264,7 @@ mod tests {
         // Add a horizontal wall at position (1, 1)
         set_wall_cells(&mut grid.view_mut(), 1, 1, 1, CELL_WALL);
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -377,7 +282,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(3);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -399,7 +304,7 @@ mod tests {
         let (grid, player_positions, walls_remaining, _) = create_test_board(9);
         let current_player = 0;
 
-        let input = board_to_resnet_input(
+        let input = grid_game_state_to_resnet_input(
             &grid.view(),
             &player_positions.view(),
             &walls_remaining.view(),
@@ -416,11 +321,11 @@ mod tests {
         assert_eq!(input[[0, 2, 18, 10]], 1.0);
     }
 
-    // Tests for create_initial_board
+    // Tests for create_initial_state
 
     #[test]
-    fn test_create_initial_board_5x5() {
-        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_board(5, 3);
+    fn test_create_initial_state_5x5() {
+        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_state(5, 3);
 
         // Check grid size: 13x13 for 5x5 board
         assert_eq!(grid.shape(), &[13, 13]);
@@ -441,8 +346,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_3x3() {
-        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_board(3, 2);
+    fn test_create_initial_state_3x3() {
+        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_state(3, 2);
 
         // Check grid size: 9x9 for 3x3 board
         assert_eq!(grid.shape(), &[9, 9]);
@@ -463,8 +368,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_9x9() {
-        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_board(9, 10);
+    fn test_create_initial_state_9x9() {
+        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_state(9, 10);
 
         // Check grid size: 21x21 for 9x9 board
         assert_eq!(grid.shape(), &[21, 21]);
@@ -485,8 +390,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_border_walls() {
-        let (grid, _, _, _) = create_initial_board(5, 3);
+    fn test_create_initial_state_border_walls() {
+        let (grid, _, _, _) = create_initial_state(5, 3);
 
         // Check that border walls are in place
         // Top border (rows 0-1)
@@ -515,8 +420,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_players_on_grid() {
-        let (grid, player_positions, _, _) = create_initial_board(5, 3);
+    fn test_create_initial_state_players_on_grid() {
+        let (grid, player_positions, _, _) = create_initial_state(5, 3);
 
         // Check that players are placed on grid at correct positions
         let p0_grid_row = (player_positions[[0, 0]] * 2 + 2) as usize;
@@ -541,8 +446,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_free_cells() {
-        let (grid, _, _, _) = create_initial_board(5, 3);
+    fn test_create_initial_state_free_cells() {
+        let (grid, _, _, _) = create_initial_state(5, 3);
 
         // Check that interior cells (not borders or player positions) are free
         // Test a few cells in the interior
@@ -552,25 +457,25 @@ mod tests {
     }
 
     #[test]
-    fn test_create_initial_board_different_wall_counts() {
-        let (_, _, walls_remaining1, _) = create_initial_board(5, 0);
+    fn test_create_initial_state_different_wall_counts() {
+        let (_, _, walls_remaining1, _) = create_initial_state(5, 0);
         assert_eq!(walls_remaining1[0], 0);
         assert_eq!(walls_remaining1[1], 0);
 
-        let (_, _, walls_remaining2, _) = create_initial_board(5, 10);
+        let (_, _, walls_remaining2, _) = create_initial_state(5, 10);
         assert_eq!(walls_remaining2[0], 10);
         assert_eq!(walls_remaining2[1], 10);
 
-        let (_, _, walls_remaining3, _) = create_initial_board(9, 20);
+        let (_, _, walls_remaining3, _) = create_initial_state(9, 20);
         assert_eq!(walls_remaining3[0], 20);
         assert_eq!(walls_remaining3[1], 20);
     }
 
     #[test]
-    fn test_create_initial_board_player_at_center_column() {
+    fn test_create_initial_state_player_at_center_column() {
         // Test various board sizes to ensure players are always at center column
         for board_size in [3, 5, 7, 9].iter() {
-            let (_, player_positions, _, _) = create_initial_board(*board_size, 3);
+            let (_, player_positions, _, _) = create_initial_state(*board_size, 3);
             let expected_center = board_size / 2;
 
             assert_eq!(
