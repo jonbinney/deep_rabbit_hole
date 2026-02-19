@@ -32,11 +32,17 @@ serde = { version = "1", features = ["derive"] }
 clap = { version = "4.5", features = ["derive"], optional = true }
 ort = { version = "2.0.0-rc.11", optional = true }
 anyhow = { version = "1", optional = true }
+serde_yaml = { version = "0.9", optional = true }
+ndarray-npy = { version = "0.9", optional = true }
+zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
 
 [features]
 default = ["python"]
 python = ["pyo3", "numpy"]
-binary = ["clap", "ort", "anyhow"]
+binary = ["clap", "ort", "anyhow", "serde_yaml", "ndarray-npy", "zip"]
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 # Enable optimizations for better performance

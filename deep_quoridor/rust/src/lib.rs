@@ -11,9 +11,19 @@ pub mod compact;
 pub mod game_state;
 pub mod grid;
 pub mod grid_helpers;
+pub mod rotation;
 mod minimax;
 mod pathfinding;
 mod validation;
+
+#[cfg(feature = "binary")]
+pub mod game_runner;
+#[cfg(feature = "binary")]
+pub mod onnx_inference;
+#[cfg(feature = "binary")]
+pub mod replay_writer;
+#[cfg(feature = "binary")]
+pub mod selfplay_config;
 
 /// Calculate the shortest distance from a position to a target row.
 ///
