@@ -82,7 +82,11 @@ mod tests {
                     &mask,
                 )
                 .unwrap();
-            assert!(mask[idx], "RandomAgent picked an invalid action index {}", idx);
+            assert!(
+                mask[idx],
+                "RandomAgent picked an invalid action index {}",
+                idx
+            );
         }
     }
 

@@ -69,7 +69,11 @@ pub fn write_game_npz<P: AsRef<Path>>(path: P, result: &GameResult) -> Result<()
     // Stack action_masks → (N, policy_size) as f32
     let mut mask_data = Vec::with_capacity(n * policy_len);
     for item in items {
-        mask_data.extend(item.action_mask.iter().map(|&b| if b { 1.0f32 } else { 0.0f32 }));
+        mask_data.extend(
+            item.action_mask
+                .iter()
+                .map(|&b| if b { 1.0f32 } else { 0.0f32 }),
+        );
     }
     let action_masks =
         Array2::<f32>::from_shape_vec((n, policy_len), mask_data).context("action_masks")?;

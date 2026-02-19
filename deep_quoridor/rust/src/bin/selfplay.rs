@@ -51,6 +51,10 @@ struct Cli {
     /// Use "random" for a random agent.
     #[arg(long)]
     p2: Option<String>,
+
+    /// Print a step-by-step trace of each game (whose turn, action, board).
+    #[arg(long, default_value = "false")]
+    trace: bool,
 }
 
 fn main() -> Result<()> {
@@ -77,7 +81,10 @@ fn main() -> Result<()> {
             random_p2 = Some(RandomAgent::new());
         }
         Some(other) => {
-            anyhow::bail!("Unknown --p2 agent type: '{}'. Valid options: random", other);
+            anyhow::bail!(
+                "Unknown --p2 agent type: '{}'. Valid options: random",
+                other
+            );
         }
         None => {
             onnx_p2 = Some(OnnxAgent::new(&cli.model_path)?);
@@ -106,6 +113,7 @@ fn main() -> Result<()> {
             q.board_size,
             q.max_walls,
             q.max_steps as i32,
+            cli.trace,
         )?;
 
         // Update stats
@@ -149,6 +157,9 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("Done. {} games written to {}", cli.num_games, cli.output_dir);
+    println!(
+        "Done. {} games written to {}",
+        cli.num_games, cli.output_dir
+    );
     Ok(())
 }

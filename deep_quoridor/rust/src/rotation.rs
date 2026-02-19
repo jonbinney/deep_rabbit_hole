@@ -9,9 +9,7 @@
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
-use crate::actions::{
-    action_index_to_action, action_to_index, policy_size, ACTION_MOVE,
-};
+use crate::actions::{action_index_to_action, action_to_index, policy_size, ACTION_MOVE};
 
 /// Rotate a 2D grid 180° — equivalent to `np.rot90(grid, k=2)`.
 ///

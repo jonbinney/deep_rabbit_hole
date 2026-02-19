@@ -11,9 +11,9 @@ pub mod compact;
 pub mod game_state;
 pub mod grid;
 pub mod grid_helpers;
-pub mod rotation;
 mod minimax;
 mod pathfinding;
+pub mod rotation;
 mod validation;
 
 pub mod agents;

@@ -44,8 +44,12 @@ impl ActionSelector for OnnxAgent {
         action_mask: &[bool],
     ) -> Result<(usize, Vec<f32>)> {
         // Build ResNet input tensor
-        let resnet_input =
-            grid_game_state_to_resnet_input(grid, player_positions, walls_remaining, current_player);
+        let resnet_input = grid_game_state_to_resnet_input(
+            grid,
+            player_positions,
+            walls_remaining,
+            current_player,
+        );
 
         // Convert to flat vec for ORT
         let shape = resnet_input.shape().to_vec();

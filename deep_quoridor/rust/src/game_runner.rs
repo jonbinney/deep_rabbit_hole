@@ -7,14 +7,109 @@
 
 use ndarray::Array3;
 
-use crate::actions::{action_index_to_action, compute_full_action_mask, policy_size};
+use crate::actions::{
+    action_index_to_action, compute_full_action_mask, policy_size, ACTION_MOVE,
+    ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+};
 use crate::agents::ActionSelector;
 use crate::game_state::{apply_action, check_win, create_initial_state};
+use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
-    rotate_action_coords, rotate_goal_rows,
-    rotate_grid_180, rotate_player_positions,
+    rotate_action_coords, rotate_goal_rows, rotate_grid_180, rotate_player_positions,
 };
+
+/// Format an action triple as a human-readable string.
+fn format_action(_board_size: i32, row: i32, col: i32, action_type: i32) -> String {
+    match action_type {
+        ACTION_MOVE => format!("Move to ({}, {})", row, col),
+        ACTION_WALL_HORIZONTAL => format!("Place horizontal wall at ({}, {})", row, col),
+        ACTION_WALL_VERTICAL => format!("Place vertical wall at ({}, {})", row, col),
+        _ => format!("Unknown action type {}", action_type),
+    }
+}
+
+/// Render the board state as a human-readable string.
+///
+/// Shows player positions as `1` and `2`, walls as `|` (vertical) and `-`
+/// (horizontal), and empty cells as `.`.
+///
+/// The board is always shown in the original (un-rotated) orientation.
+pub fn display_board(
+    grid: &ndarray::ArrayView2<i8>,
+    player_positions: &ndarray::ArrayView2<i32>,
+    walls_remaining: &ndarray::ArrayView1<i32>,
+    board_size: i32,
+) -> String {
+    let mut out = String::new();
+    let bs = board_size as usize;
+
+    // Column header
+    out.push_str("    ");
+    for c in 0..bs {
+        out.push_str(&format!(" {} ", c));
+    }
+    out.push('\n');
+
+    let p0_row = player_positions[[0, 0]] as usize;
+    let p0_col = player_positions[[0, 1]] as usize;
+    let p1_row = player_positions[[1, 0]] as usize;
+    let p1_col = player_positions[[1, 1]] as usize;
+
+    for row in 0..bs {
+        // --- cell row ---
+        out.push_str(&format!("{:>3} ", row));
+        for col in 0..bs {
+            // cell content
+            if row == p0_row && col == p0_col {
+                out.push('1');
+            } else if row == p1_row && col == p1_col {
+                out.push('2');
+            } else {
+                out.push('.');
+            }
+
+            // vertical wall to the right
+            if col < bs - 1 {
+                // Grid coord of the gap between (row,col) and (row,col+1)
+                let gr = (row * 2 + 2) as usize;
+                let gc = (col * 2 + 3) as usize;
+                if grid[[gr, gc]] == CELL_WALL {
+                    out.push_str(" | ");
+                } else {
+                    out.push_str("   ");
+                }
+            }
+        }
+        // Metadata on the right of first two rows
+        match row {
+            0 => out.push_str(&format!("   P1 walls: {}", walls_remaining[0])),
+            1 => out.push_str(&format!("   P2 walls: {}", walls_remaining[1])),
+            _ => {}
+        }
+        out.push('\n');
+
+        // --- horizontal wall row between this row and the next ---
+        if row < bs - 1 {
+            out.push_str("    ");
+            for col in 0..bs {
+                // Grid coord of the gap between (row,col) and (row+1,col)
+                let gr = (row * 2 + 3) as usize;
+                let gc = (col * 2 + 2) as usize;
+                if grid[[gr, gc]] == CELL_WALL {
+                    out.push('-');
+                } else {
+                    out.push(' ');
+                }
+                if col < bs - 1 {
+                    out.push_str("   ");
+                }
+            }
+            out.push('\n');
+        }
+    }
+    out
+}
 
 /// One turn's training data, stored in "current-player-faces-downward" coords.
 pub struct ReplayBufferItem {
@@ -46,12 +141,17 @@ pub struct GameResult {
 /// Player 0 moves first. When Player 1 is the current player, the board is
 /// rotated 180° before being passed to `agent_p2` so the network always sees
 /// "current player moving downward".
+///
+/// When `trace` is `true`, each step prints whose turn it is, the action
+/// chosen, and the resulting board state in the original (un-rotated)
+/// orientation.
 pub fn play_game(
     agent_p1: &mut dyn ActionSelector,
     agent_p2: &mut dyn ActionSelector,
     board_size: i32,
     max_walls: i32,
     max_steps: i32,
+    trace: bool,
 ) -> anyhow::Result<GameResult> {
     let (mut grid, mut player_positions, mut walls_remaining, goal_rows) =
         create_initial_state(board_size, max_walls);
@@ -116,9 +216,7 @@ pub fn play_game(
         )?;
 
         // Store replay item (in rotated frame — the frame the model saw)
-        let input_3d = resnet_input
-            .index_axis(ndarray::Axis(0), 0)
-            .to_owned();
+        let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
         replay_items.push(ReplayBufferItem {
             input_array: input_3d,
             policy: policy.clone(),
@@ -132,7 +230,12 @@ pub fn play_game(
 
         // If Player 1, un-rotate action coordinates back to original frame
         let (a_row, a_col, a_type) = if current_player == 1 {
-            rotate_action_coords(board_size, action_triple[0], action_triple[1], action_triple[2])
+            rotate_action_coords(
+                board_size,
+                action_triple[0],
+                action_triple[1],
+                action_triple[2],
+            )
         } else {
             (action_triple[0], action_triple[1], action_triple[2])
         };
@@ -146,6 +249,25 @@ pub fn play_game(
             current_player,
             &action_arr.view(),
         );
+
+        if trace {
+            let player_label = if current_player == 0 { "P1" } else { "P2" };
+            println!(
+                "--- Step {} | {} ---\n{}",
+                step + 1,
+                player_label,
+                format_action(board_size, a_row, a_col, a_type),
+            );
+            print!(
+                "{}\n",
+                display_board(
+                    &grid.view(),
+                    &player_positions.view(),
+                    &walls_remaining.view(),
+                    board_size
+                ),
+            );
+        }
 
         // Check win
         if check_win(&player_positions.view(), &goal_rows.view(), current_player) {
@@ -209,7 +331,7 @@ mod tests {
     fn test_play_game_completes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
 
         // Game should complete within 200 steps on a 5×5 board
         assert!(result.num_turns > 0);
@@ -220,7 +342,7 @@ mod tests {
     fn test_play_game_alternating_players() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
 
         // With 0 walls the game should end quickly via moves only
         // Players should alternate
@@ -233,7 +355,7 @@ mod tests {
     fn test_play_game_winner_values() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
 
         if let Some(w) = result.winner {
             for item in &result.replay_items {
@@ -251,7 +373,7 @@ mod tests {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
         // Very short max_steps to force truncation
-        let result = play_game(&mut p1, &mut p2, 5, 3, 2).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false).unwrap();
 
         if result.winner.is_none() {
             for item in &result.replay_items {
@@ -264,7 +386,7 @@ mod tests {
     fn test_replay_items_have_correct_shapes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
 
         let grid_size = 5 * 2 + 3; // 13
         let total_actions = policy_size(5);

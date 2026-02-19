@@ -407,7 +407,10 @@ mod tests {
             for idx in 0..total {
                 let action = action_index_to_action(board_size, idx);
                 let recovered = action_to_index(board_size, &action);
-                assert_eq!(idx, recovered, "board_size={board_size}, idx={idx}, action={action:?}");
+                assert_eq!(
+                    idx, recovered,
+                    "board_size={board_size}, idx={idx}, action={action:?}"
+                );
             }
         }
     }
@@ -487,20 +490,37 @@ mod tests {
         // Count valid actions from full mask
         let mask_count: usize = full_mask.iter().filter(|&&x| x).count();
         let expected_count = move_actions.nrows() + wall_actions.nrows();
-        assert_eq!(mask_count, expected_count, "mask has {mask_count} true entries, expected {expected_count}");
+        assert_eq!(
+            mask_count, expected_count,
+            "mask has {mask_count} true entries, expected {expected_count}"
+        );
 
         // Verify each move action is in the mask
         for i in 0..move_actions.nrows() {
-            let action = [move_actions[[i, 0]], move_actions[[i, 1]], move_actions[[i, 2]]];
+            let action = [
+                move_actions[[i, 0]],
+                move_actions[[i, 1]],
+                move_actions[[i, 2]],
+            ];
             let idx = action_to_index(board_size, &action);
-            assert!(full_mask[idx], "Move action {action:?} at index {idx} not in mask");
+            assert!(
+                full_mask[idx],
+                "Move action {action:?} at index {idx} not in mask"
+            );
         }
 
         // Verify each wall action is in the mask
         for i in 0..wall_actions.nrows() {
-            let action = [wall_actions[[i, 0]], wall_actions[[i, 1]], wall_actions[[i, 2]]];
+            let action = [
+                wall_actions[[i, 0]],
+                wall_actions[[i, 1]],
+                wall_actions[[i, 2]],
+            ];
             let idx = action_to_index(board_size, &action);
-            assert!(full_mask[idx], "Wall action {action:?} at index {idx} not in mask");
+            assert!(
+                full_mask[idx],
+                "Wall action {action:?} at index {idx} not in mask"
+            );
         }
     }
 }
