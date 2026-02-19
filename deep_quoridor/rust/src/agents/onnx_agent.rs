@@ -1,4 +1,4 @@
-//! ONNX model inference for self-play agents.
+//! ONNX model inference agent.
 //!
 //! This module is only available behind the `binary` feature flag.
 
@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use ndarray::{ArrayView1, ArrayView2};
 use ort::session::Session;
 
-use crate::game_runner::ActionSelector;
+use crate::agents::ActionSelector;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 
 /// Compute softmax of a slice of logits.

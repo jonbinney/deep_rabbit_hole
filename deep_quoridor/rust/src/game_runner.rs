@@ -5,37 +5,16 @@
 //! This module is independent of ONNX — the agent is abstracted behind the
 //! [`ActionSelector`] trait so the game runner can be tested with mock agents.
 
-use ndarray::{Array3, ArrayView1, ArrayView2};
+use ndarray::Array3;
 
 use crate::actions::{action_index_to_action, compute_full_action_mask, policy_size};
+use crate::agents::ActionSelector;
 use crate::game_state::{apply_action, check_win, create_initial_state};
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
     rotate_action_coords, rotate_goal_rows,
     rotate_grid_180, rotate_player_positions,
 };
-
-/// Trait for agents that select actions given a game state.
-///
-/// The provided state may already be rotated for Player 1.
-pub trait ActionSelector {
-    /// Select an action given the game state.
-    ///
-    /// Arguments are in the coordinate frame presented (possibly rotated).
-    ///
-    /// Returns `(action_index, policy_probabilities)` where `action_index` is
-    /// a flat index into the policy vector and `policy_probabilities` is the
-    /// full softmax output.
-    fn select_action(
-        &mut self,
-        grid: &ArrayView2<i8>,
-        player_positions: &ArrayView2<i32>,
-        walls_remaining: &ArrayView1<i32>,
-        goal_rows: &ArrayView1<i32>,
-        current_player: i32,
-        action_mask: &[bool],
-    ) -> anyhow::Result<(usize, Vec<f32>)>;
-}
 
 /// One turn's training data, stored in "current-player-faces-downward" coords.
 pub struct ReplayBufferItem {
@@ -61,13 +40,15 @@ pub struct GameResult {
     pub replay_items: Vec<ReplayBufferItem>,
 }
 
-/// Play a complete game between two agents (both use the same `ActionSelector`).
+/// Play a complete game between two agents.
 ///
+/// `agent_p1` controls player 0 and `agent_p2` controls player 1.
 /// Player 0 moves first. When Player 1 is the current player, the board is
-/// rotated 180° before being passed to the agent so the network always sees
+/// rotated 180° before being passed to `agent_p2` so the network always sees
 /// "current player moving downward".
-pub fn play_game<A: ActionSelector>(
-    agent: &mut A,
+pub fn play_game(
+    agent_p1: &mut dyn ActionSelector,
+    agent_p2: &mut dyn ActionSelector,
     board_size: i32,
     max_walls: i32,
     max_steps: i32,
@@ -119,7 +100,12 @@ pub fn play_game<A: ActionSelector>(
             current_player,
         );
 
-        // Ask agent for action
+        // Ask the appropriate agent for action
+        let agent: &mut dyn ActionSelector = if current_player == 0 {
+            agent_p1
+        } else {
+            agent_p2
+        };
         let (action_idx, policy) = agent.select_action(
             &work_grid.view(),
             &work_positions.view(),
@@ -221,8 +207,9 @@ mod tests {
 
     #[test]
     fn test_play_game_completes() {
-        let mut agent = FirstValidAgent;
-        let result = play_game(&mut agent, 5, 3, 200).unwrap();
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200).unwrap();
 
         // Game should complete within 200 steps on a 5×5 board
         assert!(result.num_turns > 0);
@@ -231,8 +218,9 @@ mod tests {
 
     #[test]
     fn test_play_game_alternating_players() {
-        let mut agent = FirstValidAgent;
-        let result = play_game(&mut agent, 5, 0, 200).unwrap();
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200).unwrap();
 
         // With 0 walls the game should end quickly via moves only
         // Players should alternate
@@ -243,8 +231,9 @@ mod tests {
 
     #[test]
     fn test_play_game_winner_values() {
-        let mut agent = FirstValidAgent;
-        let result = play_game(&mut agent, 5, 0, 200).unwrap();
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200).unwrap();
 
         if let Some(w) = result.winner {
             for item in &result.replay_items {
@@ -259,9 +248,10 @@ mod tests {
 
     #[test]
     fn test_play_game_truncation_values() {
-        let mut agent = FirstValidAgent;
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
         // Very short max_steps to force truncation
-        let result = play_game(&mut agent, 5, 3, 2).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 2).unwrap();
 
         if result.winner.is_none() {
             for item in &result.replay_items {
@@ -272,8 +262,9 @@ mod tests {
 
     #[test]
     fn test_replay_items_have_correct_shapes() {
-        let mut agent = FirstValidAgent;
-        let result = play_game(&mut agent, 5, 3, 200).unwrap();
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200).unwrap();
 
         let grid_size = 5 * 2 + 3; // 13
         let total_actions = policy_size(5);

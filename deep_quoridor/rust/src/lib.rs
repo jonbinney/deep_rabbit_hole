@@ -16,10 +16,10 @@ mod minimax;
 mod pathfinding;
 mod validation;
 
+pub mod agents;
+
 #[cfg(feature = "binary")]
 pub mod game_runner;
-#[cfg(feature = "binary")]
-pub mod onnx_inference;
 #[cfg(feature = "binary")]
 pub mod replay_writer;
 #[cfg(feature = "binary")]
