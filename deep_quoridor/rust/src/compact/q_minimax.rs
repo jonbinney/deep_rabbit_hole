@@ -170,15 +170,16 @@ fn minimax(
     heuristic: i32,
     log_entries: Option<Arc<Mutex<Vec<MinimaxLogEntry>>>>,
 ) -> f32 {
-    if mechanics.check_win(data, current_player) {
-        return if current_player == agent_player {
+    let opponent = 1 - current_player;
+
+    // We're checking for the player that just finished their move.
+    if mechanics.check_win(data, opponent) {
+        return if opponent == agent_player {
             WINNING_REWARD
         } else {
             -WINNING_REWARD
         };
     }
-
-    let opponent = 1 - current_player;
 
     if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
         return 0.0; // Tie
@@ -380,6 +381,53 @@ mod tests {
         for value in &values {
             assert!(value.is_finite(), "Values should be finite");
         }
+    }
+
+    #[test]
+    fn test_evaluate_actions_win_in_one() {
+        let mechanics = QGameMechanics::new(3, 0, 4);
+        let mut data = mechanics.create_initial_state();
+
+        // P1 playes something that doesn't instantly lose
+        mechanics.execute_move(&mut data, 0, 0, 2);
+        mechanics.switch_player(&mut data);
+        mechanics.execute_move(&mut data, 1, 1, 1);
+        mechanics.switch_player(&mut data);
+        mechanics.execute_move(&mut data, 0, 1, 2);
+        mechanics.switch_player(&mut data);
+
+        // P2 can win in 1 more moves
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 1, 999, 1.0, 0, false);
+        assert!(
+            values.contains(&WINNING_REWARD),
+            "Minimax failed to find viable win in one move"
+        );
+    }
+
+    /// P2 should be able to win on a 3x3 board by the 4th move of the
+    /// game, but not before that.
+    #[test]
+    fn test_evaluate_actions_search_depth() {
+        let mechanics = QGameMechanics::new(3, 0, 4);
+        let mut data = mechanics.create_initial_state();
+
+        // P1 playes something that doesn't instantly lose
+        mechanics.execute_move(&mut data, 0, 0, 2);
+        mechanics.switch_player(&mut data);
+
+        // P2 can win in 3 more moves
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 3, 999, 1.0, 0, false);
+        assert!(
+            values.contains(&WINNING_REWARD),
+            "Minimax failed to find viable win"
+        );
+
+        // P2 cannot win in 2 more moves.
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 2, 999, 1.0, 0, false);
+        assert!(
+            !values.contains(&WINNING_REWARD),
+            "Minimax foud a win where there shouldn't be one",
+        );
     }
 
     #[test]
