@@ -1,9 +1,70 @@
 #![allow(dead_code)]
 
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
 use crate::actions::{ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL};
 use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
+
+/// Initialize the initial game state for a Quoridor board
+///
+/// Creates the initial game state for a Quoridor board with:
+/// - A grid of size (board_size * 2 + 3) x (board_size * 2 + 3)
+/// - Border walls around the perimeter
+/// - Players positioned at top and bottom center
+/// - Specified number of walls for each player
+///
+/// # Arguments
+/// * `board_size` - The size of the board (e.g., 5 for a 5x5 board, 9 for standard Quoridor)
+/// * `max_walls` - Number of walls each player starts with
+///
+/// # Returns
+/// A tuple containing:
+/// * `grid` - The game grid with border walls and player positions
+/// * `player_positions` - Array of player positions [player_id, [row, col]]
+/// * `walls_remaining` - Array of walls remaining for each player
+/// * `goal_rows` - Array of goal rows for each player
+pub fn create_initial_state(
+    board_size: i32,
+    max_walls: i32,
+) -> (Array2<i8>, Array2<i32>, Array1<i32>, Array1<i32>) {
+    let grid_size = (board_size * 2 + 3) as usize;
+
+    let mut grid = Array2::<i8>::from_elem((grid_size, grid_size), CELL_FREE);
+
+    // Add border walls
+    for i in 0..2 {
+        for j in 0..grid_size {
+            grid[[i, j]] = CELL_WALL;
+            grid[[grid_size - 1 - i, j]] = CELL_WALL;
+            grid[[j, i]] = CELL_WALL;
+            grid[[j, grid_size - 1 - i]] = CELL_WALL;
+        }
+    }
+
+    let mut player_positions = Array2::<i32>::zeros((2, 2));
+    let center_col = board_size / 2;
+
+    // Player 0 starts at top center
+    player_positions[[0, 0]] = 0;
+    player_positions[[0, 1]] = center_col;
+    // Player 1 starts at bottom center
+    player_positions[[1, 0]] = board_size - 1;
+    player_positions[[1, 1]] = center_col;
+
+    // Place players on grid (grid coords are board_coords * 2 + 2)
+    let p0_grid_row = (player_positions[[0, 0]] * 2 + 2) as usize;
+    let p0_grid_col = (player_positions[[0, 1]] * 2 + 2) as usize;
+    let p1_grid_row = (player_positions[[1, 0]] * 2 + 2) as usize;
+    let p1_grid_col = (player_positions[[1, 1]] * 2 + 2) as usize;
+
+    grid[[p0_grid_row, p0_grid_col]] = 0;
+    grid[[p1_grid_row, p1_grid_col]] = 1;
+
+    let walls_remaining = Array1::from(vec![max_walls, max_walls]);
+    let goal_rows = Array1::from(vec![board_size - 1, 0]); // Player 0 wants bottom, Player 1 wants top
+
+    (grid, player_positions, walls_remaining, goal_rows)
+}
 
 /// Check if a player has won by reaching their goal row.
 ///
