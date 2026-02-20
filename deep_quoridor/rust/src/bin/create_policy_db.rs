@@ -9,6 +9,7 @@ use clap::Parser;
 use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
 use quoridor_rs::q_log_entries_to_sqlite;
 use std::env;
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -89,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nEvaluating actions and creating policy database...");
     println!("  Output file: {}", args.output);
 
+    let eval_start = Instant::now();
     let (_actions, _values, log_entries) = q_minimax::evaluate_actions(
         &mechanics,
         &initial_state,
@@ -98,12 +100,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.heuristic,
         true, // enable logging
     );
+    let eval_elapsed = eval_start.elapsed();
+    println!("  evaluate_actions took {:.3}s", eval_elapsed.as_secs_f64());
 
     // Write log entries to SQLite database
     if let Some(entries) = log_entries {
         let num_entries = entries.len();
         println!("  Collected {} log entries", num_entries);
 
+        let write_start = Instant::now();
         q_log_entries_to_sqlite(
             entries,
             &args.output,
@@ -111,6 +116,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.max_steps,
             args.max_walls,
         )?;
+        let write_elapsed = write_start.elapsed();
+        println!("  Writing database took {:.3}s", write_elapsed.as_secs_f64());
 
         println!(
             "\n✓ Successfully created policy database with {} entries",
