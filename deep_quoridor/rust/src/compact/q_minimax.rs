@@ -210,10 +210,8 @@ fn minimax(
 
         // Apply action
         if *action_type == 2 {
-            // Move action
             mechanics.execute_move(&mut new_data, current_player, *row, *col);
         } else {
-            // Wall action (type 1 or 2 indicates orientation)
             let orientation = *action_type;
             mechanics.execute_wall_placement(
                 &mut new_data,
@@ -246,8 +244,14 @@ fn minimax(
 
         if is_maximizing {
             best_value = best_value.max(discounted_value);
+            if best_value == WINNING_REWARD {
+                break;
+            }
         } else {
             best_value = best_value.min(discounted_value);
+            if best_value == -WINNING_REWARD {
+                break;
+            }
         }
     }
 
