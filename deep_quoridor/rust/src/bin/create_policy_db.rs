@@ -1,14 +1,11 @@
 #!/usr/bin/env rust
 //! Create a policy database from minimax evaluations.
-//!
-//! This binary initializes a Quoridor game and uses the Rust q_minimax implementation
-//! to evaluate all possible actions from the initial state, logging the results to
-//! a SQLite database for later analysis or training.
 
 use clap::Parser;
 use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
-use quoridor_rs::q_log_entries_to_sqlite;
+use rusqlite::{params, Connection};
 use std::env;
+use std::path::Path;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
@@ -49,6 +46,106 @@ struct Args {
     /// Output SQLite database file path
     #[arg(short, long, default_value = "policy_db.sqlite")]
     output: String,
+}
+
+#[allow(dead_code)]
+pub fn save_policy_to_sqlite(
+    entries: Vec<q_minimax::MinimaxLogEntry>,
+    filename: &str,
+    board_size: usize,
+    max_steps: usize,
+    max_walls: usize,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut conn = Connection::open(Path::new(filename))?;
+
+    // Drop existing tables to avoid schema conflicts
+    // This ensures we always have the correct schema for QBitRepr-based data
+    conn.execute("DROP TABLE IF EXISTS policy", [])?;
+    conn.execute("DROP TABLE IF EXISTS metadata", [])?;
+
+    // Create metadata table for global parameters
+    conn.execute(
+        "CREATE TABLE metadata (
+            key TEXT PRIMARY KEY,
+            value FLOAT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Insert metadata
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('board_size', ?1)",
+        params![board_size as f32],
+    )?;
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('max_steps', ?1)",
+        params![max_steps as f32],
+    )?;
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('max_walls', ?1)",
+        params![max_walls as f32],
+    )?;
+
+    // Create table for policy entries
+    conn.execute(
+        "CREATE TABLE policy (
+            id INTEGER PRIMARY KEY,
+            state BLOB NOT NULL,
+            agent_player INTEGER NOT NULL,
+            num_actions INTEGER NOT NULL,
+            actions BLOB NOT NULL,
+            action_values BLOB NOT NULL
+        )",
+        [],
+    )?;
+
+    // Create index for fast lookups by state
+    conn.execute("CREATE INDEX idx_state ON policy (state)", [])?;
+
+    let num_entries = entries.len();
+
+    // Insert entries in a transaction for better performance
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO policy (state, agent_player, num_actions, actions, action_values)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+
+        for entry in entries {
+            // State is already packed as Vec<u8>
+            let state_blob = entry.data;
+
+            // Flatten actions into a single vector: each action is (row, col, action_type)
+            let actions_flat: Vec<usize> = entry
+                .actions
+                .into_iter()
+                .flat_map(|(r, c, t)| vec![r, c, t])
+                .collect();
+            let actions_blob: Vec<u8> = actions_flat
+                .iter()
+                .flat_map(|&x| (x as u32).to_le_bytes())
+                .collect();
+
+            // Convert values to bytes
+            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
+
+            let num_actions = entry.values.len() as i32;
+
+            stmt.execute(params![
+                state_blob,
+                entry.agent_player as i32,
+                num_actions,
+                actions_blob,
+                values_blob,
+            ])?;
+        }
+        // Explicitly drop statement before committing
+        drop(stmt);
+    }
+    tx.commit()?;
+
+    Ok(num_entries)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -109,7 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Collected {} log entries", num_entries);
 
         let write_start = Instant::now();
-        q_log_entries_to_sqlite(
+        save_policy_to_sqlite(
             entries,
             &args.output,
             args.board_size,
@@ -117,7 +214,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.max_walls,
         )?;
         let write_elapsed = write_start.elapsed();
-        println!("  Writing database took {:.3}s", write_elapsed.as_secs_f64());
+        println!(
+            "  Writing database took {:.3}s",
+            write_elapsed.as_secs_f64()
+        );
 
         println!(
             "\n✓ Successfully created policy database with {} entries",
