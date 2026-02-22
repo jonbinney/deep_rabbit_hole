@@ -1,17 +1,18 @@
 /// QBitRepr-based minimax algorithm for Quoridor
+use dashmap::DashMap;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use super::q_game_mechanics::QGameMechanics;
 
 pub const WINNING_REWARD: f32 = 1e6;
 
-/// Log entry for QBitRepr-based minimax
+/// Log entry for QBitRepr-based minimax. The state bytes are stored as the
+/// DashMap key rather than in this struct to avoid duplication.
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct MinimaxLogEntry {
-    pub data: Vec<u8>, // Packed game state
     pub agent_player: usize,
     pub actions: Vec<(usize, usize, usize)>, // (row, col, action_type) where type: 0=move, 1/2=wall
     pub values: Vec<f32>,
@@ -168,7 +169,7 @@ fn minimax(
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
-    log_entries: Option<Arc<Mutex<Vec<MinimaxLogEntry>>>>,
+    log_entries: Option<Arc<DashMap<Vec<u8>, MinimaxLogEntry>>>,
 ) -> f32 {
     let opponent = 1 - current_player;
 
@@ -255,20 +256,21 @@ fn minimax(
         }
     }
 
-    // Log if requested
+    // Log if requested (only insert if this state hasn't been seen before)
     if let Some(ref log) = log_entries {
-        let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
-            .into_iter()
-            .map(|(r, c, t, v)| ((r, c, t), v))
-            .unzip();
+        let state_key = data.to_vec();
+        log.entry(state_key).or_insert_with(|| {
+            let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
+                .into_iter()
+                .map(|(r, c, t, v)| ((r, c, t), v))
+                .unzip();
 
-        let entry = MinimaxLogEntry {
-            data: data.to_vec(),
-            agent_player,
-            actions: actions_vec,
-            values: values_vec,
-        };
-        log.lock().unwrap().push(entry);
+            MinimaxLogEntry {
+                agent_player,
+                actions: actions_vec,
+                values: values_vec,
+            }
+        });
     }
 
     best_value
@@ -286,7 +288,7 @@ pub fn evaluate_actions(
 ) -> (
     Vec<(usize, usize, usize)>,
     Vec<f32>,
-    Option<Vec<MinimaxLogEntry>>,
+    Option<DashMap<Vec<u8>, MinimaxLogEntry>>,
 ) {
     let current_player = mechanics.repr().get_current_player(data);
 
@@ -298,7 +300,7 @@ pub fn evaluate_actions(
 
     // Create log collector if needed
     let log_collector = if enable_logging {
-        Some(Arc::new(Mutex::new(Vec::new())))
+        Some(Arc::new(DashMap::new()))
     } else {
         None
     };
@@ -347,8 +349,7 @@ pub fn evaluate_actions(
     let log_entries = log_collector.map(|collector| {
         Arc::try_unwrap(collector)
             .ok()
-            .and_then(|mutex| mutex.into_inner().ok())
-            .unwrap_or_else(Vec::new)
+            .expect("log_collector Arc should have no other references")
     });
 
     (actions, values, log_entries)

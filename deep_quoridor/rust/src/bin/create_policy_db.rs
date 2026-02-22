@@ -2,6 +2,7 @@
 //! Create a policy database from minimax evaluations.
 
 use clap::Parser;
+use dashmap::DashMap;
 use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
 use rusqlite::{params, Connection};
 use std::env;
@@ -50,7 +51,7 @@ struct Args {
 
 #[allow(dead_code)]
 pub fn save_policy_to_sqlite(
-    entries: Vec<q_minimax::MinimaxLogEntry>,
+    entries: DashMap<Vec<u8>, q_minimax::MinimaxLogEntry>,
     filename: &str,
     board_size: usize,
     max_steps: usize,
@@ -112,9 +113,8 @@ pub fn save_policy_to_sqlite(
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
 
-        for entry in entries {
-            // State is already packed as Vec<u8>
-            let state_blob = entry.data;
+        for item in entries.into_iter() {
+            let (state_blob, entry) = item;
 
             // Flatten actions into a single vector: each action is (row, col, action_type)
             let actions_flat: Vec<usize> = entry
