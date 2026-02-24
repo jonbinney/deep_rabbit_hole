@@ -8,14 +8,15 @@ use super::q_game_mechanics::QGameMechanics;
 
 pub const WINNING_REWARD: f32 = 1e6;
 
-/// Log entry for QBitRepr-based minimax. The state bytes are stored as the
+/// Transposition table entry for minimax. The state bytes are stored as the
 /// DashMap key rather than in this struct to avoid duplication.
 #[derive(Clone)]
 #[allow(dead_code)]
-pub struct MinimaxLogEntry {
+pub struct TranspositionEntry {
     pub agent_player: usize,
     pub actions: Vec<(usize, usize, usize)>, // (row, col, action_type) where type: 0=move, 1/2=wall
     pub values: Vec<f32>,
+    pub best_value: f32,
 }
 
 /// Compute distance to goal for a player using QBitRepr state
@@ -169,8 +170,15 @@ fn minimax(
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
-    log_entries: Option<Arc<DashMap<Vec<u8>, MinimaxLogEntry>>>,
+    transposition_table: Option<Arc<DashMap<Vec<u8>, TranspositionEntry>>>,
 ) -> f32 {
+    // Check transposition table for cached result
+    if let Some(ref table) = transposition_table {
+        if let Some(entry) = table.get(data) {
+            return entry.best_value;
+        }
+    }
+
     let opponent = 1 - current_player;
 
     // We're checking for the player that just finished their move.
@@ -237,7 +245,7 @@ fn minimax(
             branching_factor,
             discount_factor,
             heuristic,
-            log_entries.clone(),
+            transposition_table.clone(),
         );
 
         let discounted_value = value * discount_factor;
@@ -256,21 +264,22 @@ fn minimax(
         }
     }
 
-    // Log if requested (only insert if this state hasn't been seen before)
-    if let Some(ref log) = log_entries {
-        let state_key = data.to_vec();
-        log.entry(state_key).or_insert_with(|| {
-            let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
-                .into_iter()
-                .map(|(r, c, t, v)| ((r, c, t), v))
-                .unzip();
+    // Store result in transposition table
+    if let Some(ref table) = transposition_table {
+        let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
+            .into_iter()
+            .map(|(r, c, t, v)| ((r, c, t), v))
+            .unzip();
 
-            MinimaxLogEntry {
+        table.insert(
+            data.to_vec(),
+            TranspositionEntry {
                 agent_player,
                 actions: actions_vec,
                 values: values_vec,
-            }
-        });
+                best_value,
+            },
+        );
     }
 
     best_value
@@ -288,7 +297,7 @@ pub fn evaluate_actions(
 ) -> (
     Vec<(usize, usize, usize)>,
     Vec<f32>,
-    Option<DashMap<Vec<u8>, MinimaxLogEntry>>,
+    Option<DashMap<Vec<u8>, TranspositionEntry>>,
 ) {
     let current_player = mechanics.repr().get_current_player(data);
 
@@ -298,8 +307,8 @@ pub fn evaluate_actions(
         return (Vec::new(), Vec::new(), None);
     }
 
-    // Create log collector if needed
-    let log_collector = if enable_logging {
+    // Create transposition table if needed
+    let transposition_table = if enable_logging {
         Some(Arc::new(DashMap::new()))
     } else {
         None
@@ -340,19 +349,19 @@ pub fn evaluate_actions(
                 branching_factor,
                 discount_factor,
                 heuristic,
-                log_collector.clone(),
+                transposition_table.clone(),
             )
         })
         .collect();
 
-    // Extract log entries
-    let log_entries = log_collector.map(|collector| {
-        Arc::try_unwrap(collector)
+    // Extract transposition table
+    let result_table = transposition_table.map(|table| {
+        Arc::try_unwrap(table)
             .ok()
-            .expect("log_collector Arc should have no other references")
+            .expect("transposition_table Arc should have no other references")
     });
 
-    (actions, values, log_entries)
+    (actions, values, result_table)
 }
 
 #[cfg(test)]

@@ -51,7 +51,7 @@ struct Args {
 
 #[allow(dead_code)]
 pub fn save_policy_to_sqlite(
-    entries: DashMap<Vec<u8>, q_minimax::MinimaxLogEntry>,
+    entries: DashMap<Vec<u8>, q_minimax::TranspositionEntry>,
     filename: &str,
     board_size: usize,
     max_steps: usize,
