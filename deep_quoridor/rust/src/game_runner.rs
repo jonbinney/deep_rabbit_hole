@@ -8,8 +8,7 @@
 use ndarray::Array3;
 
 use crate::actions::{
-    action_index_to_action, compute_full_action_mask, policy_size, ACTION_MOVE,
-    ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+    action_index_to_action, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
 };
 use crate::agents::ActionSelector;
 use crate::game_state::GameState;
@@ -154,7 +153,6 @@ pub fn play_game(
     trace: bool,
 ) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
-    let total_actions = policy_size(board_size);
 
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let mut winner: Option<i32> = None;
@@ -182,15 +180,7 @@ pub fn play_game(
         }
 
         // Compute action mask in the working (possibly rotated) frame
-        let mut mask = vec![false; total_actions];
-        compute_full_action_mask(
-            &work_state.grid(),
-            &work_state.player_positions(),
-            &work_state.walls_remaining(),
-            &work_state.goal_rows(),
-            current_player,
-            &mut mask,
-        );
+        let mask = work_state.get_action_mask();
 
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
         if !mask.iter().any(|&m| m) {
@@ -199,12 +189,7 @@ pub fn play_game(
         }
 
         // Build ResNet input from the working state
-        let resnet_input = grid_game_state_to_resnet_input(
-            &work_state.grid(),
-            &work_state.player_positions(),
-            &work_state.walls_remaining(),
-            current_player,
-        );
+        let resnet_input = grid_game_state_to_resnet_input(&work_state);
 
         // Ask the appropriate agent for action
         let agent: &mut dyn ActionSelector = if current_player == 0 {
@@ -291,6 +276,7 @@ pub fn play_game(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actions::policy_size;
 
     /// A mock agent that always picks the first valid action.
     struct FirstValidAgent;

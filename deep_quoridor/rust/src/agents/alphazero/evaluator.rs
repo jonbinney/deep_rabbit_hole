@@ -36,12 +36,7 @@ impl OnnxEvaluator {
 impl Evaluator for OnnxEvaluator {
     fn evaluate(&mut self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
         // Build ResNet input tensor
-        let resnet_input = grid_game_state_to_resnet_input(
-            &state.grid(),
-            &state.player_positions(),
-            &state.walls_remaining(),
-            state.current_player,
-        );
+        let resnet_input = grid_game_state_to_resnet_input(state);
 
         // Convert to flat vec for ORT
         let shape = resnet_input.shape().to_vec();
@@ -66,16 +61,8 @@ impl Evaluator for OnnxEvaluator {
             .try_extract_tensor::<f32>()
             .context("Failed to extract policy logits")?;
 
-        // Apply mask: set invalid actions to -inf before softmax
-        let masked_logits: Vec<f32> = policy_logits
-            .1
-            .iter()
-            .zip(action_mask.iter())
-            .map(|(&logit, &valid)| if valid { logit } else { -1e32 })
-            .collect();
-
-        // Compute softmax over masked logits
-        let priors = softmax(&masked_logits);
+        // Apply masked softmax to get priors
+        let priors = masked_softmax(policy_logits.1, action_mask);
 
         Ok((value, priors))
     }

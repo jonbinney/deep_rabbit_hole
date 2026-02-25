@@ -441,49 +441,28 @@ mod tests {
 
     #[test]
     fn test_compute_full_action_mask_length() {
-        let (grid, player_positions, walls_remaining, goal_rows) = create_test_game();
-        let board_size = 9;
-        let total = policy_size(board_size);
-        let mut mask = vec![false; total];
-
-        compute_full_action_mask(
-            &grid.view(),
-            &player_positions.view(),
-            &walls_remaining.view(),
-            &goal_rows.view(),
-            0,
-            &mut mask,
-        );
-
+        use crate::game_state::GameState;
+        let state = GameState::new(9, 10);
+        let mask = state.get_action_mask();
         // Should have some valid actions
         assert!(mask.iter().any(|&x| x));
     }
 
     #[test]
     fn test_full_mask_matches_individual_masks() {
-        use crate::game_state::create_initial_state;
+        use crate::game_state::GameState;
 
-        let (grid, player_positions, walls_remaining, goal_rows) = create_initial_state(5, 3);
+        let state = GameState::new(5, 3);
         let board_size = 5;
-        let total = policy_size(board_size);
-        let mut full_mask = vec![false; total];
-
-        compute_full_action_mask(
-            &grid.view(),
-            &player_positions.view(),
-            &walls_remaining.view(),
-            &goal_rows.view(),
-            0,
-            &mut full_mask,
-        );
+        let full_mask = state.get_action_mask();
 
         // Get individual valid actions
-        let move_actions = get_valid_move_actions(&grid.view(), &player_positions.view(), 0);
+        let move_actions = get_valid_move_actions(&state.grid(), &state.player_positions(), 0);
         let wall_actions = get_valid_wall_actions(
-            &grid.view(),
-            &player_positions.view(),
-            &walls_remaining.view(),
-            &goal_rows.view(),
+            &state.grid(),
+            &state.player_positions(),
+            &state.walls_remaining(),
+            &state.goal_rows(),
             0,
         );
 
