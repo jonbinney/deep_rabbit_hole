@@ -7,4 +7,4 @@ pub mod evaluator;
 pub mod mcts;
 
 pub mod agent;
-pub use agent::AlphaZeroAgent;
+pub use agent::{AlphaZeroAgent, AlphaZeroAgentConfig};
