@@ -1,4 +1,3 @@
-import pickle
 import threading
 import time
 from collections import Counter
@@ -94,12 +93,12 @@ def train(config: Config):
         Timer.start("waiting-to-train", ignore_if_running=True)
 
         # Process new games: find new files, move them and extract the info used for training
-        ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.pkl")) if f.is_file()]
+        ready = [f for f in sorted(config.paths.replay_buffers_ready.glob("*.npz")) if f.is_file()]
 
         for f in ready:
             last_game += 1
 
-            new_name = config.paths.replay_buffers / f"game_{last_game:07d}.pkl"
+            new_name = config.paths.replay_buffers / f"game_{last_game:07d}.npz"
 
             yaml_file = f.with_suffix(".yaml")
             new_yaml_name = new_name.with_suffix(".yaml")
@@ -107,18 +106,16 @@ def train(config: Config):
             game_info = parse_yaml_file_as(GameInfo, new_yaml_name)
 
             f.rename(new_name)
-            with open(new_name, "rb") as f:
-                data = pickle.load(f)
-                moves_per_game.append(game_info.game_length)
-                game_filename.append(f.name)
-                wandb_run.log(
-                    {
-                        "game_length": game_info.game_length,
-                        "model_lag": model_version - 1 - game_info.model_version,
-                        "Game num": last_game,
-                        "Model version": model_version,
-                    }
-                )
+            moves_per_game.append(game_info.game_length)
+            game_filename.append(new_name.name)
+            wandb_run.log(
+                {
+                    "game_length": game_info.game_length,
+                    "model_lag": model_version - 1 - game_info.model_version,
+                    "Game num": last_game,
+                    "Model version": model_version,
+                }
+            )
 
         total_moves = sum(moves_per_game)
 
@@ -138,10 +135,19 @@ def train(config: Config):
         samples_per_game = Counter(games)
         for game_number in samples_per_game:
             file = config.paths.replay_buffers / game_filename[game_number]
-            with open(file, "rb") as f:
-                data = pickle.load(f)
-
-            samples.extend(np.random.choice(list(data), samples_per_game[game_number]))
+            npz = np.load(file)
+            n_moves = npz["values"].shape[0]
+            indices = np.random.choice(n_moves, samples_per_game[game_number])
+            for idx in indices:
+                samples.append(
+                    {
+                        "input_array": npz["input_arrays"][idx],
+                        "mcts_policy": npz["policies"][idx],
+                        "action_mask": npz["action_masks"][idx],
+                        "value": float(npz["values"][idx]),
+                        "player": int(npz["players"][idx]),
+                    }
+                )
         time_sample = Timer.finish("sample")
 
         # Train the network for one step using the samples
