@@ -31,5 +31,8 @@
     "rust-analyzer.linkedProjects": [
         "./deep_quoridor/rust/Cargo.toml"
     ],
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "chat.tools.terminal.autoApprove": {
+        "git commit": true
+    }
 }
