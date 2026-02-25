@@ -13,6 +13,16 @@ use std::path::Path;
 use crate::agents::alphazero::agent::AlphaZeroAgentConfig;
 use crate::agents::alphazero::mcts::MCTSConfig;
 
+/// Parsed `latest.yaml` — written atomically by the Python trainer
+/// whenever a new model checkpoint is produced.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LatestModelYaml {
+    /// Path to the ONNX (or .pt) model file.
+    pub filename: String,
+    /// Monotonically-increasing model version number.
+    pub version: i64,
+}
+
 /// Top-level config — mirrors the Python `UserConfig` structure.
 /// Uses `deny_unknown_fields = false` (the serde default) so extra
 /// sections like `training`, `benchmarks`, `wandb` are silently ignored.
@@ -159,6 +169,23 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<PipelineConfig> {
     let config: PipelineConfig = serde_yaml::from_str(&contents)
         .with_context(|| format!("Failed to parse config file: {}", path.as_ref().display()))?;
     Ok(config)
+}
+
+/// Load a `LatestModelYaml` from a YAML file.
+pub fn load_latest_model<P: AsRef<Path>>(path: P) -> Result<LatestModelYaml> {
+    let contents = fs::read_to_string(path.as_ref()).with_context(|| {
+        format!(
+            "Failed to read latest model file: {}",
+            path.as_ref().display()
+        )
+    })?;
+    let model: LatestModelYaml = serde_yaml::from_str(&contents).with_context(|| {
+        format!(
+            "Failed to parse latest model file: {}",
+            path.as_ref().display()
+        )
+    })?;
+    Ok(model)
 }
 
 #[cfg(test)]
