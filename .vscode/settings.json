@@ -32,6 +32,7 @@
         "./deep_quoridor/rust/Cargo.toml"
     ],
     "python-envs.pythonProjects": [],
+    "chat.tools.terminal.outputLocation": "terminal",
     "chat.tools.terminal.autoApprove": {
         "git commit": true,
         "gh": true
