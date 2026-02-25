@@ -44,6 +44,16 @@ use quoridor_rs::game_runner::play_game;
 use quoridor_rs::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
 use quoridor_rs::selfplay_config::{load_config, load_latest_model, AlphaZeroConfig};
 
+/// Convert a `.pt` model path to its corresponding `.onnx` path.
+/// If the path doesn't end in `.pt`, returns it unchanged.
+fn pt_to_onnx_path(path: &str) -> String {
+    if let Some(stem) = path.strip_suffix(".pt") {
+        format!("{}.onnx", stem)
+    } else {
+        path.to_string()
+    }
+}
+
 #[derive(Parser)]
 #[command(about = "Quoridor self-play data generator")]
 struct Cli {
@@ -302,7 +312,7 @@ fn run_continuous(
 
     let latest = load_latest_model(latest_yaml_path)?;
     let mut model_version = latest.version;
-    let mut model_path = latest.filename.clone();
+    let mut model_path = pt_to_onnx_path(&latest.filename);
 
     println!(
         "Loading initial model: version={}, path={}",
@@ -328,12 +338,13 @@ fn run_continuous(
         // Check for new model version
         if let Ok(new_latest) = load_latest_model(latest_yaml_path) {
             if new_latest.version != model_version {
+                let new_path = pt_to_onnx_path(&new_latest.filename);
                 println!(
                     "New model detected: version {} -> {} ({})",
-                    model_version, new_latest.version, new_latest.filename
+                    model_version, new_latest.version, new_path
                 );
                 model_version = new_latest.version;
-                model_path = new_latest.filename.clone();
+                model_path = new_path;
                 agent_p1 = create_agent(false, None, &model_path, az_config)?;
                 agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
             }

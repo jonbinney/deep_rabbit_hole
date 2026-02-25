@@ -67,6 +67,7 @@ class SelfPlayConfig(StrictBaseModel):
     num_workers: int
     parallel_games: int
     alphazero: Optional[AlphaZeroSelfPlayConfig] = None
+    rust_selfplay_binary: Optional[str] = None
 
 
 class TrainingConfig(StrictBaseModel):
