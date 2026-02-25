@@ -66,6 +66,10 @@ struct Cli {
     /// Print a step-by-step trace of each game (whose turn, action, board).
     #[arg(long, default_value = "false")]
     trace: bool,
+
+    /// Model version number to record in replay metadata.
+    #[arg(long, default_value = "0")]
+    model_version: i64,
 }
 
 /// Boxed agent trait object for dynamic dispatch.
@@ -204,7 +208,7 @@ fn main() -> Result<()> {
         let npz_path = format!("{}/{}.npz", cli.output_dir, base_name);
 
         let metadata = GameMetadata {
-            model_version: 0,
+            model_version: cli.model_version,
             game_length: result.replay_items.len(),
             creator: format!("{}", pid),
         };
