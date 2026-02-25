@@ -3,10 +3,10 @@
 //! This module is only available behind the `binary` feature flag.
 
 use anyhow::{Context, Result};
-use ndarray::{ArrayView1, ArrayView2};
 use ort::session::Session;
 
 use crate::agents::ActionSelector;
+use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 
 /// Compute softmax of a slice of logits.
@@ -36,19 +36,15 @@ impl OnnxAgent {
 impl ActionSelector for OnnxAgent {
     fn select_action(
         &mut self,
-        grid: &ArrayView2<i8>,
-        player_positions: &ArrayView2<i32>,
-        walls_remaining: &ArrayView1<i32>,
-        _goal_rows: &ArrayView1<i32>,
-        current_player: i32,
+        state: &GameState,
         action_mask: &[bool],
     ) -> Result<(usize, Vec<f32>)> {
         // Build ResNet input tensor
         let resnet_input = grid_game_state_to_resnet_input(
-            grid,
-            player_positions,
-            walls_remaining,
-            current_player,
+            &state.grid(),
+            &state.player_positions(),
+            &state.walls_remaining(),
+            state.current_player,
         );
 
         // Convert to flat vec for ORT

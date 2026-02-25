@@ -1,9 +1,155 @@
 #![allow(dead_code)]
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
+use std::hash::{Hash, Hasher};
 
-use crate::actions::{ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL};
+use crate::actions::{
+    compute_full_action_mask, policy_size, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+};
 use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
+
+/// A complete game state wrapper for Quoridor.
+///
+/// Bundles all state needed to play a game and provides convenience methods
+/// for stepping, checking wins, computing action masks, and hashing.
+#[derive(Clone, Debug)]
+pub struct GameState {
+    pub grid: Array2<i8>,
+    pub player_positions: Array2<i32>,
+    pub walls_remaining: Array1<i32>,
+    pub goal_rows: Array1<i32>,
+    pub current_player: i32,
+    pub board_size: i32,
+    pub completed_steps: usize,
+}
+
+impl GameState {
+    /// Create a new game state with initial positions.
+    pub fn new(board_size: i32, max_walls: i32) -> Self {
+        let (grid, player_positions, walls_remaining, goal_rows) =
+            create_initial_state(board_size, max_walls);
+        Self {
+            grid,
+            player_positions,
+            walls_remaining,
+            goal_rows,
+            current_player: 0,
+            board_size,
+            completed_steps: 0,
+        }
+    }
+
+    /// Apply an action to this game state in place.
+    ///
+    /// Increments `completed_steps` and swaps `current_player`.
+    pub fn step(&mut self, action: [i32; 3]) {
+        let action_arr = Array1::from(vec![action[0], action[1], action[2]]);
+        apply_action(
+            &mut self.grid.view_mut(),
+            &mut self.player_positions.view_mut(),
+            &mut self.walls_remaining.view_mut(),
+            self.current_player,
+            &action_arr.view(),
+        );
+        self.completed_steps += 1;
+        self.current_player = 1 - self.current_player;
+    }
+
+    /// Clone this state and apply an action to the clone.
+    ///
+    /// Useful for MCTS lazy expansion.
+    pub fn clone_and_step(&self, action: [i32; 3]) -> Self {
+        let mut new_state = self.clone();
+        new_state.step(action);
+        new_state
+    }
+
+    /// Check if the game is over (either player has won).
+    pub fn is_game_over(&self) -> bool {
+        self.check_win(0) || self.check_win(1)
+    }
+
+    /// Check if a specific player has won.
+    pub fn check_win(&self, player: i32) -> bool {
+        check_win(&self.player_positions.view(), &self.goal_rows.view(), player)
+    }
+
+    /// Get the winner if the game is over, otherwise None.
+    pub fn winner(&self) -> Option<i32> {
+        if self.check_win(0) {
+            Some(0)
+        } else if self.check_win(1) {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    /// Compute the action mask for the current player.
+    pub fn get_action_mask(&self) -> Vec<bool> {
+        let total_actions = policy_size(self.board_size);
+        let mut mask = vec![false; total_actions];
+        compute_full_action_mask(
+            &self.grid.view(),
+            &self.player_positions.view(),
+            &self.walls_remaining.view(),
+            &self.goal_rows.view(),
+            self.current_player,
+            &mut mask,
+        );
+        mask
+    }
+
+    /// Compute a fast hash of the game state for visited-state tracking.
+    ///
+    /// The hash includes: grid, positions, walls remaining, and current player.
+    pub fn get_fast_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        let mut hasher = DefaultHasher::new();
+
+        // Hash grid
+        for val in self.grid.iter() {
+            val.hash(&mut hasher);
+        }
+
+        // Hash positions
+        for val in self.player_positions.iter() {
+            val.hash(&mut hasher);
+        }
+
+        // Hash walls remaining
+        for val in self.walls_remaining.iter() {
+            val.hash(&mut hasher);
+        }
+
+        // Hash current player
+        self.current_player.hash(&mut hasher);
+
+        hasher.finish()
+    }
+
+    /// Get the policy size for this board.
+    pub fn policy_size(&self) -> usize {
+        policy_size(self.board_size)
+    }
+
+    // Accessor methods returning views
+    pub fn grid(&self) -> ArrayView2<i8> {
+        self.grid.view()
+    }
+
+    pub fn player_positions(&self) -> ArrayView2<i32> {
+        self.player_positions.view()
+    }
+
+    pub fn walls_remaining(&self) -> ArrayView1<i32> {
+        self.walls_remaining.view()
+    }
+
+    pub fn goal_rows(&self) -> ArrayView1<i32> {
+        self.goal_rows.view()
+    }
+}
 
 /// Initialize the initial game state for a Quoridor board
 ///
@@ -289,5 +435,109 @@ mod tests {
 
         // Check walls restored
         assert_eq!(walls_remaining[0], initial_walls);
+    }
+
+    // ========== GameState wrapper tests ==========
+
+    #[test]
+    fn test_game_state_new() {
+        let state = GameState::new(5, 3);
+
+        assert_eq!(state.board_size, 5);
+        assert_eq!(state.current_player, 0);
+        assert_eq!(state.completed_steps, 0);
+        assert_eq!(state.walls_remaining[0], 3);
+        assert_eq!(state.walls_remaining[1], 3);
+        assert_eq!(state.player_positions[[0, 0]], 0); // Player 0 at top
+        assert_eq!(state.player_positions[[1, 0]], 4); // Player 1 at bottom
+    }
+
+    #[test]
+    fn test_game_state_step() {
+        let mut state = GameState::new(5, 3);
+
+        // Player 0 starts, move down one row
+        state.step([1, 2, ACTION_MOVE]);
+
+        assert_eq!(state.player_positions[[0, 0]], 1);
+        assert_eq!(state.player_positions[[0, 1]], 2);
+        assert_eq!(state.current_player, 1); // Switched to player 1
+        assert_eq!(state.completed_steps, 1);
+    }
+
+    #[test]
+    fn test_game_state_clone_and_step() {
+        let state = GameState::new(5, 3);
+
+        let new_state = state.clone_and_step([1, 2, ACTION_MOVE]);
+
+        // Original state unchanged
+        assert_eq!(state.player_positions[[0, 0]], 0);
+        assert_eq!(state.current_player, 0);
+        assert_eq!(state.completed_steps, 0);
+
+        // New state updated
+        assert_eq!(new_state.player_positions[[0, 0]], 1);
+        assert_eq!(new_state.current_player, 1);
+        assert_eq!(new_state.completed_steps, 1);
+    }
+
+    #[test]
+    fn test_game_state_check_win() {
+        let mut state = GameState::new(5, 0); // No walls for faster game
+
+        // Neither player has won initially
+        assert!(!state.check_win(0));
+        assert!(!state.check_win(1));
+        assert!(!state.is_game_over());
+
+        // Move player 0 to goal (row 4)
+        state.player_positions[[0, 0]] = 4;
+        assert!(state.check_win(0));
+        assert!(!state.check_win(1));
+        assert!(state.is_game_over());
+        assert_eq!(state.winner(), Some(0));
+    }
+
+    #[test]
+    fn test_game_state_action_mask() {
+        let state = GameState::new(5, 3);
+        let mask = state.get_action_mask();
+
+        // Should have correct length
+        assert_eq!(mask.len(), state.policy_size());
+        assert_eq!(mask.len(), 25 + 2 * 16); // 57 for 5x5 board
+
+        // Should have some valid actions
+        assert!(mask.iter().any(|&m| m));
+    }
+
+    #[test]
+    fn test_game_state_hash_stability() {
+        let state1 = GameState::new(5, 3);
+        let state2 = GameState::new(5, 3);
+
+        // Same state should produce same hash
+        assert_eq!(state1.get_fast_hash(), state2.get_fast_hash());
+    }
+
+    #[test]
+    fn test_game_state_hash_different_states() {
+        let state1 = GameState::new(5, 3);
+        let state2 = state1.clone_and_step([1, 2, ACTION_MOVE]);
+
+        // Different states should produce different hashes
+        assert_ne!(state1.get_fast_hash(), state2.get_fast_hash());
+    }
+
+    #[test]
+    fn test_game_state_accessors() {
+        let state = GameState::new(5, 3);
+
+        // Test that accessors return valid views
+        assert_eq!(state.grid().shape(), &[13, 13]);
+        assert_eq!(state.player_positions().shape(), &[2, 2]);
+        assert_eq!(state.walls_remaining().len(), 2);
+        assert_eq!(state.goal_rows().len(), 2);
     }
 }
