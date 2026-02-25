@@ -139,19 +139,19 @@ impl GameState {
     }
 
     // Accessor methods returning views
-    pub fn grid(&self) -> ArrayView2<i8> {
+    pub fn grid(&self) -> ArrayView2<'_, i8> {
         self.grid.view()
     }
 
-    pub fn player_positions(&self) -> ArrayView2<i32> {
+    pub fn player_positions(&self) -> ArrayView2<'_, i32> {
         self.player_positions.view()
     }
 
-    pub fn walls_remaining(&self) -> ArrayView1<i32> {
+    pub fn walls_remaining(&self) -> ArrayView1<'_, i32> {
         self.walls_remaining.view()
     }
 
-    pub fn goal_rows(&self) -> ArrayView1<i32> {
+    pub fn goal_rows(&self) -> ArrayView1<'_, i32> {
         self.goal_rows.view()
     }
 }

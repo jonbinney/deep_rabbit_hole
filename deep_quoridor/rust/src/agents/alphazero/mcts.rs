@@ -4,7 +4,6 @@
 
 use std::collections::HashSet;
 
-use rand::Rng;
 use rand_distr::{Dirichlet, Distribution};
 
 use crate::actions::{action_index_to_action, action_to_index};
