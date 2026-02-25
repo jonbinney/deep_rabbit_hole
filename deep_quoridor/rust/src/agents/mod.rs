@@ -2,11 +2,14 @@
 //!
 //! All agents implement the [`ActionSelector`] trait.
 
-use ndarray::{ArrayView1, ArrayView2};
+use crate::game_state::GameState;
 
 #[cfg(feature = "binary")]
 pub mod onnx_agent;
 pub mod random_agent;
+
+#[cfg(feature = "binary")]
+pub mod alphazero;
 
 /// Trait for agents that select actions given a game state.
 ///
@@ -21,11 +24,7 @@ pub trait ActionSelector {
     /// full softmax output (or a uniform/mask-based distribution for simpler agents).
     fn select_action(
         &mut self,
-        grid: &ArrayView2<i8>,
-        player_positions: &ArrayView2<i32>,
-        walls_remaining: &ArrayView1<i32>,
-        goal_rows: &ArrayView1<i32>,
-        current_player: i32,
+        state: &GameState,
         action_mask: &[bool],
     ) -> anyhow::Result<(usize, Vec<f32>)>;
 }

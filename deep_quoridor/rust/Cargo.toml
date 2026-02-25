@@ -35,11 +35,12 @@ anyhow = "1"
 serde_yaml = { version = "0.9", optional = true }
 ndarray-npy = { version = "0.9", optional = true }
 zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
+rand_distr = { version = "0.4", optional = true }
 
 [features]
 default = ["python"]
 python = ["pyo3", "numpy"]
-binary = ["clap", "ort", "serde_yaml", "ndarray-npy", "zip"]
+binary = ["clap", "ort", "serde_yaml", "ndarray-npy", "zip", "rand_distr"]
 
 [dev-dependencies]
 tempfile = "3"
