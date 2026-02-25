@@ -12,7 +12,7 @@ use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
 ///
 /// Bundles all state needed to play a game and provides convenience methods
 /// for stepping, checking wins, computing action masks, and hashing.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GameState {
     pub grid: Array2<i8>,
     pub player_positions: Array2<i32>,
