@@ -159,7 +159,9 @@ impl NodeArena {
         }
 
         // Need to compute it from parent
-        let parent_idx = self.nodes[idx].parent.expect("Non-root node must have parent");
+        let parent_idx = self.nodes[idx]
+            .parent
+            .expect("Non-root node must have parent");
         let action = self.nodes[idx]
             .action_taken
             .expect("Child node must have action");
@@ -181,12 +183,7 @@ impl NodeArena {
 }
 
 /// Expand a node by creating children for all valid actions.
-pub fn expand_node(
-    arena: &mut NodeArena,
-    node_idx: usize,
-    priors: &[f32],
-    board_size: i32,
-) {
+pub fn expand_node(arena: &mut NodeArena, node_idx: usize, priors: &[f32], board_size: i32) {
     // Create children only for actions with non-zero prior
     for (action_idx, &prior) in priors.iter().enumerate() {
         if prior > 1e-10 {
@@ -357,8 +354,13 @@ pub fn search<E: Evaluator>(
             let mut current_idx = 0;
 
             while !arena.get(current_idx).should_expand() {
-                current_idx =
-                    select_child(&arena, current_idx, config.ucb_c, visited_states, board_size);
+                current_idx = select_child(
+                    &arena,
+                    current_idx,
+                    config.ucb_c,
+                    visited_states,
+                    board_size,
+                );
             }
 
             // Get/create game state for the selected node
@@ -367,7 +369,11 @@ pub fn search<E: Evaluator>(
             // Check for terminal state
             if leaf_game.is_game_over() {
                 // Terminal: backpropagate result
-                let value = if leaf_game.winner().is_some() { 1.0 } else { 0.0 };
+                let value = if leaf_game.winner().is_some() {
+                    1.0
+                } else {
+                    0.0
+                };
                 backpropagate_result(&mut arena, current_idx, value);
                 continue;
             }
@@ -428,7 +434,11 @@ mod tests {
     }
 
     impl Evaluator for MockEvaluator {
-        fn evaluate(&mut self, _state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
+        fn evaluate(
+            &mut self,
+            _state: &GameState,
+            action_mask: &[bool],
+        ) -> Result<(f32, Vec<f32>)> {
             // Return uniform priors over valid actions
             let num_valid = action_mask.iter().filter(|&&m| m).count();
             let prior = if num_valid > 0 {
@@ -636,7 +646,10 @@ mod tests {
         apply_dirichlet_noise(&mut priors, 0.25, 0.5);
 
         // Priors should have changed
-        let changed = priors.iter().zip(original.iter()).any(|(p, o)| (p - o).abs() > 1e-6);
+        let changed = priors
+            .iter()
+            .zip(original.iter())
+            .any(|(p, o)| (p - o).abs() > 1e-6);
         assert!(changed);
 
         // Only non-zero priors should be affected

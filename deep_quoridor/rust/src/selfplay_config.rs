@@ -144,7 +144,8 @@ impl AlphaZeroConfig {
             mcts_noise_alpha: overrides.mcts_noise_alpha.or(self.mcts_noise_alpha),
             temperature: overrides.temperature.or(self.temperature),
             drop_t_on_step: overrides.drop_t_on_step.or(self.drop_t_on_step),
-            penalize_visited_states: overrides.penalize_visited_states || self.penalize_visited_states,
+            penalize_visited_states: overrides.penalize_visited_states
+                || self.penalize_visited_states,
             max_steps: overrides.max_steps.or(self.max_steps),
         }
     }
@@ -282,15 +283,15 @@ self_play:
         };
 
         let overrides = AlphaZeroConfig {
-            mcts_n: Some(50),        // Override
-            mcts_k: None,            // Keep base
-            mcts_c_puct: 2.0,        // Override
-            mcts_noise_epsilon: 0.5, // Override
-            mcts_noise_alpha: None,  // Keep base
-            temperature: None,       // Keep base
-            drop_t_on_step: None,    // Keep base
+            mcts_n: Some(50),              // Override
+            mcts_k: None,                  // Keep base
+            mcts_c_puct: 2.0,              // Override
+            mcts_noise_epsilon: 0.5,       // Override
+            mcts_noise_alpha: None,        // Keep base
+            temperature: None,             // Keep base
+            drop_t_on_step: None,          // Keep base
             penalize_visited_states: true, // Override
-            max_steps: None,         // Keep base
+            max_steps: None,               // Keep base
         };
 
         let merged = base.merge(&overrides);

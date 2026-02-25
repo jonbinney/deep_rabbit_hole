@@ -103,7 +103,10 @@ fn create_agent(
             az_config.to_agent_config(),
         )?)),
         "random" => Ok(BoxedAgent::Random(RandomAgent::new())),
-        other => anyhow::bail!("Unknown agent type: '{}'. Valid: onnx, alphazero, random", other),
+        other => anyhow::bail!(
+            "Unknown agent type: '{}'. Valid: onnx, alphazero, random",
+            other
+        ),
     }
 }
 

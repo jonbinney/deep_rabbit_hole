@@ -4,7 +4,8 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMu
 use std::hash::{Hash, Hasher};
 
 use crate::actions::{
-    compute_full_action_mask, policy_size, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+    compute_full_action_mask, policy_size, ACTION_MOVE, ACTION_WALL_HORIZONTAL,
+    ACTION_WALL_VERTICAL,
 };
 use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
 
@@ -71,7 +72,11 @@ impl GameState {
 
     /// Check if a specific player has won.
     pub fn check_win(&self, player: i32) -> bool {
-        check_win(&self.player_positions.view(), &self.goal_rows.view(), player)
+        check_win(
+            &self.player_positions.view(),
+            &self.goal_rows.view(),
+            player,
+        )
     }
 
     /// Get the winner if the game is over, otherwise None.

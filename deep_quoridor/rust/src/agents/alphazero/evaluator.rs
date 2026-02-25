@@ -71,13 +71,7 @@ impl Evaluator for OnnxEvaluator {
             .1
             .iter()
             .zip(action_mask.iter())
-            .map(|(&logit, &valid)| {
-                if valid {
-                    logit
-                } else {
-                    -1e32
-                }
-            })
+            .map(|(&logit, &valid)| if valid { logit } else { -1e32 })
             .collect();
 
         // Compute softmax over masked logits
@@ -153,4 +147,3 @@ mod tests {
         assert!(probs[2] < 1e-10);
     }
 }
-

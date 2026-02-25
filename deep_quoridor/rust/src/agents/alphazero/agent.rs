@@ -119,8 +119,12 @@ impl ActionSelector for AlphaZeroAgent {
         action_mask: &[bool],
     ) -> Result<(usize, Vec<f32>)> {
         // Run MCTS search
-        let (children, _root_value) =
-            search(&self.config.mcts, state.clone(), &mut self.evaluator, &self.visited_states)?;
+        let (children, _root_value) = search(
+            &self.config.mcts,
+            state.clone(),
+            &mut self.evaluator,
+            &self.visited_states,
+        )?;
 
         // Extract visit counts and action indices
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
@@ -138,7 +142,8 @@ impl ActionSelector for AlphaZeroAgent {
         };
 
         // Select action using temperature
-        let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, temperature);
+        let selected_idx =
+            apply_temperature_and_sample(&visit_counts, &action_indices, temperature);
 
         // Build full policy vector from visit counts
         let total_visits: u32 = visit_counts.iter().sum();
@@ -224,4 +229,3 @@ mod tests {
         assert!(!config.penalize_visited_states);
     }
 }
-
