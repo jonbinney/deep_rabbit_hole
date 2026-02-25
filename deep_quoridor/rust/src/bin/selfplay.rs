@@ -5,22 +5,23 @@
 //! replay files to `output_dir`.
 //!
 //! Usage:
+//!   # Default: AlphaZero MCTS agent
 //!   selfplay --config experiments/ci.yaml \
 //!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
 //!            --output-dir /tmp/replays \
 //!            --num-games 100
 //!
-//!   # Play ONNX (P1) vs Random (P2):
+//!   # Use legacy raw ONNX greedy agent:
+//!   selfplay --config experiments/ci.yaml \
+//!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
+//!            --output-dir /tmp/replays \
+//!            --num-games 100 --use-raw-onnx-agent
+//!
+//!   # AlphaZero vs Random:
 //!   selfplay --config experiments/ci.yaml \
 //!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
 //!            --output-dir /tmp/replays \
 //!            --num-games 100 --p2 random
-//!
-//!   # Use AlphaZero MCTS agent:
-//!   selfplay --config experiments/ci.yaml \
-//!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
-//!            --output-dir /tmp/replays \
-//!            --num-games 100 --agent-type alphazero
 
 use anyhow::Result;
 use clap::Parser;
@@ -54,12 +55,11 @@ struct Cli {
     #[arg(long, default_value = "100")]
     num_games: usize,
 
-    /// Agent type for both players. "onnx" (default) or "alphazero".
-    #[arg(long, default_value = "onnx")]
-    agent_type: String,
+    /// Use the legacy raw ONNX greedy agent instead of the default AlphaZero MCTS agent.
+    #[arg(long, default_value = "false")]
+    use_raw_onnx_agent: bool,
 
-    /// Agent type for player 2. Omit to use the same type as P1.
-    /// Use "random" for a random agent.
+    /// Agent for player 2. Omit to use the same agent as P1. Use "random" for a random agent.
     #[arg(long)]
     p2: Option<String>,
 
@@ -92,21 +92,24 @@ impl BoxedAgent {
 }
 
 fn create_agent(
-    agent_type: &str,
+    use_raw_onnx: bool,
+    p2_override: Option<&str>,
     model_path: &str,
     az_config: &AlphaZeroConfig,
 ) -> Result<BoxedAgent> {
-    match agent_type {
-        "onnx" => Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path)?)),
-        "alphazero" => Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
+    if let Some("random") = p2_override {
+        return Ok(BoxedAgent::Random(RandomAgent::new()));
+    }
+    if let Some(other) = p2_override {
+        anyhow::bail!("Unknown --p2 agent: '{}'. Valid: random", other);
+    }
+    if use_raw_onnx {
+        Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path)?))
+    } else {
+        Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
             model_path,
             az_config.to_agent_config(),
-        )?)),
-        "random" => Ok(BoxedAgent::Random(RandomAgent::new())),
-        other => anyhow::bail!(
-            "Unknown agent type: '{}'. Valid: onnx, alphazero, random",
-            other
-        ),
+        )?))
     }
 }
 
@@ -127,31 +130,38 @@ fn main() -> Result<()> {
         base_az
     };
 
-    // Determine P2 agent type
-    let p2_type = cli.p2.as_deref().unwrap_or(&cli.agent_type);
-    let p2_desc = if cli.p2.is_some() {
-        p2_type.to_string()
+    let agent_label = if cli.use_raw_onnx_agent {
+        "raw-onnx"
     } else {
-        format!("{} (same as P1)", p2_type)
+        "alphazero"
+    };
+    let p2_desc = match cli.p2.as_deref() {
+        Some(p2) => p2.to_string(),
+        None => format!("{} (same as P1)", agent_label),
     };
 
     println!(
         "Self-play: board_size={}, max_walls={}, max_steps={}, num_games={}",
         q.board_size, q.max_walls, q.max_steps, cli.num_games,
     );
-    println!("P1: {} ({})", cli.agent_type, cli.model_path);
+    println!("P1: {} ({})", agent_label, cli.model_path);
     println!("P2: {}", p2_desc);
     println!("Output: {}", cli.output_dir);
 
-    if cli.agent_type == "alphazero" {
+    if !cli.use_raw_onnx_agent {
         println!(
             "MCTS config: n={:?}, k={:?}, c_puct={}, noise_epsilon={}",
             az_config.mcts_n, az_config.mcts_k, az_config.mcts_c_puct, az_config.mcts_noise_epsilon
         );
     }
 
-    let mut agent_p1 = create_agent(&cli.agent_type, &cli.model_path, &az_config)?;
-    let mut agent_p2 = create_agent(p2_type, &cli.model_path, &az_config)?;
+    let mut agent_p1 = create_agent(cli.use_raw_onnx_agent, None, &cli.model_path, &az_config)?;
+    let mut agent_p2 = create_agent(
+        cli.use_raw_onnx_agent,
+        cli.p2.as_deref(),
+        &cli.model_path,
+        &az_config,
+    )?;
 
     println!("Model loaded.");
 
