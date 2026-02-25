@@ -33,6 +33,7 @@
     ],
     "python-envs.pythonProjects": [],
     "chat.tools.terminal.autoApprove": {
-        "git commit": true
+        "git commit": true,
+        "gh": true
     }
 }
