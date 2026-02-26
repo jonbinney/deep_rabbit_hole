@@ -127,6 +127,7 @@ impl AlphaZeroConfig {
                 noise_epsilon: self.mcts_noise_epsilon,
                 noise_alpha: self.mcts_noise_alpha,
                 max_steps: self.max_steps,
+                penalize_visited_states: self.penalize_visited_states,
             },
             temperature: self.temperature.unwrap_or(1.0),
             drop_t_on_step: self.drop_t_on_step,

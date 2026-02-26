@@ -118,12 +118,18 @@ impl ActionSelector for AlphaZeroAgent {
         state: &GameState,
         action_mask: &[bool],
     ) -> Result<(usize, Vec<f32>)> {
-        // Run MCTS search
+        // Run MCTS search - only pass visited states when penalization is enabled
+        let empty_visited = HashSet::new();
+        let visited_ref = if self.config.penalize_visited_states {
+            &self.visited_states
+        } else {
+            &empty_visited
+        };
         let (children, _root_value) = search(
             &self.config.mcts,
             state.clone(),
             &mut self.evaluator,
-            &self.visited_states,
+            visited_ref,
         )?;
 
         // Extract visit counts and action indices

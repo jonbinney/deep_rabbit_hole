@@ -26,6 +26,8 @@ pub struct MCTSConfig {
     pub noise_alpha: Option<f32>,
     /// Maximum game steps before declaring a draw.
     pub max_steps: Option<i32>,
+    /// Whether to penalize visited states during MCTS selection.
+    pub penalize_visited_states: bool,
 }
 
 impl Default for MCTSConfig {
@@ -37,6 +39,7 @@ impl Default for MCTSConfig {
             noise_epsilon: 0.25,
             noise_alpha: None,
             max_steps: None,
+            penalize_visited_states: false,
         }
     }
 }
@@ -217,17 +220,20 @@ pub fn select_child(
         let u = ucb_c * child.prior * (parent_visits.sqrt()) / (1.0 + child.visit_count as f32);
         let mut ucb = q + u;
 
-        // Apply penalty if child state is in visited set
-        if let Some(ref game) = child.game {
-            if visited_states.contains(&game.get_fast_hash()) {
-                ucb -= 1.0;
-            }
-        } else if let Some(action) = child.action_taken {
-            // Compute hash for child without fully expanding game
-            let parent_game = arena.get(node_idx).game.as_ref().unwrap();
-            let child_game = parent_game.clone_and_step(action);
-            if visited_states.contains(&child_game.get_fast_hash()) {
-                ucb -= 1.0;
+        // Apply penalty if child state is in visited set (only when enabled)
+        // NOTE: If the penalized_visited_states flag is false, the agent will pass an empty set, so this check will have no effect.
+        if !visited_states.is_empty() {
+            if let Some(ref game) = child.game {
+                if visited_states.contains(&game.get_fast_hash()) {
+                    ucb -= 1.0;
+                }
+            } else if let Some(action) = child.action_taken {
+                // Compute hash for child without fully expanding game
+                let parent_game = arena.get(node_idx).game.as_ref().unwrap();
+                let child_game = parent_game.clone_and_step(action);
+                if visited_states.contains(&child_game.get_fast_hash()) {
+                    ucb -= 1.0;
+                }
             }
         }
 
@@ -584,6 +590,42 @@ mod tests {
 
         // Child2 should be selected since child1 has penalty
         let selected = select_child(&arena, 0, 1.4, &visited, 5);
+        assert_eq!(selected, child2);
+    }
+
+    #[test]
+    fn test_no_visited_state_penalty_when_set_is_empty() {
+        // When penalize_visited_states is false, the agent passes an empty set,
+        // so no penalty should be applied even if a state would match.
+        let state = GameState::new(5, 0);
+        let mut arena = NodeArena::new(state.clone());
+
+        let child1 = arena.alloc_child(0, [1, 2, 2], 0.5);
+        let child2 = arena.alloc_child(0, [0, 1, 2], 0.5);
+
+        arena.get_mut(0).children = vec![child1, child2];
+        arena.get_mut(0).visit_count = 20;
+
+        // Give child1 higher Q-value and similar visits so it clearly wins
+        arena.get_mut(child1).visit_count = 8;
+        arena.get_mut(child1).value_sum = 6.0; // Q = 0.75
+        arena.get_mut(child2).visit_count = 8;
+        arena.get_mut(child2).value_sum = 0.0; // Q = 0.0
+
+        // Empty visited set (simulates penalize_visited_states=false)
+        let visited = HashSet::new();
+
+        // Child1 should be selected (no penalty applied, higher Q)
+        let selected = select_child(&arena, 0, 1.4, &visited, 5);
+        assert_eq!(selected, child1);
+
+        // Now with visited_states containing child1's hash,
+        // child2 should be selected instead (penalty of -1.0 brings Q from 0.75 to -0.25)
+        let child1_game = state.clone_and_step([1, 2, 2]);
+        let mut visited_with_penalty = HashSet::new();
+        visited_with_penalty.insert(child1_game.get_fast_hash());
+
+        let selected = select_child(&arena, 0, 1.4, &visited_with_penalty, 5);
         assert_eq!(selected, child2);
     }
 
