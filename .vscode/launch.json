@@ -8,9 +8,10 @@
             "console": "integratedTerminal",
             "program": "deep_quoridor/src/train.py",
             "args": [
-                "-N", "3", "-W", "0", "-e", "1000", "-i", "43", "-p",
+                "-N", "3", "-W", "0", "-e", "10", "-i", "43", "-p",
                 "alphazero:training_mode=true",
                 "-r", "arenaresults2", "computationtimes",
+                "-w"
             ],
             "justMyCode": false
         },
