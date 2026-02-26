@@ -65,11 +65,15 @@ def train(config: Config):
     # Save initial model (model_0)
     filename = config.paths.checkpoints / "model_0.pt"
     alphazero_agent.save_model(filename)
-    LatestModel.write(config, str(filename), 0)
 
     if config.training.save_onnx:
         onnx_filename = config.paths.checkpoints / "model_0.onnx"
         alphazero_agent.save_model_onnx(onnx_filename)
+
+    # Write latest.yaml after all model files are saved (including ONNX),
+    # so that consumers (e.g. Rust self-play) don't try to load files that
+    # haven't been written yet.
+    LatestModel.write(config, str(filename), 0)
 
     finish_condition = None
     if config.training.finish_after:
@@ -175,12 +179,14 @@ def train(config: Config):
         # Save in PyTorch format
         new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
         alphazero_agent.save_model(new_model_filename)
-        LatestModel.write(config, str(new_model_filename), model_version)
 
         # Save in ONNX format if enabled
         if config.training.save_onnx:
             onnx_model_filename = config.paths.checkpoints / f"model_{model_version}.onnx"
             alphazero_agent.save_model_onnx(onnx_model_filename)
+
+        # Write latest.yaml after all model files are saved
+        LatestModel.write(config, str(new_model_filename), model_version)
 
         time_save_model = Timer.finish("save-model")
 

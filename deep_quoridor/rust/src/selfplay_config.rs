@@ -23,6 +23,24 @@ pub struct LatestModelYaml {
     pub version: i64,
 }
 
+/// Network type used by the AlphaZero agent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NetworkType {
+    Resnet,
+    Mlp,
+}
+
+/// Minimal network config — just enough to determine the type.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NetworkConfig {
+    #[serde(rename = "type", default = "default_network_type")]
+    network_type: String,
+}
+
+fn default_network_type() -> String {
+    "resnet".to_string()
+}
+
 /// Top-level config — mirrors the Python `UserConfig` structure.
 /// Uses `deny_unknown_fields = false` (the serde default) so extra
 /// sections like `training`, `benchmarks`, `wandb` are silently ignored.
@@ -65,6 +83,10 @@ pub struct SelfPlayWorkerConfig {
 /// Field names use the same keys as Python for config reusability.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AlphaZeroConfig {
+    /// Network configuration (type, num_blocks, etc.).
+    #[serde(default)]
+    pub network: Option<NetworkConfig>,
+
     /// Number of MCTS simulations.
     #[serde(default)]
     pub mcts_n: Option<u32>,
@@ -113,6 +135,7 @@ fn default_noise_epsilon() -> f32 {
 impl Default for AlphaZeroConfig {
     fn default() -> Self {
         Self {
+            network: None,
             mcts_n: Some(100),
             mcts_k: None,
             mcts_c_puct: 1.4,
@@ -148,6 +171,11 @@ impl AlphaZeroConfig {
     /// Merge with overrides from self_play section.
     pub fn merge(&self, overrides: &AlphaZeroConfig) -> AlphaZeroConfig {
         AlphaZeroConfig {
+            network: overrides
+                .network
+                .as_ref()
+                .or(self.network.as_ref())
+                .cloned(),
             mcts_n: overrides.mcts_n.or(self.mcts_n),
             mcts_k: overrides.mcts_k.or(self.mcts_k),
             mcts_c_puct: overrides.mcts_c_puct,
@@ -159,6 +187,20 @@ impl AlphaZeroConfig {
                 || self.penalize_visited_states,
             max_steps: overrides.max_steps.or(self.max_steps),
         }
+    }
+}
+
+impl PipelineConfig {
+    /// Return the network type from the config, defaulting to Resnet.
+    pub fn network_type(&self) -> NetworkType {
+        self.alphazero
+            .as_ref()
+            .and_then(|az| az.network.as_ref())
+            .map(|n| match n.network_type.as_str() {
+                "mlp" => NetworkType::Mlp,
+                _ => NetworkType::Resnet,
+            })
+            .unwrap_or(NetworkType::Resnet)
     }
 }
 
@@ -276,6 +318,7 @@ self_play:
     #[test]
     fn test_alphazero_config_to_agent_config() {
         let config = AlphaZeroConfig {
+            network: None,
             mcts_n: Some(200),
             mcts_k: None,
             mcts_c_puct: 2.0,
@@ -299,6 +342,7 @@ self_play:
     #[test]
     fn test_alphazero_config_merge() {
         let base = AlphaZeroConfig {
+            network: None,
             mcts_n: Some(100),
             mcts_k: Some(10),
             mcts_c_puct: 1.4,
@@ -311,6 +355,7 @@ self_play:
         };
 
         let overrides = AlphaZeroConfig {
+            network: None,
             mcts_n: Some(50),              // Override
             mcts_k: None,                  // Keep base
             mcts_c_puct: 2.0,              // Override

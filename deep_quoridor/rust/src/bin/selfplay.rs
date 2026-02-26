@@ -305,7 +305,14 @@ fn run_continuous(
             return Ok(());
         }
         if Path::new(latest_yaml_path).exists() {
-            break;
+            let onnx_path = pt_to_onnx_path(
+                &load_latest_model(latest_yaml_path)
+                    .map(|m| m.filename)
+                    .unwrap_or_default(),
+            );
+            if Path::new(&onnx_path).exists() {
+                break;
+            }
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
@@ -339,14 +346,17 @@ fn run_continuous(
         if let Ok(new_latest) = load_latest_model(latest_yaml_path) {
             if new_latest.version != model_version {
                 let new_path = pt_to_onnx_path(&new_latest.filename);
-                println!(
-                    "New model detected: version {} -> {} ({})",
-                    model_version, new_latest.version, new_path
-                );
-                model_version = new_latest.version;
-                model_path = new_path;
-                agent_p1 = create_agent(false, None, &model_path, az_config)?;
-                agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+                // Wait for the ONNX file to appear before loading
+                if Path::new(&new_path).exists() {
+                    println!(
+                        "New model detected: version {} -> {} ({})",
+                        model_version, new_latest.version, new_path
+                    );
+                    model_version = new_latest.version;
+                    model_path = new_path;
+                    agent_p1 = create_agent(false, None, &model_path, az_config)?;
+                    agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+                }
             }
         }
 
