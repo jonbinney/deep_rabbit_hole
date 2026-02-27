@@ -5,12 +5,19 @@
 //! replay files to `output_dir`.
 //!
 //! Usage:
+//!   # Default: AlphaZero MCTS agent
 //!   selfplay --config experiments/ci.yaml \
 //!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
 //!            --output-dir /tmp/replays \
 //!            --num-games 100
 //!
-//!   # Play ONNX (P1) vs Random (P2):
+//!   # Use legacy raw ONNX greedy agent:
+//!   selfplay --config experiments/ci.yaml \
+//!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
+//!            --output-dir /tmp/replays \
+//!            --num-games 100 --use-raw-onnx-agent
+//!
+//!   # AlphaZero vs Random:
 //!   selfplay --config experiments/ci.yaml \
 //!            --model-path experiments/onnx/B5W3_resnet_sample.onnx \
 //!            --output-dir /tmp/replays \
@@ -21,12 +28,13 @@ use clap::Parser;
 use std::process;
 use std::time::Instant;
 
+use quoridor_rs::agents::alphazero::AlphaZeroAgent;
 use quoridor_rs::agents::onnx_agent::OnnxAgent;
 use quoridor_rs::agents::random_agent::RandomAgent;
 use quoridor_rs::agents::ActionSelector;
 use quoridor_rs::game_runner::play_game;
 use quoridor_rs::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
-use quoridor_rs::selfplay_config::load_config;
+use quoridor_rs::selfplay_config::{load_config, AlphaZeroConfig};
 
 #[derive(Parser)]
 #[command(about = "Quoridor self-play data generator")]
@@ -47,8 +55,11 @@ struct Cli {
     #[arg(long, default_value = "100")]
     num_games: usize,
 
-    /// Agent type for player 2. Omit to use the same ONNX model as P1.
-    /// Use "random" for a random agent.
+    /// Use the legacy raw ONNX greedy agent instead of the default AlphaZero MCTS agent.
+    #[arg(long, default_value = "false")]
+    use_raw_onnx_agent: bool,
+
+    /// Agent for player 2. Omit to use the same agent as P1. Use "random" for a random agent.
     #[arg(long)]
     p2: Option<String>,
 
@@ -57,45 +68,100 @@ struct Cli {
     trace: bool,
 }
 
+/// Boxed agent trait object for dynamic dispatch.
+enum BoxedAgent {
+    Onnx(OnnxAgent),
+    AlphaZero(AlphaZeroAgent),
+    Random(RandomAgent),
+}
+
+impl BoxedAgent {
+    fn as_mut(&mut self) -> &mut dyn ActionSelector {
+        match self {
+            BoxedAgent::Onnx(a) => a,
+            BoxedAgent::AlphaZero(a) => a,
+            BoxedAgent::Random(a) => a,
+        }
+    }
+
+    fn reset_game(&mut self) {
+        if let BoxedAgent::AlphaZero(a) = self {
+            a.reset_game();
+        }
+    }
+}
+
+fn create_agent(
+    use_raw_onnx: bool,
+    p2_override: Option<&str>,
+    model_path: &str,
+    az_config: &AlphaZeroConfig,
+) -> Result<BoxedAgent> {
+    if let Some("random") = p2_override {
+        return Ok(BoxedAgent::Random(RandomAgent::new()));
+    }
+    if let Some(other) = p2_override {
+        anyhow::bail!("Unknown --p2 agent: '{}'. Valid: random", other);
+    }
+    if use_raw_onnx {
+        Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path)?))
+    } else {
+        Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
+            model_path,
+            az_config.to_agent_config(),
+        )?))
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = load_config(&cli.config)?;
     let q = &config.quoridor;
 
-    let p2_desc = cli.p2.as_deref().unwrap_or("onnx (same model)");
+    // Build AlphaZero config from YAML, merging self_play overrides
+    let base_az = config.alphazero.unwrap_or_default();
+    let az_config = if let Some(ref sp) = config.self_play {
+        if let Some(ref sp_az) = sp.alphazero {
+            base_az.merge(sp_az)
+        } else {
+            base_az
+        }
+    } else {
+        base_az
+    };
+
+    let agent_label = if cli.use_raw_onnx_agent {
+        "raw-onnx"
+    } else {
+        "alphazero"
+    };
+    let p2_desc = match cli.p2.as_deref() {
+        Some(p2) => p2.to_string(),
+        None => format!("{} (same as P1)", agent_label),
+    };
+
     println!(
         "Self-play: board_size={}, max_walls={}, max_steps={}, num_games={}",
         q.board_size, q.max_walls, q.max_steps, cli.num_games,
     );
-    println!("P1: ONNX {}", cli.model_path);
+    println!("P1: {} ({})", agent_label, cli.model_path);
     println!("P2: {}", p2_desc);
     println!("Output: {}", cli.output_dir);
 
-    let mut agent_p1 = OnnxAgent::new(&cli.model_path)?;
-
-    // Build P2 agent: either another OnnxAgent (same model) or a RandomAgent
-    let mut onnx_p2: Option<OnnxAgent> = None;
-    let mut random_p2: Option<RandomAgent> = None;
-    match cli.p2.as_deref() {
-        Some("random") => {
-            random_p2 = Some(RandomAgent::new());
-        }
-        Some(other) => {
-            anyhow::bail!(
-                "Unknown --p2 agent type: '{}'. Valid options: random",
-                other
-            );
-        }
-        None => {
-            onnx_p2 = Some(OnnxAgent::new(&cli.model_path)?);
-        }
+    if !cli.use_raw_onnx_agent {
+        println!(
+            "MCTS config: n={:?}, k={:?}, c_puct={}, noise_epsilon={}",
+            az_config.mcts_n, az_config.mcts_k, az_config.mcts_c_puct, az_config.mcts_noise_epsilon
+        );
     }
 
-    let agent_p2: &mut dyn ActionSelector = match (&mut onnx_p2, &mut random_p2) {
-        (Some(ref mut a), _) => a,
-        (_, Some(ref mut a)) => a,
-        _ => unreachable!(),
-    };
+    let mut agent_p1 = create_agent(cli.use_raw_onnx_agent, None, &cli.model_path, &az_config)?;
+    let mut agent_p2 = create_agent(
+        cli.use_raw_onnx_agent,
+        cli.p2.as_deref(),
+        &cli.model_path,
+        &az_config,
+    )?;
 
     println!("Model loaded.");
 
@@ -107,9 +173,13 @@ fn main() -> Result<()> {
     let start = Instant::now();
 
     for game_idx in 0..cli.num_games {
+        // Reset visited states between games for AlphaZero agents
+        agent_p1.reset_game();
+        agent_p2.reset_game();
+
         let result = play_game(
-            &mut agent_p1,
-            agent_p2,
+            agent_p1.as_mut(),
+            agent_p2.as_mut(),
             q.board_size,
             q.max_walls,
             q.max_steps as i32,

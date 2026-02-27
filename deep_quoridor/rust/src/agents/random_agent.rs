@@ -1,9 +1,9 @@
 //! Random agent — picks a valid action uniformly at random.
 
-use ndarray::{ArrayView1, ArrayView2};
 use rand::Rng;
 
 use crate::agents::ActionSelector;
+use crate::game_state::GameState;
 
 /// An agent that selects a random valid action.
 pub struct RandomAgent {
@@ -27,11 +27,7 @@ impl Default for RandomAgent {
 impl ActionSelector for RandomAgent {
     fn select_action(
         &mut self,
-        _grid: &ArrayView2<i8>,
-        _player_positions: &ArrayView2<i32>,
-        _walls_remaining: &ArrayView1<i32>,
-        _goal_rows: &ArrayView1<i32>,
-        _current_player: i32,
+        _state: &GameState,
         action_mask: &[bool],
     ) -> anyhow::Result<(usize, Vec<f32>)> {
         // Collect valid action indices
@@ -60,28 +56,15 @@ impl ActionSelector for RandomAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
 
     #[test]
     fn test_random_agent_picks_valid_action() {
         let mut agent = RandomAgent::new();
-        let grid = Array2::<i8>::zeros((13, 13));
-        let positions = Array2::<i32>::zeros((2, 2));
-        let walls = Array1::<i32>::zeros(2);
-        let goals = Array1::<i32>::zeros(2);
+        let state = GameState::new(5, 3);
         let mask = vec![false, false, true, false, true, true];
 
         for _ in 0..50 {
-            let (idx, _) = agent
-                .select_action(
-                    &grid.view(),
-                    &positions.view(),
-                    &walls.view(),
-                    &goals.view(),
-                    0,
-                    &mask,
-                )
-                .unwrap();
+            let (idx, _) = agent.select_action(&state, &mask).unwrap();
             assert!(
                 mask[idx],
                 "RandomAgent picked an invalid action index {}",
@@ -93,22 +76,10 @@ mod tests {
     #[test]
     fn test_random_agent_policy_sums_to_one() {
         let mut agent = RandomAgent::new();
-        let grid = Array2::<i8>::zeros((13, 13));
-        let positions = Array2::<i32>::zeros((2, 2));
-        let walls = Array1::<i32>::zeros(2);
-        let goals = Array1::<i32>::zeros(2);
+        let state = GameState::new(5, 3);
         let mask = vec![false, true, true, false, true];
 
-        let (_, policy) = agent
-            .select_action(
-                &grid.view(),
-                &positions.view(),
-                &walls.view(),
-                &goals.view(),
-                0,
-                &mask,
-            )
-            .unwrap();
+        let (_, policy) = agent.select_action(&state, &mask).unwrap();
 
         let sum: f32 = policy.iter().sum();
         assert!((sum - 1.0).abs() < 1e-6);
@@ -120,20 +91,10 @@ mod tests {
     #[test]
     fn test_random_agent_no_valid_actions_fails() {
         let mut agent = RandomAgent::new();
-        let grid = Array2::<i8>::zeros((13, 13));
-        let positions = Array2::<i32>::zeros((2, 2));
-        let walls = Array1::<i32>::zeros(2);
-        let goals = Array1::<i32>::zeros(2);
+        let state = GameState::new(5, 3);
         let mask = vec![false, false, false];
 
-        let result = agent.select_action(
-            &grid.view(),
-            &positions.view(),
-            &walls.view(),
-            &goals.view(),
-            0,
-            &mask,
-        );
+        let result = agent.select_action(&state, &mask);
         assert!(result.is_err());
     }
 }

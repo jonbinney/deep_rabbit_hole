@@ -8,11 +8,10 @@
 use ndarray::Array3;
 
 use crate::actions::{
-    action_index_to_action, compute_full_action_mask, policy_size, ACTION_MOVE,
-    ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+    action_index_to_action, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
 };
 use crate::agents::ActionSelector;
-use crate::game_state::{apply_action, check_win, create_initial_state};
+use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
@@ -153,38 +152,35 @@ pub fn play_game(
     max_steps: i32,
     trace: bool,
 ) -> anyhow::Result<GameResult> {
-    let (mut grid, mut player_positions, mut walls_remaining, goal_rows) =
-        create_initial_state(board_size, max_walls);
-
-    let total_actions = policy_size(board_size);
+    let mut state = GameState::new(board_size, max_walls);
 
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
-    let mut current_player: i32 = 0;
     let mut winner: Option<i32> = None;
 
     for step in 0..max_steps {
-        // Possibly rotated copies for Player 1
-        let (work_grid, work_positions, work_goals);
+        let current_player = state.current_player;
+
+        // Create a working state (rotated for Player 1)
+        let work_state: GameState;
         if current_player == 1 {
-            work_grid = rotate_grid_180(&grid.view());
-            work_positions = rotate_player_positions(&player_positions.view(), board_size);
-            work_goals = rotate_goal_rows(&goal_rows.view());
+            let work_grid = rotate_grid_180(&state.grid());
+            let work_positions = rotate_player_positions(&state.player_positions(), board_size);
+            let work_goals = rotate_goal_rows(&state.goal_rows());
+            work_state = GameState {
+                grid: work_grid,
+                player_positions: work_positions,
+                walls_remaining: state.walls_remaining.clone(),
+                goal_rows: work_goals,
+                current_player,
+                board_size,
+                completed_steps: state.completed_steps,
+            };
         } else {
-            work_grid = grid.clone();
-            work_positions = player_positions.clone();
-            work_goals = goal_rows.clone();
+            work_state = state.clone();
         }
 
         // Compute action mask in the working (possibly rotated) frame
-        let mut mask = vec![false; total_actions];
-        compute_full_action_mask(
-            &work_grid.view(),
-            &work_positions.view(),
-            &walls_remaining.view(),
-            &work_goals.view(),
-            current_player,
-            &mut mask,
-        );
+        let mask = work_state.get_action_mask();
 
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
         if !mask.iter().any(|&m| m) {
@@ -193,12 +189,7 @@ pub fn play_game(
         }
 
         // Build ResNet input from the working state
-        let resnet_input = grid_game_state_to_resnet_input(
-            &work_grid.view(),
-            &work_positions.view(),
-            &walls_remaining.view(),
-            current_player,
-        );
+        let resnet_input = grid_game_state_to_resnet_input(&work_state);
 
         // Ask the appropriate agent for action
         let agent: &mut dyn ActionSelector = if current_player == 0 {
@@ -206,14 +197,7 @@ pub fn play_game(
         } else {
             agent_p2
         };
-        let (action_idx, policy) = agent.select_action(
-            &work_grid.view(),
-            &work_positions.view(),
-            &walls_remaining.view(),
-            &work_goals.view(),
-            current_player,
-            &mask,
-        )?;
+        let (action_idx, policy) = agent.select_action(&work_state, &mask)?;
 
         // Store replay item (in rotated frame — the frame the model saw)
         let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
@@ -241,14 +225,7 @@ pub fn play_game(
         };
 
         // Apply action on the ORIGINAL game state
-        let action_arr = ndarray::Array1::from(vec![a_row, a_col, a_type]);
-        apply_action(
-            &mut grid.view_mut(),
-            &mut player_positions.view_mut(),
-            &mut walls_remaining.view_mut(),
-            current_player,
-            &action_arr.view(),
-        );
+        state.step([a_row, a_col, a_type]);
 
         if trace {
             let player_label = if current_player == 0 { "P1" } else { "P2" };
@@ -261,16 +238,16 @@ pub fn play_game(
             print!(
                 "{}\n",
                 display_board(
-                    &grid.view(),
-                    &player_positions.view(),
-                    &walls_remaining.view(),
+                    &state.grid(),
+                    &state.player_positions(),
+                    &state.walls_remaining(),
                     board_size
                 ),
             );
         }
 
-        // Check win
-        if check_win(&player_positions.view(), &goal_rows.view(), current_player) {
+        // Check win (current_player already switched after step, so check previous player)
+        if state.check_win(current_player) {
             winner = Some(current_player);
             // Backfill values: +1 for winner, -1 for loser
             for item in replay_items.iter_mut() {
@@ -286,9 +263,6 @@ pub fn play_game(
                 replay_items,
             });
         }
-
-        // Alternate players
-        current_player = 1 - current_player;
     }
 
     // Truncated — values stay 0.0
@@ -302,7 +276,7 @@ pub fn play_game(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{ArrayView1, ArrayView2};
+    use crate::actions::policy_size;
 
     /// A mock agent that always picks the first valid action.
     struct FirstValidAgent;
@@ -310,11 +284,7 @@ mod tests {
     impl ActionSelector for FirstValidAgent {
         fn select_action(
             &mut self,
-            _grid: &ArrayView2<i8>,
-            _player_positions: &ArrayView2<i32>,
-            _walls_remaining: &ArrayView1<i32>,
-            _goal_rows: &ArrayView1<i32>,
-            _current_player: i32,
+            _state: &GameState,
             action_mask: &[bool],
         ) -> anyhow::Result<(usize, Vec<f32>)> {
             let idx = action_mask
