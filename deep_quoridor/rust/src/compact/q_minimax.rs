@@ -170,15 +170,8 @@ fn minimax(
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
-    transposition_table: Option<Arc<DashMap<Vec<u8>, TranspositionEntry>>>,
+    transposition_table: Arc<DashMap<Vec<u8>, TranspositionEntry>>,
 ) -> f32 {
-    // Check transposition table for cached result
-    if let Some(ref table) = transposition_table {
-        if let Some(entry) = table.get(data) {
-            return entry.best_value;
-        }
-    }
-
     let opponent = 1 - current_player;
 
     // We're checking for the player that just finished their move.
@@ -265,22 +258,20 @@ fn minimax(
     }
 
     // Store result in transposition table
-    if let Some(ref table) = transposition_table {
-        let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
-            .into_iter()
-            .map(|(r, c, t, v)| ((r, c, t), v))
-            .unzip();
+    let (actions_vec, values_vec): (Vec<(usize, usize, usize)>, Vec<f32>) = action_values
+        .into_iter()
+        .map(|(r, c, t, v)| ((r, c, t), v))
+        .unzip();
 
-        table.insert(
-            data.to_vec(),
-            TranspositionEntry {
-                agent_player,
-                actions: actions_vec,
-                values: values_vec,
-                best_value,
-            },
-        );
-    }
+    transposition_table.insert(
+        data.to_vec(),
+        TranspositionEntry {
+            agent_player,
+            actions: actions_vec,
+            values: values_vec,
+            best_value,
+        },
+    );
 
     best_value
 }
@@ -293,26 +284,20 @@ pub fn evaluate_actions(
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
-    enable_logging: bool,
 ) -> (
     Vec<(usize, usize, usize)>,
     Vec<f32>,
-    Option<DashMap<Vec<u8>, TranspositionEntry>>,
+    DashMap<Vec<u8>, TranspositionEntry>,
 ) {
     let current_player = mechanics.repr().get_current_player(data);
 
     // Sample actions
     let actions = sample_actions(mechanics, data, branching_factor);
     if actions.is_empty() {
-        return (Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), DashMap::new());
     }
 
-    // Create transposition table if needed
-    let transposition_table = if enable_logging {
-        Some(Arc::new(DashMap::new()))
-    } else {
-        None
-    };
+    let transposition_table = Arc::new(DashMap::new());
 
     // Evaluate actions in parallel
     let values: Vec<f32> = actions
@@ -355,11 +340,9 @@ pub fn evaluate_actions(
         .collect();
 
     // Extract transposition table
-    let result_table = transposition_table.map(|table| {
-        Arc::try_unwrap(table)
-            .ok()
-            .expect("transposition_table Arc should have no other references")
-    });
+    let result_table = Arc::try_unwrap(transposition_table)
+        .ok()
+        .expect("transposition_table Arc should have no other references");
 
     (actions, values, result_table)
 }
@@ -376,11 +359,10 @@ mod tests {
 
         // Evaluate actions
         let (actions, values, _logs) = evaluate_actions(
-            &mechanics, &data, 6,     // max_depth
-            5,     // branching_factor
-            0.95,  // discount_factor
-            1,     // heuristic
-            false, // enable_logging
+            &mechanics, &data, 6,    // max_depth
+            5,    // branching_factor
+            0.95, // discount_factor
+            1,    // heuristic
         );
 
         // Should have some actions
@@ -411,7 +393,7 @@ mod tests {
         mechanics.switch_player(&mut data);
 
         // P2 can win in 1 more moves
-        let (_, values, _) = evaluate_actions(&mechanics, &data, 1, 999, 1.0, 0, false);
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 1, 999, 1.0, 0);
         assert!(
             values.contains(&WINNING_REWARD),
             "Minimax failed to find viable win in one move"
@@ -430,14 +412,14 @@ mod tests {
         mechanics.switch_player(&mut data);
 
         // P2 can win in 3 more moves
-        let (_, values, _) = evaluate_actions(&mechanics, &data, 3, 999, 1.0, 0, false);
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 3, 999, 1.0, 0);
         assert!(
             values.contains(&WINNING_REWARD),
             "Minimax failed to find viable win"
         );
 
         // P2 cannot win in 2 more moves.
-        let (_, values, _) = evaluate_actions(&mechanics, &data, 2, 999, 1.0, 0, false);
+        let (_, values, _) = evaluate_actions(&mechanics, &data, 2, 999, 1.0, 0);
         assert!(
             !values.contains(&WINNING_REWARD),
             "Minimax foud a win where there shouldn't be one",

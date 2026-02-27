@@ -359,7 +359,6 @@ fn q_evaluate_actions<'py>(
         branching_factor,
         discount_factor,
         heuristic,
-        false, // don't enable logging
     );
 
     // Convert actions back to numpy format
@@ -380,7 +379,98 @@ fn q_evaluate_actions<'py>(
     ))
 }
 
-/// Write QBitRepr-based log entries to a SQLite database
+/// Look up a game state in a pre-computed policy database.
+///
+/// Converts the grid-based game state to QBitRepr packed bytes, then queries
+/// the SQLite policy DB. Returns (actions, values) if found, or None.
+#[cfg(feature = "python")]
+#[pyfunction]
+fn policy_db_lookup<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    current_player: i32,
+    completed_steps: i32,
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+    db_path: &str,
+) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)>> {
+    use compact::q_game_mechanics::QGameMechanics;
+    use rusqlite::Connection;
+    use std::path::Path;
+
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
+
+    // Convert game state to QBitRepr format
+    let mut data = mechanics.repr().create_data();
+    mechanics.repr().from_game_state(
+        &mut data,
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        current_player,
+        completed_steps,
+    );
+    mechanics.print(&data);
+    println!(" ");
+
+    // Open the database and query
+    let conn = Connection::open_with_flags(
+        Path::new(db_path),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
+
+    let mut stmt = conn
+        .prepare_cached("SELECT num_actions, actions, action_values FROM policy WHERE state = ?1")
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("SQL prepare: {e}")))?;
+
+    let result = stmt.query_row(rusqlite::params![data], |row| {
+        let num_actions: i32 = row.get(0)?;
+        let actions_blob: Vec<u8> = row.get(1)?;
+        let values_blob: Vec<u8> = row.get(2)?;
+        Ok((num_actions, actions_blob, values_blob))
+    });
+
+    match result {
+        Ok((num_actions, actions_blob, values_blob)) => {
+            let n = num_actions as usize;
+
+            // Decode actions: each is 3 x u32 little-endian
+            let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
+            for i in 0..n {
+                let offset = i * 12;
+                let r = u32::from_le_bytes(actions_blob[offset..offset + 4].try_into().unwrap());
+                let c =
+                    u32::from_le_bytes(actions_blob[offset + 4..offset + 8].try_into().unwrap());
+                let t =
+                    u32::from_le_bytes(actions_blob[offset + 8..offset + 12].try_into().unwrap());
+                actions_array[[i, 0]] = r as i32;
+                actions_array[[i, 1]] = c as i32;
+                actions_array[[i, 2]] = t as i32;
+            }
+
+            // Decode values: each is f32 little-endian
+            let mut values_array = ndarray::Array1::<f32>::zeros(n);
+            for i in 0..n {
+                let offset = i * 4;
+                values_array[i] =
+                    f32::from_le_bytes(values_blob[offset..offset + 4].try_into().unwrap());
+            }
+
+            Ok(Some((
+                PyArray2::from_owned_array_bound(py, actions_array),
+                numpy::PyArray1::from_owned_array_bound(py, values_array),
+            )))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "DB query error: {e}"
+        ))),
+    }
+}
 
 /// A Python module implemented in Rust.
 #[cfg(feature = "python")]
@@ -413,6 +503,9 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
     m.add_function(wrap_pyfunction!(q_evaluate_actions, m)?)?;
+
+    // Policy DB lookup
+    m.add_function(wrap_pyfunction!(policy_db_lookup, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;

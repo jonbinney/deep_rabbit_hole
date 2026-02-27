@@ -195,7 +195,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.branching_factor,
         args.discount_factor,
         args.heuristic,
-        true, // enable logging
     );
     let eval_elapsed = eval_start.elapsed();
     println!("  evaluate_actions took {:.3}s", eval_elapsed.as_secs_f64());
