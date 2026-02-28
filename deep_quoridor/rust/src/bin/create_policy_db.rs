@@ -152,7 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Set number of threads for Rayon
-    env::set_var("RAYON_NUM_THREADS", args.num_threads.to_string());
+    unsafe {
+        env::set_var("RAYON_NUM_THREADS", args.num_threads.to_string());
+    }
 
     println!("Initializing Quoridor game...");
     println!("  Board size: {}x{}", args.board_size, args.board_size);
@@ -183,7 +185,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Walls remaining: [{}, {}]", p0_walls, p1_walls);
     println!("  Current player: {}", current_player);
 
-    // Call q_minimax to evaluate actions and generate log entries
     println!("\nEvaluating actions and creating policy database...");
     println!("  Output file: {}", args.output);
 
@@ -200,32 +201,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  evaluate_actions took {:.3}s", eval_elapsed.as_secs_f64());
 
     // Write log entries to SQLite database
-    if let Some(entries) = log_entries {
-        let num_entries = entries.len();
-        println!("  Collected {} log entries", num_entries);
+    let num_entries = log_entries.len();
+    println!("  Collected {} log entries", num_entries);
 
-        let write_start = Instant::now();
-        save_policy_to_sqlite(
-            entries,
-            &args.output,
-            args.board_size,
-            args.max_steps,
-            args.max_walls,
-        )?;
-        let write_elapsed = write_start.elapsed();
-        println!(
-            "  Writing database took {:.3}s",
-            write_elapsed.as_secs_f64()
-        );
+    let write_start = Instant::now();
+    save_policy_to_sqlite(
+        log_entries,
+        &args.output,
+        args.board_size,
+        args.max_steps,
+        args.max_walls,
+    )?;
+    let write_elapsed = write_start.elapsed();
+    println!(
+        "  Writing database took {:.3}s",
+        write_elapsed.as_secs_f64()
+    );
 
-        println!(
-            "\n✓ Successfully created policy database with {} entries",
-            num_entries
-        );
-        println!("  Saved to: {}", args.output);
-    } else {
-        println!("\n✗ No log entries were generated");
-    }
+    println!(
+        "\n✓ Successfully created policy database with {} entries",
+        num_entries
+    );
+    println!("  Saved to: {}", args.output);
 
     Ok(())
 }

@@ -14,9 +14,8 @@ pub const WINNING_REWARD: f32 = 1e6;
 #[allow(dead_code)]
 pub struct TranspositionEntry {
     pub agent_player: usize,
-    pub actions: Vec<(usize, usize, usize)>, // (row, col, action_type) where type: 0=move, 1/2=wall
+    pub actions: Vec<(usize, usize, usize)>,
     pub values: Vec<f32>,
-    pub best_value: f32,
 }
 
 /// Compute distance to goal for a player using QBitRepr state
@@ -269,7 +268,6 @@ fn minimax(
             agent_player,
             actions: actions_vec,
             values: values_vec,
-            best_value,
         },
     );
 
@@ -290,6 +288,7 @@ pub fn evaluate_actions(
     DashMap<Vec<u8>, TranspositionEntry>,
 ) {
     let current_player = mechanics.repr().get_current_player(data);
+    let agent_player = current_player;
 
     // Sample actions
     let actions = sample_actions(mechanics, data, branching_factor);
@@ -328,7 +327,7 @@ pub fn evaluate_actions(
                 mechanics,
                 &new_data,
                 1 - current_player,
-                current_player,
+                agent_player,
                 1, // search_depth
                 max_search_depth,
                 branching_factor,
@@ -343,6 +342,15 @@ pub fn evaluate_actions(
     let result_table = Arc::try_unwrap(transposition_table)
         .ok()
         .expect("transposition_table Arc should have no other references");
+
+    result_table.insert(
+        data.to_vec(),
+        TranspositionEntry {
+            agent_player,
+            actions: actions.clone(),
+            values: values.clone(),
+        },
+    );
 
     (actions, values, result_table)
 }
