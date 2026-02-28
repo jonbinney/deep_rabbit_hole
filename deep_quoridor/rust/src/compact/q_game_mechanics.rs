@@ -2,7 +2,29 @@
 ///
 /// This provides efficient game state operations by working directly with
 /// the bit-packed representation instead of converting to/from grid arrays.
+use std::collections::VecDeque;
+
 use super::q_bit_repr::{QBitRepr, WALL_HORIZONTAL, WALL_VERTICAL};
+
+/// Reusable buffer for BFS operations, avoiding repeated heap allocations.
+pub struct BfsBuffer {
+    pub visited: Vec<bool>,
+    pub queue: VecDeque<(usize, usize)>,
+}
+
+impl BfsBuffer {
+    pub fn new(board_size: usize) -> Self {
+        Self {
+            visited: vec![false; board_size * board_size],
+            queue: VecDeque::with_capacity(board_size * board_size),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.visited.fill(false);
+        self.queue.clear();
+    }
+}
 
 /// Game mechanics for Quoridor using bit-packed state representation
 #[derive(Clone, Debug)]
@@ -240,8 +262,9 @@ impl QGameMechanics {
         false
     }
 
-    /// Check if a player can reach their goal row using BFS
-    fn can_reach_goal(&self, data: &[u8], player: usize) -> bool {
+    /// Check if a player can reach their goal row using BFS.
+    /// Uses a reusable BfsBuffer to avoid allocations.
+    fn can_reach_goal(&self, data: &[u8], player: usize, buf: &mut BfsBuffer) -> bool {
         let board_size = self.repr.board_size();
         let goal_row = self.goal_rows[player];
 
@@ -253,14 +276,13 @@ impl QGameMechanics {
         }
 
         // BFS to find path to goal row
-        let mut visited = vec![false; board_size * board_size];
-        let mut queue = std::collections::VecDeque::new();
+        buf.clear();
 
         let start_idx = start_row * board_size + start_col;
-        queue.push_back((start_row, start_col));
-        visited[start_idx] = true;
+        buf.queue.push_back((start_row, start_col));
+        buf.visited[start_idx] = true;
 
-        while let Some((row, col)) = queue.pop_front() {
+        while let Some((row, col)) = buf.queue.pop_front() {
             // Check if we reached the goal row
             if row == goal_row {
                 return true;
@@ -283,7 +305,7 @@ impl QGameMechanics {
                 let new_idx = new_row * board_size + new_col;
 
                 // Skip if already visited
-                if visited[new_idx] {
+                if buf.visited[new_idx] {
                     continue;
                 }
 
@@ -293,8 +315,8 @@ impl QGameMechanics {
                 }
 
                 // Mark as visited and add to queue
-                visited[new_idx] = true;
-                queue.push_back((new_row, new_col));
+                buf.visited[new_idx] = true;
+                buf.queue.push_back((new_row, new_col));
             }
         }
 
@@ -302,31 +324,27 @@ impl QGameMechanics {
         false
     }
 
-    /// Returns true if the wall is valid
+    /// Returns true if the wall is valid.
+    /// Temporarily mutates `data` in-place (places then removes the wall) to avoid cloning.
     pub fn is_wall_placement_valid(
         &self,
-        data: &[u8],
+        data: &mut [u8],
         row: usize,
         col: usize,
         orientation: usize,
+        buf: &mut BfsBuffer,
     ) -> bool {
         // First check if placement is physically possible
         if !self.is_wall_placement_free(data, row, col, orientation) {
             return false;
         }
 
-        // Temporarily place the wall
-        let mut temp_data = data.to_vec();
-        self.place_wall(&mut temp_data, row, col, orientation);
+        // Temporarily place the wall, check reachability, then remove it
+        self.place_wall(data, row, col, orientation);
+        let valid = self.can_reach_goal(data, 0, buf) && self.can_reach_goal(data, 1, buf);
+        self.remove_wall(data, row, col, orientation);
 
-        // Check both players can reach their goals
-        for player in 0..2 {
-            if !self.can_reach_goal(&temp_data, player) {
-                return false;
-            }
-        }
-
-        true
+        valid
     }
 
     /// Execute a move action
@@ -376,7 +394,7 @@ impl QGameMechanics {
     }
 
     /// Get all valid wall placements for the current player
-    pub fn get_valid_wall_placements(&self, data: &[u8]) -> Vec<(usize, usize, usize)> {
+    pub fn get_valid_wall_placements(&self, data: &mut [u8]) -> Vec<(usize, usize, usize)> {
         let current_player = self.repr.get_current_player(data);
 
         // Check if player has walls remaining
@@ -388,11 +406,12 @@ impl QGameMechanics {
 
         let board_size = self.repr.board_size();
         let mut valid_placements = Vec::new();
+        let mut buf = BfsBuffer::new(board_size);
 
         for row in 0..board_size - 1 {
             for col in 0..board_size - 1 {
                 for orientation in [WALL_VERTICAL, WALL_HORIZONTAL] {
-                    if self.is_wall_placement_valid(data, row, col, orientation) {
+                    if self.is_wall_placement_valid(data, row, col, orientation, &mut buf) {
                         valid_placements.push((row, col, orientation));
                     }
                 }
@@ -681,7 +700,8 @@ mod tests {
         mechanics.place_wall(&mut state, 2, 2, WALL_VERTICAL);
 
         // Verify pathfinding still works with one gap open
-        let is_valid = mechanics.is_wall_placement_valid(&state, 2, 1, WALL_VERTICAL);
+        let mut buf = BfsBuffer::new(9);
+        let is_valid = mechanics.is_wall_placement_valid(&mut state, 2, 1, WALL_VERTICAL, &mut buf);
         // This should be invalid if it blocks the only remaining path
         // (depends on whether there's still a way around)
 
@@ -705,7 +725,8 @@ mod tests {
         }
 
         // This wall should still be valid because players can go around via the sides
-        let is_valid = mechanics.is_wall_placement_valid(&state, 4, 7, WALL_HORIZONTAL);
+        let mut buf = BfsBuffer::new(9);
+        let is_valid = mechanics.is_wall_placement_valid(&mut state, 4, 7, WALL_HORIZONTAL, &mut buf);
         assert!(
             is_valid,
             "Wall should be valid as players can still reach goals"
@@ -716,14 +737,15 @@ mod tests {
     fn test_can_reach_goal_direct() {
         let mechanics = QGameMechanics::new(9, 10, 100);
         let state = mechanics.create_initial_state();
+        let mut buf = BfsBuffer::new(9);
 
         // Both players should be able to reach their goals in initial state
         assert!(
-            mechanics.can_reach_goal(&state, 0),
+            mechanics.can_reach_goal(&state, 0, &mut buf),
             "Player 1 should reach goal"
         );
         assert!(
-            mechanics.can_reach_goal(&state, 1),
+            mechanics.can_reach_goal(&state, 1, &mut buf),
             "Player 2 should reach goal"
         );
     }
@@ -945,13 +967,14 @@ mod tests {
 
     /// Test helper to verify wall placements
     fn test_wall_placements(board_str: &str) {
-        let (mechanics, state, _, expected_forbidden) = parse_board(board_str);
+        let (mechanics, mut state, _, expected_forbidden) = parse_board(board_str);
 
         let mut actual_forbidden = Vec::new();
+        let mut buf = BfsBuffer::new(mechanics.repr().board_size());
         for row in 0..mechanics.repr().board_size() - 1 {
             for col in 0..mechanics.repr().board_size() - 1 {
                 for orientation in [WALL_VERTICAL, WALL_HORIZONTAL] {
-                    if !mechanics.is_wall_placement_valid(&state, row, col, orientation) {
+                    if !mechanics.is_wall_placement_valid(&mut state, row, col, orientation, &mut buf) {
                         actual_forbidden.push((row, col, orientation));
                     }
                 }

@@ -4,7 +4,8 @@ use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::sync::Arc;
 
-use super::q_game_mechanics::QGameMechanics;
+use super::q_bit_repr::{WALL_HORIZONTAL, WALL_VERTICAL};
+use super::q_game_mechanics::{BfsBuffer, QGameMechanics};
 
 pub const WINNING_REWARD: f32 = 1e6;
 
@@ -16,6 +17,7 @@ pub struct TranspositionEntry {
     pub agent_player: usize,
     pub actions: Vec<(usize, usize, usize)>,
     pub values: Vec<f32>,
+    pub best_value: f32,
 }
 
 /// Compute distance to goal for a player using QBitRepr state
@@ -123,15 +125,17 @@ fn compute_heuristic(
     distance_reward + wall_reward
 }
 
-/// Sample actions for QBitRepr-based minimax
+/// Sample actions for QBitRepr-based minimax.
+/// Uses lazy wall generation: only validates wall candidates until enough are found,
+/// rather than validating all possible wall placements upfront.
 fn sample_actions(
     mechanics: &QGameMechanics,
-    data: &[u8],
+    data: &mut [u8],
     branching_factor: usize,
 ) -> Vec<(usize, usize, usize)> {
     let mut rng = rand::thread_rng();
 
-    // Get valid moves (type 0)
+    // Get valid moves (type 2 = pawn move)
     let moves = mechanics.get_valid_moves(data);
     let mut actions: Vec<(usize, usize, usize)> =
         moves.into_iter().map(|(row, col)| (row, col, 2)).collect();
@@ -142,26 +146,45 @@ fn sample_actions(
         return actions;
     }
 
-    // Get valid wall placements and convert to action format
-    // wall orientation 0 -> action_type 1 (vertical wall)
-    // wall orientation 1 -> action_type 2 (horizontal wall)
-    let mut walls = mechanics.get_valid_wall_placements(data);
-    walls.shuffle(&mut rng);
+    // Check if the current player has walls remaining
+    let current_player = mechanics.repr().get_current_player(data);
+    let walls_remaining = mechanics.repr().get_walls_remaining(data, current_player);
+    if walls_remaining == 0 {
+        return actions;
+    }
 
-    // Add walls until we reach branching factor
+    // Lazy wall generation: build candidate list, shuffle, then validate one-by-one
+    let board_size = mechanics.repr().board_size();
+    let mut candidates: Vec<(usize, usize, usize)> = Vec::new();
+    for row in 0..board_size - 1 {
+        for col in 0..board_size - 1 {
+            candidates.push((row, col, WALL_VERTICAL));
+            candidates.push((row, col, WALL_HORIZONTAL));
+        }
+    }
+    candidates.shuffle(&mut rng);
+
     let num_walls_needed = branching_factor - actions.len();
-    for (row, col, orientation) in walls.into_iter().take(num_walls_needed) {
-        actions.push((row, col, orientation));
+    let mut walls_found = 0;
+    let mut buf = BfsBuffer::new(board_size);
+    for (row, col, orientation) in candidates {
+        if mechanics.is_wall_placement_valid(data, row, col, orientation, &mut buf) {
+            actions.push((row, col, orientation));
+            walls_found += 1;
+            if walls_found >= num_walls_needed {
+                break;
+            }
+        }
     }
 
     actions
 }
 
-/// QBitRepr-based minimax recursive function
+/// QBitRepr-based minimax recursive function with alpha-beta pruning
 #[allow(clippy::too_many_arguments)]
 fn minimax(
     mechanics: &QGameMechanics,
-    data: &[u8],
+    data: &mut [u8],
     current_player: usize,
     agent_player: usize,
     search_depth: usize,
@@ -169,8 +192,15 @@ fn minimax(
     branching_factor: usize,
     discount_factor: f32,
     heuristic: i32,
+    mut alpha: f32,
+    mut beta: f32,
     transposition_table: Arc<DashMap<Vec<u8>, TranspositionEntry>>,
 ) -> f32 {
+    // Check transposition table for cached result
+    if let Some(entry) = transposition_table.get(data) {
+        return entry.best_value;
+    }
+
     let opponent = 1 - current_player;
 
     // We're checking for the player that just finished their move.
@@ -226,10 +256,10 @@ fn minimax(
         // Switch player
         mechanics.switch_player(&mut new_data);
 
-        // Recursive call
+        // Recursive call with alpha-beta bounds
         let value = minimax(
             mechanics,
-            &new_data,
+            &mut new_data,
             opponent,
             agent_player,
             search_depth + 1,
@@ -237,6 +267,8 @@ fn minimax(
             branching_factor,
             discount_factor,
             heuristic,
+            alpha,
+            beta,
             transposition_table.clone(),
         );
 
@@ -245,12 +277,14 @@ fn minimax(
 
         if is_maximizing {
             best_value = best_value.max(discounted_value);
-            if best_value == WINNING_REWARD {
+            alpha = alpha.max(best_value);
+            if alpha >= beta {
                 break;
             }
         } else {
             best_value = best_value.min(discounted_value);
-            if best_value == -WINNING_REWARD {
+            beta = beta.min(best_value);
+            if alpha >= beta {
                 break;
             }
         }
@@ -268,6 +302,7 @@ fn minimax(
             agent_player,
             actions: actions_vec,
             values: values_vec,
+            best_value,
         },
     );
 
@@ -290,8 +325,9 @@ pub fn evaluate_actions(
     let current_player = mechanics.repr().get_current_player(data);
     let agent_player = current_player;
 
-    // Sample actions
-    let actions = sample_actions(mechanics, data, branching_factor);
+    // Sample actions (needs mutable data for in-place wall validation)
+    let mut data_mut = data.to_vec();
+    let actions = sample_actions(mechanics, &mut data_mut, branching_factor);
     if actions.is_empty() {
         return (Vec::new(), Vec::new(), DashMap::new());
     }
@@ -322,10 +358,10 @@ pub fn evaluate_actions(
             // Switch player
             mechanics.switch_player(&mut new_data);
 
-            // Recursive evaluation
+            // Recursive evaluation with full alpha-beta window
             minimax(
                 mechanics,
-                &new_data,
+                &mut new_data,
                 1 - current_player,
                 agent_player,
                 1, // search_depth
@@ -333,6 +369,8 @@ pub fn evaluate_actions(
                 branching_factor,
                 discount_factor,
                 heuristic,
+                -WINNING_REWARD * 2.0, // alpha
+                WINNING_REWARD * 2.0,  // beta
                 transposition_table.clone(),
             )
         })
@@ -343,12 +381,14 @@ pub fn evaluate_actions(
         .ok()
         .expect("transposition_table Arc should have no other references");
 
+    let best_value = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     result_table.insert(
         data.to_vec(),
         TranspositionEntry {
             agent_player,
             actions: actions.clone(),
             values: values.clone(),
+            best_value,
         },
     );
 
@@ -452,9 +492,9 @@ mod tests {
     #[test]
     fn test_sample_actions() {
         let mechanics = QGameMechanics::new(5, 5, 100);
-        let data = mechanics.create_initial_state();
+        let mut data = mechanics.create_initial_state();
 
-        let actions = sample_actions(&mechanics, &data, 10);
+        let actions = sample_actions(&mechanics, &mut data, 10);
 
         assert!(!actions.is_empty(), "Should have at least one action");
         assert!(actions.len() <= 10, "Should respect branching factor");
