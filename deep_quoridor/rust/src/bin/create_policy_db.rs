@@ -3,9 +3,8 @@
 
 use clap::Parser;
 use dashmap::DashMap;
-use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
+use quoridor_rs::compact::{policy_db, q_game_mechanics::QGameMechanics};
 use rusqlite::{params, Connection};
-use std::env;
 use std::path::Path;
 use std::time::Instant;
 
@@ -28,22 +27,6 @@ struct Args {
     #[arg(long, default_value_t = 8)]
     max_steps: usize,
 
-    /// How many actions to consider at each minimax stage
-    #[arg(long, default_value_t = 10000)]
-    branching_factor: usize,
-
-    /// Discount factor for future rewards
-    #[arg(long, default_value_t = 1.0)]
-    discount_factor: f32,
-
-    /// Heuristic to use (0=none, 1=distance+walls)
-    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(i32).range(0..=1))]
-    heuristic: i32,
-
-    /// Number of threads to use for computation
-    #[arg(long, default_value_t = 1)]
-    num_threads: usize,
-
     /// Output SQLite database file path
     #[arg(short, long, default_value = "policy_db.sqlite")]
     output: String,
@@ -51,7 +34,7 @@ struct Args {
 
 #[allow(dead_code)]
 pub fn save_policy_to_sqlite(
-    entries: DashMap<Vec<u8>, q_minimax::TranspositionEntry>,
+    entries: DashMap<Vec<u8>, policy_db::TranspositionEntry>,
     filename: &str,
     board_size: usize,
     max_steps: usize,
@@ -60,7 +43,6 @@ pub fn save_policy_to_sqlite(
     let mut conn = Connection::open(Path::new(filename))?;
 
     // Drop existing tables to avoid schema conflicts
-    // This ensures we always have the correct schema for QBitRepr-based data
     conn.execute("DROP TABLE IF EXISTS policy", [])?;
     conn.execute("DROP TABLE IF EXISTS metadata", [])?;
 
@@ -127,10 +109,21 @@ pub fn save_policy_to_sqlite(
                 .flat_map(|&x| (x as u32).to_le_bytes())
                 .collect();
 
-            // Convert values to bytes
-            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
+            // Convert Option<i8> values to f32 for storage.
+            // Values in the transposition table are from the current player's
+            // perspective (negamax). Convert to player 0's perspective for the DB.
+            let p0_factor: f32 = if entry.agent_player == 0 { 1.0 } else { -1.0 };
+            let values_blob: Vec<u8> = entry
+                .action_values
+                .iter()
+                .map(|v| match v {
+                    Some(val) => (*val as f32) * p0_factor,
+                    None => f32::NAN,
+                })
+                .flat_map(|x| x.to_le_bytes())
+                .collect();
 
-            let num_actions = entry.values.len() as i32;
+            let num_actions = entry.action_values.len() as i32;
 
             stmt.execute(params![
                 state_blob,
@@ -151,23 +144,14 @@ pub fn save_policy_to_sqlite(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Set number of threads for Rayon
-    unsafe {
-        env::set_var("RAYON_NUM_THREADS", args.num_threads.to_string());
-    }
-
     println!("Initializing Quoridor game...");
     println!("  Board size: {}x{}", args.board_size, args.board_size);
     println!("  Max walls: {} per player", args.max_walls);
     println!("  Max steps: {}", args.max_steps);
-    println!("  Branching factor: {}", args.branching_factor);
-    println!("  Discount factor: {}", args.discount_factor);
-    println!("  Heuristic: {}", args.heuristic);
-    println!("  Number of threads: {}", args.num_threads);
 
     // Create game mechanics and initial state
     let mechanics = QGameMechanics::new(args.board_size, args.max_walls, args.max_steps);
-    let initial_state = mechanics.create_initial_state();
+    let mut initial_state = mechanics.create_initial_state();
 
     // Print game state info
     let current_player = mechanics.repr().get_current_player(&initial_state);
@@ -185,28 +169,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Walls remaining: [{}, {}]", p0_walls, p1_walls);
     println!("  Current player: {}", current_player);
 
-    println!("\nEvaluating actions and creating policy database...");
+    println!("\nRunning minimax and creating policy database...");
     println!("  Output file: {}", args.output);
 
     let eval_start = Instant::now();
-    let (_actions, _values, log_entries) = q_minimax::evaluate_actions(
-        &mechanics,
-        &initial_state,
-        args.max_steps,
-        args.branching_factor,
-        args.discount_factor,
-        args.heuristic,
-    );
+    let transposition_table = DashMap::new();
+    let value = policy_db::minimax(&mechanics, &mut initial_state, &transposition_table);
     let eval_elapsed = eval_start.elapsed();
-    println!("  evaluate_actions took {:.3}s", eval_elapsed.as_secs_f64());
+    println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
+    println!("  Root value: {:?}", value);
 
-    // Write log entries to SQLite database
-    let num_entries = log_entries.len();
-    println!("  Collected {} log entries", num_entries);
+    // Write transposition table entries to SQLite database
+    let num_entries = transposition_table.len();
+    println!("  Collected {} transposition table entries", num_entries);
 
     let write_start = Instant::now();
     save_policy_to_sqlite(
-        log_entries,
+        transposition_table,
         &args.output,
         args.board_size,
         args.max_steps,
@@ -219,7 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!(
-        "\n✓ Successfully created policy database with {} entries",
+        "\nSuccessfully created policy database with {} entries",
         num_entries
     );
     println!("  Saved to: {}", args.output);
