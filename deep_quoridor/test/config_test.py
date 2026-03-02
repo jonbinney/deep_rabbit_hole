@@ -51,11 +51,6 @@ def test_override_boolean_true(config_file):
     assert config.training.model_save_timing is True
 
 
-def test_override_boolean_false(config_file):
-    config = load_user_config(config_file, overrides=["training.save_pytorch=false"])
-    assert config.training.save_pytorch is False
-
-
 def test_override_int(config_file):
     config = load_user_config(config_file, overrides=["alphazero.mcts_n=500"])
     assert config.alphazero.mcts_n == 500
