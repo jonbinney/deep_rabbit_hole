@@ -1,10 +1,14 @@
 import argparse
 import multiprocessing as mp
+import os
 import time
 from pathlib import Path
 
 from v2 import benchmarks, load_config_and_setup_run, self_play, train
 from v2.common import ShutdownSignal
+
+# Prevents getting messages in the console every few lines telling you to install weave
+os.environ["WANDB_DISABLE_WEAVE"] = "true"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Quoridor agent")
