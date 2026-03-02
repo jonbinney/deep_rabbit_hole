@@ -22,11 +22,16 @@ if __name__ == "__main__":
         help="Configuration overrides (e.g., run_id=my_run alphazero.mcts_n=250)",
     )
     parser.add_argument(
-        "--rust-selfplay",
-        nargs="?",
-        const="auto",
+        "--selfplay-program",
+        choices=["python", "rust"],
+        default="python",
+        help="Select self-play implementation: python (default) or rust",
+    )
+    parser.add_argument(
+        "--rust-selfplay-executable",
+        type=str,
         default=None,
-        help="Use Rust self-play binary. Optionally provide path; default: rust/target/release/selfplay",
+        help="Path to the Rust self-play binary (default: rust/target/release/selfplay)",
     )
 
     args = parser.parse_args()
@@ -39,8 +44,11 @@ if __name__ == "__main__":
 
     # Resolve Rust self-play binary path
     rust_binary = None
-    if args.rust_selfplay is not None:
-        if args.rust_selfplay == "auto":
+    use_rust = args.selfplay_program == "rust"
+    if use_rust:
+        if args.rust_selfplay_executable is not None:
+            rust_binary = args.rust_selfplay_executable
+        else:
             rust_binary = str(
                 Path(__file__).parent.parent
                 / "rust"
@@ -48,8 +56,6 @@ if __name__ == "__main__":
                 / "release"
                 / "selfplay"
             )
-        else:
-            rust_binary = args.rust_selfplay
         if not Path(rust_binary).exists():
             print(f"ERROR: Rust self-play binary not found at {rust_binary}")
             print(
@@ -59,12 +65,13 @@ if __name__ == "__main__":
 
     # Apply overrides: force save_onnx when using Rust self-play
     overrides = args.overrides or []
-    if rust_binary:
+    if use_rust:
         overrides = list(overrides) + ["training.save_onnx=true"]
 
     config = load_config_and_setup_run(args.config_file, runs_dir, overrides=overrides)
 
-    if rust_binary:
+    if use_rust:
+        config.self_play.selfplay_program = "rust"
         config.self_play.rust_selfplay_binary = rust_binary
 
     mp.set_start_method("spawn", force=True)
@@ -81,7 +88,7 @@ if __name__ == "__main__":
     self_play_processes = []
     rust_subprocesses = []
 
-    if rust_binary:
+    if use_rust:
         # Spawn Rust self-play processes in continuous mode
         config_file_path = str(config.paths.config_file)
         for i in range(config.self_play.num_workers):
