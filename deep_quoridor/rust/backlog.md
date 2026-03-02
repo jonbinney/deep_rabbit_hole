@@ -121,6 +121,25 @@ Gradually expand children as visit count increases, rather than expanding all at
 
 ---
 
+## MLP Network Input Support in Rust
+
+**Status:** Not started  
+**Priority:** Medium  
+**Effort:** Medium
+
+The Rust `OnnxEvaluator` currently only produces ResNet-format input (5-channel 3D tensor).
+To support MLP models, it needs a flat 1D input matching Python's `MLPNetwork.game_to_input_array()`.
+
+### Implementation Notes
+- MLP input: `concat(player_board.flatten(), opponent_board.flatten(), old_style_walls.flatten(), [my_walls, opp_walls])`
+- `old_style_walls` is a `(board_size-1, board_size-1, 2)` array — vertical/horizontal wall presence
+- Must reconstruct from the grid by checking `check_wall_cells()` for all possible positions
+- Or, track `old_style_walls` alongside the grid in `GameState` (simpler but more invasive)
+- Thread `NetworkType` from config through `AlphaZeroAgent` → `OnnxEvaluator`
+- `NetworkType` enum and config parsing already added in `selfplay_config.rs`
+
+---
+
 ## MCTS-specific Optimizations
 
 **Status:** Not started  
