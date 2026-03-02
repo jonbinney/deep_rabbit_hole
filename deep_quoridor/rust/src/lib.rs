@@ -460,6 +460,11 @@ fn policy_db_lookup<'py>(
                     f32::from_le_bytes(values_blob[offset..offset + 4].try_into().unwrap());
             }
 
+            // The values in the policy database are always from the starting player's perspective.
+            if current_player == 1 {
+                values_array *= -1.0;
+            }
+
             Ok(Some((
                 PyArray2::from_owned_array_bound(py, actions_array),
                 numpy::PyArray1::from_owned_array_bound(py, values_array),
