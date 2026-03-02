@@ -67,6 +67,8 @@ class SelfPlayConfig(StrictBaseModel):
     num_workers: int
     parallel_games: int
     alphazero: Optional[AlphaZeroSelfPlayConfig] = None
+    program: Literal["python", "rust"] = "python"
+    rust_selfplay_binary: Optional[str] = None
 
 
 class InitialModel(StrictBaseModel):
@@ -163,7 +165,9 @@ class PathsConfig(StrictBaseModel):
     config_file: Path
 
     @classmethod
-    def create(cls, base_dir: str, run_id: str, create_dirs: bool = True) -> "PathsConfig":
+    def create(
+        cls, base_dir: str, run_id: str, create_dirs: bool = True
+    ) -> "PathsConfig":
         run_root = Path(base_dir) / "runs"
         run_dir = run_root / run_id
         config_file = run_dir / "config.yaml"
@@ -175,7 +179,13 @@ class PathsConfig(StrictBaseModel):
         replay_buffers_tmp = replay_buffers_ready / "tmp"
 
         if create_dirs:
-            for path in (models, checkpoints, replay_buffers, replay_buffers_ready, replay_buffers_tmp):
+            for path in (
+                models,
+                checkpoints,
+                replay_buffers,
+                replay_buffers_ready,
+                replay_buffers_tmp,
+            ):
                 path.mkdir(parents=True, exist_ok=True)
 
         return cls(
@@ -194,13 +204,18 @@ class Config(UserConfig):
     paths: PathsConfig
 
     @classmethod
-    def from_user(cls, user: UserConfig, base_dir: str, create_dirs: bool = True) -> "Config":
+    def from_user(
+        cls, user: UserConfig, base_dir: str, create_dirs: bool = True
+    ) -> "Config":
         paths = PathsConfig.create(base_dir, user.run_id, create_dirs=create_dirs)
         return cls(**user.model_dump(), paths=paths)
 
 
 def to_yaml_str_ordered(model: BaseModel) -> str:
-    return yaml.safe_dump(model.model_dump(by_alias=True, exclude_none=True, exclude_unset=True), sort_keys=False)
+    return yaml.safe_dump(
+        model.model_dump(by_alias=True, exclude_none=True, exclude_unset=True),
+        sort_keys=False,
+    )
 
 
 def _merge_dicts(base: dict, override: dict) -> dict:
@@ -281,7 +296,9 @@ def _apply_overrides(data: dict, overrides: list[str]) -> dict:
     """
     for override in overrides:
         if "=" not in override:
-            raise ValueError(f"Invalid override format '{override}', expected 'key=value'")
+            raise ValueError(
+                f"Invalid override format '{override}', expected 'key=value'"
+            )
         key, value = override.split("=", 1)
         parts = key.split(".")
         parsed_value = _parse_override_value(value)
@@ -302,7 +319,10 @@ def load_user_config(file: str, overrides: list[str] | None = None) -> UserConfi
 
 
 def load_config_and_setup_run(
-    file: str, base_dir: str, overrides: list[str] | None = None, create_dirs: bool = True
+    file: str,
+    base_dir: str,
+    overrides: list[str] | None = None,
+    create_dirs: bool = True,
 ) -> Config:
     user_config = load_user_config(file, overrides=overrides)
     config = Config.from_user(user_config, base_dir, create_dirs=create_dirs)

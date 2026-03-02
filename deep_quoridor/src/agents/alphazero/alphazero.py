@@ -11,8 +11,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
-import wandb
-import wandb.wandb_run
 from agents.alphazero.mcts import MCTS, QuoridorKey
 from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from agents.core import TrainableAgent
@@ -20,6 +18,9 @@ from pydantic_yaml import to_yaml_file
 from quoridor import ActionEncoder, MoveAction, construct_game_from_observation
 from utils import Timer, get_initial_random_seed, my_device, resolve_path
 from utils.subargs import SubargsBase
+
+import wandb
+import wandb.wandb_run
 
 
 @dataclass
@@ -232,7 +233,9 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_encoder = ActionEncoder(board_size)
 
         nn_config = NNConfig.from_alphazero_params(params)
-        self.evaluator = NNEvaluator(self.action_encoder, self.device, nn_config, params.max_cache_size)
+        self.evaluator = NNEvaluator(
+            self.action_encoder, self.device, nn_config, params.max_cache_size
+        )
 
         self._fetch_model_from_wandb_and_update_params()
         self._resolve_and_load_model()
@@ -242,7 +245,9 @@ class AlphaZeroAgent(TrainableAgent):
         # Estimate the typical number of valid moves and use that to choose the alpha parameter of dirichlet noise.
         # (see parameters class for more explanation of how to choose alpha)
         if params.mcts_noise_alpha is None:
-            max_valid_wall_actions = 0 if max_walls == 0 else self.action_encoder.num_actions - board_size**2
+            max_valid_wall_actions = (
+                0 if max_walls == 0 else self.action_encoder.num_actions - board_size**2
+            )
             typical_num_valid_actions = float(np.mean([3, max_valid_wall_actions]))
             mcts_noise_alpha = 10.0 / typical_num_valid_actions
         else:
@@ -261,7 +266,10 @@ class AlphaZeroAgent(TrainableAgent):
 
         if params.training_mode and params.train_every is not None:
             self.evaluator.train_prepare(
-                params.learning_rate, params.batch_size, params.optimizer_iterations, params.weight_decay
+                params.learning_rate,
+                params.batch_size,
+                params.optimizer_iterations,
+                params.weight_decay,
             )
 
         self.episode_count = 0
@@ -298,7 +306,9 @@ class AlphaZeroAgent(TrainableAgent):
 
         # Any game state whose hash has a least significant byte that is in this set is part of the
         # test set. The test set is the same for the entire run.
-        self.test_set_lsbs = set(random.sample(range(256), int(round(256 * params.test_ratio))))
+        self.test_set_lsbs = set(
+            random.sample(range(256), int(round(256 * params.test_ratio)))
+        )
 
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
@@ -323,7 +333,9 @@ class AlphaZeroAgent(TrainableAgent):
         artifact = self.wandb_artifact()
         if artifact is None:
             return
-        local_filename = resolve_path(self.params.wandb_dir, self.wandb_local_filename(artifact))
+        local_filename = resolve_path(
+            self.params.wandb_dir, self.wandb_local_filename(artifact)
+        )
 
         self.params.model_filename = str(local_filename)
 
@@ -337,9 +349,13 @@ class AlphaZeroAgent(TrainableAgent):
             artifact_dir = artifact.download(root=tmpdir)
 
             # NOTE: This picks the first .pt file it finds in the artifact
-            tmp_filename = next(Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None)
+            tmp_filename = next(
+                Path(artifact_dir).glob(f"**/*.{self.get_model_extension()}"), None
+            )
             if tmp_filename is None:
-                raise FileNotFoundError(f"No model file found in artifact {artifact.name}")
+                raise FileNotFoundError(
+                    f"No model file found in artifact {artifact.name}"
+                )
 
             shutil.copyfile(tmp_filename, local_filename)
 
@@ -354,7 +370,9 @@ class AlphaZeroAgent(TrainableAgent):
             if self.params.training_mode:
                 return
 
-            print("WARNING: no initial model provided usign a filename or wandb, so using random initialized model")
+            print(
+                "WARNING: no initial model provided usign a filename or wandb, so using random initialized model"
+            )
             return
             # If it's not training mode, we definitely need to load a pretrained model, so try the
             # default path for local files
@@ -429,10 +447,15 @@ class AlphaZeroAgent(TrainableAgent):
         # Create a dummy input tensor with the correct shape
         # The shape depends on the network type
         network = self.evaluator.network
-        if hasattr(network, "__class__") and network.__class__.__name__ == "ResnetNetwork":
+        if (
+            hasattr(network, "__class__")
+            and network.__class__.__name__ == "ResnetNetwork"
+        ):
             # ResNet expects input of shape (batch_size, 5, input_size, input_size)
             # NOTE: input_size is board_size * 2 + 3, which is the dimension of the combined grid input, not the original board size
-            dummy_input = torch.randn(1, 5, network.input_size, network.input_size, device=self.device)
+            dummy_input = torch.randn(
+                1, 5, network.input_size, network.input_size, device=self.device
+            )
         else:
             # MLP expects input of shape (batch_size, input_size)
             dummy_input = torch.randn(1, network.input_size, device=self.device)
@@ -486,7 +509,9 @@ class AlphaZeroAgent(TrainableAgent):
             while replay_buffer and replay_buffer[-1]["value"] is None:
                 position = replay_buffer.pop()
                 agent = env.player_to_agent[position["player"]]
-                factor = 1 + self.params.game_length_bonus_factor * (1 - env.game.completed_steps / env.max_steps)
+                factor = 1 + self.params.game_length_bonus_factor * (
+                    1 - env.game.completed_steps / env.max_steps
+                )
                 position["value"] = factor * env.rewards[agent]
                 episode_positions.append(position)
 
@@ -495,7 +520,9 @@ class AlphaZeroAgent(TrainableAgent):
 
             self.episode_count += 1
 
-    def end_game_batch_and_save_replay_buffers(self, temp_dir: Path, ready_dir: Path, model_version: int):
+    def end_game_batch_and_save_replay_buffers(
+        self, temp_dir: Path, ready_dir: Path, model_version: int
+    ):
         if not self.params.training_mode:
             return
 
@@ -509,7 +536,9 @@ class AlphaZeroAgent(TrainableAgent):
             while replay_buffer and replay_buffer[-1]["value"] is None:
                 position = replay_buffer.pop()
                 agent = env.player_to_agent[position["player"]]
-                factor = 1 + self.params.game_length_bonus_factor * (1 - env.game.completed_steps / env.max_steps)
+                factor = 1 + self.params.game_length_bonus_factor * (
+                    1 - env.game.completed_steps / env.max_steps
+                )
                 position["value"] = factor * env.rewards[agent]
                 processed_replay_buffer.append(position)
 
@@ -517,19 +546,35 @@ class AlphaZeroAgent(TrainableAgent):
 
             filename = f"game_{int(time.time() * 1000)}_{i}_{os.getpid()}"
 
-            # We first save the game info to the ready directory; the trainer will look for the pkl file
+            # We first save the game info to the ready directory; the trainer will look for the npz file
             # first, so there's no risk of partial reads or race conditions
             game_info = GameInfo(
-                model_version=model_version, game_length=len(processed_replay_buffer), creator=str(os.getpid())
+                model_version=model_version,
+                game_length=len(processed_replay_buffer),
+                creator=str(os.getpid()),
             )
             to_yaml_file(ready_dir / f"{filename}.yaml", game_info)
 
-            # For the binary, we first save it in a temp directory and move it right away, to avoid partial reads
-            pkl_filename = temp_dir / f"{filename}.pkl"
-            with open(pkl_filename, "wb") as f:
-                pickle.dump(processed_replay_buffer, f)
+            # Save as npz with the same field names as the Rust self-play binary
+            npz_filename = temp_dir / f"{filename}.npz"
+            np.savez_compressed(
+                npz_filename,
+                input_arrays=np.stack(
+                    [p["input_array"] for p in processed_replay_buffer]
+                ),
+                policies=np.stack([p["mcts_policy"] for p in processed_replay_buffer]),
+                action_masks=np.stack(
+                    [p["action_mask"] for p in processed_replay_buffer]
+                ),
+                values=np.array(
+                    [p["value"] for p in processed_replay_buffer], dtype=np.float32
+                ),
+                players=np.array(
+                    [int(p["player"]) for p in processed_replay_buffer], dtype=np.int32
+                ),
+            )
 
-            pkl_filename.rename(ready_dir / pkl_filename.name)
+            npz_filename.rename(ready_dir / npz_filename.name)
 
     def start_game(self, game, player_id):
         self.visited_states.clear()
@@ -539,7 +584,10 @@ class AlphaZeroAgent(TrainableAgent):
         self.end_game_batch(env)
 
         # This is just used when we use the old train.py script
-        if self.params.train_every is not None and self.episode_count % self.params.train_every == 0:
+        if (
+            self.params.train_every is not None
+            and self.episode_count % self.params.train_every == 0
+        ):
             self.train_iteration()
 
     def compute_loss_and_reward(self, length: int) -> Tuple[float, float]:
@@ -551,7 +599,9 @@ class AlphaZeroAgent(TrainableAgent):
 
         return float(avg_loss), 0.0
 
-    def train_iteration(self, is_replay_buffer_bootstrap=False, epoch=None, episode=None) -> bool:
+    def train_iteration(
+        self, is_replay_buffer_bootstrap=False, epoch=None, episode=None
+    ) -> bool:
         """
         Train the neural network on collected data.
 
@@ -564,8 +614,14 @@ class AlphaZeroAgent(TrainableAgent):
             t, p, v = entry["loss_total"], entry["loss_policy"], entry["loss_value"]
 
             if "loss_total_val" in entry:
-                vt, vp, vv = entry["loss_total_val"], entry["loss_policy_val"], entry["loss_value_val"]
-                print(f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}")
+                vt, vp, vv = (
+                    entry["loss_total_val"],
+                    entry["loss_policy_val"],
+                    entry["loss_value_val"],
+                )
+                print(
+                    f"{i:>7}     {t:>7.3f} {vt:>7.3f}     {p:>7.3f} {vp:>7.3f}     {v:>7.3f} {vv:>7.3f}"
+                )
             else:
                 print(f"{i:>7} {t:>7.3f} {p:>7.3f} {v:>7.3f}")
 
@@ -577,7 +633,10 @@ class AlphaZeroAgent(TrainableAgent):
                 del entry["completion"]
                 self.wandb_run.log(entry)
 
-        if len(self.replay_buffer) * (1.0 - self.params.validation_ratio) < self.params.batch_size:
+        if (
+            len(self.replay_buffer) * (1.0 - self.params.validation_ratio)
+            < self.params.batch_size
+        ):
             return False
 
         # Save replay buffer if requested
@@ -591,17 +650,24 @@ class AlphaZeroAgent(TrainableAgent):
                 self.first_replay_buffer_saved = True
 
         Timer.start("training")
-        print(f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})...")
+        print(
+            f"Training the network (buffer size: {len(self.replay_buffer)}, batch size: {self.params.batch_size})..."
+        )
 
         if self.params.validation_ratio > 0.0:
             print("==== Training & Validation Loss ====")
-            print("  Epoch       Total   Val Total   Policy  Val Policy  Value   Val Value")
+            print(
+                "  Epoch       Total   Val Total   Policy  Val Policy  Value   Val Value"
+            )
         else:
             print("==== Training Loss ====")
             print("  Epoch   Total   Policy  Value")
 
         self.evaluator.train_iteration(
-            self.replay_buffer, self.params.validation_ratio, self.test_set_lsbs, on_new_entry=log_loss_entry
+            self.replay_buffer,
+            self.params.validation_ratio,
+            self.test_set_lsbs,
+            on_new_entry=log_loss_entry,
         )
 
         Timer.finish("training", episode)
@@ -612,7 +678,9 @@ class AlphaZeroAgent(TrainableAgent):
         params = {
             "ep": episode_number,
             "i": get_initial_random_seed(),
-            "t": int(self.params.temperature * 100) if self.params.temperature else None,
+            "t": int(self.params.temperature * 100)
+            if self.params.temperature
+            else None,
             "dt": self.params.drop_t_on_step,
             "rbs": self.params.replay_buffer_size,
             "n": self.params.mcts_n,
@@ -644,7 +712,9 @@ class AlphaZeroAgent(TrainableAgent):
         """Save replay buffer contents to a file."""
         replay_buffer_dir = "replay_buffers"
         os.makedirs(replay_buffer_dir, exist_ok=True)
-        filepath = os.path.join(replay_buffer_dir, self._replay_buffer_filename(episode_number))
+        filepath = os.path.join(
+            replay_buffer_dir, self._replay_buffer_filename(episode_number)
+        )
         with open(filepath, "wb") as f:
             pickle.dump(list(self.replay_buffer), f)
         print(f"Saved replay buffer to {filepath}")
@@ -654,8 +724,12 @@ class AlphaZeroAgent(TrainableAgent):
         if self.params.train_every is None or not self.is_training():
             return False
 
-        assert isinstance(self.params.train_every, int), "train_every must be set to load replay buffer from file"
-        filepath = os.path.join("replay_buffers", self._replay_buffer_filename(self.params.train_every))
+        assert isinstance(
+            self.params.train_every, int
+        ), "train_every must be set to load replay buffer from file"
+        filepath = os.path.join(
+            "replay_buffers", self._replay_buffer_filename(self.params.train_every)
+        )
         if not os.path.exists(filepath):
             return False
 
@@ -683,7 +757,9 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
-    def get_action_batch(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
+    def get_action_batch(
+        self, observations_with_ids: list[tuple[int, dict]]
+    ) -> list[tuple[int, int]]:
         """
         Get actions for multiple observations.  Each entry in observation_with_ids needs a distinct id that can be
         an arbitrary number. The same id will be returned with the action matching the observation.
@@ -718,16 +794,24 @@ class AlphaZeroAgent(TrainableAgent):
             # displaying them
             if len(observations_with_ids) == 1:
                 self._log_action(
-                    visit_probs, root_children, float(root_value), MoveAction(game.board.get_player_position(player))
+                    visit_probs,
+                    root_children,
+                    float(root_value),
+                    MoveAction(game.board.get_player_position(player)),
                 )
 
             temperature = self.initial_temperature
-            if self.params.drop_t_on_step is not None and game.completed_steps >= self.params.drop_t_on_step:
+            if (
+                self.params.drop_t_on_step is not None
+                and game.completed_steps >= self.params.drop_t_on_step
+            ):
                 temperature = 0
 
             if temperature == 0.0:
                 max_value = np.max(visit_probs)
-                visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
+                visit_probs = np.array(
+                    [1.0 if v == max_value else 0.0 for v in visit_probs]
+                )
                 visit_probs /= np.sum(visit_probs)
             else:
                 visit_probs = visit_probs ** (1.0 / temperature)
@@ -746,9 +830,13 @@ class AlphaZeroAgent(TrainableAgent):
             # Store training data if in training mode
             if self.params.training_mode:
                 # Convert visit counts to policy target (normalized)
-                policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+                policy_target = np.zeros(
+                    self.action_encoder.num_actions, dtype=np.float32
+                )
                 for child in root_children:
-                    action_index = self.action_encoder.action_to_index(child.action_taken)
+                    action_index = self.action_encoder.action_to_index(
+                        child.action_taken
+                    )
                     policy_target[action_index] = child.visit_count / visit_counts_sum
                 self.store_training_data(game, policy_target, player, game_idx)
 
