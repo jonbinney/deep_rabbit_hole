@@ -129,6 +129,16 @@ def alphazero_params_dict_from_config(
         "mcts_ucb_c": config.alphazero.mcts_c_puct,
     }
 
+    if config.training.initial_model:
+        im = config.training.initial_model
+        if im.file:
+            params_dict["model_filename"] = im.file
+        if im.wandb_alias:
+            params_dict["wandb_alias"] = im.wandb_alias
+            params_dict["wandb_project"] = im.wandb_project or (
+                config.wandb.project if config.wandb else "deep_quoridor"
+            )
+
     # Add network config
     if config.alphazero.network.type == "mlp":
         params_dict.update(

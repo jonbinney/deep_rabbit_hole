@@ -2,7 +2,6 @@ import threading
 import time
 from collections import Counter
 from threading import Thread
-from typing import Any
 
 import numpy as np
 import wandb
@@ -32,17 +31,7 @@ def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdow
 
 def train(config: Config):
     batch_size = config.training.batch_size
-
-    overrides: dict[str, Any] = {"training_mode": True}
-    if config.training.initial_model:
-        im = config.training.initial_model
-        if im.file:
-            overrides["model_filename"] = im.file
-        if im.wandb_alias:
-            overrides["wandb_alias"] = im.wandb_alias
-            overrides["wandb_project"] = im.wandb_project or (config.wandb.project if config.wandb else "deep_quoridor")
-
-    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides=overrides)
+    alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     upload_model_thread = None
     shutdown_event = None
