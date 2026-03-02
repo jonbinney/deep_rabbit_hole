@@ -68,7 +68,7 @@ def train(config: Config):
         filename = config.paths.checkpoints / "model_0.pt"
         alphazero_agent.save_model(filename)
         LatestModel.write(config, str(filename), 0)
-    
+
     if config.training.save_onnx:
         onnx_filename = config.paths.checkpoints / "model_0.onnx"
         alphazero_agent.save_model_onnx(onnx_filename)
@@ -121,6 +121,11 @@ def train(config: Config):
                     }
                 )
 
+        # Trim oldest games to stay within the replay buffer size limit
+        while len(moves_per_game) > config.training.replay_buffer_size:
+            moves_per_game.pop(0)
+            game_filename.pop(0)
+
         total_moves = sum(moves_per_game)
 
         games_needed_to_train = config.training.games_per_training_step * (training_steps + 1)
@@ -135,7 +140,8 @@ def train(config: Config):
         Timer.start("sample")
         samples = []
 
-        games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
+        buffer_size = len(moves_per_game)
+        games = np.random.choice(buffer_size, batch_size, p=[moves / total_moves for moves in moves_per_game])
         samples_per_game = Counter(games)
         for game_number in samples_per_game:
             file = config.paths.replay_buffers / game_filename[game_number]
@@ -157,6 +163,8 @@ def train(config: Config):
                 "value_loss": value_loss,
                 "total_loss": total_loss,
                 "games_played": last_game,
+                "replay_buffer_games": buffer_size,
+                "replay_buffer_moves": total_moves,
                 "time-sample": time_sample,
                 "time-train": time_train,
                 "time-waiting-to-train": time_waiting_to_train,
@@ -166,20 +174,20 @@ def train(config: Config):
         )
 
         Timer.start("save-model")
-        
+
         # Save in PyTorch format if enabled
         if config.training.save_pytorch:
             new_model_filename = config.paths.checkpoints / f"model_{model_version}.pt"
             alphazero_agent.save_model(new_model_filename)
             LatestModel.write(config, str(new_model_filename), model_version)
-        
+
         # Save in ONNX format if enabled
         if config.training.save_onnx:
             onnx_model_filename = config.paths.checkpoints / f"model_{model_version}.onnx"
             alphazero_agent.save_model_onnx(onnx_model_filename)
-        
+
         time_save_model = Timer.finish("save-model")
-        
+
         if config.training.model_save_timing:
             formats = []
             if config.training.save_pytorch:
@@ -188,7 +196,7 @@ def train(config: Config):
                 formats.append("ONNX")
             format_str = " and ".join(formats) if formats else "no format"
             print(f"Saving model ({format_str}) took {time_save_model:.4f}s")
-        
+
         model_version += 1
 
     ShutdownSignal.signal(config)

@@ -1,6 +1,5 @@
 # V1 Parity
 
-- Replay buffer length: righ now we're not rolling out old games to respect the length
 - Continuation
 
 # Other improvements and new features
