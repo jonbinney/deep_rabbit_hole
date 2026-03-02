@@ -19,19 +19,7 @@ if __name__ == "__main__":
         "-o",
         "--overrides",
         nargs="*",
-        help="Configuration overrides (e.g., run_id=my_run alphazero.mcts_n=250)",
-    )
-    parser.add_argument(
-        "--selfplay-program",
-        choices=["python", "rust"],
-        default="python",
-        help="Select self-play implementation: python (default) or rust",
-    )
-    parser.add_argument(
-        "--rust-selfplay-executable",
-        type=str,
-        default=None,
-        help="Path to the Rust self-play binary (default: rust/target/release/selfplay)",
+        help="Configuration overrides (e.g., run_id=my_run self_play.program=rust)",
     )
 
     args = parser.parse_args()
@@ -42,37 +30,28 @@ if __name__ == "__main__":
         else str(Path(__file__).parent.parent)
     )
 
-    # Resolve Rust self-play binary path
-    rust_binary = None
-    use_rust = args.selfplay_program == "rust"
+    config = load_config_and_setup_run(args.config_file, runs_dir, overrides=args.overrides)
+
+    use_rust = config.self_play.program == "rust"
     if use_rust:
-        if args.rust_selfplay_executable is not None:
-            rust_binary = args.rust_selfplay_executable
-        else:
-            rust_binary = str(
+        # Apply default Rust binary path if not specified in config
+        if config.self_play.rust_selfplay_binary is None:
+            config.self_play.rust_selfplay_binary = str(
                 Path(__file__).parent.parent
                 / "rust"
                 / "target"
                 / "release"
                 / "selfplay"
             )
+        rust_binary = config.self_play.rust_selfplay_binary
         if not Path(rust_binary).exists():
             print(f"ERROR: Rust self-play binary not found at {rust_binary}")
             print(
                 "Build it with: cd deep_quoridor/rust && cargo build --release --features binary --bin selfplay"
             )
             exit(1)
-
-    # Apply overrides: force save_onnx when using Rust self-play
-    overrides = args.overrides or []
-    if use_rust:
-        overrides = list(overrides) + ["training.save_onnx=true"]
-
-    config = load_config_and_setup_run(args.config_file, runs_dir, overrides=overrides)
-
-    if use_rust:
-        config.self_play.selfplay_program = "rust"
-        config.self_play.rust_selfplay_binary = rust_binary
+        # Rust self-play requires ONNX model exports
+        config.training.save_onnx = True
 
     mp.set_start_method("spawn", force=True)
 

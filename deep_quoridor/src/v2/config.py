@@ -67,7 +67,7 @@ class SelfPlayConfig(StrictBaseModel):
     num_workers: int
     parallel_games: int
     alphazero: Optional[AlphaZeroSelfPlayConfig] = None
-    selfplay_program: Literal["python", "rust"] = "python"
+    program: Literal["python", "rust"] = "python"
     rust_selfplay_binary: Optional[str] = None
 
 
