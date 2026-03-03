@@ -34,6 +34,7 @@ struct Args {
 
 #[allow(dead_code)]
 pub fn save_policy_to_sqlite(
+    mechanics: &QGameMechanics,
     entries: DashMap<Vec<u8>, policy_db::TranspositionEntry>,
     filename: &str,
     board_size: usize,
@@ -74,10 +75,10 @@ pub fn save_policy_to_sqlite(
         "CREATE TABLE policy (
             id INTEGER PRIMARY KEY,
             state BLOB NOT NULL,
-            agent_player INTEGER NOT NULL,
-            num_actions INTEGER NOT NULL,
-            actions BLOB NOT NULL,
-            action_values BLOB NOT NULL
+            best_action_row INTEGER NOT NULL,
+            best_action_col INTEGER NOT NULL,
+            best_action_type INTEGER NOT NULL,
+            best_value INTEGER NOT NULL
         )",
         [],
     )?;
@@ -91,46 +92,29 @@ pub fn save_policy_to_sqlite(
     let tx = conn.transaction()?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO policy (state, agent_player, num_actions, actions, action_values)
+            "INSERT INTO policy (state, best_action_row, best_action_col, best_action_type, best_value)
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
 
         for item in entries.into_iter() {
             let (state_blob, entry) = item;
 
-            // Flatten actions into a single vector: each action is (row, col, action_type)
-            let actions_flat: Vec<usize> = entry
-                .actions
-                .into_iter()
-                .flat_map(|(r, c, t)| vec![r, c, t])
-                .collect();
-            let actions_blob: Vec<u8> = actions_flat
-                .iter()
-                .flat_map(|&x| (x as u32).to_le_bytes())
-                .collect();
+            let (action_row, action_col, action_type) = entry.best_action;
 
-            // Convert Option<i8> values to f32 for storage.
-            // Values in the transposition table are from the current player's
-            // perspective (negamax). Convert to player 0's perspective for the DB.
-            let p0_factor: f32 = if entry.agent_player == 0 { 1.0 } else { -1.0 };
-            let values_blob: Vec<u8> = entry
-                .action_values
-                .iter()
-                .map(|v| match v {
-                    Some(val) => (*val as f32) * p0_factor,
-                    None => f32::NAN,
-                })
-                .flat_map(|x| x.to_le_bytes())
-                .collect();
-
-            let num_actions = entry.action_values.len() as i32;
+            // Convert best_value from current player's perspective to player 0's perspective.
+            let current_player = mechanics.repr().get_current_player(&state_blob);
+            let p0_factor: i32 = if current_player == 0 { 1 } else { -1 };
+            let best_value_p0: i32 = match entry.best_value {
+                Some(v) => (v as i32) * p0_factor,
+                None => 0, // unknown treated as 0 (tie)
+            };
 
             stmt.execute(params![
                 state_blob,
-                entry.agent_player as i32,
-                num_actions,
-                actions_blob,
-                values_blob,
+                action_row as i32,
+                action_col as i32,
+                action_type as i32,
+                best_value_p0,
             ])?;
         }
         // Explicitly drop statement before committing
@@ -175,6 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let eval_start = Instant::now();
     let transposition_table = DashMap::new();
     let value = policy_db::minimax(&mechanics, &mut initial_state, &transposition_table);
+    dbg!(&value);
     let eval_elapsed = eval_start.elapsed();
     println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
     println!("  Root value: {:?}", value);
@@ -185,6 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let write_start = Instant::now();
     save_policy_to_sqlite(
+        &mechanics,
         transposition_table,
         &args.output,
         args.board_size,

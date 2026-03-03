@@ -6,24 +6,23 @@ use dashmap::DashMap;
 
 use super::q_game_mechanics::QGameMechanics;
 
-/// Transposition table entry. The state bytes are stored as the
-/// DashMap key rather than in this struct.
+/// Transposition table entry storing only the best action and its value.
+/// The state bytes are stored as the DashMap key rather than in this struct.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct TranspositionEntry {
-    pub agent_player: usize,
-    pub actions: Vec<(usize, usize, usize)>,
-    pub action_values: Vec<Option<i8>>,
+    pub best_action: (u8, u8, u8),
     pub best_value: Option<i8>,
 }
 
 /// Get all valid actions (moves + wall placements) for the current player.
-fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(usize, usize, usize)> {
+fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, u8)> {
     let moves = mechanics.get_valid_moves(data);
-    let mut actions: Vec<(usize, usize, usize)> =
-        moves.into_iter().map(|(r, c)| (r, c, 2)).collect();
+    let mut actions: Vec<(u8, u8, u8)> = moves
+        .into_iter()
+        .map(|(r, c)| (r as u8, c as u8, 2))
+        .collect();
     let walls = mechanics.get_valid_wall_placements(data);
-    actions.extend(walls);
+    actions.extend(walls.into_iter().map(|(r, c, t)| (r as u8, c as u8, t as u8)));
     actions
 }
 
@@ -65,30 +64,30 @@ pub fn minimax(
     assert!(!actions.is_empty(), "No valid actions - should never happen");
 
     let mut best_known: Option<i8> = None;
+    let mut best_action: (u8, u8, u8) = actions[0]; // default to first action
     let mut has_unknown = false;
-    let mut action_values = Vec::with_capacity(actions.len());
 
     for &(row, col, action_type) in &actions {
         // Create child state
         let mut new_data = data.to_vec();
+        let (r, c, t) = (row as usize, col as usize, action_type as usize);
         if action_type == 2 {
-            mechanics.execute_move(&mut new_data, current_player, row, col);
+            mechanics.execute_move(&mut new_data, current_player, r, c);
         } else {
-            mechanics.execute_wall_placement(&mut new_data, current_player, row, col, action_type);
+            mechanics.execute_wall_placement(&mut new_data, current_player, r, c, t);
         }
         mechanics.switch_player(&mut new_data);
 
         // Recurse. Child returns value from opponent's perspective; negate for ours.
         let child_value = minimax(mechanics, &mut new_data, transposition_table);
         let our_value = child_value.map(|v| -v);
-        action_values.push(our_value);
 
         match our_value {
             Some(v) => {
-                best_known = Some(match best_known {
-                    Some(b) => b.max(v),
-                    None => v,
-                });
+                if best_known.is_none() || v > best_known.unwrap() {
+                    best_known = Some(v);
+                    best_action = (row, col, action_type);
+                }
             }
             None => has_unknown = true,
         }
@@ -110,9 +109,7 @@ pub fn minimax(
     transposition_table.insert(
         data.to_vec(),
         TranspositionEntry {
-            agent_player: current_player,
-            actions,
-            action_values,
+            best_action,
             best_value,
         },
     );
