@@ -3,6 +3,9 @@
 /// Uses i8 values (1 = win, 0 = tie, -1 = loss, None = unknown)
 /// with a transposition table. No alpha-beta pruning or heuristic.
 use dashmap::DashMap;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
 
 use super::q_game_mechanics::QGameMechanics;
 
@@ -22,7 +25,11 @@ fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, 
         .map(|(r, c)| (r as u8, c as u8, 2))
         .collect();
     let walls = mechanics.get_valid_wall_placements(data);
-    actions.extend(walls.into_iter().map(|(r, c, t)| (r as u8, c as u8, t as u8)));
+    actions.extend(
+        walls
+            .into_iter()
+            .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
+    );
     actions
 }
 
@@ -40,6 +47,15 @@ pub fn minimax(
     mechanics: &QGameMechanics,
     data: &mut [u8],
     transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+) -> Option<i8> {
+    minimax_inner(mechanics, data, transposition_table, None)
+}
+
+fn minimax_inner(
+    mechanics: &QGameMechanics,
+    data: &mut [u8],
+    transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+    mut rng: Option<&mut StdRng>,
 ) -> Option<i8> {
     // Check transposition table for cached result
     if let Some(entry) = transposition_table.get(data) {
@@ -60,8 +76,16 @@ pub fn minimax(
     }
 
     // Get all valid actions for the current player
-    let actions = get_all_actions(mechanics, data);
-    assert!(!actions.is_empty(), "No valid actions - should never happen");
+    let mut actions = get_all_actions(mechanics, data);
+    assert!(
+        !actions.is_empty(),
+        "No valid actions - should never happen"
+    );
+
+    // Shuffle actions if an RNG is provided (for Lazy SMP)
+    if let Some(ref mut r) = rng {
+        actions.shuffle(*r);
+    }
 
     let mut best_known: Option<i8> = None;
     let mut best_action: (u8, u8, u8) = actions[0]; // default to first action
@@ -79,7 +103,12 @@ pub fn minimax(
         mechanics.switch_player(&mut new_data);
 
         // Recurse. Child returns value from opponent's perspective; negate for ours.
-        let child_value = minimax(mechanics, &mut new_data, transposition_table);
+        let child_value = minimax_inner(
+            mechanics,
+            &mut new_data,
+            transposition_table,
+            rng.as_deref_mut(),
+        );
         let our_value = child_value.map(|v| -v);
 
         match our_value {
@@ -115,6 +144,37 @@ pub fn minimax(
     );
 
     best_value
+}
+
+/// Lazy SMP parallel minimax. Spawns `num_threads` threads each running
+/// the full minimax with randomized move ordering, all sharing the same
+/// transposition table. Returns the root value.
+pub fn minimax_lazy_smp(
+    mechanics: &QGameMechanics,
+    data: &mut [u8],
+    transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+    num_threads: usize,
+) -> Option<i8> {
+    let data_snapshot = data.to_vec();
+    let result = std::thread::scope(|s| {
+        let mut handles = Vec::with_capacity(num_threads);
+        for i in 0..num_threads {
+            let mut thread_data = data_snapshot.clone();
+            let tt = &transposition_table;
+            let mech = &mechanics;
+            handles.push(s.spawn(move || {
+                let mut rng = StdRng::seed_from_u64(i as u64);
+                minimax_inner(mech, &mut thread_data, tt, Some(&mut rng))
+            }));
+        }
+        // Collect all results; return thread 0's result
+        let mut results = Vec::with_capacity(num_threads);
+        for h in handles {
+            results.push(h.join().expect("minimax thread panicked"));
+        }
+        results[0]
+    });
+    result
 }
 
 #[cfg(test)]

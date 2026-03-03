@@ -27,6 +27,10 @@ struct Args {
     #[arg(long, default_value_t = 8)]
     max_steps: usize,
 
+    /// Number of threads for Lazy SMP parallel search
+    #[arg(long, default_value_t = 1)]
+    num_threads: usize,
+
     /// Output SQLite database file path
     #[arg(short, long, default_value = "policy_db.sqlite")]
     output: String,
@@ -155,10 +159,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nRunning minimax and creating policy database...");
     println!("  Output file: {}", args.output);
+    println!("  Threads: {}", args.num_threads);
 
     let eval_start = Instant::now();
     let transposition_table = DashMap::new();
-    let value = policy_db::minimax(&mechanics, &mut initial_state, &transposition_table);
+    let value = if args.num_threads > 1 {
+        policy_db::minimax_lazy_smp(
+            &mechanics,
+            &mut initial_state,
+            &transposition_table,
+            args.num_threads,
+        )
+    } else {
+        policy_db::minimax(&mechanics, &mut initial_state, &transposition_table)
+    };
     dbg!(&value);
     let eval_elapsed = eval_start.elapsed();
     println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
