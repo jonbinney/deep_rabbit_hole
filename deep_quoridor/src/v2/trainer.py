@@ -121,6 +121,11 @@ def train(config: Config):
                 }
             )
 
+        # Trim oldest games to stay within the replay buffer size limit
+        while len(moves_per_game) > config.training.replay_buffer_size:
+            moves_per_game.pop(0)
+            game_filename.pop(0)
+
         total_moves = sum(moves_per_game)
 
         games_needed_to_train = config.training.games_per_training_step * (training_steps + 1)
@@ -135,7 +140,8 @@ def train(config: Config):
         Timer.start("sample")
         samples = []
 
-        games = np.random.choice(last_game, batch_size, p=[moves / total_moves for moves in moves_per_game])
+        buffer_size = len(moves_per_game)
+        games = np.random.choice(buffer_size, batch_size, p=[moves / total_moves for moves in moves_per_game])
         samples_per_game = Counter(games)
         for game_number in samples_per_game:
             file = config.paths.replay_buffers / game_filename[game_number]
@@ -166,6 +172,8 @@ def train(config: Config):
                 "value_loss": value_loss,
                 "total_loss": total_loss,
                 "games_played": last_game,
+                "replay_buffer_games": buffer_size,
+                "replay_buffer_moves": total_moves,
                 "time-sample": time_sample,
                 "time-train": time_train,
                 "time-waiting-to-train": time_waiting_to_train,
