@@ -71,4 +71,4 @@ def self_play(config: Config):
         )
         num_truncated = n - len(finished_in)
         elapsed = Timer.finish("self-play")
-        print(f"{os.getpid()} - finsihed in {elapsed} {sorted(finished_in)}, {num_truncated}")
+        print(f"{os.getpid()} - selfplay finished in {elapsed} {sorted(finished_in)}, {num_truncated}")
