@@ -94,6 +94,7 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
+    sample_caching_size: int = 8
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):
@@ -165,9 +166,7 @@ class PathsConfig(StrictBaseModel):
     config_file: Path
 
     @classmethod
-    def create(
-        cls, base_dir: str, run_id: str, create_dirs: bool = True
-    ) -> "PathsConfig":
+    def create(cls, base_dir: str, run_id: str, create_dirs: bool = True) -> "PathsConfig":
         run_root = Path(base_dir) / "runs"
         run_dir = run_root / run_id
         config_file = run_dir / "config.yaml"
@@ -204,9 +203,7 @@ class Config(UserConfig):
     paths: PathsConfig
 
     @classmethod
-    def from_user(
-        cls, user: UserConfig, base_dir: str, create_dirs: bool = True
-    ) -> "Config":
+    def from_user(cls, user: UserConfig, base_dir: str, create_dirs: bool = True) -> "Config":
         paths = PathsConfig.create(base_dir, user.run_id, create_dirs=create_dirs)
         return cls(**user.model_dump(), paths=paths)
 
@@ -296,9 +293,7 @@ def _apply_overrides(data: dict, overrides: list[str]) -> dict:
     """
     for override in overrides:
         if "=" not in override:
-            raise ValueError(
-                f"Invalid override format '{override}', expected 'key=value'"
-            )
+            raise ValueError(f"Invalid override format '{override}', expected 'key=value'")
         key, value = override.split("=", 1)
         parts = key.split(".")
         parsed_value = _parse_override_value(value)
