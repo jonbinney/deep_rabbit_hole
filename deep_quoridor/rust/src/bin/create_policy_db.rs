@@ -77,49 +77,28 @@ pub fn save_policy_to_sqlite(
     // Create table for policy entries
     conn.execute(
         "CREATE TABLE policy (
-            id INTEGER PRIMARY KEY,
-            state BLOB NOT NULL,
-            best_action_row INTEGER NOT NULL,
-            best_action_col INTEGER NOT NULL,
-            best_action_type INTEGER NOT NULL,
-            best_value INTEGER NOT NULL
+            state BLOB PRIMARY KEY,
+            value INTEGER NOT NULL
         )",
         [],
     )?;
-
-    // Create index for fast lookups by state
-    conn.execute("CREATE INDEX idx_state ON policy (state)", [])?;
 
     let num_entries = entries.len();
 
     // Insert entries in a transaction for better performance
     let tx = conn.transaction()?;
     {
-        let mut stmt = tx.prepare(
-            "INSERT INTO policy (state, best_action_row, best_action_col, best_action_type, best_value)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-        )?;
+        let mut stmt = tx.prepare("INSERT INTO policy (state, value) VALUES (?1, ?2)")?;
 
         for item in entries.into_iter() {
             let (state_blob, entry) = item;
 
-            let (action_row, action_col, action_type) = entry.best_action;
-
-            // Convert best_value from current player's perspective to player 0's perspective.
+            // Convert value from current player's perspective to player 0's perspective.
             let current_player = mechanics.repr().get_current_player(&state_blob);
             let p0_factor: i32 = if current_player == 0 { 1 } else { -1 };
-            let best_value_p0: i32 = match entry.best_value {
-                Some(v) => (v as i32) * p0_factor,
-                None => 0, // unknown treated as 0 (tie)
-            };
+            let value_p0: i32 = (entry.value as i32) * p0_factor;
 
-            stmt.execute(params![
-                state_blob,
-                action_row as i32,
-                action_col as i32,
-                action_type as i32,
-                best_value_p0,
-            ])?;
+            stmt.execute(params![state_blob, value_p0])?;
         }
         // Explicitly drop statement before committing
         drop(stmt);
@@ -173,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         policy_db::minimax(&mechanics, &mut initial_state, &transposition_table)
     };
-    dbg!(&value);
+
     let eval_elapsed = eval_start.elapsed();
     println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
     println!("  Root value: {:?}", value);

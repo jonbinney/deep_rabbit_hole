@@ -381,8 +381,9 @@ fn q_evaluate_actions<'py>(
 
 /// Look up a game state in a pre-computed policy database.
 ///
-/// Converts the grid-based game state to QBitRepr packed bytes, then queries
-/// the SQLite policy DB. Returns (actions, values) if found, or None.
+/// The DB stores only (state, value). This function enumerates all valid
+/// actions, computes each child state, queries the DB for each child's value,
+/// and returns (actions, values) from the current player's perspective.
 #[cfg(feature = "python")]
 #[pyfunction]
 fn policy_db_lookup<'py>(
@@ -416,7 +417,27 @@ fn policy_db_lookup<'py>(
     mechanics.print(&data);
     println!(" ");
 
-    // Open the database and query
+    let cp = current_player as usize;
+
+    // Get all valid actions for current player
+    let moves = mechanics.get_valid_moves(&mut data);
+    let walls = mechanics.get_valid_wall_placements(&mut data);
+
+    let mut actions: Vec<(u8, u8, u8)> = moves
+        .into_iter()
+        .map(|(r, c)| (r as u8, c as u8, 2))
+        .collect();
+    actions.extend(
+        walls
+            .into_iter()
+            .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
+    );
+
+    if actions.is_empty() {
+        return Ok(None);
+    }
+
+    // Open the database
     let conn = Connection::open_with_flags(
         Path::new(db_path),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -424,57 +445,67 @@ fn policy_db_lookup<'py>(
     .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
 
     let mut stmt = conn
-        .prepare_cached("SELECT num_actions, actions, action_values FROM policy WHERE state = ?1")
+        .prepare_cached("SELECT value FROM policy WHERE state = ?1")
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("SQL prepare: {e}")))?;
 
-    let result = stmt.query_row(rusqlite::params![data], |row| {
-        let num_actions: i32 = row.get(0)?;
-        let actions_blob: Vec<u8> = row.get(1)?;
-        let values_blob: Vec<u8> = row.get(2)?;
-        Ok((num_actions, actions_blob, values_blob))
-    });
+    let n = actions.len();
+    let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
+    let mut values_array = ndarray::Array1::<f32>::zeros(n);
+    let mut any_found = false;
 
-    match result {
-        Ok((num_actions, actions_blob, values_blob)) => {
-            let n = num_actions as usize;
+    for (i, &(row, col, action_type)) in actions.iter().enumerate() {
+        actions_array[[i, 0]] = row as i32;
+        actions_array[[i, 1]] = col as i32;
+        actions_array[[i, 2]] = action_type as i32;
 
-            // Decode actions: each is 3 x u32 little-endian
-            let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
-            for i in 0..n {
-                let offset = i * 12;
-                let r = u32::from_le_bytes(actions_blob[offset..offset + 4].try_into().unwrap());
-                let c =
-                    u32::from_le_bytes(actions_blob[offset + 4..offset + 8].try_into().unwrap());
-                let t =
-                    u32::from_le_bytes(actions_blob[offset + 8..offset + 12].try_into().unwrap());
-                actions_array[[i, 0]] = r as i32;
-                actions_array[[i, 1]] = c as i32;
-                actions_array[[i, 2]] = t as i32;
-            }
-
-            // Decode values: each is f32 little-endian
-            let mut values_array = ndarray::Array1::<f32>::zeros(n);
-            for i in 0..n {
-                let offset = i * 4;
-                values_array[i] =
-                    f32::from_le_bytes(values_blob[offset..offset + 4].try_into().unwrap());
-            }
-
-            // The values in the policy database are always from the starting player's perspective.
-            if current_player == 1 {
-                values_array *= -1.0;
-            }
-
-            Ok(Some((
-                PyArray2::from_owned_array_bound(py, actions_array),
-                numpy::PyArray1::from_owned_array_bound(py, values_array),
-            )))
+        // Create child state
+        let mut child_data = data.clone();
+        let (r, c, t) = (row as usize, col as usize, action_type as usize);
+        if action_type == 2 {
+            mechanics.execute_move(&mut child_data, cp, r, c);
+        } else {
+            mechanics.execute_wall_placement(&mut child_data, cp, r, c, t);
         }
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-            "DB query error: {e}"
-        ))),
+        mechanics.switch_player(&mut child_data);
+
+        // Query DB for child state value
+        let result: Result<i32, _> =
+            stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
+
+        match result {
+            Ok(child_value_p0) => {
+                any_found = true;
+                // DB stores values from player 0's perspective.
+                // Convert to current player's perspective, then negate
+                // (child is opponent's turn, so child value is opponent's).
+                let child_value_cur = if current_player == 0 {
+                    child_value_p0
+                } else {
+                    -child_value_p0
+                };
+                // Negate: child value is from opponent's perspective
+                values_array[i] = -child_value_cur as f32;
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                // Child state not in DB; treat as unknown (0)
+                values_array[i] = 0.0;
+            }
+            Err(e) => {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "DB query error: {e}"
+                )));
+            }
+        }
     }
+
+    if !any_found {
+        return Ok(None);
+    }
+
+    Ok(Some((
+        PyArray2::from_owned_array_bound(py, actions_array),
+        numpy::PyArray1::from_owned_array_bound(py, values_array),
+    )))
 }
 
 /// A Python module implemented in Rust.

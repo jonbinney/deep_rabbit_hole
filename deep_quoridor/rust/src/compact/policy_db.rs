@@ -9,12 +9,11 @@ use rand::SeedableRng;
 
 use super::q_game_mechanics::QGameMechanics;
 
-/// Transposition table entry storing only the best action and its value.
+/// Transposition table entry storing only the value.
 /// The state bytes are stored as the DashMap key rather than in this struct.
 #[derive(Clone)]
 pub struct TranspositionEntry {
-    pub best_action: (u8, u8, u8),
-    pub best_value: Option<i8>,
+    pub value: i8,
 }
 
 /// Get all valid actions (moves + wall placements) for the current player.
@@ -41,7 +40,7 @@ fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, 
 /// - `Some(-1)` = current player loses with best play
 /// - `None` = unknown (non-terminal state at search horizon)
 ///
-/// All reachable states and their action values are stored in the
+/// All reachable states and their values are stored in the
 /// transposition table for later export to a policy database.
 pub fn minimax(
     mechanics: &QGameMechanics,
@@ -59,7 +58,7 @@ fn minimax_inner(
 ) -> Option<i8> {
     // Check transposition table for cached result
     if let Some(entry) = transposition_table.get(data) {
-        return entry.best_value;
+        return Some(entry.value);
     }
 
     let current_player = mechanics.repr().get_current_player(data);
@@ -88,7 +87,6 @@ fn minimax_inner(
     }
 
     let mut best_known: Option<i8> = None;
-    let mut best_action: (u8, u8, u8) = actions[0]; // default to first action
     let mut has_unknown = false;
 
     for &(row, col, action_type) in &actions {
@@ -115,7 +113,6 @@ fn minimax_inner(
             Some(v) => {
                 if best_known.is_none() || v > best_known.unwrap() {
                     best_known = Some(v);
-                    best_action = (row, col, action_type);
                 }
             }
             None => has_unknown = true,
@@ -126,7 +123,7 @@ fn minimax_inner(
     // - If we found a guaranteed win (1), the value is 1 regardless of unknowns.
     // - If there are unknown children and no guaranteed win, the value is unknown.
     // - If all children are known, the value is the max.
-    let best_value = if best_known == Some(1) {
+    let value = if best_known == Some(1) {
         Some(1)
     } else if has_unknown {
         None
@@ -134,16 +131,15 @@ fn minimax_inner(
         best_known
     };
 
-    // Store in transposition table
+    // Store in transposition table (use 0 for unknown)
     transposition_table.insert(
         data.to_vec(),
         TranspositionEntry {
-            best_action,
-            best_value,
+            value: value.unwrap_or(0),
         },
     );
 
-    best_value
+    value
 }
 
 /// Lazy SMP parallel minimax. Spawns `num_threads` threads each running
