@@ -90,6 +90,7 @@ class TrainingConfig(StrictBaseModel):
     batch_size: int
     weight_decay: float
     replay_buffer_size: int
+    max_cached_games: int = 10000
     model_save_timing: bool = False
     save_onnx: bool = False
     finish_after: Optional[str] = None

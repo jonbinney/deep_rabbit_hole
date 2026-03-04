@@ -1,6 +1,6 @@
 import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from pathlib import Path
 from threading import Thread
 
@@ -14,15 +14,18 @@ from v2.yaml_models import GameInfo, LatestModel
 
 
 class Sampler:
-    def __init__(self, dir: Path):
+    def __init__(self, dir: Path, max_cached_games: int = 1000):
         self.dir = dir
-        self.cache = {}
+        self.max_cached_games = max_cached_games
+        self.cache: OrderedDict = OrderedDict()
 
     def remove_game(self, game_filename: str):
         self.cache.pop(game_filename, None)
 
     def _ensure_loaded(self, game_filename: str):
-        if game_filename not in self.cache:
+        if game_filename in self.cache:
+            self.cache.move_to_end(game_filename)
+        else:
             with np.load(self.dir / game_filename) as npz:
                 self.cache[game_filename] = {
                     "input_arrays": npz["input_arrays"],
@@ -31,6 +34,8 @@ class Sampler:
                     "values": npz["values"],
                     "players": npz["players"],
                 }
+            while len(self.cache) > self.max_cached_games:
+                self.cache.popitem(last=False)
 
     def sample(self, game_filename: str, n: int):
         self._ensure_loaded(game_filename)
@@ -119,7 +124,7 @@ def train(config: Config):
     model_version = 1
     moves_per_game = []
     game_filename = []
-    sampler = Sampler(config.paths.replay_buffers)
+    sampler = Sampler(config.paths.replay_buffers, config.training.max_cached_games)
     while True:
         if finish_condition and finish_condition.is_ready():
             print(f"Trainer: reached out finish condition: {config.training.finish_after}")
