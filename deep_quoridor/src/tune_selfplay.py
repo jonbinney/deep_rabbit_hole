@@ -85,12 +85,6 @@ def compute_metrics(num_workers, parallel_games, durations, wall_elapsed):
     total_worker_time = sum(durations)
     total_games = parallel_games * total_rounds
     avg_throughput = num_workers * total_games / total_worker_time
-    # # Average per-round throughput (games/sec as seen by each worker)
-    # round_throughputs = [g / e for e, g in rounds if e > 0]
-    # avg_throughput = sum(round_throughputs) / len(round_throughputs) if round_throughputs else 0
-
-    # # Wall throughput: total games / wall clock (the real end-to-end rate)
-    # wall_throughput = total_games / wall_elapsed if wall_elapsed > 0 else 0
 
     return {
         "num_workers": num_workers,
