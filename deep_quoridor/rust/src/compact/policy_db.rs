@@ -46,7 +46,7 @@ pub fn minimax(
     mechanics: &QGameMechanics,
     data: &mut [u8],
     transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
-) -> Option<i8> {
+) -> i8 {
     minimax_inner(mechanics, data, transposition_table, None)
 }
 
@@ -55,89 +55,80 @@ fn minimax_inner(
     data: &mut [u8],
     transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
     mut rng: Option<&mut StdRng>,
-) -> Option<i8> {
-    // Check transposition table for cached result
+) -> i8 {
     if let Some(entry) = transposition_table.get(data) {
-        return Some(entry.value);
+        // This branch has already been explored
+        return entry.value;
     }
 
     let current_player = mechanics.repr().get_current_player(data);
     let opponent = 1 - current_player;
-
-    // The opponent just moved. Check if they won (current player lost).
-    if mechanics.check_win(data, opponent) {
-        return Some(-1);
-    }
-
-    // Draw: max steps reached
-    if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
-        return Some(0);
-    }
-
-    // Get all valid actions for the current player
-    let mut actions = get_all_actions(mechanics, data);
-    assert!(
-        !actions.is_empty(),
-        "No valid actions - should never happen"
-    );
-
-    // Shuffle actions if an RNG is provided (for Lazy SMP)
-    if let Some(ref mut r) = rng {
-        actions.shuffle(*r);
-    }
-
-    let mut best_known: Option<i8> = None;
-    let mut has_unknown = false;
-
-    for &(row, col, action_type) in &actions {
-        // Create child state
-        let mut new_data = data.to_vec();
-        let (r, c, t) = (row as usize, col as usize, action_type as usize);
-        if action_type == 2 {
-            mechanics.execute_move(&mut new_data, current_player, r, c);
-        } else {
-            mechanics.execute_wall_placement(&mut new_data, current_player, r, c, t);
+    let value = if mechanics.check_win(data, opponent) {
+        // Someone won
+        match opponent {
+            0 => 1,
+            1 => -1,
+            _ => panic!("Bad player number ({})", opponent),
         }
-        mechanics.switch_player(&mut new_data);
-
-        // Recurse. Child returns value from opponent's perspective; negate for ours.
-        let child_value = minimax_inner(
-            mechanics,
-            &mut new_data,
-            transposition_table,
-            rng.as_deref_mut(),
-        );
-        let our_value = child_value.map(|v| -v);
-
-        match our_value {
-            Some(v) => {
-                if best_known.is_none() || v > best_known.unwrap() {
-                    best_known = Some(v);
-                }
-            }
-            None => has_unknown = true,
-        }
-    }
-
-    // Determine this node's value:
-    // - If we found a guaranteed win (1), the value is 1 regardless of unknowns.
-    // - If there are unknown children and no guaranteed win, the value is unknown.
-    // - If all children are known, the value is the max.
-    let value = if best_known == Some(1) {
-        Some(1)
-    } else if has_unknown {
-        None
+    } else if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
+        // Draw: max steps reached
+        0
     } else {
-        best_known
+        // Not a terminal state. Recurse.
+
+        // Get all valid actions for the current player
+        let mut actions = get_all_actions(mechanics, data);
+        assert!(
+            !actions.is_empty(),
+            "No valid actions - should never happen"
+        );
+
+        // Shuffle actions if an RNG is provided (for Lazy SMP)
+        if let Some(ref mut r) = rng {
+            actions.shuffle(*r);
+        }
+
+        let is_maximizing = current_player == 0;
+        let mut best_child_value: Option<i8> = None;
+
+        for &(row, col, action_type) in &actions {
+            // Create child state
+            let mut new_data = data.to_vec();
+            let (r, c, t) = (row as usize, col as usize, action_type as usize);
+            if action_type == 2 {
+                mechanics.execute_move(
+                    &mut new_data,
+                    mechanics.repr().get_current_player(data),
+                    r,
+                    c,
+                );
+            } else {
+                mechanics.execute_wall_placement(&mut new_data, current_player, r, c, t);
+            }
+
+            mechanics.switch_player(&mut new_data);
+
+            // Recurse. Child returns value from opponent's perspective; negate for ours.
+            let child_value = minimax_inner(
+                mechanics,
+                &mut new_data,
+                transposition_table,
+                rng.as_deref_mut(),
+            );
+
+            if best_child_value.is_none()
+                || is_maximizing && child_value > best_child_value.unwrap()
+                || !is_maximizing && child_value < best_child_value.unwrap()
+            {
+                best_child_value = Some(child_value)
+            }
+        }
+
+        best_child_value.unwrap()
     };
 
     // Store in transposition table (use 0 for unknown)
-    transposition_table.insert(
-        data.to_vec(),
-        TranspositionEntry {
-            value: value.unwrap_or(0),
-        },
-    );
+    transposition_table.insert(data.to_vec(), TranspositionEntry { value: value });
 
     value
 }
@@ -150,7 +141,7 @@ pub fn minimax_lazy_smp(
     data: &mut [u8],
     transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
     num_threads: usize,
-) -> Option<i8> {
+) -> i8 {
     let data_snapshot = data.to_vec();
     let result = std::thread::scope(|s| {
         let mut handles = Vec::with_capacity(num_threads);
@@ -186,7 +177,7 @@ mod tests {
         let value = minimax(&mechanics, &mut data, &table);
 
         // On a 3x3 board with no walls, the game should be fully solvable
-        assert!(value.is_some(), "Value should be determined");
+        assert!(value == -1, "P1 should always lose 3x3 with no walls");
         println!(
             "3x3 no walls: value = {:?}, table size = {}",
             value,
@@ -209,7 +200,7 @@ mod tests {
         let table = DashMap::new();
         let value = minimax(&mechanics, &mut data, &table);
 
-        assert_eq!(value, Some(1), "Player 0 should be able to win in one move");
+        assert_eq!(value, 1, "Player 0 should be able to win in one move");
     }
 
     #[test]
@@ -221,7 +212,7 @@ mod tests {
         let table = DashMap::new();
         let value = minimax(&mechanics, &mut data, &table);
 
-        assert_eq!(value, Some(0), "Max steps reached should be a tie");
+        assert_eq!(value, 0, "Max steps reached should be a tie");
     }
 
     #[test]
