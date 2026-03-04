@@ -71,6 +71,19 @@ class SelfPlayConfig(StrictBaseModel):
     rust_selfplay_binary: Optional[str] = None
 
 
+class InitialModel(StrictBaseModel):
+    file: Optional[str] = None
+    wandb_project: Optional[str] = None
+    wandb_alias: Optional[str] = None
+
+    @field_validator("wandb_alias")
+    @classmethod
+    def file_and_wandb_mutually_exclusive(cls, v, info):
+        if v is not None and info.data.get("file") is not None:
+            raise ValueError("Cannot specify both 'file' and 'wandb_alias' in initial_model")
+        return v
+
+
 class TrainingConfig(StrictBaseModel):
     games_per_training_step: float
     learning_rate: float
@@ -80,6 +93,7 @@ class TrainingConfig(StrictBaseModel):
     model_save_timing: bool = False
     save_onnx: bool = False
     finish_after: Optional[str] = None
+    initial_model: Optional[InitialModel] = None
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):

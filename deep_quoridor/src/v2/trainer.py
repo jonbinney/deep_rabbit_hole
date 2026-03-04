@@ -31,7 +31,6 @@ def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdow
 
 def train(config: Config):
     batch_size = config.training.batch_size
-
     alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
 
     upload_model_thread = None
