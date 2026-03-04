@@ -14,38 +14,38 @@ from v2.yaml_models import GameInfo, LatestModel
 
 
 class Sampler:
-    def __init__(self, dir: Path, cache_per_game: int):
-        self.cache_per_game = cache_per_game
+    def __init__(self, dir: Path):
         self.dir = dir
         self.cache = {}
 
     def remove_game(self, game_filename: str):
         self.cache.pop(game_filename, None)
 
-    def sample(self, game_filename: str, n: int):
+    def _ensure_loaded(self, game_filename: str):
         if game_filename not in self.cache:
-            self.cache[game_filename] = []
-
-        in_cache = self.cache[game_filename]
-        if len(in_cache) < n:
-            num_to_load = self.cache_per_game - len(in_cache) + n
             with np.load(self.dir / game_filename) as npz:
-                n_moves = npz["values"].shape[0]
-                indices = np.random.choice(n_moves, num_to_load)
-                for idx in indices:
-                    self.cache[game_filename].append(
-                        {
-                            "input_array": npz["input_arrays"][idx],
-                            "mcts_policy": npz["policies"][idx],
-                            "action_mask": npz["action_masks"][idx],
-                            "value": float(npz["values"][idx]),
-                            "player": int(npz["players"][idx]),
-                        }
-                    )
+                self.cache[game_filename] = {
+                    "input_arrays": npz["input_arrays"],
+                    "policies": npz["policies"],
+                    "action_masks": npz["action_masks"],
+                    "values": npz["values"],
+                    "players": npz["players"],
+                }
 
-        samples = self.cache[game_filename][:n]
-        self.cache[game_filename] = self.cache[game_filename][n:]
-        return samples
+    def sample(self, game_filename: str, n: int):
+        self._ensure_loaded(game_filename)
+        data = self.cache[game_filename]
+        indices = np.random.choice(data["values"].shape[0], n)
+        return [
+            {
+                "input_array": data["input_arrays"][idx],
+                "mcts_policy": data["policies"][idx],
+                "action_mask": data["action_masks"][idx],
+                "value": float(data["values"][idx]),
+                "player": int(data["players"][idx]),
+            }
+            for idx in indices
+        ]
 
 
 def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdown_event: threading.Event):
@@ -119,7 +119,7 @@ def train(config: Config):
     model_version = 1
     moves_per_game = []
     game_filename = []
-    sampler = Sampler(config.paths.replay_buffers, config.training.sample_caching_size)
+    sampler = Sampler(config.paths.replay_buffers)
     while True:
         if finish_condition and finish_condition.is_ready():
             print(f"Trainer: reached out finish condition: {config.training.finish_after}")

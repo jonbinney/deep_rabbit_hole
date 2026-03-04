@@ -94,7 +94,6 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
-    sample_caching_size: int = 8
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):
