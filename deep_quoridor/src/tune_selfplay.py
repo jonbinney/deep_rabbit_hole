@@ -42,7 +42,6 @@ def run_single_benchmark(config_file, num_workers, parallel_games, duration, run
 
     src_dir = Path(__file__).parent
 
-    wall_start = time.time()
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -51,15 +50,16 @@ def run_single_benchmark(config_file, num_workers, parallel_games, duration, run
         cwd=str(src_dir),
     )
     durations = []
+    all_lines = []
     for line in proc.stdout:
         line = line.rstrip()
+        all_lines.append(line)
         parsed = parse_selfplay_line(line)
         if parsed:
             print(f"  {line}")
             durations.append(parsed)
 
     proc.wait()
-    wall_elapsed = time.time() - wall_start
 
     # Cleanup run directory
     effective_runs_dir = runs_dir or str(src_dir.parent)
@@ -67,10 +67,14 @@ def run_single_benchmark(config_file, num_workers, parallel_games, duration, run
     if run_dir.exists():
         shutil.rmtree(run_dir)
 
-    return compute_metrics(num_workers, parallel_games, durations, wall_elapsed)
+    if not durations:
+        print("WARNING: couldn't find the duration of the self-play")
+        print(all_lines)
+
+    return compute_metrics(num_workers, parallel_games, durations)
 
 
-def compute_metrics(num_workers, parallel_games, durations, wall_elapsed):
+def compute_metrics(num_workers, parallel_games, durations):
     if not durations:
         return {
             "num_workers": num_workers,
