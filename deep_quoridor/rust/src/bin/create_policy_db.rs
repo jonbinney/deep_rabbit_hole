@@ -93,12 +93,9 @@ pub fn save_policy_to_sqlite(
         for item in entries.into_iter() {
             let (state_blob, entry) = item;
 
-            // Convert value from current player's perspective to player 0's perspective.
-            let current_player = mechanics.repr().get_current_player(&state_blob);
-            let p0_factor: i32 = if current_player == 0 { 1 } else { -1 };
-            let value_p0: i32 = (entry.value as i32) * p0_factor;
-
-            stmt.execute(params![state_blob, value_p0])?;
+            // Transposition table already stores P0-absolute values
+            // (1=P0 wins, -1=P0 loses). Store directly.
+            stmt.execute(params![state_blob, entry.value as i32])?;
         }
         // Explicitly drop statement before committing
         drop(stmt);

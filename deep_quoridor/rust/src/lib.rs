@@ -475,16 +475,13 @@ fn policy_db_lookup<'py>(
         match result {
             Ok(child_value_p0) => {
                 any_found = true;
-                // DB stores values from player 0's perspective.
-                // Convert to current player's perspective, then negate
-                // (child is opponent's turn, so child value is opponent's).
-                let child_value_cur = if current_player == 0 {
-                    child_value_p0
+                // DB stores values from P0's perspective (1=P0 wins, -1=P0 loses).
+                // Convert to the acting player's perspective.
+                values_array[i] = if current_player == 0 {
+                    child_value_p0 as f32 // P0 uses the value directly
                 } else {
-                    -child_value_p0
+                    -child_value_p0 as f32 // P1 wants the opposite of P0's value
                 };
-                // Negate: child value is from opponent's perspective
-                values_array[i] = -child_value_cur as f32;
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 // Child state not in DB; treat as unknown (0)

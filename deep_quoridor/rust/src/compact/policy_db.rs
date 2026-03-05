@@ -32,13 +32,12 @@ fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, 
     actions
 }
 
-/// Minimax evaluation using negamax formulation with transposition table.
+/// Minimax evaluation with transposition table.
 ///
-/// Returns the value from the current player's perspective:
-/// - `Some(1)` = current player wins with best play
-/// - `Some(0)` = game is a tie with best play
-/// - `Some(-1)` = current player loses with best play
-/// - `None` = unknown (non-terminal state at search horizon)
+/// Returns the value from player 0's (absolute) perspective:
+/// - `1` = player 0 wins with best play
+/// - `0` = game is a tie with best play
+/// - `-1` = player 1 wins with best play
 ///
 /// All reachable states and their values are stored in the
 /// transposition table for later export to a policy database.
