@@ -468,31 +468,43 @@ fn policy_db_lookup<'py>(
         }
         mechanics.switch_player(&mut child_data);
 
-        // Query DB for child state value
-        let result: Result<i32, _> =
-            stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
+        // Check for terminal states first (not stored in DB).
+        let child_cp = mechanics.repr().get_current_player(&child_data);
+        let child_opponent = 1 - child_cp;
+        let child_value_p0: f32 = if mechanics.check_win(&child_data, child_opponent) {
+            // child_opponent just won
+            any_found = true;
+            if child_opponent == 0 { 1.0 } else { -1.0 }
+        } else if mechanics.repr().get_completed_steps(&child_data)
+            >= mechanics.repr().max_steps()
+        {
+            any_found = true;
+            0.0
+        } else {
+            // Non-terminal: query DB
+            let result: Result<i32, _> =
+                stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
 
-        match result {
-            Ok(child_value_p0) => {
-                any_found = true;
-                // DB stores values from P0's perspective (1=P0 wins, -1=P0 loses).
-                // Convert to the acting player's perspective.
-                values_array[i] = if current_player == 0 {
-                    child_value_p0 as f32 // P0 uses the value directly
-                } else {
-                    -child_value_p0 as f32 // P1 wants the opposite of P0's value
-                };
+            match result {
+                Ok(v) => {
+                    any_found = true;
+                    v as f32
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => 0.0,
+                Err(e) => {
+                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "DB query error: {e}"
+                    )));
+                }
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                // Child state not in DB; treat as unknown (0)
-                values_array[i] = 0.0;
-            }
-            Err(e) => {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "DB query error: {e}"
-                )));
-            }
-        }
+        };
+
+        // DB stores P0-perspective. Convert to acting player's perspective.
+        values_array[i] = if current_player == 0 {
+            child_value_p0
+        } else {
+            -child_value_p0
+        };
     }
 
     if !any_found {

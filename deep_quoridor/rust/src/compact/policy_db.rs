@@ -62,72 +62,70 @@ fn minimax_inner(
 
     let current_player = mechanics.repr().get_current_player(data);
     let opponent = 1 - current_player;
-    let value = if mechanics.check_win(data, opponent) {
-        // Someone won
-        match opponent {
+
+    // Terminal states: return value directly without storing in transposition table.
+    if mechanics.check_win(data, opponent) {
+        return match opponent {
             0 => 1,
             1 => -1,
             _ => panic!("Bad player number ({})", opponent),
-        }
-    } else if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
-        // Draw: max steps reached
-        0
-    } else {
-        // Not a terminal state. Recurse.
+        };
+    }
+    if mechanics.repr().get_completed_steps(data) >= mechanics.repr().max_steps() {
+        return 0;
+    }
 
-        // Get all valid actions for the current player
-        let mut actions = get_all_actions(mechanics, data);
-        assert!(
-            !actions.is_empty(),
-            "No valid actions - should never happen"
+    // Not a terminal state. Recurse.
+
+    // Get all valid actions for the current player
+    let mut actions = get_all_actions(mechanics, data);
+    assert!(
+        !actions.is_empty(),
+        "No valid actions - should never happen"
+    );
+
+    // Shuffle actions if an RNG is provided (for Lazy SMP)
+    if let Some(ref mut r) = rng {
+        actions.shuffle(*r);
+    }
+
+    let is_maximizing = current_player == 0;
+    let mut best_child_value: Option<i8> = None;
+
+    for &(row, col, action_type) in &actions {
+        // Create child state
+        let mut new_data = data.to_vec();
+        let (r, c, t) = (row as usize, col as usize, action_type as usize);
+        if action_type == 2 {
+            mechanics.execute_move(
+                &mut new_data,
+                mechanics.repr().get_current_player(data),
+                r,
+                c,
+            );
+        } else {
+            mechanics.execute_wall_placement(&mut new_data, current_player, r, c, t);
+        }
+
+        mechanics.switch_player(&mut new_data);
+
+        let child_value = minimax_inner(
+            mechanics,
+            &mut new_data,
+            transposition_table,
+            rng.as_deref_mut(),
         );
 
-        // Shuffle actions if an RNG is provided (for Lazy SMP)
-        if let Some(ref mut r) = rng {
-            actions.shuffle(*r);
+        if best_child_value.is_none()
+            || is_maximizing && child_value > best_child_value.unwrap()
+            || !is_maximizing && child_value < best_child_value.unwrap()
+        {
+            best_child_value = Some(child_value)
         }
+    }
 
-        let is_maximizing = current_player == 0;
-        let mut best_child_value: Option<i8> = None;
-
-        for &(row, col, action_type) in &actions {
-            // Create child state
-            let mut new_data = data.to_vec();
-            let (r, c, t) = (row as usize, col as usize, action_type as usize);
-            if action_type == 2 {
-                mechanics.execute_move(
-                    &mut new_data,
-                    mechanics.repr().get_current_player(data),
-                    r,
-                    c,
-                );
-            } else {
-                mechanics.execute_wall_placement(&mut new_data, current_player, r, c, t);
-            }
-
-            mechanics.switch_player(&mut new_data);
-
-            // Recurse. Child returns value from opponent's perspective; negate for ours.
-            let child_value = minimax_inner(
-                mechanics,
-                &mut new_data,
-                transposition_table,
-                rng.as_deref_mut(),
-            );
-
-            if best_child_value.is_none()
-                || is_maximizing && child_value > best_child_value.unwrap()
-                || !is_maximizing && child_value < best_child_value.unwrap()
-            {
-                best_child_value = Some(child_value)
-            }
-        }
-
-        best_child_value.unwrap()
-    };
-
-    // Store in transposition table (use 0 for unknown)
-    transposition_table.insert(data.to_vec(), TranspositionEntry { value: value });
+    let value = best_child_value.unwrap();
+    transposition_table.insert(data.to_vec(), TranspositionEntry { value });
 
     value
 }
