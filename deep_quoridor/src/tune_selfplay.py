@@ -127,7 +127,7 @@ def main():
     parser.add_argument("--games", type=str, help="Comma-separated parallel_games values")
     parser.add_argument("--duration", type=str, default="2 minutes", help="Duration per combo (default: '2 minutes')")
     parser.add_argument("--runs-dir", type=str, default=None, help="Directory for runs")
-    parser.add_argument("--extra-overrides", nargs="*", default=[], help="Additional config overrides for train_v2.py")
+    parser.add_argument("-o", "--overrides", nargs="*", default=[], help="Additional config overrides for train_v2.py")
     args = parser.parse_args()
 
     workers_list = [int(x) for x in args.workers.split(",")]
