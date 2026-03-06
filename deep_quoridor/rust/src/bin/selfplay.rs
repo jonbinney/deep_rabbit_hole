@@ -363,6 +363,7 @@ fn run_continuous(
         agent_p1.reset_game();
         agent_p2.reset_game();
 
+        let game_start = std::time::Instant::now();
         let result = play_game(
             agent_p1.as_mut(),
             agent_p2.as_mut(),
@@ -371,6 +372,8 @@ fn run_continuous(
             q.max_steps as i32,
             false,
         )?;
+        let game_elapsed = game_start.elapsed().as_secs_f64();
+        println!("{} - selfplay finished in {:.4}", pid, game_elapsed);
 
         // Atomic write: write to tmp dir, then rename to output dir
         let ts = std::time::SystemTime::now()

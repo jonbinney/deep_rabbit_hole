@@ -165,9 +165,7 @@ class PathsConfig(StrictBaseModel):
     config_file: Path
 
     @classmethod
-    def create(
-        cls, base_dir: str, run_id: str, create_dirs: bool = True
-    ) -> "PathsConfig":
+    def create(cls, base_dir: str, run_id: str, create_dirs: bool = True) -> "PathsConfig":
         run_root = Path(base_dir) / "runs"
         run_dir = run_root / run_id
         config_file = run_dir / "config.yaml"
@@ -204,9 +202,7 @@ class Config(UserConfig):
     paths: PathsConfig
 
     @classmethod
-    def from_user(
-        cls, user: UserConfig, base_dir: str, create_dirs: bool = True
-    ) -> "Config":
+    def from_user(cls, user: UserConfig, base_dir: str, create_dirs: bool = True) -> "Config":
         paths = PathsConfig.create(base_dir, user.run_id, create_dirs=create_dirs)
         return cls(**user.model_dump(), paths=paths)
 
@@ -296,9 +292,7 @@ def _apply_overrides(data: dict, overrides: list[str]) -> dict:
     """
     for override in overrides:
         if "=" not in override:
-            raise ValueError(
-                f"Invalid override format '{override}', expected 'key=value'"
-            )
+            raise ValueError(f"Invalid override format '{override}', expected 'key=value'")
         key, value = override.split("=", 1)
         parts = key.split(".")
         parsed_value = _parse_override_value(value)
@@ -330,5 +324,20 @@ def load_config_and_setup_run(
     config_filename = config.paths.config_file
     with config_filename.open(mode="w") as f:
         f.write(to_yaml_str_ordered(user_config))
+
+    use_rust = config.self_play.program == "rust"
+    if use_rust:
+        # Apply default Rust binary path if not specified in config
+        if config.self_play.rust_selfplay_binary is None:
+            config.self_play.rust_selfplay_binary = str(
+                Path(__file__).parent.parent.parent / "rust" / "target" / "release" / "selfplay"
+            )
+        rust_binary = config.self_play.rust_selfplay_binary
+        if not Path(rust_binary).exists():
+            print(f"ERROR: Rust self-play binary not found at {rust_binary}")
+            print("Build it with: cd deep_quoridor/rust && cargo build --release --features binary --bin selfplay")
+            exit(1)
+        # Rust self-play requires ONNX model exports
+        config.training.save_onnx = True
 
     return config

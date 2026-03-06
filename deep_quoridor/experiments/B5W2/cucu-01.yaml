@@ -1,0 +1,83 @@
+# This run was able to train a very good model, that was able to beat policy_db (optimal strategy) as P2, after
+# model 400.  With more training it was able to get to almost 100% raw wins.
+# https://wandb.ai/the-lazy-learning-lair/B5W2/groups/cucu-01-20260302-1504/workspace?nw=nwuseramarcu
+run_id: cucu-01-$DATETIME
+quoridor:
+  board_size: 5
+  max_walls: 2
+  max_steps: 50
+alphazero:
+  network:
+    type: resnet
+    num_blocks: 2
+    num_channels: 32
+  mcts_n: 400
+  mcts_c_puct: 1.2
+wandb:
+  project: B5W2
+  upload_model:
+    every: 100 models
+    when_max:
+      - raw_win_perc
+      - p2_win_perc
+    when_min:
+      - dumb_score
+self_play:
+  num_workers: 4
+  parallel_games: 10
+  alphazero:
+    mcts_noise_epsilon: 0.25
+training:
+  games_per_training_step: 25.0
+  learning_rate: 0.001
+  batch_size: 2048
+  weight_decay: 0.0001
+  replay_buffer_size: 10000
+benchmarks:
+  - every: 10 models
+    jobs:
+      - type: tournament
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+        times: 100
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: dumb_score
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+  - every: 100 models
+    jobs:
+      - type: agent_evolution
+        prefix: raw
+        alphazero:
+          mcts_n: 0
+        top_n: 5
+        times: 10
+  - every: 100 models
+    jobs:
+      - type: tournament
+        prefix: ""
+        times: 20
+        opponents:
+          - random
+          - greedy:p_random=0.3,nick=greedy-03
+          - greedy:p_random=0.1,nick=greedy-01
+          - greedy
+          - simple:branching_factor=8,nick=simple-bf8
+          - simple:branching_factor=16,nick=simple-bf16
+      - type: dumb_score
+        prefix: ""
+  - every: 100 models
+    jobs:
+      - type: tournament
+        prefix: "hard"
+        times: 2
+        opponents:
+          - simple:branching_factor=256,nick=simple,max_depth=6
