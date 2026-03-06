@@ -24,7 +24,7 @@ while true; do
     fi
 
     # Read the first non-empty line
-    CMD=$(sed -n '/\S/p' "$QUEUE_FILE" | head -1)
+    CMD=$(grep -m1 '[^ 	]' "$QUEUE_FILE")
 
     if [ -z "$CMD" ]; then
         echo "Queue empty. Done."
@@ -33,7 +33,7 @@ while true; do
 
     # Remove the first non-empty line before running
     TEMP=$(mktemp)
-    awk 'BEGIN{found=0} /\S/{if(!found){found=1;next}} {print}' "$QUEUE_FILE" > "$TEMP"
+    awk 'BEGIN{found=0} /[^ \t]/{if(!found){found=1;next}} {print}' "$QUEUE_FILE" > "$TEMP"
     mv "$TEMP" "$QUEUE_FILE"
 
     echo "=== Running: $CMD ==="
