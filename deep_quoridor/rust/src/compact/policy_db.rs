@@ -1,7 +1,7 @@
-/// Simplified minimax for building a policy database.
+/// Minimax with alpha-beta pruning for building a policy database.
 ///
-/// Uses i8 values (1 = win, 0 = tie, -1 = loss, None = unknown)
-/// with a transposition table. No alpha-beta pruning or heuristic.
+/// Uses i8 values (1 = P0 wins, 0 = tie, -1 = P1 wins)
+/// with a transposition table.
 use dashmap::DashMap;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -9,12 +9,45 @@ use rand::SeedableRng;
 
 use super::q_game_mechanics::QGameMechanics;
 
-/// Transposition table entry storing only the value.
-/// The state bytes are stored as the DashMap key rather than in this struct.
-#[derive(Clone)]
-pub struct TranspositionEntry {
-    pub value: i8,
+/// Maximum state size in bytes. Covers up to 9x9 boards with generous parameters.
+pub const MAX_STATE_BYTES: usize = 8;
+
+/// Fixed-size key for the transposition table, avoiding heap allocation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct StateKey {
+    bytes: [u8; MAX_STATE_BYTES],
+    len: u8,
 }
+
+impl StateKey {
+    pub fn from_slice(data: &[u8]) -> Self {
+        assert!(
+            data.len() <= MAX_STATE_BYTES,
+            "State size {} exceeds MAX_STATE_BYTES {}",
+            data.len(),
+            MAX_STATE_BYTES
+        );
+        let mut bytes = [0u8; MAX_STATE_BYTES];
+        bytes[..data.len()].copy_from_slice(data);
+        Self {
+            bytes,
+            len: data.len() as u8,
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
+    }
+}
+
+impl std::hash::Hash for StateKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
+    }
+}
+
+/// Transposition table type alias.
+pub type TranspositionTable = DashMap<StateKey, i8>;
 
 /// Get all valid actions (moves + wall placements) for the current player.
 fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, u8)> {
@@ -32,32 +65,34 @@ fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, 
     actions
 }
 
-/// Minimax evaluation with transposition table.
+/// Minimax evaluation with alpha-beta pruning and transposition table.
 ///
 /// Returns the value from player 0's (absolute) perspective:
 /// - `1` = player 0 wins with best play
 /// - `0` = game is a tie with best play
 /// - `-1` = player 1 wins with best play
 ///
-/// All reachable states and their values are stored in the
+/// All reachable non-terminal states and their values are stored in the
 /// transposition table for later export to a policy database.
 pub fn minimax(
     mechanics: &QGameMechanics,
     data: &mut [u8],
-    transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+    transposition_table: &TranspositionTable,
 ) -> i8 {
-    minimax_inner(mechanics, data, transposition_table, None)
+    minimax_inner(mechanics, data, transposition_table, None, -1, 1)
 }
 
 fn minimax_inner(
     mechanics: &QGameMechanics,
     data: &mut [u8],
-    transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+    transposition_table: &TranspositionTable,
     mut rng: Option<&mut StdRng>,
+    mut alpha: i8,
+    mut beta: i8,
 ) -> i8 {
-    if let Some(entry) = transposition_table.get(data) {
-        // This branch has already been explored
-        return entry.value;
+    let key = StateKey::from_slice(data);
+    if let Some(entry) = transposition_table.get(&key) {
+        return *entry;
     }
 
     let current_player = mechanics.repr().get_current_player(data);
@@ -77,7 +112,6 @@ fn minimax_inner(
 
     // Not a terminal state. Recurse.
 
-    // Get all valid actions for the current player
     let mut actions = get_all_actions(mechanics, data);
     assert!(
         !actions.is_empty(),
@@ -90,10 +124,9 @@ fn minimax_inner(
     }
 
     let is_maximizing = current_player == 0;
-    let mut best_child_value: Option<i8> = None;
+    let mut best_value: i8 = if is_maximizing { -1 } else { 1 };
 
     for &(row, col, action_type) in &actions {
-        // Create child state
         let mut new_data = data.to_vec();
         let (r, c, t) = (row as usize, col as usize, action_type as usize);
         if action_type == 2 {
@@ -114,20 +147,36 @@ fn minimax_inner(
             &mut new_data,
             transposition_table,
             rng.as_deref_mut(),
+            alpha,
+            beta,
         );
 
-        if best_child_value.is_none()
-            || is_maximizing && child_value > best_child_value.unwrap()
-            || !is_maximizing && child_value < best_child_value.unwrap()
-        {
-            best_child_value = Some(child_value)
+        if is_maximizing {
+            if child_value > best_value {
+                best_value = child_value;
+            }
+            if best_value > alpha {
+                alpha = best_value;
+            }
+            if alpha >= beta {
+                break;
+            }
+        } else {
+            if child_value < best_value {
+                best_value = child_value;
+            }
+            if best_value < beta {
+                beta = best_value;
+            }
+            if alpha >= beta {
+                break;
+            }
         }
     }
 
-    let value = best_child_value.unwrap();
-    transposition_table.insert(data.to_vec(), TranspositionEntry { value });
+    transposition_table.insert(key, best_value);
 
-    value
+    best_value
 }
 
 /// Lazy SMP parallel minimax. Spawns `num_threads` threads each running
@@ -136,7 +185,7 @@ fn minimax_inner(
 pub fn minimax_lazy_smp(
     mechanics: &QGameMechanics,
     data: &mut [u8],
-    transposition_table: &DashMap<Vec<u8>, TranspositionEntry>,
+    transposition_table: &TranspositionTable,
     num_threads: usize,
 ) -> i8 {
     let data_snapshot = data.to_vec();
@@ -148,10 +197,9 @@ pub fn minimax_lazy_smp(
             let mech = &mechanics;
             handles.push(s.spawn(move || {
                 let mut rng = StdRng::seed_from_u64(i as u64);
-                minimax_inner(mech, &mut thread_data, tt, Some(&mut rng))
+                minimax_inner(mech, &mut thread_data, tt, Some(&mut rng), -1, 1)
             }));
         }
-        // Collect all results; return thread 0's result
         let mut results = Vec::with_capacity(num_threads);
         for h in handles {
             results.push(h.join().expect("minimax thread panicked"));
@@ -169,11 +217,10 @@ mod tests {
     fn test_minimax_initial_state_3x3() {
         let mechanics = QGameMechanics::new(3, 0, 10);
         let mut data = mechanics.create_initial_state();
-        let table = DashMap::new();
+        let table = TranspositionTable::new();
 
         let value = minimax(&mechanics, &mut data, &table);
 
-        // On a 3x3 board with no walls, the game should be fully solvable
         assert!(value == -1, "P1 should always lose 3x3 with no walls");
         println!(
             "3x3 no walls: value = {:?}, table size = {}",
@@ -187,14 +234,12 @@ mod tests {
         let mechanics = QGameMechanics::new(3, 0, 10);
         let mut data = mechanics.create_initial_state();
 
-        // Player 0 goal is row 2, player 1 goal is row 0.
-        // Place player 0 one step away from goal row.
         mechanics.repr().set_player_position(&mut data, 0, 1, 1);
         mechanics.repr().set_player_position(&mut data, 1, 2, 0);
         mechanics.repr().set_current_player(&mut data, 0);
         mechanics.repr().set_completed_steps(&mut data, 2);
 
-        let table = DashMap::new();
+        let table = TranspositionTable::new();
         let value = minimax(&mechanics, &mut data, &table);
 
         assert_eq!(value, 1, "Player 0 should be able to win in one move");
@@ -206,7 +251,7 @@ mod tests {
         let mut data = mechanics.create_initial_state();
         mechanics.repr().set_completed_steps(&mut data, 2);
 
-        let table = DashMap::new();
+        let table = TranspositionTable::new();
         let value = minimax(&mechanics, &mut data, &table);
 
         assert_eq!(value, 0, "Max steps reached should be a tie");
@@ -216,7 +261,7 @@ mod tests {
     fn test_transposition_table_populated() {
         let mechanics = QGameMechanics::new(3, 0, 4);
         let mut data = mechanics.create_initial_state();
-        let table = DashMap::new();
+        let table = TranspositionTable::new();
 
         minimax(&mechanics, &mut data, &table);
 

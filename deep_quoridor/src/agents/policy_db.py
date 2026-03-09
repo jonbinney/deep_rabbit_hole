@@ -98,5 +98,5 @@ class PolicyDBAgent(Agent):
             elif action_type == 1:  # horizontal wall
                 action_idx = self.action_encoder.action_to_index(WallAction((r, c), WallOrientation.HORIZONTAL))
 
-            if action_mask[action_idx]:
-                return action_idx
+            assert action_mask[action_idx]
+            return action_idx

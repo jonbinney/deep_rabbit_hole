@@ -2,8 +2,10 @@
 //! Create a policy database from minimax evaluations.
 
 use clap::Parser;
-use dashmap::DashMap;
-use quoridor_rs::compact::{policy_db, q_game_mechanics::QGameMechanics};
+use quoridor_rs::compact::{
+    policy_db::{self, TranspositionTable},
+    q_game_mechanics::QGameMechanics,
+};
 use rusqlite::{params, Connection};
 use std::path::Path;
 use std::time::Instant;
@@ -38,14 +40,23 @@ struct Args {
 
 #[allow(dead_code)]
 pub fn save_policy_to_sqlite(
-    mechanics: &QGameMechanics,
-    entries: DashMap<Vec<u8>, policy_db::TranspositionEntry>,
+    _mechanics: &QGameMechanics,
+    entries: TranspositionTable,
     filename: &str,
     board_size: usize,
     max_steps: usize,
     max_walls: usize,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut conn = Connection::open(Path::new(filename))?;
+
+    // Performance pragmas: disable journaling and syncs during bulk insert
+    conn.execute_batch(
+        "PRAGMA journal_mode = OFF;
+         PRAGMA synchronous = OFF;
+         PRAGMA locking_mode = EXCLUSIVE;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA cache_size = -64000;",
+    )?;
 
     // Drop existing tables to avoid schema conflicts
     conn.execute("DROP TABLE IF EXISTS policy", [])?;
@@ -74,10 +85,10 @@ pub fn save_policy_to_sqlite(
         params![max_walls as f32],
     )?;
 
-    // Create table for policy entries
+    // Create table WITHOUT primary key index — insert first, index later
     conn.execute(
         "CREATE TABLE policy (
-            state BLOB PRIMARY KEY,
+            state BLOB,
             value INTEGER NOT NULL
         )",
         [],
@@ -85,22 +96,27 @@ pub fn save_policy_to_sqlite(
 
     let num_entries = entries.len();
 
-    // Insert entries in a transaction for better performance
+    // Bulk insert in a transaction
     let tx = conn.transaction()?;
     {
         let mut stmt = tx.prepare("INSERT INTO policy (state, value) VALUES (?1, ?2)")?;
 
         for item in entries.into_iter() {
-            let (state_blob, entry) = item;
+            let (key, value) = item;
 
             // Transposition table already stores P0-absolute values
             // (1=P0 wins, -1=P0 loses). Store directly.
-            stmt.execute(params![state_blob, entry.value as i32])?;
+            stmt.execute(params![key.as_slice(), value as i32])?;
         }
-        // Explicitly drop statement before committing
         drop(stmt);
     }
     tx.commit()?;
+
+    // Create index after all inserts (much faster than maintaining during insert)
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_policy_state ON policy(state)",
+        [],
+    )?;
 
     Ok(num_entries)
 }
@@ -138,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Threads: {}", args.num_threads);
 
     let eval_start = Instant::now();
-    let transposition_table = DashMap::new();
+    let transposition_table = TranspositionTable::new();
     let value = if args.num_threads > 1 {
         policy_db::minimax_lazy_smp(
             &mechanics,

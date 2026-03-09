@@ -397,7 +397,7 @@ fn policy_db_lookup<'py>(
     max_walls: usize,
     max_steps: usize,
     db_path: &str,
-) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<f32>>)>> {
+) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<i32>>)>> {
     use compact::q_game_mechanics::QGameMechanics;
     use rusqlite::Connection;
     use std::path::Path;
@@ -414,8 +414,7 @@ fn policy_db_lookup<'py>(
         current_player,
         completed_steps,
     );
-    mechanics.print(&data);
-    println!(" ");
+    mechanics.repr().print(&data);
 
     let cp = current_player as usize;
 
@@ -450,7 +449,7 @@ fn policy_db_lookup<'py>(
 
     let n = actions.len();
     let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
-    let mut values_array = ndarray::Array1::<f32>::zeros(n);
+    let mut values_array = ndarray::Array1::<i32>::zeros(n);
     let mut any_found = false;
 
     for (i, &(row, col, action_type)) in actions.iter().enumerate() {
@@ -471,15 +470,18 @@ fn policy_db_lookup<'py>(
         // Check for terminal states first (not stored in DB).
         let child_cp = mechanics.repr().get_current_player(&child_data);
         let child_opponent = 1 - child_cp;
-        let child_value_p0: f32 = if mechanics.check_win(&child_data, child_opponent) {
+        let child_value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
             // child_opponent just won
             any_found = true;
-            if child_opponent == 0 { 1.0 } else { -1.0 }
-        } else if mechanics.repr().get_completed_steps(&child_data)
-            >= mechanics.repr().max_steps()
+            if child_opponent == 0 {
+                1
+            } else {
+                -1
+            }
+        } else if mechanics.repr().get_completed_steps(&child_data) >= mechanics.repr().max_steps()
         {
             any_found = true;
-            0.0
+            0
         } else {
             // Non-terminal: query DB
             let result: Result<i32, _> =
@@ -488,9 +490,13 @@ fn policy_db_lookup<'py>(
             match result {
                 Ok(v) => {
                     any_found = true;
-                    v as f32
+                    if current_player == 0 {
+                        v
+                    } else {
+                        -v
+                    }
                 }
-                Err(rusqlite::Error::QueryReturnedNoRows) => 0.0,
+                Err(rusqlite::Error::QueryReturnedNoRows) => panic!("No state found for action"),
                 Err(e) => {
                     return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
                         "DB query error: {e}"
@@ -500,12 +506,10 @@ fn policy_db_lookup<'py>(
         };
 
         // DB stores P0-perspective. Convert to acting player's perspective.
-        values_array[i] = if current_player == 0 {
-            child_value_p0
-        } else {
-            -child_value_p0
-        };
+        values_array[i] = child_value_p0;
     }
+    dbg!(&actions);
+    dbg!(&values_array);
 
     if !any_found {
         return Ok(None);
