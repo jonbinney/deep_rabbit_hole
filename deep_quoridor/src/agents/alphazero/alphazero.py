@@ -310,6 +310,9 @@ class AlphaZeroAgent(TrainableAgent):
             random.sample(range(256), int(round(256 * params.test_ratio)))
         )
 
+        self._onnx_proto = None
+        self._onnx_init_name_to_idx: dict = {}
+
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
 
@@ -435,7 +438,14 @@ class AlphaZeroAgent(TrainableAgent):
         print(f"AlphaZero model saved to {path}")
 
     def save_model_onnx(self, path):
-        """Export the model to ONNX format."""
+        """Export the model to ONNX format.
+
+        On the first call, performs a full torch.onnx.export() and caches the ONNX
+        protobuf in memory. On subsequent calls, only updates the weight tensors
+        (initializers) in the cached proto and re-serializes, skipping graph tracing.
+        """
+        import onnx
+        import onnx.numpy_helper
         import torch.onnx
 
         # Create directory for saving models if it doesn't exist
@@ -444,40 +454,62 @@ class AlphaZeroAgent(TrainableAgent):
         # Set the network to evaluation mode
         self.evaluator.network.eval()
 
-        # Create a dummy input tensor with the correct shape
-        # The shape depends on the network type
-        network = self.evaluator.network
-        if (
-            hasattr(network, "__class__")
-            and network.__class__.__name__ == "ResnetNetwork"
-        ):
-            # ResNet expects input of shape (batch_size, 5, input_size, input_size)
-            # NOTE: input_size is board_size * 2 + 3, which is the dimension of the combined grid input, not the original board size
-            dummy_input = torch.randn(
-                1, 5, network.input_size, network.input_size, device=self.device
+        if self._onnx_proto is None:
+            # First save: run full export and build the initializer name→index cache.
+            network = self.evaluator.network
+            if (
+                hasattr(network, "__class__")
+                and network.__class__.__name__ == "ResnetNetwork"
+            ):
+                # ResNet expects input of shape (batch_size, 5, input_size, input_size)
+                # NOTE: input_size is board_size * 2 + 3, which is the dimension of the combined grid input, not the original board size
+                dummy_input = torch.randn(
+                    1, 5, network.input_size, network.input_size, device=self.device
+                )
+            else:
+                # MLP expects input of shape (batch_size, input_size)
+                dummy_input = torch.randn(1, network.input_size, device=self.device)
+
+            # Export the model with opset 17 (widely supported, avoids version conversion issues)
+            torch.onnx.export(
+                self.evaluator.network,
+                (dummy_input,),  # Args must be a tuple
+                path,
+                export_params=True,
+                opset_version=17,  # Use 17 instead of 11 to avoid conversion issues
+                do_constant_folding=True,
+                input_names=["input"],
+                output_names=["policy_logits", "value"],
+                dynamic_axes={
+                    "input": {0: "batch_size"},
+                    "policy_logits": {0: "batch_size"},
+                    "value": {0: "batch_size"},
+                },
+                external_data=False,  # Don't use external data format for simplicity; model should be small enough to fit in a single file
+            )
+
+            self._onnx_proto = onnx.load(str(path))
+            self._onnx_init_name_to_idx = {
+                init.name: idx
+                for idx, init in enumerate(self._onnx_proto.graph.initializer)
+            }
+            print(
+                f"AlphaZero model exported to ONNX at {path} "
+                f"({len(self._onnx_init_name_to_idx)} initializers cached)"
             )
         else:
-            # MLP expects input of shape (batch_size, input_size)
-            dummy_input = torch.randn(1, network.input_size, device=self.device)
-
-        # Export the model with opset 17 (widely supported, avoids version conversion issues)
-        torch.onnx.export(
-            self.evaluator.network,
-            (dummy_input,),  # Args must be a tuple
-            path,
-            export_params=True,
-            opset_version=17,  # Use 17 instead of 11 to avoid conversion issues
-            do_constant_folding=True,
-            input_names=["input"],
-            output_names=["policy_logits", "value"],
-            dynamic_axes={
-                "input": {0: "batch_size"},
-                "policy_logits": {0: "batch_size"},
-                "value": {0: "batch_size"},
-            },
-            external_data=False,  # Don't use external data format for simplicity; model should be small enough to fit in a single file
-        )
-        print(f"AlphaZero model exported to ONNX at {path}")
+            # Subsequent saves: update only the weight tensors in the cached proto.
+            state_dict = self.evaluator.network.state_dict()
+            for name, tensor in state_dict.items():
+                if name in self._onnx_init_name_to_idx:
+                    idx = self._onnx_init_name_to_idx[name]
+                    self._onnx_proto.graph.initializer[idx].CopyFrom(
+                        onnx.numpy_helper.from_array(
+                            tensor.cpu().numpy(), name=name
+                        )
+                    )
+            onnx.save(self._onnx_proto, str(path))
+            print(f"AlphaZero model exported to ONNX at {path} (cached proto, weights updated)")
 
     def save_model_with_suffix(self, suffix: str) -> Path:
         path = resolve_path(self.params.model_dir, self.resolve_filename(suffix))
