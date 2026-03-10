@@ -471,7 +471,8 @@ class AlphaZeroAgent(TrainableAgent):
             self._onnx_proto = onnx.load(str(path))
             state_dict_names = set(self.evaluator.network.state_dict().keys())
             self._onnx_init_name_to_idx = {
-                init.name: idx for idx, init in enumerate(self._onnx_proto.graph.initializer)
+                init.name: idx
+                for idx, init in enumerate(self._onnx_proto.graph.initializer)
                 if init.name in state_dict_names
             }
             print(
