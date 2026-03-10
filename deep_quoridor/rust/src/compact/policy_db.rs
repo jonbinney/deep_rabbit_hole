@@ -206,11 +206,6 @@ mod tests {
         let value = minimax(&mechanics, &mut data, &table);
 
         assert!(value == -1, "P1 should always lose 3x3 with no walls");
-        println!(
-            "3x3 no walls: value = {:?}, table size = {}",
-            value,
-            table.len()
-        );
     }
 
     #[test]
@@ -250,6 +245,5 @@ mod tests {
         minimax(&mechanics, &mut data, &table);
 
         assert!(!table.is_empty(), "Transposition table should have entries");
-        println!("Table has {} entries", table.len());
     }
 }

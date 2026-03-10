@@ -42,8 +42,8 @@ impl QGameMechanics {
     /// * `max_steps` - Maximum steps before draw
     pub fn new(board_size: usize, max_walls: usize, max_steps: usize) -> Self {
         let repr = QBitRepr::new(board_size, max_walls, max_steps);
-        // Player 1 starts at bottom, aims for top (row 0)
-        // Player 2 starts at top, aims for bottom (row board_size-1)
+        // Player 0 starts at top (row 0), aims for bottom (row board_size-1)
+        // Player 1 starts at bottom (row board_size-1), aims for top (row 0)
         let goal_rows = [board_size - 1, 0];
 
         Self { repr, goal_rows }
@@ -603,9 +603,9 @@ mod tests {
         let (p1_row, p1_col) = mechanics.repr.get_player_position(&state, 0);
         let (p2_row, p2_col) = mechanics.repr.get_player_position(&state, 1);
 
-        assert_eq!(p1_row, 0); // Bottom
+        assert_eq!(p1_row, 0); // Top
         assert_eq!(p1_col, 4); // Center
-        assert_eq!(p2_row, 8); // Top
+        assert_eq!(p2_row, 8); // Bottom
         assert_eq!(p2_col, 4); // Center
 
         // Check walls
@@ -705,12 +705,8 @@ mod tests {
         // This should be invalid if it blocks the only remaining path
         // (depends on whether there's still a way around)
 
-        // Log the result to verify pathfinding completed
-        eprintln!(
-            "Pathfinding completed successfully: wall at (2,1) is {}",
-            if is_valid { "valid" } else { "invalid" }
-        );
         // Test passes as long as we get here without panic
+        let _ = is_valid;
     }
 
     #[test]
@@ -798,8 +794,6 @@ mod tests {
             .iter()
             .map(|line| line[num_leading_spaces..].to_owned())
             .collect();
-
-        dbg!(&stripped_lines);
 
         let mechanics = QGameMechanics::new(size, 10, 100);
         let mut state = mechanics.repr().create_data();

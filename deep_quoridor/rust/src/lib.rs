@@ -362,7 +362,7 @@ fn q_evaluate_actions<'py>(
     );
 
     // Convert actions back to numpy format
-    // Actions are (row, col, action_type) where action_type: 0=move, 1=vert wall, 2=horiz wall
+    // Actions are (row, col, action_type) where action_type: 0=vert wall, 1=horiz wall, 2=move
     let num_actions = actions.len();
     let mut actions_array = ndarray::Array2::<i32>::zeros((num_actions, 3));
     for (i, (row, col, action_type)) in actions.iter().enumerate() {
@@ -414,8 +414,6 @@ fn policy_db_lookup<'py>(
         current_player,
         completed_steps,
     );
-    mechanics.repr().print(&data);
-
     let cp = current_player as usize;
 
     // Get all valid actions for current player
@@ -508,9 +506,6 @@ fn policy_db_lookup<'py>(
         // DB stores P0-perspective. Convert to acting player's perspective.
         values_array[i] = child_value_p0;
     }
-    dbg!(&actions);
-    dbg!(&values_array);
-
     if !any_found {
         return Ok(None);
     }

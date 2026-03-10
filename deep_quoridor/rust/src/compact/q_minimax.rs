@@ -221,10 +221,7 @@ fn minimax(
     }
 
     let actions = sample_actions(mechanics, data, branching_factor);
-    if actions.is_empty() {
-        mechanics.print(data);
-        assert!(false, "No valid actions - should never happen");
-    }
+    assert!(!actions.is_empty(), "No valid actions - should never happen");
 
     let is_maximizing = current_player == agent_player;
     let mut best_value = if is_maximizing {
@@ -432,7 +429,7 @@ mod tests {
         let mechanics = QGameMechanics::new(3, 0, 4);
         let mut data = mechanics.create_initial_state();
 
-        // P1 playes something that doesn't instantly lose
+        // P1 plays something that doesn't instantly lose
         mechanics.execute_move(&mut data, 0, 0, 2);
         mechanics.switch_player(&mut data);
         mechanics.execute_move(&mut data, 1, 1, 1);
@@ -440,7 +437,7 @@ mod tests {
         mechanics.execute_move(&mut data, 0, 1, 2);
         mechanics.switch_player(&mut data);
 
-        // P2 can win in 1 more moves
+        // P2 can win in 1 move
         let (_, values, _) = evaluate_actions(&mechanics, &data, 1, 999, 1.0, 0);
         assert!(
             values.contains(&WINNING_REWARD),
@@ -455,7 +452,7 @@ mod tests {
         let mechanics = QGameMechanics::new(3, 0, 4);
         let mut data = mechanics.create_initial_state();
 
-        // P1 playes something that doesn't instantly lose
+        // P1 plays something that doesn't instantly lose
         mechanics.execute_move(&mut data, 0, 0, 2);
         mechanics.switch_player(&mut data);
 
@@ -478,13 +475,12 @@ mod tests {
     fn test_distance_to_goal() {
         let mechanics = QGameMechanics::new(5, 5, 100);
         let data = mechanics.create_initial_state();
-        mechanics.print(&data);
 
-        // Player 0 starts at bottom, goal is top (row 0)
+        // Player 0 starts at top (row 0), goal is bottom (row 4)
         let dist_p0 = distance_to_goal(&mechanics, &data, 0);
         assert!(dist_p0 > 0, "Player 0 should have distance > 0 to goal");
 
-        // Player 1 starts at top, goal is bottom (row 4)
+        // Player 1 starts at bottom (row 4), goal is top (row 0)
         let dist_p1 = distance_to_goal(&mechanics, &data, 1);
         assert!(dist_p1 > 0, "Player 1 should have distance > 0 to goal");
     }
