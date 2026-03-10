@@ -360,7 +360,7 @@ class AlphaZeroAgent(TrainableAgent):
             if self.params.training_mode:
                 return
 
-            print("WARNING: no initial model provided usign a filename or wandb, so using random initialized model")
+            print("WARNING: no initial model provided using a filename or wandb, so using random initialized model")
             return
             # If it's not training mode, we definitely need to load a pretrained model, so try the
             # default path for local files
