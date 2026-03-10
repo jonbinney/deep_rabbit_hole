@@ -1,14 +1,14 @@
 #!/usr/bin/env rust
 //! Create a policy database from minimax evaluations.
-//!
-//! This binary initializes a Quoridor game and uses the Rust q_minimax implementation
-//! to evaluate all possible actions from the initial state, logging the results to
-//! a SQLite database for later analysis or training.
 
 use clap::Parser;
-use quoridor_rs::compact::{q_game_mechanics::QGameMechanics, q_minimax};
-use quoridor_rs::q_log_entries_to_sqlite;
-use std::env;
+use quoridor_rs::compact::{
+    policy_db::{self, TranspositionTable},
+    q_game_mechanics::QGameMechanics,
+};
+use rusqlite::{params, Connection};
+use std::path::Path;
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -29,19 +29,7 @@ struct Args {
     #[arg(long, default_value_t = 8)]
     max_steps: usize,
 
-    /// How many actions to consider at each minimax stage
-    #[arg(long, default_value_t = 10000)]
-    branching_factor: usize,
-
-    /// Discount factor for future rewards
-    #[arg(long, default_value_t = 1.0)]
-    discount_factor: f32,
-
-    /// Heuristic to use (0=none, 1=distance+walls)
-    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(i32).range(0..=1))]
-    heuristic: i32,
-
-    /// Number of threads to use for computation
+    /// Number of threads for Lazy SMP parallel search
     #[arg(long, default_value_t = 1)]
     num_threads: usize,
 
@@ -50,24 +38,97 @@ struct Args {
     output: String,
 }
 
+#[allow(dead_code)]
+pub fn save_policy_to_sqlite(
+    _mechanics: &QGameMechanics,
+    entries: TranspositionTable,
+    filename: &str,
+    board_size: usize,
+    max_steps: usize,
+    max_walls: usize,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut conn = Connection::open(Path::new(filename))?;
+
+    // Performance pragmas: disable journaling and syncs during bulk insert
+    conn.execute_batch(
+        "PRAGMA journal_mode = OFF;
+         PRAGMA synchronous = OFF;
+         PRAGMA locking_mode = EXCLUSIVE;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA cache_size = -64000;",
+    )?;
+
+    // Drop existing tables to avoid schema conflicts
+    conn.execute("DROP TABLE IF EXISTS policy", [])?;
+    conn.execute("DROP TABLE IF EXISTS metadata", [])?;
+
+    // Create metadata table for global parameters
+    conn.execute(
+        "CREATE TABLE metadata (
+            key TEXT PRIMARY KEY,
+            value FLOAT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Insert metadata
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('board_size', ?1)",
+        params![board_size as f32],
+    )?;
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('max_steps', ?1)",
+        params![max_steps as f32],
+    )?;
+    conn.execute(
+        "INSERT INTO metadata (key, value) VALUES ('max_walls', ?1)",
+        params![max_walls as f32],
+    )?;
+
+    // Create table WITHOUT primary key index — insert first, index later
+    conn.execute(
+        "CREATE TABLE policy (
+            state BLOB,
+            value INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    let num_entries = entries.len();
+
+    // Bulk insert in a transaction
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare("INSERT INTO policy (state, value) VALUES (?1, ?2)")?;
+
+        for item in entries.into_iter() {
+            let (key, value) = item;
+
+            // Transposition table already stores P0-absolute values
+            // (1=P0 wins, -1=P0 loses). Store directly.
+            stmt.execute(params![key.as_slice(), value as i32])?;
+        }
+        drop(stmt);
+    }
+    tx.commit()?;
+
+    // Create index after all inserts (much faster than maintaining during insert)
+    conn.execute("CREATE UNIQUE INDEX idx_policy_state ON policy(state)", [])?;
+
+    Ok(num_entries)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-
-    // Set number of threads for Rayon
-    env::set_var("RAYON_NUM_THREADS", args.num_threads.to_string());
 
     println!("Initializing Quoridor game...");
     println!("  Board size: {}x{}", args.board_size, args.board_size);
     println!("  Max walls: {} per player", args.max_walls);
     println!("  Max steps: {}", args.max_steps);
-    println!("  Branching factor: {}", args.branching_factor);
-    println!("  Discount factor: {}", args.discount_factor);
-    println!("  Heuristic: {}", args.heuristic);
-    println!("  Number of threads: {}", args.num_threads);
 
     // Create game mechanics and initial state
     let mechanics = QGameMechanics::new(args.board_size, args.max_walls, args.max_steps);
-    let initial_state = mechanics.create_initial_state();
+    let mut initial_state = mechanics.create_initial_state();
 
     // Print game state info
     let current_player = mechanics.repr().get_current_player(&initial_state);
@@ -85,41 +146,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Walls remaining: [{}, {}]", p0_walls, p1_walls);
     println!("  Current player: {}", current_player);
 
-    // Call q_minimax to evaluate actions and generate log entries
-    println!("\nEvaluating actions and creating policy database...");
+    println!("\nRunning minimax and creating policy database...");
     println!("  Output file: {}", args.output);
+    println!("  Threads: {}", args.num_threads);
 
-    let (_actions, _values, log_entries) = q_minimax::evaluate_actions(
+    let eval_start = Instant::now();
+    let transposition_table = TranspositionTable::new();
+    let value = if args.num_threads > 1 {
+        policy_db::minimax_lazy_smp(
+            &mechanics,
+            &mut initial_state,
+            &transposition_table,
+            args.num_threads,
+        )
+    } else {
+        policy_db::minimax(&mechanics, &mut initial_state, &transposition_table)
+    };
+
+    let eval_elapsed = eval_start.elapsed();
+    println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
+    println!("  Root value: {:?}", value);
+
+    // Write transposition table entries to SQLite database
+    let num_entries = transposition_table.len();
+    println!("  Collected {} transposition table entries", num_entries);
+
+    let write_start = Instant::now();
+    save_policy_to_sqlite(
         &mechanics,
-        &initial_state,
+        transposition_table,
+        &args.output,
+        args.board_size,
         args.max_steps,
-        args.branching_factor,
-        args.discount_factor,
-        args.heuristic,
-        true, // enable logging
+        args.max_walls,
+    )?;
+    let write_elapsed = write_start.elapsed();
+    println!(
+        "  Writing database took {:.3}s",
+        write_elapsed.as_secs_f64()
     );
 
-    // Write log entries to SQLite database
-    if let Some(entries) = log_entries {
-        let num_entries = entries.len();
-        println!("  Collected {} log entries", num_entries);
-
-        q_log_entries_to_sqlite(
-            entries,
-            &args.output,
-            args.board_size,
-            args.max_steps,
-            args.max_walls,
-        )?;
-
-        println!(
-            "\n✓ Successfully created policy database with {} entries",
-            num_entries
-        );
-        println!("  Saved to: {}", args.output);
-    } else {
-        println!("\n✗ No log entries were generated");
-    }
+    println!(
+        "\nSuccessfully created policy database with {} entries",
+        num_entries
+    );
+    println!("  Saved to: {}", args.output);
 
     Ok(())
 }

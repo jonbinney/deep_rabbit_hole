@@ -3,9 +3,6 @@ use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyR
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use rusqlite::{params, Connection};
-use std::path::Path;
-
 pub mod actions;
 pub mod compact;
 pub mod game_state;
@@ -372,11 +369,10 @@ fn q_evaluate_actions<'py>(
         branching_factor,
         discount_factor,
         heuristic,
-        false, // don't enable logging
     );
 
     // Convert actions back to numpy format
-    // Actions are (row, col, action_type) where action_type: 0=move, 1=vert wall, 2=horiz wall
+    // Actions are (row, col, action_type) where action_type: 0=vert wall, 1=horiz wall, 2=move
     let num_actions = actions.len();
     let mut actions_array = ndarray::Array2::<i32>::zeros((num_actions, 3));
     for (i, (row, col, action_type)) in actions.iter().enumerate() {
@@ -393,106 +389,143 @@ fn q_evaluate_actions<'py>(
     ))
 }
 
-/// Write QBitRepr-based log entries to a SQLite database
-#[allow(dead_code)]
-pub fn q_log_entries_to_sqlite(
-    entries: Vec<compact::q_minimax::MinimaxLogEntry>,
-    filename: &str,
+/// Look up a game state in a pre-computed policy database.
+///
+/// The DB stores only (state, value). This function enumerates all valid
+/// actions, computes each child state, queries the DB for each child's value,
+/// and returns (actions, values) from the current player's perspective.
+#[cfg(feature = "python")]
+#[pyfunction]
+fn policy_db_lookup<'py>(
+    py: Python<'py>,
+    grid: PyReadonlyArray2<i8>,
+    player_positions: PyReadonlyArray2<i32>,
+    walls_remaining: PyReadonlyArray1<i32>,
+    current_player: i32,
+    completed_steps: i32,
     board_size: usize,
-    max_steps: usize,
     max_walls: usize,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut conn = Connection::open(Path::new(filename))?;
+    max_steps: usize,
+    db_path: &str,
+) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<i32>>)>> {
+    use compact::q_game_mechanics::QGameMechanics;
+    use rusqlite::Connection;
+    use std::path::Path;
 
-    // Drop existing tables to avoid schema conflicts
-    // This ensures we always have the correct schema for QBitRepr-based data
-    conn.execute("DROP TABLE IF EXISTS policy", [])?;
-    conn.execute("DROP TABLE IF EXISTS metadata", [])?;
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
 
-    // Create metadata table for global parameters
-    conn.execute(
-        "CREATE TABLE metadata (
-            key TEXT PRIMARY KEY,
-            value FLOAT NOT NULL
-        )",
-        [],
-    )?;
+    // Convert game state to QBitRepr format
+    let mut data = mechanics.repr().create_data();
+    mechanics.repr().from_game_state(
+        &mut data,
+        &grid.as_array(),
+        &player_positions.as_array(),
+        &walls_remaining.as_array(),
+        current_player,
+        completed_steps,
+    );
+    let cp = current_player as usize;
 
-    // Insert metadata
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('board_size', ?1)",
-        params![board_size as f32],
-    )?;
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('max_steps', ?1)",
-        params![max_steps as f32],
-    )?;
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('max_walls', ?1)",
-        params![max_walls as f32],
-    )?;
+    // Get all valid actions for current player
+    let moves = mechanics.get_valid_moves(&mut data);
+    let walls = mechanics.get_valid_wall_placements(&mut data);
 
-    // Create table for policy entries
-    conn.execute(
-        "CREATE TABLE policy (
-            id INTEGER PRIMARY KEY,
-            state BLOB NOT NULL,
-            agent_player INTEGER NOT NULL,
-            num_actions INTEGER NOT NULL,
-            actions BLOB NOT NULL,
-            action_values BLOB NOT NULL
-        )",
-        [],
-    )?;
+    let mut actions: Vec<(u8, u8, u8)> = moves
+        .into_iter()
+        .map(|(r, c)| (r as u8, c as u8, 2))
+        .collect();
+    actions.extend(
+        walls
+            .into_iter()
+            .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
+    );
 
-    // Create index for fast lookups by state
-    conn.execute("CREATE INDEX idx_state ON policy (state)", [])?;
-
-    let num_entries = entries.len();
-
-    // Insert entries in a transaction for better performance
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
-            "INSERT INTO policy (state, agent_player, num_actions, actions, action_values)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-        )?;
-
-        for entry in entries {
-            // State is already packed as Vec<u8>
-            let state_blob = entry.data;
-
-            // Flatten actions into a single vector: each action is (row, col, action_type)
-            let actions_flat: Vec<usize> = entry
-                .actions
-                .into_iter()
-                .flat_map(|(r, c, t)| vec![r, c, t])
-                .collect();
-            let actions_blob: Vec<u8> = actions_flat
-                .iter()
-                .flat_map(|&x| (x as u32).to_le_bytes())
-                .collect();
-
-            // Convert values to bytes
-            let values_blob: Vec<u8> = entry.values.iter().flat_map(|&x| x.to_le_bytes()).collect();
-
-            let num_actions = entry.values.len() as i32;
-
-            stmt.execute(params![
-                state_blob,
-                entry.agent_player as i32,
-                num_actions,
-                actions_blob,
-                values_blob,
-            ])?;
-        }
-        // Explicitly drop statement before committing
-        drop(stmt);
+    if actions.is_empty() {
+        return Ok(None);
     }
-    tx.commit()?;
 
-    Ok(num_entries)
+    // Open the database
+    let conn = Connection::open_with_flags(
+        Path::new(db_path),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
+
+    let mut stmt = conn
+        .prepare_cached("SELECT value FROM policy WHERE state = ?1")
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("SQL prepare: {e}")))?;
+
+    let n = actions.len();
+    let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
+    let mut values_array = ndarray::Array1::<i32>::zeros(n);
+    let mut any_found = false;
+
+    for (i, &(row, col, action_type)) in actions.iter().enumerate() {
+        actions_array[[i, 0]] = row as i32;
+        actions_array[[i, 1]] = col as i32;
+        actions_array[[i, 2]] = action_type as i32;
+
+        // Create child state
+        let mut child_data = data.clone();
+        let (r, c, t) = (row as usize, col as usize, action_type as usize);
+        if action_type == 2 {
+            mechanics.execute_move(&mut child_data, cp, r, c);
+        } else {
+            mechanics.execute_wall_placement(&mut child_data, cp, r, c, t);
+        }
+        mechanics.switch_player(&mut child_data);
+
+        // Check for terminal states first (not stored in DB).
+        let child_cp = mechanics.repr().get_current_player(&child_data);
+        let child_opponent = 1 - child_cp;
+        let child_value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
+            // child_opponent just won
+            any_found = true;
+            if child_opponent == 0 {
+                -1
+            } else {
+                1
+            }
+        } else if mechanics.repr().get_completed_steps(&child_data) >= mechanics.repr().max_steps()
+        {
+            any_found = true;
+            0
+        } else {
+            // Non-terminal: query DB
+            let result: Result<i32, _> =
+                stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
+
+            match result {
+                Ok(v) => {
+                    any_found = true;
+                    if current_player == 0 {
+                        v
+                    } else {
+                        -v
+                    }
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => panic!("No state found for action"),
+                Err(e) => {
+                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "DB query error: {e}"
+                    )));
+                }
+            }
+        };
+
+        // DB stores P0-perspective. Convert to acting player's perspective.
+        values_array[i] = child_value_p0;
+    }
+    if !any_found {
+        return Ok(None);
+    }
+
+    Ok(Some((
+        PyArray2::from_owned_array_bound(py, actions_array),
+        numpy::PyArray1::from_owned_array_bound(py, values_array),
+    )))
 }
+
 /// A Python module implemented in Rust.
 #[cfg(feature = "python")]
 #[pymodule]
@@ -524,6 +557,9 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Minimax evaluation
     m.add_function(wrap_pyfunction!(evaluate_actions, m)?)?;
     m.add_function(wrap_pyfunction!(q_evaluate_actions, m)?)?;
+
+    // Policy DB lookup
+    m.add_function(wrap_pyfunction!(policy_db_lookup, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;

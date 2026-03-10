@@ -26,6 +26,7 @@ pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 numpy = { version = "0.22", optional = true }
 ndarray = "0.16"
 rand = "0.8"
+dashmap = "6"
 rayon = "1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
