@@ -1,4 +1,4 @@
-/// Minimax with alpha-beta pruning for building a policy database.
+/// Minimax for building a policy database.
 ///
 /// Uses i8 values (1 = P0 wins, 0 = tie, -1 = P1 wins)
 /// with a transposition table.
@@ -65,7 +65,7 @@ fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, 
     actions
 }
 
-/// Minimax evaluation with alpha-beta pruning and transposition table.
+/// Minimax evaluation with transposition table.
 ///
 /// Returns the value from player 0's (absolute) perspective:
 /// - `1` = player 0 wins with best play
@@ -79,7 +79,7 @@ pub fn minimax(
     data: &mut [u8],
     transposition_table: &TranspositionTable,
 ) -> i8 {
-    minimax_inner(mechanics, data, transposition_table, None, -1, 1)
+    minimax_inner(mechanics, data, transposition_table, None)
 }
 
 fn minimax_inner(
@@ -87,8 +87,6 @@ fn minimax_inner(
     data: &mut [u8],
     transposition_table: &TranspositionTable,
     mut rng: Option<&mut StdRng>,
-    mut alpha: i8,
-    mut beta: i8,
 ) -> i8 {
     let key = StateKey::from_slice(data);
     if let Some(entry) = transposition_table.get(&key) {
@@ -147,29 +145,15 @@ fn minimax_inner(
             &mut new_data,
             transposition_table,
             rng.as_deref_mut(),
-            alpha,
-            beta,
         );
 
         if is_maximizing {
             if child_value > best_value {
                 best_value = child_value;
             }
-            if best_value > alpha {
-                alpha = best_value;
-            }
-            if alpha >= beta {
-                break;
-            }
         } else {
             if child_value < best_value {
                 best_value = child_value;
-            }
-            if best_value < beta {
-                beta = best_value;
-            }
-            if alpha >= beta {
-                break;
             }
         }
     }
@@ -197,7 +181,7 @@ pub fn minimax_lazy_smp(
             let mech = &mechanics;
             handles.push(s.spawn(move || {
                 let mut rng = StdRng::seed_from_u64(i as u64);
-                minimax_inner(mech, &mut thread_data, tt, Some(&mut rng), -1, 1)
+                minimax_inner(mech, &mut thread_data, tt, Some(&mut rng))
             }));
         }
         let mut results = Vec::with_capacity(num_threads);
