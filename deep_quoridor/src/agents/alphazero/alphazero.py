@@ -304,7 +304,7 @@ class AlphaZeroAgent(TrainableAgent):
         self.test_set_lsbs = set(random.sample(range(256), int(round(256 * params.test_ratio))))
 
         self._onnx_proto = None
-        self._onnx_init_name_to_idx: dict = {}
+        self._onnx_init_name_to_idx: dict[str, int] = {}
 
     def set_wandb_run(self, wandb_run: wandb.wandb_run.Run):
         self.wandb_run = wandb_run
@@ -454,7 +454,7 @@ class AlphaZeroAgent(TrainableAgent):
             torch.onnx.export(
                 self.evaluator.network,
                 (dummy_input,),  # Args must be a tuple
-                path,
+                str(path),
                 export_params=True,
                 opset_version=17,  # Use 17 instead of 11 to avoid conversion issues
                 do_constant_folding=True,
@@ -469,8 +469,10 @@ class AlphaZeroAgent(TrainableAgent):
             )
 
             self._onnx_proto = onnx.load(str(path))
+            state_dict_names = set(self.evaluator.network.state_dict().keys())
             self._onnx_init_name_to_idx = {
                 init.name: idx for idx, init in enumerate(self._onnx_proto.graph.initializer)
+                if init.name in state_dict_names
             }
             print(
                 f"AlphaZero model exported to ONNX at {path} "
@@ -479,12 +481,23 @@ class AlphaZeroAgent(TrainableAgent):
         else:
             # Subsequent saves: update only the weight tensors in the cached proto.
             state_dict = self.evaluator.network.state_dict()
+            updated_count = 0
             for name, tensor in state_dict.items():
                 if name in self._onnx_init_name_to_idx:
                     idx = self._onnx_init_name_to_idx[name]
                     self._onnx_proto.graph.initializer[idx].CopyFrom(
                         onnx.numpy_helper.from_array(tensor.cpu().numpy(), name=name)
                     )
+                    updated_count += 1
+            expected_initializers = len(self._onnx_init_name_to_idx)
+            if updated_count != expected_initializers:
+                cached_names = set(self._onnx_init_name_to_idx.keys())
+                missing_in_state_dict = sorted(cached_names - set(state_dict.keys()))
+                print(
+                    "Warning: ONNX cached initializers not fully updated from state_dict "
+                    f"({updated_count}/{expected_initializers} updated). "
+                    f"Missing in state_dict: {missing_in_state_dict}"
+                )
             onnx.save(self._onnx_proto, str(path))
             print(f"AlphaZero model exported to ONNX at {path} (cached proto, weights updated)")
 
