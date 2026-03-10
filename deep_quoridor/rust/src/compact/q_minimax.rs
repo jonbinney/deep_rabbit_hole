@@ -221,7 +221,10 @@ fn minimax(
     }
 
     let actions = sample_actions(mechanics, data, branching_factor);
-    assert!(!actions.is_empty(), "No valid actions - should never happen");
+    assert!(
+        !actions.is_empty(),
+        "No valid actions - should never happen"
+    );
 
     let is_maximizing = current_player == agent_player;
     let mut best_value = if is_maximizing {

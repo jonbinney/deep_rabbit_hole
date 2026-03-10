@@ -722,7 +722,8 @@ mod tests {
 
         // This wall should still be valid because players can go around via the sides
         let mut buf = BfsBuffer::new(9);
-        let is_valid = mechanics.is_wall_placement_valid(&mut state, 4, 7, WALL_HORIZONTAL, &mut buf);
+        let is_valid =
+            mechanics.is_wall_placement_valid(&mut state, 4, 7, WALL_HORIZONTAL, &mut buf);
         assert!(
             is_valid,
             "Wall should be valid as players can still reach goals"
@@ -968,7 +969,13 @@ mod tests {
         for row in 0..mechanics.repr().board_size() - 1 {
             for col in 0..mechanics.repr().board_size() - 1 {
                 for orientation in [WALL_VERTICAL, WALL_HORIZONTAL] {
-                    if !mechanics.is_wall_placement_valid(&mut state, row, col, orientation, &mut buf) {
+                    if !mechanics.is_wall_placement_valid(
+                        &mut state,
+                        row,
+                        col,
+                        orientation,
+                        &mut buf,
+                    ) {
                         actual_forbidden.push((row, col, orientation));
                     }
                 }

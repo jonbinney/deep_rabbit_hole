@@ -113,10 +113,7 @@ pub fn save_policy_to_sqlite(
     tx.commit()?;
 
     // Create index after all inserts (much faster than maintaining during insert)
-    conn.execute(
-        "CREATE UNIQUE INDEX idx_policy_state ON policy(state)",
-        [],
-    )?;
+    conn.execute("CREATE UNIQUE INDEX idx_policy_state ON policy(state)", [])?;
 
     Ok(num_entries)
 }
