@@ -3,7 +3,14 @@ commit with only the formatting and linting changes. This will make it easier fo
 
 whenever you need to use python, remember to activate the virtualenv which is in the .venv directory in the root of the repo.
 
-Whenever you commit to git, create the commit message starting with "vibe: " and then a one line summary of the changes.
+Whenever you commit to git, follow these commit message guidelines:
+- Start the subject line with "vibe: " followed by a summary in imperative mood
+  (e.g. "vibe: add feature" not "vibe: added feature").
+- Keep the subject line to 50 characters max (not counting the "vibe: " prefix).
+- For non-trivial changes, add a body separated by a blank line from the subject.
+  Wrap body lines at 72 characters. Focus on **why** the change was made, not
+  what files were changed (the diff shows that).
+- Do not enumerate modified files in the commit message.
 
 Whenever you change rust files, before commit, make sure to run cargo fmt to format all files and then check formatting, build and run before committing.
 
