@@ -122,6 +122,12 @@ pub struct AlphaZeroConfig {
     /// Maximum game steps for MCTS terminal check.
     #[serde(default)]
     pub max_steps: Option<i32>,
+
+    /// Bonus factor based on game length. When non-zero, rewards are scaled by
+    /// `1 + factor * (1 - completed_steps / max_steps)`, making shorter wins
+    /// and longer losses more valuable.
+    #[serde(default)]
+    pub game_length_bonus_factor: f32,
 }
 
 fn default_c_puct() -> f32 {
@@ -145,6 +151,7 @@ impl Default for AlphaZeroConfig {
             drop_t_on_step: None,
             penalize_visited_states: false,
             max_steps: None,
+            game_length_bonus_factor: 0.0,
         }
     }
 }
@@ -186,6 +193,11 @@ impl AlphaZeroConfig {
             penalize_visited_states: overrides.penalize_visited_states
                 || self.penalize_visited_states,
             max_steps: overrides.max_steps.or(self.max_steps),
+            game_length_bonus_factor: if overrides.game_length_bonus_factor != 0.0 {
+                overrides.game_length_bonus_factor
+            } else {
+                self.game_length_bonus_factor
+            },
         }
     }
 }
@@ -328,6 +340,7 @@ self_play:
             drop_t_on_step: Some(10),
             penalize_visited_states: true,
             max_steps: Some(100),
+            game_length_bonus_factor: 0.0,
         };
 
         let agent_config = config.to_agent_config();
@@ -352,6 +365,7 @@ self_play:
             drop_t_on_step: Some(30),
             penalize_visited_states: false,
             max_steps: Some(200),
+            game_length_bonus_factor: 0.1,
         };
 
         let overrides = AlphaZeroConfig {
@@ -365,6 +379,7 @@ self_play:
             drop_t_on_step: None,          // Keep base
             penalize_visited_states: true, // Override
             max_steps: None,               // Keep base
+            game_length_bonus_factor: 0.0, // Keep base (0.0 doesn't override)
         };
 
         let merged = base.merge(&overrides);
@@ -378,5 +393,6 @@ self_play:
         assert_eq!(merged.drop_t_on_step, Some(30));
         assert!(merged.penalize_visited_states);
         assert_eq!(merged.max_steps, Some(200));
+        assert!((merged.game_length_bonus_factor - 0.1).abs() < 1e-6);
     }
 }

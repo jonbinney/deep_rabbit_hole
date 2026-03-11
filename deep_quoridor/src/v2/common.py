@@ -173,6 +173,7 @@ def alphazero_params_dict_from_config(
         params_dict["mcts_noise_alpha"] = sub_config.mcts_noise_alpha
         params_dict["temperature"] = sub_config.temperature
         params_dict["drop_t_on_step"] = sub_config.drop_t_on_step
+        params_dict["game_length_bonus_factor"] = sub_config.game_length_bonus_factor
 
     # Apply overrides (highest priority)
     params_dict.update(overrides)

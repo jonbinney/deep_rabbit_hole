@@ -151,6 +151,7 @@ pub fn play_game(
     max_walls: i32,
     max_steps: i32,
     trace: bool,
+    game_length_bonus_factor: f32,
 ) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
 
@@ -249,17 +250,21 @@ pub fn play_game(
         // Check win (current_player already switched after step, so check previous player)
         if state.check_win(current_player) {
             winner = Some(current_player);
-            // Backfill values: +1 for winner, -1 for loser
+            let completed_steps = step + 1;
+            let factor = 1.0
+                + game_length_bonus_factor
+                    * (1.0 - completed_steps as f32 / max_steps as f32);
+            // Backfill values: +1 for winner, -1 for loser, scaled by game length bonus
             for item in replay_items.iter_mut() {
                 item.value = if item.player == current_player {
-                    1.0
+                    factor
                 } else {
-                    -1.0
+                    -factor
                 };
             }
             return Ok(GameResult {
                 winner,
-                num_turns: step + 1,
+                num_turns: completed_steps,
                 replay_items,
             });
         }
@@ -301,7 +306,7 @@ mod tests {
     fn test_play_game_completes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, 0.0).unwrap();
 
         // Game should complete within 200 steps on a 5×5 board
         assert!(result.num_turns > 0);
@@ -312,7 +317,7 @@ mod tests {
     fn test_play_game_alternating_players() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, 0.0).unwrap();
 
         // With 0 walls the game should end quickly via moves only
         // Players should alternate
@@ -325,7 +330,7 @@ mod tests {
     fn test_play_game_winner_values() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, 0.0).unwrap();
 
         if let Some(w) = result.winner {
             for item in &result.replay_items {
@@ -343,7 +348,7 @@ mod tests {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
         // Very short max_steps to force truncation
-        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false, 0.0).unwrap();
 
         if result.winner.is_none() {
             for item in &result.replay_items {
@@ -356,7 +361,7 @@ mod tests {
     fn test_replay_items_have_correct_shapes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, 0.0).unwrap();
 
         let grid_size = 5 * 2 + 3; // 13
         let total_actions = policy_size(5);

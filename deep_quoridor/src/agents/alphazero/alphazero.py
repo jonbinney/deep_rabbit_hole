@@ -476,8 +476,7 @@ class AlphaZeroAgent(TrainableAgent):
                 if init.name in state_dict_names
             }
             print(
-                f"AlphaZero model exported to ONNX at {path} "
-                f"({len(self._onnx_init_name_to_idx)} initializers cached)"
+                f"AlphaZero model exported to ONNX at {path} ({len(self._onnx_init_name_to_idx)} initializers cached)"
             )
         else:
             # Subsequent saves: update only the weight tensors in the cached proto.

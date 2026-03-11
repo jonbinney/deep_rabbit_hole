@@ -150,7 +150,7 @@ def main():
             parallel_games=parallel_games,
             duration=args.duration,
             runs_dir=args.runs_dir,
-            extra_overrides=args.extra_overrides,
+            extra_overrides=args.overrides,
         )
         results.append(result)
 

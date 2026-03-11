@@ -61,6 +61,7 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
     mcts_noise_alpha: Optional[float] = None
     drop_t_on_step: Optional[int] = None
     temperature: Optional[float] = None
+    game_length_bonus_factor: float = 0.0
 
 
 class SelfPlayConfig(StrictBaseModel):
