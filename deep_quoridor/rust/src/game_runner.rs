@@ -233,7 +233,12 @@ pub fn play_game(
                 "--- Step {} | {} ---\n{}",
                 step + 1,
                 player_label,
-                format_action(board_size, action_triple[0], action_triple[1], action_triple[2]),
+                format_action(
+                    board_size,
+                    action_triple[0],
+                    action_triple[1],
+                    action_triple[2]
+                ),
             );
             print!(
                 "{}\n",
@@ -250,9 +255,8 @@ pub fn play_game(
         if state.check_win(current_player) {
             winner = Some(current_player);
             let completed_steps = step + 1;
-            let factor = 1.0
-                + game_length_bonus_factor
-                    * (1.0 - completed_steps as f32 / max_steps as f32);
+            let factor =
+                1.0 + game_length_bonus_factor * (1.0 - completed_steps as f32 / max_steps as f32);
             // Backfill values: +1 for winner, -1 for loser, scaled by game length bonus
             for item in replay_items.iter_mut() {
                 item.value = if item.player == current_player {

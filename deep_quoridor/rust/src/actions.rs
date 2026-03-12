@@ -265,8 +265,7 @@ pub fn compute_full_action_mask(
     // wall_mask layout from compute_wall_action_mask: [vertical (ws²) | horizontal (ws²)]
     // Output layout matches Python ActionEncoder: [moves | vertical | horizontal]
     // This is the same order, so copy directly.
-    mask[num_moves..num_moves + 2 * num_walls]
-        .copy_from_slice(wall_mask.as_slice().unwrap());
+    mask[num_moves..num_moves + 2 * num_walls].copy_from_slice(wall_mask.as_slice().unwrap());
 }
 
 /// Decode a flat policy index to an action triple [row, col, action_type].

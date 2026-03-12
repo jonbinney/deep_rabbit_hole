@@ -7,8 +7,7 @@ use crate::agents::onnx_agent::softmax;
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
-    create_rotation_mapping, remap_mask, rotate_goal_rows, rotate_grid_180,
-    rotate_player_positions,
+    create_rotation_mapping, remap_mask, rotate_goal_rows, rotate_grid_180, rotate_player_positions,
 };
 
 /// Trait for evaluating game positions.
