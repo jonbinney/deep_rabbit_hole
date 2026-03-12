@@ -154,7 +154,7 @@ fn main() -> Result<()> {
 
     // Build AlphaZero config from YAML, merging self_play overrides
     let base_az = config.alphazero.unwrap_or_default();
-    let az_config = if let Some(ref sp) = config.self_play {
+    let mut az_config = if let Some(ref sp) = config.self_play {
         if let Some(ref sp_az) = sp.alphazero {
             base_az.merge(sp_az)
         } else {
@@ -163,6 +163,11 @@ fn main() -> Result<()> {
     } else {
         base_az
     };
+
+    // Propagate quoridor.max_steps to MCTS config if not already set
+    if az_config.max_steps.is_none() {
+        az_config.max_steps = Some(q.max_steps as i32);
+    }
 
     if cli.continuous {
         run_continuous(&cli, q, &az_config)
@@ -202,7 +207,7 @@ fn run_batch(
 
     if !cli.use_raw_onnx_agent {
         println!(
-            "MCTS config: n={:?}, k={:?}, c_puct={}, noise_epsilon={}",
+            "MCTS config: n={:?}, k={:?}, c_puct={:?}, noise_epsilon={:?}",
             az_config.mcts_n, az_config.mcts_k, az_config.mcts_c_puct, az_config.mcts_noise_epsilon
         );
     }

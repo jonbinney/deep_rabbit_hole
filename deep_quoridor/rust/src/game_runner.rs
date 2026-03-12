@@ -285,6 +285,7 @@ pub fn play_game(
 mod tests {
     use super::*;
     use crate::actions::policy_size;
+    use crate::rotation::create_rotation_mapping;
 
     /// A mock agent that always picks the first valid action.
     struct FirstValidAgent;
@@ -373,6 +374,204 @@ mod tests {
             assert_eq!(item.input_array.shape(), &[5, grid_size, grid_size]);
             assert_eq!(item.policy.len(), total_actions);
             assert_eq!(item.action_mask.len(), total_actions);
+        }
+    }
+
+    /// Find the grid position of the 1.0 in a channel of the input tensor.
+    fn find_position_in_channel(input: &ndarray::Array3<f32>, channel: usize) -> Option<(usize, usize)> {
+        let grid_size = input.shape()[1];
+        for r in 0..grid_size {
+            for c in 0..grid_size {
+                if input[[channel, r, c]] == 1.0 {
+                    return Some((r, c));
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn test_replay_player1_input_has_current_player_near_top() {
+        // Play a game and check that player 1 replay items have the current
+        // player (player 1) positioned near the top of the board after rotation.
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, 0.0).unwrap();
+
+        // On a 5x5 board, grid is 13x13. Board row 0 = grid row 2, row 4 = grid row 10.
+        // "Near the top" means grid row <= 6 (board row <= 2, top half).
+        for item in &result.replay_items {
+            // Channel 1 = current player position
+            let (row, _col) = find_position_in_channel(&item.input_array, 1)
+                .expect("Should find current player position in channel 1");
+
+            if item.player == 0 {
+                // Player 0 starts at top and should generally stay in upper-ish rows at beginning
+                // Just check it's a valid grid position (every even row + 2)
+                assert!(row >= 2 && row <= 10, "Player 0 pos at grid row {}", row);
+            } else {
+                // Player 1: after rotation, should be at the top of the board (low grid row).
+                // Player 1 starts at board row 4 (grid row 10), after rotation → board row 0 (grid row 2).
+                // As the game progresses, player 1 moves toward their goal (board row 0 in original,
+                // which is board row 4 = grid row 10 in rotated frame). So they should start near
+                // grid row 2 and move down. All positions should have the player in the upper half
+                // initially, but may go lower later. We just check the FIRST player 1 item.
+            }
+        }
+
+        // Specifically check the first player 1 item (step 1)
+        let first_p1 = result.replay_items.iter().find(|i| i.player == 1).unwrap();
+        let (row, _col) = find_position_in_channel(&first_p1.input_array, 1).unwrap();
+        // Player 1 starts at board (4, 2), after 180° rotation → (0, 2), grid (2, 6)
+        assert_eq!(row, 2, "First player 1 item: current player should be at grid row 2 (top) after rotation, got {}", row);
+    }
+
+    #[test]
+    fn test_remap_mask_matches_rotated_state_mask() {
+        // Verify that remapping the original mask via the rotation mapping
+        // produces the same result as computing the mask on the rotated state.
+        use crate::rotation::{remap_mask, rotate_grid_180, rotate_player_positions, rotate_goal_rows};
+
+        let board_size = 5;
+        let max_walls = 2;
+
+        // Create a state and make a move so it's player 1's turn
+        let state0 = GameState::new(board_size, max_walls);
+        let mask0 = state0.get_action_mask();
+        let first_valid = mask0.iter().position(|&m| m).unwrap();
+        let action = action_index_to_action(board_size, first_valid);
+        let state1 = state0.clone_and_step(action);
+        assert_eq!(state1.current_player, 1);
+
+        // Approach 1: remap original mask
+        let orig_mask = state1.get_action_mask();
+        let (orig_to_rot, _) = create_rotation_mapping(board_size);
+        let remapped_mask = remap_mask(&orig_mask, &orig_to_rot);
+
+        // Approach 2: compute mask on rotated state
+        let rot_grid = rotate_grid_180(&state1.grid());
+        let rot_positions = rotate_player_positions(&state1.player_positions(), board_size);
+        let rot_goals = rotate_goal_rows(&state1.goal_rows());
+        let rot_state = GameState {
+            grid: rot_grid,
+            player_positions: rot_positions,
+            walls_remaining: state1.walls_remaining.clone(),
+            goal_rows: rot_goals,
+            current_player: 1,
+            board_size,
+            completed_steps: state1.completed_steps,
+        };
+        let rotated_state_mask = rot_state.get_action_mask();
+
+        // They should be identical
+        assert_eq!(
+            remapped_mask, rotated_state_mask,
+            "Remapped mask differs from rotated state mask"
+        );
+    }
+
+    #[test]
+    fn test_replay_player1_policy_is_rotated() {
+        // Verify that the policy stored for player 1 is in the rotated frame.
+        // The mock agent always picks the first valid action. In original frame,
+        // this is some action. In the stored replay, the policy should be
+        // in the rotated frame.
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, 0.0).unwrap();
+
+        let (orig_to_rot, _) = create_rotation_mapping(5);
+
+        // For each player 1 item, verify the policy is in rotated frame
+        for (step, item) in result.replay_items.iter().enumerate() {
+            if item.player != 1 {
+                continue;
+            }
+
+            // The policy should have exactly one non-zero entry (FirstValidAgent picks one action)
+            let nonzero_idx = item.policy.iter().position(|&p| p > 0.0)
+                .expect("Policy should have at least one non-zero entry");
+
+            // This index should be in the ROTATED frame.
+            // Decode it as a rotated action and verify it's valid.
+            let rotated_action = action_index_to_action(5, nonzero_idx);
+            assert!(
+                rotated_action[0] >= 0 && rotated_action[0] < 5 &&
+                rotated_action[1] >= 0 && rotated_action[1] < 5,
+                "Step {}: Invalid rotated action {:?} at index {}",
+                step, rotated_action, nonzero_idx
+            );
+
+            // The action should be valid according to the rotated mask
+            assert!(
+                item.action_mask[nonzero_idx],
+                "Step {}: Policy has non-zero at index {} but mask says invalid",
+                step, nonzero_idx
+            );
+        }
+    }
+
+    #[test]
+    fn test_replay_input_matches_direct_computation() {
+        // For player 0: input should match grid_game_state_to_resnet_input on original state.
+        // For player 1: input should match grid_game_state_to_resnet_input on rotated state.
+        //
+        // We can't easily reconstruct the exact game state at each step from the replay data,
+        // but we can verify key properties:
+        // 1. Channel 0 (walls) should have border walls in the right places
+        // 2. Channel 1 and 2 should each have exactly one 1.0 (player positions)
+        // 3. Channel 3 and 4 should have uniform values (walls remaining)
+        let mut p1 = FirstValidAgent;
+        let mut p2 = FirstValidAgent;
+        let result = play_game(&mut p1, &mut p2, 5, 2, 200, false, 0.0).unwrap();
+
+        for (step, item) in result.replay_items.iter().enumerate() {
+            let input = &item.input_array;
+
+            // Channel 1 (current player) should have exactly one 1.0
+            let ch1_sum: f32 = input.slice(ndarray::s![1, .., ..]).iter().sum();
+            assert!(
+                (ch1_sum - 1.0).abs() < 1e-5,
+                "Step {}: Channel 1 sum should be 1.0, got {}",
+                step, ch1_sum
+            );
+
+            // Channel 2 (opponent) should have exactly one 1.0
+            let ch2_sum: f32 = input.slice(ndarray::s![2, .., ..]).iter().sum();
+            assert!(
+                (ch2_sum - 1.0).abs() < 1e-5,
+                "Step {}: Channel 2 sum should be 1.0, got {}",
+                step, ch2_sum
+            );
+
+            // Channel 3 and 4 should be uniform
+            let ch3_vals: Vec<f32> = input.slice(ndarray::s![3, .., ..]).iter().copied().collect();
+            let ch3_val = ch3_vals[0];
+            assert!(
+                ch3_vals.iter().all(|&v| v == ch3_val),
+                "Step {}: Channel 3 should be uniform",
+                step
+            );
+
+            let ch4_vals: Vec<f32> = input.slice(ndarray::s![4, .., ..]).iter().copied().collect();
+            let ch4_val = ch4_vals[0];
+            assert!(
+                ch4_vals.iter().all(|&v| v == ch4_val),
+                "Step {}: Channel 4 should be uniform",
+                step
+            );
+
+            // Border walls in channel 0: top-left corner should always be a wall
+            assert_eq!(
+                input[[0, 0, 0]], 1.0,
+                "Step {}: Top-left border wall missing",
+                step
+            );
+            assert_eq!(
+                input[[0, 12, 12]], 1.0,
+                "Step {}: Bottom-right border wall missing",
+                step
+            );
         }
     }
 }

@@ -96,12 +96,12 @@ pub struct AlphaZeroConfig {
     pub mcts_k: Option<u32>,
 
     /// UCB exploration constant (c_puct).
-    #[serde(default = "default_c_puct")]
-    pub mcts_c_puct: f32,
+    #[serde(default)]
+    pub mcts_c_puct: Option<f32>,
 
     /// Dirichlet noise weight.
-    #[serde(default = "default_noise_epsilon")]
-    pub mcts_noise_epsilon: f32,
+    #[serde(default)]
+    pub mcts_noise_epsilon: Option<f32>,
 
     /// Dirichlet alpha parameter. If None, auto-computed.
     #[serde(default)]
@@ -130,22 +130,14 @@ pub struct AlphaZeroConfig {
     pub game_length_bonus_factor: f32,
 }
 
-fn default_c_puct() -> f32 {
-    1.4
-}
-
-fn default_noise_epsilon() -> f32 {
-    0.25
-}
-
 impl Default for AlphaZeroConfig {
     fn default() -> Self {
         Self {
             network: None,
             mcts_n: Some(100),
             mcts_k: None,
-            mcts_c_puct: 1.4,
-            mcts_noise_epsilon: 0.25,
+            mcts_c_puct: None,
+            mcts_noise_epsilon: None,
             mcts_noise_alpha: None,
             temperature: None,
             drop_t_on_step: None,
@@ -163,8 +155,8 @@ impl AlphaZeroConfig {
             mcts: MCTSConfig {
                 n: self.mcts_n,
                 k: self.mcts_k,
-                ucb_c: self.mcts_c_puct,
-                noise_epsilon: self.mcts_noise_epsilon,
+                ucb_c: self.mcts_c_puct.unwrap_or(1.4),
+                noise_epsilon: self.mcts_noise_epsilon.unwrap_or(0.25),
                 noise_alpha: self.mcts_noise_alpha,
                 max_steps: self.max_steps,
                 penalize_visited_states: self.penalize_visited_states,
@@ -185,8 +177,8 @@ impl AlphaZeroConfig {
                 .cloned(),
             mcts_n: overrides.mcts_n.or(self.mcts_n),
             mcts_k: overrides.mcts_k.or(self.mcts_k),
-            mcts_c_puct: overrides.mcts_c_puct,
-            mcts_noise_epsilon: overrides.mcts_noise_epsilon,
+            mcts_c_puct: overrides.mcts_c_puct.or(self.mcts_c_puct),
+            mcts_noise_epsilon: overrides.mcts_noise_epsilon.or(self.mcts_noise_epsilon),
             mcts_noise_alpha: overrides.mcts_noise_alpha.or(self.mcts_noise_alpha),
             temperature: overrides.temperature.or(self.temperature),
             drop_t_on_step: overrides.drop_t_on_step.or(self.drop_t_on_step),
@@ -283,7 +275,7 @@ training:
         // Check alphazero config
         let az = config.alphazero.unwrap();
         assert_eq!(az.mcts_n, Some(50));
-        assert!((az.mcts_c_puct - 1.2).abs() < 1e-6);
+        assert!((az.mcts_c_puct.unwrap() - 1.2).abs() < 1e-6);
     }
 
     #[test]
@@ -323,8 +315,8 @@ self_play:
         let config = AlphaZeroConfig::default();
 
         assert_eq!(config.mcts_n, Some(100));
-        assert!((config.mcts_c_puct - 1.4).abs() < 1e-6);
-        assert!((config.mcts_noise_epsilon - 0.25).abs() < 1e-6);
+        assert!(config.mcts_c_puct.is_none());
+        assert!(config.mcts_noise_epsilon.is_none());
     }
 
     #[test]
@@ -333,8 +325,8 @@ self_play:
             network: None,
             mcts_n: Some(200),
             mcts_k: None,
-            mcts_c_puct: 2.0,
-            mcts_noise_epsilon: 0.1,
+            mcts_c_puct: Some(2.0),
+            mcts_noise_epsilon: Some(0.1),
             mcts_noise_alpha: Some(0.3),
             temperature: Some(0.5),
             drop_t_on_step: Some(10),
@@ -358,8 +350,8 @@ self_play:
             network: None,
             mcts_n: Some(100),
             mcts_k: Some(10),
-            mcts_c_puct: 1.4,
-            mcts_noise_epsilon: 0.25,
+            mcts_c_puct: Some(1.4),
+            mcts_noise_epsilon: Some(0.25),
             mcts_noise_alpha: Some(0.3),
             temperature: Some(1.0),
             drop_t_on_step: Some(30),
@@ -372,8 +364,8 @@ self_play:
             network: None,
             mcts_n: Some(50),              // Override
             mcts_k: None,                  // Keep base
-            mcts_c_puct: 2.0,              // Override
-            mcts_noise_epsilon: 0.5,       // Override
+            mcts_c_puct: Some(2.0),        // Override
+            mcts_noise_epsilon: Some(0.5), // Override
             mcts_noise_alpha: None,        // Keep base
             temperature: None,             // Keep base
             drop_t_on_step: None,          // Keep base
@@ -386,13 +378,29 @@ self_play:
 
         assert_eq!(merged.mcts_n, Some(50));
         assert_eq!(merged.mcts_k, Some(10));
-        assert!((merged.mcts_c_puct - 2.0).abs() < 1e-6);
-        assert!((merged.mcts_noise_epsilon - 0.5).abs() < 1e-6);
+        assert!((merged.mcts_c_puct.unwrap() - 2.0).abs() < 1e-6);
+        assert!((merged.mcts_noise_epsilon.unwrap() - 0.5).abs() < 1e-6);
         assert_eq!(merged.mcts_noise_alpha, Some(0.3));
         assert_eq!(merged.temperature, Some(1.0));
         assert_eq!(merged.drop_t_on_step, Some(30));
         assert!(merged.penalize_visited_states);
         assert_eq!(merged.max_steps, Some(200));
         assert!((merged.game_length_bonus_factor - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_alphazero_config_merge_preserves_base_c_puct() {
+        // When self_play section doesn't specify mcts_c_puct, base value should be kept
+        let base = AlphaZeroConfig {
+            mcts_c_puct: Some(1.2),
+            ..AlphaZeroConfig::default()
+        };
+        let overrides = AlphaZeroConfig {
+            mcts_noise_epsilon: Some(0.25),
+            ..AlphaZeroConfig::default()
+        };
+        let merged = base.merge(&overrides);
+        assert!((merged.mcts_c_puct.unwrap() - 1.2).abs() < 1e-6,
+            "Base c_puct 1.2 should be preserved, got {}", merged.mcts_c_puct.unwrap());
     }
 }

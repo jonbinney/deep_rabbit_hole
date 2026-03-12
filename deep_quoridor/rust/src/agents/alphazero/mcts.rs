@@ -327,8 +327,17 @@ pub fn search<E: Evaluator>(
     // Apply Dirichlet noise at root if configured
     if config.noise_epsilon > 0.0 {
         let alpha = config.noise_alpha.unwrap_or_else(|| {
-            let num_valid = action_mask.iter().filter(|&&m| m).count();
-            10.0 / num_valid.max(1) as f32
+            // Match Python: typical_num_valid = mean(3, max_valid_wall_actions)
+            // where max_valid_wall_actions = num_actions - board_size²
+            let num_actions = action_mask.len();
+            let num_move_actions = (board_size * board_size) as usize;
+            let max_valid_wall_actions = if num_actions > num_move_actions {
+                num_actions - num_move_actions
+            } else {
+                0
+            };
+            let typical_num_valid = (3.0 + max_valid_wall_actions as f32) / 2.0;
+            10.0 / typical_num_valid.max(1.0)
         });
         apply_dirichlet_noise(&mut priors, config.noise_epsilon, alpha);
     }
