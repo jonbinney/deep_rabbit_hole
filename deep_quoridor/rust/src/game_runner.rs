@@ -15,7 +15,8 @@ use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
-    rotate_action_coords, rotate_goal_rows, rotate_grid_180, rotate_player_positions,
+    create_rotation_mapping, remap_mask, remap_policy, rotate_goal_rows, rotate_grid_180,
+    rotate_player_positions,
 };
 
 /// Format an action triple as a human-readable string.
@@ -158,30 +159,14 @@ pub fn play_game(
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let mut winner: Option<i32> = None;
 
+    // Precompute rotation mapping for storing player-1 replay data
+    let (orig_to_rot, _) = create_rotation_mapping(board_size);
+
     for step in 0..max_steps {
         let current_player = state.current_player;
 
-        // Create a working state (rotated for Player 1)
-        let work_state: GameState;
-        if current_player == 1 {
-            let work_grid = rotate_grid_180(&state.grid());
-            let work_positions = rotate_player_positions(&state.player_positions(), board_size);
-            let work_goals = rotate_goal_rows(&state.goal_rows());
-            work_state = GameState {
-                grid: work_grid,
-                player_positions: work_positions,
-                walls_remaining: state.walls_remaining.clone(),
-                goal_rows: work_goals,
-                current_player,
-                board_size,
-                completed_steps: state.completed_steps,
-            };
-        } else {
-            work_state = state.clone();
-        }
-
-        // Compute action mask in the working (possibly rotated) frame
-        let mask = work_state.get_action_mask();
+        // Compute action mask in the original frame
+        let mask = state.get_action_mask();
 
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
         if !mask.iter().any(|&m| m) {
@@ -189,44 +174,58 @@ pub fn play_game(
             break;
         }
 
-        // Build ResNet input from the working state
-        let resnet_input = grid_game_state_to_resnet_input(&work_state);
-
-        // Ask the appropriate agent for action
+        // Ask the appropriate agent for action (in original frame — evaluator
+        // handles rotation internally for player 1 during MCTS)
         let agent: &mut dyn ActionSelector = if current_player == 0 {
             agent_p1
         } else {
             agent_p2
         };
-        let (action_idx, policy) = agent.select_action(&work_state, &mask)?;
+        let (action_idx, policy) = agent.select_action(&state, &mask)?;
 
-        // Store replay item (in rotated frame — the frame the model saw)
-        let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
-        replay_items.push(ReplayBufferItem {
-            input_array: input_3d,
-            policy: policy.clone(),
-            action_mask: mask.clone(),
-            value: 0.0, // placeholder, backfilled after game ends
-            player: current_player,
-        });
+        // Store replay item in "current-player-faces-downward" frame.
+        // For player 0 this is the original frame; for player 1 we rotate.
+        if current_player == 1 {
+            let rot_grid = rotate_grid_180(&state.grid());
+            let rot_positions = rotate_player_positions(&state.player_positions(), board_size);
+            let rot_goals = rotate_goal_rows(&state.goal_rows());
+            let rot_state = GameState {
+                grid: rot_grid,
+                player_positions: rot_positions,
+                walls_remaining: state.walls_remaining.clone(),
+                goal_rows: rot_goals,
+                current_player,
+                board_size,
+                completed_steps: state.completed_steps,
+            };
+            let resnet_input = grid_game_state_to_resnet_input(&rot_state);
+            let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
+            let rot_policy = remap_policy(&policy, &orig_to_rot);
+            let rot_mask = remap_mask(&mask, &orig_to_rot);
+            replay_items.push(ReplayBufferItem {
+                input_array: input_3d,
+                policy: rot_policy,
+                action_mask: rot_mask,
+                value: 0.0,
+                player: current_player,
+            });
+        } else {
+            let resnet_input = grid_game_state_to_resnet_input(&state);
+            let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
+            replay_items.push(ReplayBufferItem {
+                input_array: input_3d,
+                policy: policy.clone(),
+                action_mask: mask.clone(),
+                value: 0.0,
+                player: current_player,
+            });
+        }
 
-        // Decode action index → (row, col, type) in working frame
+        // Decode action index → (row, col, type) in original frame
         let action_triple = action_index_to_action(board_size, action_idx);
 
-        // If Player 1, un-rotate action coordinates back to original frame
-        let (a_row, a_col, a_type) = if current_player == 1 {
-            rotate_action_coords(
-                board_size,
-                action_triple[0],
-                action_triple[1],
-                action_triple[2],
-            )
-        } else {
-            (action_triple[0], action_triple[1], action_triple[2])
-        };
-
-        // Apply action on the ORIGINAL game state
-        state.step([a_row, a_col, a_type]);
+        // Apply action on the original game state (no un-rotation needed)
+        state.step(action_triple);
 
         if trace {
             let player_label = if current_player == 0 { "P1" } else { "P2" };
@@ -234,7 +233,7 @@ pub fn play_game(
                 "--- Step {} | {} ---\n{}",
                 step + 1,
                 player_label,
-                format_action(board_size, a_row, a_col, a_type),
+                format_action(board_size, action_triple[0], action_triple[1], action_triple[2]),
             );
             print!(
                 "{}\n",
