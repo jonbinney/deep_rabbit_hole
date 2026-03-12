@@ -1,7 +1,0 @@
-extend: cucu-01.yaml
-run_id: cucu-02-$DATETIME
-
-alphazero:
-  network:
-    type: resnet
-    num_channels: 16

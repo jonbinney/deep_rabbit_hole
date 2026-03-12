@@ -1,5 +1,0 @@
-extend: cucu-01.yaml
-run_id: cucu-04-$DATETIME
-
-training:
-  weight_decay: 0.001
