@@ -105,25 +105,26 @@ impl Evaluator for OnnxEvaluator {
         let input_value = ort::value::Value::from_array((shape.as_slice(), data))
             .context("Failed to create ONNX input value")?;
 
-        // Run inference
-        let outputs = self
-            .session
-            .run(ort::inputs!["input" => input_value])
-            .context("Failed to run ONNX inference")?;
+        // Run inference and extract results into owned data so the borrow
+        // on self.session is released before we call get_rotation_mappings.
+        let (value, priors_in_eval_frame) = {
+            let outputs = self
+                .session
+                .run(ort::inputs!["input" => input_value])
+                .context("Failed to run ONNX inference")?;
 
-        // Extract value
-        let value_tensor = outputs["value"]
-            .try_extract_tensor::<f32>()
-            .context("Failed to extract value")?;
-        let value = value_tensor.1[0];
+            let value_tensor = outputs["value"]
+                .try_extract_tensor::<f32>()
+                .context("Failed to extract value")?;
+            let value = value_tensor.1[0];
 
-        // Extract policy logits and apply mask
-        let policy_logits = outputs["policy_logits"]
-            .try_extract_tensor::<f32>()
-            .context("Failed to extract policy logits")?;
+            let policy_logits = outputs["policy_logits"]
+                .try_extract_tensor::<f32>()
+                .context("Failed to extract policy logits")?;
 
-        // Apply masked softmax to get priors (in possibly-rotated frame)
-        let priors_in_eval_frame = masked_softmax(policy_logits.1, actual_mask);
+            let priors = masked_softmax(policy_logits.1, actual_mask);
+            (value, priors)
+        };
 
         // If rotated, remap policy back to original action space
         let priors = if needs_rotation {
