@@ -4,39 +4,26 @@ Future improvements and optimizations for the Rust AlphaZero implementation.
 
 ---
 
-## Batch Search
+## Batched NN Inference
 
 **Status:** Not started  
 **Priority:** High  
 **Effort:** Large
 
-Currently, each MCTS iteration evaluates a single position. Batch search would:
-- Run multiple MCTS trees in parallel (for multiple games)
-- Collect leaf positions across all trees
-- Batch NN inference for all leaves at once
-- Significantly improve GPU utilization
+Collect MCTS leaf positions across multiple concurrent game trees and
+evaluate them in a single GPU forward pass. This maximises GPU utilisation
+compared to the current one-position-at-a-time evaluation.
+
+Note: game-level parallelism and NN evaluation caching are already
+implemented (see `play_games_parallel`, `CachingEvaluator`).
 
 ### Implementation Notes
 - `MCTSBatch` struct managing multiple `NodeArena` instances
 - Collect `(tree_idx, leaf_idx, game_state)` tuples during selection
 - Single batched `Evaluator::evaluate_batch()` call
 - Distribute results back to respective trees
-
----
-
-## NN Evaluation Caching
-
-**Status:** Not started  
-**Priority:** Medium  
-**Effort:** Medium
-
-Cache neural network evaluation results to avoid redundant inference.
-
-### Implementation Notes
-- LRU cache keyed by `GameState::get_fast_hash()`
-- Matching Python's `NNEvaluator` cache behavior
-- Consider cache size based on available memory
-- Invalidation strategy: per-game or fixed-size LRU
+- Compatible with the existing `CachingEvaluator` — check cache per leaf,
+  batch only the misses
 
 ---
 
