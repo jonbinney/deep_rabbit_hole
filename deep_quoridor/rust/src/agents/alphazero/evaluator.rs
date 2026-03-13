@@ -11,7 +11,7 @@ use crate::grid_helpers::grid_game_state_to_resnet_input;
 ///
 /// Returns `(value_for_current_player, masked_softmax_priors)`.
 pub trait Evaluator {
-    fn evaluate(&mut self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)>;
+    fn evaluate(&self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)>;
 }
 
 /// ONNX-based evaluator for MCTS.
@@ -34,7 +34,7 @@ impl OnnxEvaluator {
 }
 
 impl Evaluator for OnnxEvaluator {
-    fn evaluate(&mut self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
+    fn evaluate(&self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
         // Build ResNet input tensor
         let resnet_input = grid_game_state_to_resnet_input(state);
 

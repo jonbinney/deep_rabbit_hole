@@ -128,7 +128,7 @@ impl ActionSelector for AlphaZeroAgent {
         let (children, _root_value) = search(
             &self.config.mcts,
             state.clone(),
-            &mut self.evaluator,
+            &self.evaluator,
             visited_ref,
         )?;
 
