@@ -27,6 +27,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -55,6 +60,9 @@ jobs:
       - name: Build
         working-directory: deep_quoridor/rust
         run: cargo build --verbose
+
+      - name: Install Python deps for cross-language tests
+        run: pip install numpy numba
 
       - name: Run tests with all features
         working-directory: deep_quoridor/rust
