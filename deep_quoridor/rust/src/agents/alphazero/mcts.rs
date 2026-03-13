@@ -311,7 +311,7 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
 }
 
 /// Run MCTS search and return child information.
-pub fn search<E: Evaluator>(
+pub fn search<E: Evaluator + ?Sized>(
     config: &MCTSConfig,
     game: GameState,
     evaluator: &E,

@@ -34,8 +34,10 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::Path;
 use std::process;
+use std::sync::Arc;
 use std::time::Instant;
 
+use quoridor_rs::agents::alphazero::evaluator::{Evaluator, OnnxEvaluator};
 use quoridor_rs::agents::alphazero::AlphaZeroAgent;
 use quoridor_rs::agents::onnx_agent::OnnxAgent;
 use quoridor_rs::agents::random_agent::RandomAgent;
@@ -129,6 +131,7 @@ fn create_agent(
     use_raw_onnx: bool,
     p2_override: Option<&str>,
     model_path: &str,
+    evaluator: &Arc<dyn Evaluator + Send + Sync>,
     az_config: &AlphaZeroConfig,
 ) -> Result<BoxedAgent> {
     if let Some("random") = p2_override {
@@ -141,9 +144,9 @@ fn create_agent(
         Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path)?))
     } else {
         Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
-            model_path,
+            evaluator.clone(),
             az_config.to_agent_config(),
-        )?))
+        )))
     }
 }
 
@@ -207,11 +210,20 @@ fn run_batch(
         );
     }
 
-    let mut agent_p1 = create_agent(cli.use_raw_onnx_agent, None, model_path, az_config)?;
+    let evaluator: Arc<dyn Evaluator + Send + Sync> = Arc::new(OnnxEvaluator::new(model_path)?);
+
+    let mut agent_p1 = create_agent(
+        cli.use_raw_onnx_agent,
+        None,
+        model_path,
+        &evaluator,
+        az_config,
+    )?;
     let mut agent_p2 = create_agent(
         cli.use_raw_onnx_agent,
         cli.p2.as_deref(),
         model_path,
+        &evaluator,
         az_config,
     )?;
 
@@ -326,8 +338,11 @@ fn run_continuous(
         model_version, model_path
     );
 
-    let mut agent_p1 = create_agent(false, None, &model_path, az_config)?;
-    let mut agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+    let mut evaluator: Arc<dyn Evaluator + Send + Sync> =
+        Arc::new(OnnxEvaluator::new(&model_path)?);
+
+    let mut agent_p1 = create_agent(false, None, &model_path, &evaluator, az_config)?;
+    let mut agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, &evaluator, az_config)?;
 
     let pid = process::id();
     let mut game_idx: usize = 0;
@@ -354,8 +369,10 @@ fn run_continuous(
                     );
                     model_version = new_latest.version;
                     model_path = new_path;
-                    agent_p1 = create_agent(false, None, &model_path, az_config)?;
-                    agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+                    evaluator = Arc::new(OnnxEvaluator::new(&model_path)?);
+                    agent_p1 = create_agent(false, None, &model_path, &evaluator, az_config)?;
+                    agent_p2 =
+                        create_agent(false, cli.p2.as_deref(), &model_path, &evaluator, az_config)?;
                 }
             }
         }

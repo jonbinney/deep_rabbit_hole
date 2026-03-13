@@ -3,6 +3,7 @@
 //! Uses MCTS with neural network evaluation to select actions.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use anyhow::Result;
 use rand::Rng;
@@ -10,7 +11,7 @@ use rand::Rng;
 use crate::agents::ActionSelector;
 use crate::game_state::GameState;
 
-use super::evaluator::OnnxEvaluator;
+use super::evaluator::Evaluator;
 use super::mcts::{search, MCTSConfig};
 
 /// Configuration for the AlphaZero agent.
@@ -89,21 +90,22 @@ pub fn apply_temperature_and_sample(
 /// AlphaZero MCTS agent.
 ///
 /// Combines MCTS search with neural network evaluation for action selection.
+/// The evaluator is shared via `Arc` so multiple agents can share a single
+/// evaluator (e.g., for parallel game execution with a shared cache).
 pub struct AlphaZeroAgent {
-    evaluator: OnnxEvaluator,
+    evaluator: Arc<dyn Evaluator + Send + Sync>,
     config: AlphaZeroAgentConfig,
     visited_states: HashSet<u64>,
 }
 
 impl AlphaZeroAgent {
-    /// Create a new AlphaZero agent.
-    pub fn new(model_path: &str, config: AlphaZeroAgentConfig) -> Result<Self> {
-        let evaluator = OnnxEvaluator::new(model_path)?;
-        Ok(Self {
+    /// Create a new AlphaZero agent with a shared evaluator.
+    pub fn new(evaluator: Arc<dyn Evaluator + Send + Sync>, config: AlphaZeroAgentConfig) -> Self {
+        Self {
             evaluator,
             config,
             visited_states: HashSet::new(),
-        })
+        }
     }
 
     /// Reset visited states between games.
@@ -128,7 +130,7 @@ impl ActionSelector for AlphaZeroAgent {
         let (children, _root_value) = search(
             &self.config.mcts,
             state.clone(),
-            &self.evaluator,
+            self.evaluator.as_ref(),
             visited_ref,
         )?;
 
