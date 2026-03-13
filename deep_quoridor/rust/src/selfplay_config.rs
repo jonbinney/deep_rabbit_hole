@@ -75,7 +75,7 @@ pub struct SelfPlayWorkerConfig {
     pub parallel_games: Option<usize>,
     /// AlphaZero overrides specific to self-play (e.g., noise settings).
     #[serde(default)]
-    pub alphazero: Option<AlphaZeroConfig>,
+    pub alphazero: Option<AlphaZeroSelfPlayConfig>,
 }
 
 /// AlphaZero MCTS configuration — matches Python's config format.
@@ -132,6 +132,33 @@ fn default_noise_epsilon() -> f32 {
     0.25
 }
 
+/// Self-play overrides from `self_play.alphazero`.
+///
+/// This mirrors Python's `AlphaZeroSelfPlayConfig`: only fields that are
+/// explicitly present in the self-play block should override the base config.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AlphaZeroSelfPlayConfig {
+    #[serde(default)]
+    pub mcts_noise_epsilon: Option<f32>,
+    #[serde(default)]
+    pub mcts_noise_alpha: Option<f32>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub drop_t_on_step: Option<usize>,
+}
+
+pub fn default_noise_alpha(board_size: i32, max_walls: i32) -> f32 {
+    let max_valid_wall_actions = if max_walls == 0 {
+        0
+    } else {
+        2 * (board_size - 1) * (board_size - 1)
+    };
+    let typical_num_valid_actions = (3.0 + max_valid_wall_actions as f32) / 2.0;
+    10.0 / typical_num_valid_actions
+}
+
 impl Default for AlphaZeroConfig {
     fn default() -> Self {
         Self {
@@ -151,14 +178,17 @@ impl Default for AlphaZeroConfig {
 
 impl AlphaZeroConfig {
     /// Convert to an AlphaZeroAgentConfig for the agent.
-    pub fn to_agent_config(&self) -> AlphaZeroAgentConfig {
+    pub fn to_agent_config(&self, board_size: i32, max_walls: i32) -> AlphaZeroAgentConfig {
+        let noise_alpha = self
+            .mcts_noise_alpha
+            .unwrap_or_else(|| default_noise_alpha(board_size, max_walls));
         AlphaZeroAgentConfig {
             mcts: MCTSConfig {
                 n: self.mcts_n,
                 k: self.mcts_k,
                 ucb_c: self.mcts_c_puct,
                 noise_epsilon: self.mcts_noise_epsilon,
-                noise_alpha: self.mcts_noise_alpha,
+                noise_alpha: Some(noise_alpha),
                 max_steps: self.max_steps,
                 penalize_visited_states: self.penalize_visited_states,
             },
@@ -169,23 +199,20 @@ impl AlphaZeroConfig {
     }
 
     /// Merge with overrides from self_play section.
-    pub fn merge(&self, overrides: &AlphaZeroConfig) -> AlphaZeroConfig {
+    pub fn merge_self_play(&self, overrides: &AlphaZeroSelfPlayConfig) -> AlphaZeroConfig {
         AlphaZeroConfig {
-            network: overrides
-                .network
-                .as_ref()
-                .or(self.network.as_ref())
-                .cloned(),
-            mcts_n: overrides.mcts_n.or(self.mcts_n),
-            mcts_k: overrides.mcts_k.or(self.mcts_k),
-            mcts_c_puct: overrides.mcts_c_puct,
-            mcts_noise_epsilon: overrides.mcts_noise_epsilon,
+            network: self.network.clone(),
+            mcts_n: self.mcts_n,
+            mcts_k: self.mcts_k,
+            mcts_c_puct: self.mcts_c_puct,
+            mcts_noise_epsilon: overrides
+                .mcts_noise_epsilon
+                .unwrap_or(self.mcts_noise_epsilon),
             mcts_noise_alpha: overrides.mcts_noise_alpha.or(self.mcts_noise_alpha),
             temperature: overrides.temperature.or(self.temperature),
             drop_t_on_step: overrides.drop_t_on_step.or(self.drop_t_on_step),
-            penalize_visited_states: overrides.penalize_visited_states
-                || self.penalize_visited_states,
-            max_steps: overrides.max_steps.or(self.max_steps),
+            penalize_visited_states: self.penalize_visited_states,
+            max_steps: self.max_steps,
         }
     }
 }
@@ -330,22 +357,29 @@ self_play:
             max_steps: Some(100),
         };
 
-        let agent_config = config.to_agent_config();
+        let agent_config = config.to_agent_config(5, 3);
 
         assert_eq!(agent_config.mcts.n, Some(200));
         assert!((agent_config.mcts.ucb_c - 2.0).abs() < 1e-6);
+        assert_eq!(agent_config.mcts.noise_alpha, Some(0.3));
         assert!((agent_config.temperature - 0.5).abs() < 1e-6);
         assert_eq!(agent_config.drop_t_on_step, Some(10));
         assert!(agent_config.penalize_visited_states);
     }
 
     #[test]
-    fn test_alphazero_config_merge() {
+    fn test_default_noise_alpha_matches_python_formula() {
+        let alpha = default_noise_alpha(5, 2);
+        assert!((alpha - (10.0 / 17.5)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_alphazero_config_merge_self_play_preserves_base_values() {
         let base = AlphaZeroConfig {
             network: None,
             mcts_n: Some(100),
             mcts_k: Some(10),
-            mcts_c_puct: 1.4,
+            mcts_c_puct: 1.2,
             mcts_noise_epsilon: 0.25,
             mcts_noise_alpha: Some(0.3),
             temperature: Some(1.0),
@@ -354,29 +388,49 @@ self_play:
             max_steps: Some(200),
         };
 
-        let overrides = AlphaZeroConfig {
-            network: None,
-            mcts_n: Some(50),              // Override
-            mcts_k: None,                  // Keep base
-            mcts_c_puct: 2.0,              // Override
-            mcts_noise_epsilon: 0.5,       // Override
-            mcts_noise_alpha: None,        // Keep base
-            temperature: None,             // Keep base
-            drop_t_on_step: None,          // Keep base
-            penalize_visited_states: true, // Override
-            max_steps: None,               // Keep base
+        let overrides = AlphaZeroSelfPlayConfig {
+            mcts_noise_epsilon: Some(0.5),
+            mcts_noise_alpha: None,
+            temperature: None,
+            drop_t_on_step: None,
         };
 
-        let merged = base.merge(&overrides);
+        let merged = base.merge_self_play(&overrides);
 
-        assert_eq!(merged.mcts_n, Some(50));
+        assert_eq!(merged.mcts_n, Some(100));
         assert_eq!(merged.mcts_k, Some(10));
-        assert!((merged.mcts_c_puct - 2.0).abs() < 1e-6);
+        assert!((merged.mcts_c_puct - 1.2).abs() < 1e-6);
         assert!((merged.mcts_noise_epsilon - 0.5).abs() < 1e-6);
         assert_eq!(merged.mcts_noise_alpha, Some(0.3));
         assert_eq!(merged.temperature, Some(1.0));
         assert_eq!(merged.drop_t_on_step, Some(30));
-        assert!(merged.penalize_visited_states);
+        assert!(!merged.penalize_visited_states);
         assert_eq!(merged.max_steps, Some(200));
+    }
+
+    #[test]
+    fn test_load_self_play_override_does_not_reset_c_puct() {
+        let yaml = r#"
+quoridor:
+  board_size: 5
+  max_walls: 2
+  max_steps: 50
+alphazero:
+  mcts_n: 400
+  mcts_c_puct: 1.2
+self_play:
+  alphazero:
+    mcts_noise_epsilon: 0.25
+"#;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(yaml.as_bytes()).unwrap();
+
+        let config = load_config(f.path()).unwrap();
+        let base = config.alphazero.unwrap();
+        let self_play = config.self_play.unwrap();
+        let merged = base.merge_self_play(&self_play.alphazero.unwrap());
+
+        assert!((merged.mcts_c_puct - 1.2).abs() < 1e-6);
+        assert!((merged.mcts_noise_epsilon - 0.25).abs() < 1e-6);
     }
 }
