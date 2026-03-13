@@ -4,12 +4,22 @@
 //!
 //! This module is independent of ONNX — the agent is abstracted behind the
 //! [`ActionSelector`] trait so the game runner can be tested with mock agents.
+//! For parallel self-play, see [`play_games_parallel`].
+
+#[cfg(feature = "binary")]
+use std::sync::Arc;
 
 use ndarray::Array3;
 
 use crate::actions::{
     action_index_to_action, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
 };
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::agent::AlphaZeroAgentConfig;
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::evaluator::Evaluator;
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::AlphaZeroAgent;
 use crate::agents::ActionSelector;
 use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
@@ -273,6 +283,71 @@ pub fn play_game(
     })
 }
 
+/// Play multiple self-play games in parallel using thread-based parallelism.
+///
+/// Creates `parallel_games` threads, each playing a share of `num_games` games.
+/// All threads share a single evaluator (via `Arc`) for NN inference, which
+/// enables caching across threads when using `CachingEvaluator`.
+///
+/// Each thread gets its own `AlphaZeroAgent` with its own `visited_states` set.
+/// Both P1 and P2 use the same agent configuration (self-play).
+#[cfg(feature = "binary")]
+pub fn play_games_parallel(
+    evaluator: Arc<dyn Evaluator + Send + Sync>,
+    az_config: &AlphaZeroAgentConfig,
+    board_size: i32,
+    max_walls: i32,
+    max_steps: i32,
+    num_games: usize,
+    parallel_games: usize,
+    trace: bool,
+) -> anyhow::Result<Vec<GameResult>> {
+    let threads = parallel_games.min(num_games);
+    let games_per_thread = (num_games + threads - 1) / threads;
+
+    std::thread::scope(|s| {
+        let mut handles = Vec::with_capacity(threads);
+
+        for thread_idx in 0..threads {
+            let start = thread_idx * games_per_thread;
+            let end = (start + games_per_thread).min(num_games);
+            let evaluator = evaluator.clone();
+            let config = az_config.clone();
+
+            let handle = s.spawn(move || -> anyhow::Result<Vec<GameResult>> {
+                let mut agent_p1 = AlphaZeroAgent::new(evaluator.clone(), config.clone());
+                let mut agent_p2 = AlphaZeroAgent::new(evaluator, config);
+
+                let mut results = Vec::with_capacity(end - start);
+                for _ in start..end {
+                    agent_p1.reset_game();
+                    agent_p2.reset_game();
+                    let result = play_game(
+                        &mut agent_p1,
+                        &mut agent_p2,
+                        board_size,
+                        max_walls,
+                        max_steps,
+                        trace,
+                    )?;
+                    results.push(result);
+                }
+                Ok(results)
+            });
+            handles.push(handle);
+        }
+
+        let mut all_results = Vec::with_capacity(num_games);
+        for handle in handles {
+            let thread_results = handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("self-play thread panicked"))??;
+            all_results.extend(thread_results);
+        }
+        Ok(all_results)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +440,84 @@ mod tests {
             assert_eq!(item.input_array.shape(), &[5, grid_size, grid_size]);
             assert_eq!(item.policy.len(), total_actions);
             assert_eq!(item.action_mask.len(), total_actions);
+        }
+    }
+
+    /// Mock evaluator that returns uniform priors and a fixed value.
+    /// Implements Evaluator + Send + Sync for use in play_games_parallel tests.
+    #[cfg(feature = "binary")]
+    struct MockEvaluator {
+        value: f32,
+    }
+
+    #[cfg(feature = "binary")]
+    impl Evaluator for MockEvaluator {
+        fn evaluate(
+            &self,
+            _state: &GameState,
+            action_mask: &[bool],
+        ) -> anyhow::Result<(f32, Vec<f32>)> {
+            let num_valid = action_mask.iter().filter(|&&m| m).count();
+            let prior = if num_valid > 0 {
+                1.0 / num_valid as f32
+            } else {
+                0.0
+            };
+            let priors: Vec<f32> = action_mask
+                .iter()
+                .map(|&valid| if valid { prior } else { 0.0 })
+                .collect();
+            Ok((self.value, priors))
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "binary")]
+    fn test_play_games_parallel_correct_count() {
+        let evaluator: Arc<dyn Evaluator + Send + Sync> = Arc::new(MockEvaluator { value: 0.0 });
+        let config = AlphaZeroAgentConfig {
+            mcts: crate::agents::alphazero::mcts::MCTSConfig {
+                n: Some(5),
+                noise_epsilon: 0.0,
+                max_steps: Some(50),
+                ..Default::default()
+            },
+            temperature: 1.0,
+            ..Default::default()
+        };
+        let results = play_games_parallel(evaluator, &config, 5, 0, 50, 8, 4, false).unwrap();
+        assert_eq!(results.len(), 8);
+        for r in &results {
+            assert!(r.num_turns > 0);
+            assert!(!r.replay_items.is_empty());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "binary")]
+    fn test_play_games_parallel_values_backfilled() {
+        let evaluator: Arc<dyn Evaluator + Send + Sync> = Arc::new(MockEvaluator { value: 0.0 });
+        let config = AlphaZeroAgentConfig {
+            mcts: crate::agents::alphazero::mcts::MCTSConfig {
+                n: Some(5),
+                noise_epsilon: 0.0,
+                max_steps: Some(50),
+                ..Default::default()
+            },
+            temperature: 1.0,
+            ..Default::default()
+        };
+        let results = play_games_parallel(evaluator, &config, 5, 0, 50, 4, 2, false).unwrap();
+        for r in &results {
+            if let Some(w) = r.winner {
+                for item in &r.replay_items {
+                    if item.player == w {
+                        assert_eq!(item.value, 1.0);
+                    } else {
+                        assert_eq!(item.value, -1.0);
+                    }
+                }
+            }
         }
     }
 }

@@ -311,10 +311,10 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
 }
 
 /// Run MCTS search and return child information.
-pub fn search<E: Evaluator>(
+pub fn search<E: Evaluator + ?Sized>(
     config: &MCTSConfig,
     game: GameState,
-    evaluator: &mut E,
+    evaluator: &E,
     visited_states: &HashSet<u64>,
 ) -> anyhow::Result<(Vec<ChildInfo>, f32)> {
     let board_size = game.board_size;
@@ -439,11 +439,7 @@ mod tests {
     }
 
     impl Evaluator for MockEvaluator {
-        fn evaluate(
-            &mut self,
-            _state: &GameState,
-            action_mask: &[bool],
-        ) -> Result<(f32, Vec<f32>)> {
+        fn evaluate(&self, _state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
             // Return uniform priors over valid actions
             let num_valid = action_mask.iter().filter(|&&m| m).count();
             let prior = if num_valid > 0 {
@@ -632,7 +628,7 @@ mod tests {
     #[test]
     fn test_mcts_search_basic() {
         let state = GameState::new(5, 0); // No walls for faster search
-        let mut evaluator = MockEvaluator::new(0.0);
+        let evaluator = MockEvaluator::new(0.0);
         let visited = HashSet::new();
 
         let config = MCTSConfig {
@@ -642,7 +638,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = search(&config, state, &mut evaluator, &visited);
+        let result = search(&config, state, &evaluator, &visited);
         assert!(result.is_ok());
 
         let (children, _value) = result.unwrap();
@@ -658,7 +654,7 @@ mod tests {
     #[test]
     fn test_mcts_n_zero_uses_priors() {
         let state = GameState::new(5, 3);
-        let mut evaluator = MockEvaluator::new(0.0);
+        let evaluator = MockEvaluator::new(0.0);
         let visited = HashSet::new();
 
         let config = MCTSConfig {
@@ -668,7 +664,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = search(&config, state, &mut evaluator, &visited);
+        let result = search(&config, state, &evaluator, &visited);
         assert!(result.is_ok());
 
         let (children, _) = result.unwrap();
