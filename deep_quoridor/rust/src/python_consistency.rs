@@ -2,8 +2,8 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::process::Command;
 
-use quoridor_rs::actions::{action_index_to_action, policy_size};
-use quoridor_rs::game_state::GameState;
+use crate::actions::{action_index_to_action, policy_size};
+use crate::game_state::GameState;
 
 fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool>) {
     let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
