@@ -37,12 +37,14 @@ use std::process;
 use std::sync::Arc;
 use std::time::Instant;
 
-use quoridor_rs::agents::alphazero::evaluator::{Evaluator, OnnxEvaluator};
+use quoridor_rs::agents::alphazero::evaluator::{
+    CachingEvaluator, Evaluator, OnnxEvaluator, DEFAULT_MAX_CACHE_SIZE,
+};
 use quoridor_rs::agents::alphazero::AlphaZeroAgent;
 use quoridor_rs::agents::onnx_agent::OnnxAgent;
 use quoridor_rs::agents::random_agent::RandomAgent;
 use quoridor_rs::agents::ActionSelector;
-use quoridor_rs::game_runner::play_game;
+use quoridor_rs::game_runner::{play_game, play_games_parallel};
 use quoridor_rs::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
 use quoridor_rs::selfplay_config::{load_config, load_latest_model, AlphaZeroConfig};
 
@@ -102,6 +104,16 @@ struct Cli {
     /// Path to shutdown sentinel file. When this file exists, exit gracefully.
     #[arg(long)]
     shutdown_file: Option<String>,
+
+    /// Number of games to play in parallel using threads.
+    /// When > 1, uses CachingEvaluator for thread-safe shared inference.
+    #[arg(long, default_value = "1")]
+    parallel_games: usize,
+
+    /// Maximum number of entries in the NN evaluation LRU cache.
+    /// Only used when --parallel-games > 1.
+    #[arg(long, default_value_t = DEFAULT_MAX_CACHE_SIZE)]
+    max_cache_size: usize,
 }
 
 /// Boxed agent trait object for dynamic dispatch.
@@ -185,6 +197,8 @@ fn run_batch(
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--model-path is required in batch mode"))?;
 
+    let use_parallel = cli.parallel_games > 1 && !cli.use_raw_onnx_agent && cli.p2.is_none();
+
     let agent_label = if cli.use_raw_onnx_agent {
         "raw-onnx"
     } else {
@@ -203,6 +217,13 @@ fn run_batch(
     println!("P2: {}", p2_desc);
     println!("Output: {}", cli.output_dir);
 
+    if use_parallel {
+        println!(
+            "Parallel: {} threads, cache_size={}",
+            cli.parallel_games, cli.max_cache_size
+        );
+    }
+
     if !cli.use_raw_onnx_agent {
         println!(
             "MCTS config: n={:?}, k={:?}, c_puct={}, noise_epsilon={}",
@@ -210,67 +231,111 @@ fn run_batch(
         );
     }
 
-    let evaluator: Arc<dyn Evaluator + Send + Sync> = Arc::new(OnnxEvaluator::new(model_path)?);
-
-    let mut agent_p1 = create_agent(
-        cli.use_raw_onnx_agent,
-        None,
-        model_path,
-        &evaluator,
-        az_config,
-    )?;
-    let mut agent_p2 = create_agent(
-        cli.use_raw_onnx_agent,
-        cli.p2.as_deref(),
-        model_path,
-        &evaluator,
-        az_config,
-    )?;
+    let evaluator: Arc<dyn Evaluator + Send + Sync> = if use_parallel {
+        Arc::new(CachingEvaluator::new(model_path, cli.max_cache_size)?)
+    } else {
+        Arc::new(OnnxEvaluator::new(model_path)?)
+    };
 
     println!("Model loaded.");
 
     let pid = process::id();
-    let mut wins = [0u32; 2];
-    let mut draws = 0u32;
-    let mut total_turns = 0u64;
-
     let start = Instant::now();
 
-    for game_idx in 0..cli.num_games {
-        agent_p1.reset_game();
-        agent_p2.reset_game();
-
-        let result = play_game(
-            agent_p1.as_mut(),
-            agent_p2.as_mut(),
+    if use_parallel {
+        let results = play_games_parallel(
+            evaluator,
+            &az_config.to_agent_config(),
             q.board_size,
             q.max_walls,
             q.max_steps as i32,
+            cli.num_games,
+            cli.parallel_games,
             cli.trace,
         )?;
 
-        match result.winner {
-            Some(0) => wins[0] += 1,
-            Some(1) => wins[1] += 1,
-            _ => draws += 1,
+        let mut wins = [0u32; 2];
+        let mut draws = 0u32;
+        let mut total_turns = 0u64;
+
+        for (game_idx, result) in results.iter().enumerate() {
+            match result.winner {
+                Some(0) => wins[0] += 1,
+                Some(1) => wins[1] += 1,
+                _ => draws += 1,
+            }
+            total_turns += result.num_turns as u64;
+            write_game_files(&cli.output_dir, result, cli.model_version, game_idx, pid)?;
         }
-        total_turns += result.num_turns as u64;
 
-        write_game_files(&cli.output_dir, &result, cli.model_version, game_idx, pid)?;
+        let elapsed = start.elapsed().as_secs_f64();
+        let gps = cli.num_games as f64 / elapsed;
+        println!(
+            "[{}/{}] P1 wins: {}, P2 wins: {}, draws: {}, avg turns: {:.1}, {:.1} games/s",
+            cli.num_games,
+            cli.num_games,
+            wins[0],
+            wins[1],
+            draws,
+            total_turns as f64 / cli.num_games as f64,
+            gps,
+        );
+    } else {
+        let mut agent_p1 = create_agent(
+            cli.use_raw_onnx_agent,
+            None,
+            model_path,
+            &evaluator,
+            az_config,
+        )?;
+        let mut agent_p2 = create_agent(
+            cli.use_raw_onnx_agent,
+            cli.p2.as_deref(),
+            model_path,
+            &evaluator,
+            az_config,
+        )?;
 
-        if (game_idx + 1) % 10 == 0 || game_idx + 1 == cli.num_games {
-            let elapsed = start.elapsed().as_secs_f64();
-            let gps = (game_idx + 1) as f64 / elapsed;
-            println!(
-                "[{}/{}] P1 wins: {}, P2 wins: {}, draws: {}, avg turns: {:.1}, {:.1} games/s",
-                game_idx + 1,
-                cli.num_games,
-                wins[0],
-                wins[1],
-                draws,
-                total_turns as f64 / (game_idx + 1) as f64,
-                gps,
-            );
+        let mut wins = [0u32; 2];
+        let mut draws = 0u32;
+        let mut total_turns = 0u64;
+
+        for game_idx in 0..cli.num_games {
+            agent_p1.reset_game();
+            agent_p2.reset_game();
+
+            let result = play_game(
+                agent_p1.as_mut(),
+                agent_p2.as_mut(),
+                q.board_size,
+                q.max_walls,
+                q.max_steps as i32,
+                cli.trace,
+            )?;
+
+            match result.winner {
+                Some(0) => wins[0] += 1,
+                Some(1) => wins[1] += 1,
+                _ => draws += 1,
+            }
+            total_turns += result.num_turns as u64;
+
+            write_game_files(&cli.output_dir, &result, cli.model_version, game_idx, pid)?;
+
+            if (game_idx + 1) % 10 == 0 || game_idx + 1 == cli.num_games {
+                let elapsed = start.elapsed().as_secs_f64();
+                let gps = (game_idx + 1) as f64 / elapsed;
+                println!(
+                    "[{}/{}] P1 wins: {}, P2 wins: {}, draws: {}, avg turns: {:.1}, {:.1} games/s",
+                    game_idx + 1,
+                    cli.num_games,
+                    wins[0],
+                    wins[1],
+                    draws,
+                    total_turns as f64 / (game_idx + 1) as f64,
+                    gps,
+                );
+            }
         }
     }
 
@@ -282,7 +347,7 @@ fn run_batch(
 }
 
 /// Continuous mode: play games indefinitely, polling `latest.yaml` for new
-/// model versions and checking the shutdown sentinel file between games.
+/// model versions and checking the shutdown sentinel file between batches.
 fn run_continuous(
     cli: &Cli,
     q: &quoridor_rs::selfplay_config::QuoridorConfig,
@@ -297,6 +362,8 @@ fn run_continuous(
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--shutdown-file is required with --continuous"))?;
 
+    let use_parallel = cli.parallel_games > 1 && cli.p2.is_none();
+
     // Create a tmp subdirectory for atomic writes
     let tmp_dir = format!("{}/tmp", cli.output_dir);
     std::fs::create_dir_all(&tmp_dir)?;
@@ -305,6 +372,12 @@ fn run_continuous(
         "Continuous self-play: board_size={}, max_walls={}, max_steps={}",
         q.board_size, q.max_walls, q.max_steps,
     );
+    if use_parallel {
+        println!(
+            "Parallel: {} threads, cache_size={}",
+            cli.parallel_games, cli.max_cache_size
+        );
+    }
     println!("Polling: {}", latest_yaml_path);
     println!("Shutdown: {}", shutdown_path);
     println!("Output: {}", cli.output_dir);
@@ -338,83 +411,164 @@ fn run_continuous(
         model_version, model_path
     );
 
-    let mut evaluator: Arc<dyn Evaluator + Send + Sync> =
-        Arc::new(OnnxEvaluator::new(&model_path)?);
-
-    let mut agent_p1 = create_agent(false, None, &model_path, &evaluator, az_config)?;
-    let mut agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, &evaluator, az_config)?;
-
     let pid = process::id();
     let mut game_idx: usize = 0;
 
-    loop {
-        // Check for shutdown
-        if Path::new(shutdown_path).exists() {
-            println!(
-                "Shutdown signal detected. Exiting after {} games.",
-                game_idx
-            );
-            break;
-        }
+    if use_parallel {
+        let caching_eval = Arc::new(CachingEvaluator::new(&model_path, cli.max_cache_size)?);
+        let evaluator: Arc<dyn Evaluator + Send + Sync> = caching_eval.clone();
 
-        // Check for new model version
-        if let Ok(new_latest) = load_latest_model(latest_yaml_path) {
-            if new_latest.version != model_version {
-                let new_path = pt_to_onnx_path(&new_latest.filename);
-                // Wait for the ONNX file to appear before loading
-                if Path::new(&new_path).exists() {
-                    println!(
-                        "New model detected: version {} -> {} ({})",
-                        model_version, new_latest.version, new_path
-                    );
-                    model_version = new_latest.version;
-                    model_path = new_path;
-                    evaluator = Arc::new(OnnxEvaluator::new(&model_path)?);
-                    agent_p1 = create_agent(false, None, &model_path, &evaluator, az_config)?;
-                    agent_p2 =
-                        create_agent(false, cli.p2.as_deref(), &model_path, &evaluator, az_config)?;
+        loop {
+            if Path::new(shutdown_path).exists() {
+                println!(
+                    "Shutdown signal detected. Exiting after {} games.",
+                    game_idx
+                );
+                break;
+            }
+
+            // Check for new model version
+            if let Ok(new_latest) = load_latest_model(latest_yaml_path) {
+                if new_latest.version != model_version {
+                    let new_path = pt_to_onnx_path(&new_latest.filename);
+                    if Path::new(&new_path).exists() {
+                        println!(
+                            "New model detected: version {} -> {} ({})",
+                            model_version, new_latest.version, new_path
+                        );
+                        model_version = new_latest.version;
+                        model_path = new_path;
+                        caching_eval.reload_model(&model_path)?;
+                    }
                 }
             }
+
+            // Play a batch of games in parallel
+            let batch_size = cli.parallel_games;
+            let batch_start = std::time::Instant::now();
+            let results = play_games_parallel(
+                evaluator.clone(),
+                &az_config.to_agent_config(),
+                q.board_size,
+                q.max_walls,
+                q.max_steps as i32,
+                batch_size,
+                cli.parallel_games,
+                false,
+            )?;
+            let batch_elapsed = batch_start.elapsed().as_secs_f64();
+
+            for result in &results {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                let base_name = format!("game_{}_{:04}_{}", ts, game_idx, pid);
+
+                let yaml_ready = format!("{}/{}.yaml", cli.output_dir, base_name);
+                let npz_tmp = format!("{}/{}.npz", tmp_dir, base_name);
+                let npz_ready = format!("{}/{}.npz", cli.output_dir, base_name);
+
+                let metadata = GameMetadata {
+                    model_version,
+                    game_length: result.replay_items.len(),
+                    creator: format!("{}", pid),
+                };
+                write_game_yaml(&yaml_ready, &metadata)?;
+                write_game_npz(&npz_tmp, result)?;
+                std::fs::rename(&npz_tmp, &npz_ready)?;
+                game_idx += 1;
+            }
+
+            println!(
+                "{} - {} games finished in {:.4}s ({:.1} games/s)",
+                pid,
+                batch_size,
+                batch_elapsed,
+                batch_size as f64 / batch_elapsed,
+            );
         }
+    } else {
+        let evaluator: Arc<dyn Evaluator + Send + Sync> =
+            Arc::new(OnnxEvaluator::new(&model_path)?);
 
-        agent_p1.reset_game();
-        agent_p2.reset_game();
+        let mut agent_p1 = create_agent(false, None, &model_path, &evaluator, az_config)?;
+        let mut agent_p2 =
+            create_agent(false, cli.p2.as_deref(), &model_path, &evaluator, az_config)?;
 
-        let game_start = std::time::Instant::now();
-        let result = play_game(
-            agent_p1.as_mut(),
-            agent_p2.as_mut(),
-            q.board_size,
-            q.max_walls,
-            q.max_steps as i32,
-            false,
-        )?;
-        let game_elapsed = game_start.elapsed().as_secs_f64();
-        println!("{} - selfplay finished in {:.4}", pid, game_elapsed);
+        // Need to reassign evaluator on model change in sequential mode
+        let mut current_evaluator = evaluator;
 
-        // Atomic write: write to tmp dir, then rename to output dir
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let base_name = format!("game_{}_{:04}_{}", ts, game_idx, pid);
+        loop {
+            if Path::new(shutdown_path).exists() {
+                println!(
+                    "Shutdown signal detected. Exiting after {} games.",
+                    game_idx
+                );
+                break;
+            }
 
-        let yaml_ready = format!("{}/{}.yaml", cli.output_dir, base_name);
-        let npz_tmp = format!("{}/{}.npz", tmp_dir, base_name);
-        let npz_ready = format!("{}/{}.npz", cli.output_dir, base_name);
+            // Check for new model version
+            if let Ok(new_latest) = load_latest_model(latest_yaml_path) {
+                if new_latest.version != model_version {
+                    let new_path = pt_to_onnx_path(&new_latest.filename);
+                    if Path::new(&new_path).exists() {
+                        println!(
+                            "New model detected: version {} -> {} ({})",
+                            model_version, new_latest.version, new_path
+                        );
+                        model_version = new_latest.version;
+                        model_path = new_path;
+                        current_evaluator = Arc::new(OnnxEvaluator::new(&model_path)?);
+                        agent_p1 =
+                            create_agent(false, None, &model_path, &current_evaluator, az_config)?;
+                        agent_p2 = create_agent(
+                            false,
+                            cli.p2.as_deref(),
+                            &model_path,
+                            &current_evaluator,
+                            az_config,
+                        )?;
+                    }
+                }
+            }
 
-        let metadata = GameMetadata {
-            model_version,
-            game_length: result.replay_items.len(),
-            creator: format!("{}", pid),
-        };
-        // Write YAML first to output dir (trainer looks for npz to know game is ready)
-        write_game_yaml(&yaml_ready, &metadata)?;
-        // Write npz to tmp, then atomically rename
-        write_game_npz(&npz_tmp, &result)?;
-        std::fs::rename(&npz_tmp, &npz_ready)?;
+            agent_p1.reset_game();
+            agent_p2.reset_game();
 
-        game_idx += 1;
+            let game_start = std::time::Instant::now();
+            let result = play_game(
+                agent_p1.as_mut(),
+                agent_p2.as_mut(),
+                q.board_size,
+                q.max_walls,
+                q.max_steps as i32,
+                false,
+            )?;
+            let game_elapsed = game_start.elapsed().as_secs_f64();
+            println!("{} - selfplay finished in {:.4}", pid, game_elapsed);
+
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            let base_name = format!("game_{}_{:04}_{}", ts, game_idx, pid);
+
+            let yaml_ready = format!("{}/{}.yaml", cli.output_dir, base_name);
+            let npz_tmp = format!("{}/{}.npz", tmp_dir, base_name);
+            let npz_ready = format!("{}/{}.npz", cli.output_dir, base_name);
+
+            let metadata = GameMetadata {
+                model_version,
+                game_length: result.replay_items.len(),
+                creator: format!("{}", pid),
+            };
+            write_game_yaml(&yaml_ready, &metadata)?;
+            write_game_npz(&npz_tmp, &result)?;
+            std::fs::rename(&npz_tmp, &npz_ready)?;
+
+            game_idx += 1;
+        }
     }
 
     Ok(())
