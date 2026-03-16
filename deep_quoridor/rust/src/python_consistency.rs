@@ -11,32 +11,7 @@ fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool
         .expect("rust crate should live under deep_quoridor/")
         .join("src");
 
-    let script = r#"
-import sys
-from pathlib import Path
-
-src_dir = Path(sys.argv[1])
-board_size = int(sys.argv[2])
-max_walls = int(sys.argv[3])
-sys.path.insert(0, str(src_dir))
-
-from quoridor import ActionEncoder, Board, Quoridor
-
-encoder = ActionEncoder(board_size)
-for idx in range(encoder.num_actions):
-    action = encoder.index_to_action(idx)
-    if action.__class__.__name__ == "MoveAction":
-        row, col = action.destination
-        action_type = 2
-    else:
-        row, col = action.position
-        action_type = 0 if action.orientation.name == "VERTICAL" else 1
-    print(f"A,{idx},{row},{col},{action_type}")
-
-game = Quoridor(Board(board_size, max_walls))
-mask = ''.join('1' if x else '0' for x in game.get_action_mask())
-print(f"M,{mask}")
-"#;
+    let script_path = src_dir.join("action_reference.py");
 
     let args = [
         src_dir.to_string_lossy().into_owned(),
@@ -44,11 +19,11 @@ print(f"M,{mask}")
         max_walls.to_string(),
     ];
 
-    let output = run_python(script, &args);
+    let output = run_python(&script_path.to_string_lossy(), &args);
     parse_reference_output(&output, board_size)
 }
 
-fn run_python(script: &str, args: &[String]) -> String {
+fn run_python(script_path: &str, args: &[String]) -> String {
     let mut candidates = Vec::new();
     if let Ok(python) = std::env::var("PYTHON") {
         candidates.push(python);
@@ -58,8 +33,7 @@ fn run_python(script: &str, args: &[String]) -> String {
 
     for candidate in candidates {
         let output = Command::new(&candidate)
-            .arg("-c")
-            .arg(script)
+            .arg(script_path)
             .args(args)
             .output();
 

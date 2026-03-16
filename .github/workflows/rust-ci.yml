@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'deep_quoridor/rust/**'
+      - 'deep_quoridor/src/action_reference.py'
       - '.github/workflows/rust-ci.yml'
   pull_request:
     paths:
       - 'deep_quoridor/rust/**'
+      - 'deep_quoridor/src/action_reference.py'
       - '.github/workflows/rust-ci.yml'
   workflow_dispatch:
 
@@ -32,7 +34,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      
+          cache: 'pip'
+          cache-dependency-path: deep_quoridor/requirements.txt
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -40,7 +44,7 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
-      
+
       - name: Cache cargo index
         uses: actions/cache@v4
         with:
@@ -86,6 +90,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: deep_quoridor/requirements.txt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
