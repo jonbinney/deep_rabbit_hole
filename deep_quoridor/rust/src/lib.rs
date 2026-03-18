@@ -394,9 +394,9 @@ fn q_evaluate_actions<'py>(
 
 /// Look up a game state in a pre-computed policy database.
 ///
-/// The DB stores only (state, value). This function enumerates all valid
-/// actions, computes each child state, queries the DB for each child's value,
-/// and returns (actions, values) from the current player's perspective.
+/// Enumerates all valid actions, computes each child state, queries the DB
+/// for each child's value, and returns (actions, values) from the current
+/// player's perspective.
 #[cfg(feature = "python")]
 #[pyfunction]
 fn policy_db_lookup<'py>(
@@ -411,13 +411,11 @@ fn policy_db_lookup<'py>(
     max_steps: usize,
     db_path: &str,
 ) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<i32>>)>> {
+    use compact::policy_db::PolicyDb;
     use compact::q_game_mechanics::QGameMechanics;
-    use rusqlite::Connection;
-    use std::path::Path;
 
     let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
 
-    // Convert game state to QBitRepr format
     let mut data = mechanics.repr().create_data();
     mechanics.repr().from_game_state(
         &mut data,
@@ -427,106 +425,31 @@ fn policy_db_lookup<'py>(
         current_player,
         completed_steps,
     );
-    let cp = current_player as usize;
 
-    // Get all valid actions for current player
-    let moves = mechanics.get_valid_moves(&mut data);
-    let walls = mechanics.get_valid_wall_placements(&mut data);
+    let db = PolicyDb::open(db_path)
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
 
-    let mut actions: Vec<(u8, u8, u8)> = moves
-        .into_iter()
-        .map(|(r, c)| (r as u8, c as u8, 2))
-        .collect();
-    actions.extend(
-        walls
-            .into_iter()
-            .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
-    );
-
-    if actions.is_empty() {
-        return Ok(None);
-    }
-
-    // Open the database
-    let conn = Connection::open_with_flags(
-        Path::new(db_path),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
-
-    let mut stmt = conn
-        .prepare_cached("SELECT value FROM policy WHERE state = ?1")
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("SQL prepare: {e}")))?;
-
-    let n = actions.len();
-    let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
-    let mut values_array = ndarray::Array1::<i32>::zeros(n);
-    let mut any_found = false;
-
-    for (i, &(row, col, action_type)) in actions.iter().enumerate() {
-        actions_array[[i, 0]] = row as i32;
-        actions_array[[i, 1]] = col as i32;
-        actions_array[[i, 2]] = action_type as i32;
-
-        // Create child state
-        let mut child_data = data.clone();
-        let (r, c, t) = (row as usize, col as usize, action_type as usize);
-        if action_type == 2 {
-            mechanics.execute_move(&mut child_data, cp, r, c);
-        } else {
-            mechanics.execute_wall_placement(&mut child_data, cp, r, c, t);
+    match db
+        .lookup_action_values(&mechanics, &data)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("DB query error: {e}")))?
+    {
+        None => Ok(None),
+        Some((actions, values)) => {
+            let n = actions.len();
+            let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
+            let mut values_array = ndarray::Array1::<i32>::zeros(n);
+            for (i, &(row, col, action_type)) in actions.iter().enumerate() {
+                actions_array[[i, 0]] = row as i32;
+                actions_array[[i, 1]] = col as i32;
+                actions_array[[i, 2]] = action_type as i32;
+                values_array[i] = values[i];
+            }
+            Ok(Some((
+                PyArray2::from_owned_array_bound(py, actions_array),
+                numpy::PyArray1::from_owned_array_bound(py, values_array),
+            )))
         }
-        mechanics.switch_player(&mut child_data);
-
-        // Check for terminal states first (not stored in DB).
-        let child_cp = mechanics.repr().get_current_player(&child_data);
-        let child_opponent = 1 - child_cp;
-        let child_value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
-            // child_opponent just won
-            any_found = true;
-            if child_opponent == 0 {
-                -1
-            } else {
-                1
-            }
-        } else if mechanics.repr().get_completed_steps(&child_data) >= mechanics.repr().max_steps()
-        {
-            any_found = true;
-            0
-        } else {
-            // Non-terminal: query DB
-            let result: Result<i32, _> =
-                stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
-
-            match result {
-                Ok(v) => {
-                    any_found = true;
-                    if current_player == 0 {
-                        v
-                    } else {
-                        -v
-                    }
-                }
-                Err(rusqlite::Error::QueryReturnedNoRows) => panic!("No state found for action"),
-                Err(e) => {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "DB query error: {e}"
-                    )));
-                }
-            }
-        };
-
-        // DB stores P0-perspective. Convert to acting player's perspective.
-        values_array[i] = child_value_p0;
     }
-    if !any_found {
-        return Ok(None);
-    }
-
-    Ok(Some((
-        PyArray2::from_owned_array_bound(py, actions_array),
-        numpy::PyArray1::from_owned_array_bound(py, values_array),
-    )))
 }
 
 /// A Python module implemented in Rust.

@@ -6,6 +6,8 @@ use dashmap::DashMap;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
+use rusqlite::{params, Connection};
+use std::path::Path;
 
 use super::q_game_mechanics::QGameMechanics;
 
@@ -48,6 +50,189 @@ impl std::hash::Hash for StateKey {
 
 /// Transposition table type alias.
 pub type TranspositionTable = DashMap<StateKey, i8>;
+
+/// SQLite-backed policy database for storing and querying pre-computed minimax values.
+pub struct PolicyDb {
+    conn: Connection,
+}
+
+impl PolicyDb {
+    /// Open an existing policy database for reading.
+    pub fn open(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let conn = Connection::open_with_flags(
+            Path::new(path),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        Ok(Self { conn })
+    }
+
+    /// Look up values for all actions reachable from the given state.
+    ///
+    /// Returns `None` if there are no valid actions or no DB entries were found.
+    /// Otherwise returns `(actions, values)` where values are from the acting
+    /// player's perspective (positive = good for the acting player).
+    pub fn lookup_action_values(
+        &self,
+        mechanics: &QGameMechanics,
+        data: &[u8],
+    ) -> Result<Option<(Vec<(u8, u8, u8)>, Vec<i32>)>, Box<dyn std::error::Error>> {
+        let cp = mechanics.repr().get_current_player(data);
+
+        let mut data_mut = data.to_vec();
+        let moves = mechanics.get_valid_moves(&mut data_mut);
+        let walls = mechanics.get_valid_wall_placements(&mut data_mut);
+
+        let mut actions: Vec<(u8, u8, u8)> = moves
+            .into_iter()
+            .map(|(r, c)| (r as u8, c as u8, 2))
+            .collect();
+        actions.extend(walls.into_iter().map(|(r, c, t)| (r as u8, c as u8, t as u8)));
+
+        if actions.is_empty() {
+            return Ok(None);
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT value FROM policy WHERE state = ?1")?;
+
+        let mut values = Vec::with_capacity(actions.len());
+        let mut any_found = false;
+
+        for &(row, col, action_type) in &actions {
+            let mut child_data = data.to_vec();
+            let (r, c, t) = (row as usize, col as usize, action_type as usize);
+            if action_type == 2 {
+                mechanics.execute_move(&mut child_data, cp, r, c);
+            } else {
+                mechanics.execute_wall_placement(&mut child_data, cp, r, c, t);
+            }
+            mechanics.switch_player(&mut child_data);
+
+            let child_cp = mechanics.repr().get_current_player(&child_data);
+            let child_opponent = 1 - child_cp;
+
+            // P0-perspective value for this child state.
+            let value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
+                // child_opponent just won
+                any_found = true;
+                if child_opponent == 0 { -1 } else { 1 }
+            } else if mechanics.repr().get_completed_steps(&child_data)
+                >= mechanics.repr().max_steps()
+            {
+                any_found = true;
+                0
+            } else {
+                let result: Result<i32, _> =
+                    stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
+                match result {
+                    Ok(v) => {
+                        any_found = true;
+                        v
+                    }
+                    Err(rusqlite::Error::QueryReturnedNoRows) => {
+                        panic!("No DB entry found for child state")
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            };
+
+            // Convert from P0 perspective to acting player's perspective.
+            let value = if cp == 0 { value_p0 } else { -value_p0 };
+            values.push(value);
+        }
+
+        if !any_found {
+            return Ok(None);
+        }
+
+        Ok(Some((actions, values)))
+    }
+
+    /// Create a new policy database from a transposition table.
+    ///
+    /// Only states where `completed_steps % step_interval == 0` are saved.
+    /// Returns the number of entries written.
+    pub fn write(
+        mechanics: &QGameMechanics,
+        entries: TranspositionTable,
+        path: &str,
+        board_size: usize,
+        max_steps: usize,
+        max_walls: usize,
+        step_interval: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let mut conn = Connection::open(Path::new(path))?;
+
+        // Performance pragmas: disable journaling and syncs during bulk insert.
+        conn.execute_batch(
+            "PRAGMA journal_mode = OFF;
+             PRAGMA synchronous = OFF;
+             PRAGMA locking_mode = EXCLUSIVE;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -64000;",
+        )?;
+
+        conn.execute("DROP TABLE IF EXISTS policy", [])?;
+        conn.execute("DROP TABLE IF EXISTS metadata", [])?;
+
+        conn.execute(
+            "CREATE TABLE metadata (
+                key TEXT PRIMARY KEY,
+                value FLOAT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('board_size', ?1)",
+            params![board_size as f32],
+        )?;
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('max_steps', ?1)",
+            params![max_steps as f32],
+        )?;
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('max_walls', ?1)",
+            params![max_walls as f32],
+        )?;
+
+        // Create table WITHOUT primary key index — insert first, index later.
+        conn.execute(
+            "CREATE TABLE policy (
+                state BLOB,
+                value INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        let num_entries = entries.len();
+
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("INSERT INTO policy (state, value) VALUES (?1, ?2)")?;
+
+            for item in entries.into_iter() {
+                let (key, value) = item;
+
+                let steps = mechanics.repr().get_completed_steps(key.as_slice());
+                if steps % step_interval != 0 {
+                    continue;
+                }
+
+                // Store P0-absolute values (1=P0 wins, -1=P0 loses).
+                stmt.execute(params![key.as_slice(), value as i32])?;
+            }
+            drop(stmt);
+        }
+        tx.commit()?;
+
+        // Create index after all inserts (much faster than maintaining during insert).
+        conn.execute("CREATE UNIQUE INDEX idx_policy_state ON policy(state)", [])?;
+
+        Ok(num_entries)
+    }
+}
 
 /// Get all valid actions (moves + wall placements) for the current player.
 fn get_all_actions(mechanics: &QGameMechanics, data: &mut [u8]) -> Vec<(u8, u8, u8)> {
