@@ -80,7 +80,7 @@ class ModelJobTrigger:
             if should_exit():
                 return False
 
-        self.next_model = current_model + self.every_model
+        self.next_model += self.every_model
         return True
 
     def is_ready(self):
