@@ -130,6 +130,8 @@ fn create_agent(
     p2_override: Option<&str>,
     model_path: &str,
     az_config: &AlphaZeroConfig,
+    board_size: i32,
+    max_walls: i32,
 ) -> Result<BoxedAgent> {
     if let Some("random") = p2_override {
         return Ok(BoxedAgent::Random(RandomAgent::new()));
@@ -142,7 +144,7 @@ fn create_agent(
     } else {
         Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
             model_path,
-            az_config.to_agent_config(),
+            az_config.to_agent_config(board_size, max_walls),
         )?))
     }
 }
@@ -156,7 +158,7 @@ fn main() -> Result<()> {
     let base_az = config.alphazero.unwrap_or_default();
     let az_config = if let Some(ref sp) = config.self_play {
         if let Some(ref sp_az) = sp.alphazero {
-            base_az.merge(sp_az)
+            base_az.merge_self_play(sp_az)
         } else {
             base_az
         }
@@ -207,12 +209,21 @@ fn run_batch(
         );
     }
 
-    let mut agent_p1 = create_agent(cli.use_raw_onnx_agent, None, model_path, az_config)?;
+    let mut agent_p1 = create_agent(
+        cli.use_raw_onnx_agent,
+        None,
+        model_path,
+        az_config,
+        q.board_size,
+        q.max_walls,
+    )?;
     let mut agent_p2 = create_agent(
         cli.use_raw_onnx_agent,
         cli.p2.as_deref(),
         model_path,
         az_config,
+        q.board_size,
+        q.max_walls,
     )?;
 
     println!("Model loaded.");
@@ -326,8 +337,22 @@ fn run_continuous(
         model_version, model_path
     );
 
-    let mut agent_p1 = create_agent(false, None, &model_path, az_config)?;
-    let mut agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+    let mut agent_p1 = create_agent(
+        false,
+        None,
+        &model_path,
+        az_config,
+        q.board_size,
+        q.max_walls,
+    )?;
+    let mut agent_p2 = create_agent(
+        false,
+        cli.p2.as_deref(),
+        &model_path,
+        az_config,
+        q.board_size,
+        q.max_walls,
+    )?;
 
     let pid = process::id();
     let mut game_idx: usize = 0;
@@ -354,8 +379,22 @@ fn run_continuous(
                     );
                     model_version = new_latest.version;
                     model_path = new_path;
-                    agent_p1 = create_agent(false, None, &model_path, az_config)?;
-                    agent_p2 = create_agent(false, cli.p2.as_deref(), &model_path, az_config)?;
+                    agent_p1 = create_agent(
+                        false,
+                        None,
+                        &model_path,
+                        az_config,
+                        q.board_size,
+                        q.max_walls,
+                    )?;
+                    agent_p2 = create_agent(
+                        false,
+                        cli.p2.as_deref(),
+                        &model_path,
+                        az_config,
+                        q.board_size,
+                        q.max_walls,
+                    )?;
                 }
             }
         }

@@ -6,7 +6,7 @@ gymnasium
 matplotlib
 numba
 numpy
-open_spiel
+open_spiel==1.5
 pettingzoo
 prettytable
 pygame
@@ -18,3 +18,4 @@ wandb
 pyyaml
 pydantic
 pydantic-yaml
+jax

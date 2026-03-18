@@ -39,13 +39,15 @@ jobs:
         uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled == 'true' }}
       - name: Set up Python 3.12
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: deep_quoridor/ci_requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f deep_quoridor/requirements.txt ]; then pip install -r deep_quoridor/ci_requirements.txt; fi
+          if [ -f deep_quoridor/ci_requirements.txt ]; then pip install -r deep_quoridor/ci_requirements.txt; fi
       - name: Test with pytest
         run: |
           PYTHONPATH=$PYTHONPATH:$(pwd)/deep_quoridor/src pytest deep_quoridor/test

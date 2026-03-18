@@ -210,7 +210,7 @@ pub fn get_valid_wall_actions(
 
 /// Compute the total number of actions in the policy vector for a given board size.
 ///
-/// Layout: [moves | horizontal_walls | vertical_walls]
+/// Layout: [moves | vertical_walls | horizontal_walls]
 /// = board_size² + 2 * (board_size - 1)²
 pub fn policy_size(board_size: i32) -> usize {
     let wall_size = board_size - 1;
@@ -219,7 +219,7 @@ pub fn policy_size(board_size: i32) -> usize {
 
 /// Compute a combined action mask covering moves and walls.
 ///
-/// Layout: [moves (board_size²) | horizontal_walls ((bs-1)²) | vertical_walls ((bs-1)²)]
+/// Layout: [moves (board_size²) | vertical_walls ((bs-1)²) | horizontal_walls ((bs-1)²)]
 /// This matches the Python ActionEncoder layout.
 pub fn compute_full_action_mask(
     grid: &ArrayView2<i8>,
@@ -262,30 +262,14 @@ pub fn compute_full_action_mask(
         current_player,
         &mut wall_mask.view_mut(),
     );
-    // wall_mask layout from compute_wall_action_mask: [vertical (ws²) | horizontal (ws²)]
-    // But selfplay.rs maps horizontal walls first, then vertical.
-    // Looking at the existing evaluate_action in selfplay.rs:
-    //   horizontal: num_move_actions + row*wall_size + col
-    //   vertical: num_move_actions + num_wall_actions + row*wall_size + col
-    // And compute_wall_action_mask: index for vertical = row*ws+col, horizontal = ws²+row*ws+col
-    // So wall_mask[0..ws²] = vertical, wall_mask[ws²..2*ws²] = horizontal
-    // We want output: [moves | horizontal | vertical]
-    // Actually, let me re-read the selfplay.rs mapping more carefully:
-    //   horizontal wall: num_move_actions + row*wall_size + col  (offset = num_moves)
-    //   vertical wall: num_move_actions + num_wall_actions + row*wall_size + col (offset = num_moves + num_walls)
-    // So output layout = [moves | horizontal_walls | vertical_walls]
-    // compute_wall_action_mask layout: [vertical_walls | horizontal_walls]
-    // Copy horizontal walls (second half of wall_mask) to first wall section of output
-    mask[num_moves..num_moves + num_walls]
-        .copy_from_slice(&wall_mask.as_slice().unwrap()[num_walls..2 * num_walls]);
-    // Copy vertical walls (first half of wall_mask) to second wall section of output
-    mask[num_moves + num_walls..num_moves + 2 * num_walls]
-        .copy_from_slice(&wall_mask.as_slice().unwrap()[..num_walls]);
+    // compute_wall_action_mask already uses the Python layout:
+    // [vertical_walls | horizontal_walls].
+    mask[num_moves..num_moves + 2 * num_walls].copy_from_slice(wall_mask.as_slice().unwrap());
 }
 
 /// Decode a flat policy index to an action triple [row, col, action_type].
 ///
-/// Policy layout: [moves (bs²) | horizontal_walls ((bs-1)²) | vertical_walls ((bs-1)²)]
+/// Policy layout: [moves (bs²) | vertical_walls ((bs-1)²) | horizontal_walls ((bs-1)²)]
 pub fn action_index_to_action(board_size: i32, index: usize) -> [i32; 3] {
     let num_moves = (board_size * board_size) as usize;
     let wall_size = board_size - 1;
@@ -297,17 +281,17 @@ pub fn action_index_to_action(board_size: i32, index: usize) -> [i32; 3] {
         let col = (index as i32) % board_size;
         [row, col, ACTION_MOVE]
     } else if index < num_moves + num_walls {
-        // Horizontal wall
+        // Vertical wall
         let wall_idx = index - num_moves;
         let row = (wall_idx as i32) / wall_size;
         let col = (wall_idx as i32) % wall_size;
-        [row, col, ACTION_WALL_HORIZONTAL]
+        [row, col, ACTION_WALL_VERTICAL]
     } else {
-        // Vertical wall
+        // Horizontal wall
         let wall_idx = index - num_moves - num_walls;
         let row = (wall_idx as i32) / wall_size;
         let col = (wall_idx as i32) % wall_size;
-        [row, col, ACTION_WALL_VERTICAL]
+        [row, col, ACTION_WALL_HORIZONTAL]
     }
 }
 
@@ -321,8 +305,8 @@ pub fn action_to_index(board_size: i32, action: &[i32; 3]) -> usize {
 
     match action[2] {
         ACTION_MOVE => (action[0] * board_size + action[1]) as usize,
-        ACTION_WALL_HORIZONTAL => num_moves + (action[0] * wall_size + action[1]) as usize,
-        ACTION_WALL_VERTICAL => {
+        ACTION_WALL_VERTICAL => num_moves + (action[0] * wall_size + action[1]) as usize,
+        ACTION_WALL_HORIZONTAL => {
             num_moves + num_walls + (action[0] * wall_size + action[1]) as usize
         }
         _ => panic!("Invalid action type: {}", action[2]),
@@ -427,15 +411,15 @@ mod tests {
         }
         let num_moves = (bs * bs) as usize;
         let ws = (bs - 1) as usize;
-        // Next ws² are horizontal walls
+        // Next ws² are vertical walls
         for idx in num_moves..num_moves + ws * ws {
             let action = action_index_to_action(bs, idx);
-            assert_eq!(action[2], ACTION_WALL_HORIZONTAL);
+            assert_eq!(action[2], ACTION_WALL_VERTICAL);
         }
-        // Last ws² are vertical walls
+        // Last ws² are horizontal walls
         for idx in num_moves + ws * ws..num_moves + 2 * ws * ws {
             let action = action_index_to_action(bs, idx);
-            assert_eq!(action[2], ACTION_WALL_VERTICAL);
+            assert_eq!(action[2], ACTION_WALL_HORIZONTAL);
         }
     }
 

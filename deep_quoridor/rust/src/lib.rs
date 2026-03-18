@@ -15,6 +15,9 @@ mod validation;
 
 pub mod agents;
 
+#[cfg(test)]
+mod python_consistency;
+
 #[cfg(feature = "binary")]
 pub mod game_runner;
 #[cfg(feature = "binary")]
