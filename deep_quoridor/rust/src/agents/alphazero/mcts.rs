@@ -320,9 +320,12 @@ pub fn search<E: Evaluator>(
     let board_size = game.board_size;
     let mut arena = NodeArena::new(game.clone());
 
-    // Evaluate root and expand
+    // Evaluate root upfront to get root_value and priors.
+    // Root is NOT expanded here; expansion happens inside the first loop iteration
+    // so that the loop structure matches the Python implementation (where iteration 0
+    // always selects root itself, expands it, and backpropagates through it).
     let action_mask = game.get_action_mask();
-    let (root_value, mut priors) = evaluator.evaluate(&game, &action_mask)?;
+    let (root_value, mut root_priors) = evaluator.evaluate(&game, &action_mask)?;
 
     // Apply Dirichlet noise at root if configured
     if config.noise_epsilon > 0.0 {
@@ -330,11 +333,8 @@ pub fn search<E: Evaluator>(
             let num_valid = action_mask.iter().filter(|&&m| m).count();
             10.0 / num_valid.max(1) as f32
         });
-        apply_dirichlet_noise(&mut priors, config.noise_epsilon, alpha);
+        apply_dirichlet_noise(&mut root_priors, config.noise_epsilon, alpha);
     }
-
-    // Expand root
-    expand_node(&mut arena, 0, &priors, board_size);
 
     // Determine number of iterations
     let num_valid = action_mask.iter().filter(|&&m| m).count() as u32;
@@ -342,9 +342,9 @@ pub fn search<E: Evaluator>(
         .n
         .unwrap_or_else(|| config.k.unwrap_or(10) * num_valid);
 
-    // Special case: n=0 means just use priors
+    // Special case: n=0 means just use priors (expand root once without simulating)
     if n_iterations == 0 {
-        // Set visit counts proportional to priors
+        expand_node(&mut arena, 0, &root_priors, board_size);
         let root = arena.get(0);
         let children = root.children.clone();
 
@@ -353,6 +353,11 @@ pub fn search<E: Evaluator>(
             child.visit_count = (child.prior * 1000.0) as u32;
         }
     } else {
+        // Hold pre-computed root priors so the first iteration can expand root
+        // without re-calling the evaluator (matching Python's inline-root-expansion
+        // behaviour where iteration 0 selects root itself).
+        let mut root_priors_opt: Option<Vec<f32>> = Some(root_priors);
+
         // Run MCTS iterations
         for _ in 0..n_iterations {
             // Selection: traverse tree to find a leaf
@@ -391,9 +396,15 @@ pub fn search<E: Evaluator>(
                 }
             }
 
-            // Evaluate and expand
-            let leaf_mask = leaf_game.get_action_mask();
-            let (value, leaf_priors) = evaluator.evaluate(&leaf_game, &leaf_mask)?;
+            // Evaluate and expand. On the first iteration current_idx is always 0
+            // (root) because root starts with no children; reuse the pre-computed
+            // priors instead of calling the evaluator a second time.
+            let (value, leaf_priors) = if let Some(pre_priors) = root_priors_opt.take() {
+                (root_value, pre_priors)
+            } else {
+                let leaf_mask = leaf_game.get_action_mask();
+                evaluator.evaluate(&leaf_game, &leaf_mask)?
+            };
 
             expand_node(&mut arena, current_idx, &leaf_priors, board_size);
 
@@ -402,8 +413,14 @@ pub fn search<E: Evaluator>(
         }
     }
 
-    // Collect child information from root
+    // Collect child information from root and compute root value matching Python's
+    // -(root.value_sum / root.visit_count) formula.
     let root = arena.get(0);
+    let computed_root_value = if root.visit_count > 0 {
+        -(root.value_sum / root.visit_count as f64) as f32
+    } else {
+        root_value
+    };
     let children: Vec<ChildInfo> = root
         .children
         .iter()
@@ -419,7 +436,7 @@ pub fn search<E: Evaluator>(
         })
         .collect();
 
-    Ok((children, root_value))
+    Ok((children, computed_root_value))
 }
 
 #[cfg(test)]

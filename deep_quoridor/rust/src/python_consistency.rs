@@ -431,14 +431,11 @@ fn generate_rust_mcts_trace(
             break;
         }
 
-        let work_state = if state.current_player == 1 {
-            build_rotated_state(&state)
-        } else {
-            state.clone()
-        };
-        let work_mask = work_state.get_action_mask();
+        // Run MCTS on the original (unrotated) state, matching Python's behaviour where
+        // the evaluator handles rotation internally and MCTS always operates in the
+        // original action-index space for both players.
         let (children, root_value): (Vec<ChildInfo>, f32) =
-            search(&config, work_state.clone(), &mut evaluator, &visited_states)
+            search(&config, state.clone(), &mut evaluator, &visited_states)
                 .expect("MCTS search should succeed");
 
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
@@ -446,7 +443,7 @@ fn generate_rust_mcts_trace(
         let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
 
         let total_visits: u32 = visit_counts.iter().sum();
-        let mut policy = vec![0.0f32; work_mask.len()];
+        let mut policy = vec![0.0f32; mask.len()];
         if total_visits > 0 {
             for child in &children {
                 policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
@@ -457,19 +454,9 @@ fn generate_rust_mcts_trace(
         writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy)).unwrap();
         writeln!(&mut trace, "A,{step},{selected_idx}").unwrap();
 
+        // Action is already in original frame (MCTS ran on original state), apply directly.
         let selected_action = action_index_to_action(board_size, selected_idx);
-        let action = if state.current_player == 1 {
-            let (rr, rc, rt) = rotate_action_coords(
-                board_size,
-                selected_action[0],
-                selected_action[1],
-                selected_action[2],
-            );
-            [rr, rc, rt]
-        } else {
-            selected_action
-        };
-        state.step(action);
+        state.step(selected_action);
         step += 1;
     }
 
