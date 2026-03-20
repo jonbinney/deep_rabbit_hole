@@ -1,6 +1,8 @@
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(feature = "binary")]
+use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
@@ -185,6 +187,23 @@ fn run_mcts_game_python(board_size: i32, max_walls: i32, max_steps: i32, mcts_n:
     run_python(&script_path.to_string_lossy(), &args)
 }
 
+#[cfg(feature = "binary")]
+fn explain_mcts_trace_python(trace_path: &std::path::Path) -> String {
+    let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust crate should live under deep_quoridor/")
+        .join("src");
+
+    let script_path = src_dir.join("mcts_game_reference.py");
+    let args = [
+        "--explain-trace".to_string(),
+        src_dir.to_string_lossy().into_owned(),
+        trace_path.to_string_lossy().into_owned(),
+    ];
+
+    run_python(&script_path.to_string_lossy(), &args)
+}
+
 /// Parse step_trace_reference.py output into a vector of snapshots.
 fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
     // Collect lines by step, then build snapshots.
@@ -207,6 +226,9 @@ fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
     let mut steps: BTreeMap<usize, RawStep> = BTreeMap::new();
 
     for line in output.lines() {
+        if line.starts_with("CFG,") {
+            continue;
+        }
         let parts: Vec<&str> = line.splitn(3, ',').collect();
         if parts.len() < 3 {
             continue;
@@ -313,6 +335,13 @@ fn vec_f32_to_hex(values: &[f32]) -> String {
 }
 
 #[cfg(feature = "binary")]
+fn mask_to_string(mask: &[bool]) -> String {
+    mask.iter()
+        .map(|&value| if value { '1' } else { '0' })
+        .collect()
+}
+
+#[cfg(feature = "binary")]
 fn hex_to_f32(hex: &str) -> f32 {
     assert_eq!(hex.len(), 8, "expected 4-byte float hex");
     let mut bytes = [0u8; 4];
@@ -338,6 +367,211 @@ fn build_rotated_state(state: &GameState) -> GameState {
         board_size: state.board_size,
         completed_steps: state.completed_steps,
     }
+}
+
+#[cfg(feature = "binary")]
+fn generate_rust_mcts_trace(
+    board_size: i32,
+    max_walls: i32,
+    max_steps: i32,
+    mcts_n: u32,
+) -> String {
+    let mut trace = String::new();
+    writeln!(
+        &mut trace,
+        "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
+    )
+    .unwrap();
+
+    let mut state = GameState::new(board_size, max_walls);
+    let config = MCTSConfig {
+        n: Some(mcts_n),
+        k: None,
+        ucb_c: 1.4,
+        noise_epsilon: 0.0,
+        noise_alpha: Some(1.0),
+        max_steps: Some(max_steps),
+        penalize_visited_states: false,
+    };
+    let visited_states = std::collections::HashSet::new();
+    let mut evaluator = UniformMockEvaluator;
+    let mut step = 0usize;
+
+    loop {
+        let pp = state.player_positions();
+        let wr = state.walls_remaining();
+        writeln!(&mut trace, "G,{step},{}", grid_to_hex(&state.grid())).unwrap();
+        writeln!(
+            &mut trace,
+            "P,{step},{},{},{},{}",
+            pp[[0, 0]],
+            pp[[0, 1]],
+            pp[[1, 0]],
+            pp[[1, 1]]
+        )
+        .unwrap();
+        writeln!(&mut trace, "W,{step},{},{}", wr[0], wr[1]).unwrap();
+        writeln!(&mut trace, "C,{step},{}", state.current_player).unwrap();
+
+        let mask = state.get_action_mask();
+        writeln!(&mut trace, "M,{step},{}", mask_to_string(&mask)).unwrap();
+        let tensor = grid_game_state_to_resnet_input(&state);
+        writeln!(&mut trace, "T,{step},{}", tensor_to_hex(&tensor)).unwrap();
+
+        if state.current_player == 1 {
+            let rotated = build_rotated_state(&state);
+            let rmask = rotated.get_action_mask();
+            writeln!(&mut trace, "RM,{step},{}", mask_to_string(&rmask)).unwrap();
+            let rtensor = grid_game_state_to_resnet_input(&rotated);
+            writeln!(&mut trace, "RT,{step},{}", tensor_to_hex(&rtensor)).unwrap();
+        }
+
+        let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
+        if !should_select {
+            break;
+        }
+
+        let work_state = if state.current_player == 1 {
+            build_rotated_state(&state)
+        } else {
+            state.clone()
+        };
+        let work_mask = work_state.get_action_mask();
+        let (children, root_value): (Vec<ChildInfo>, f32) =
+            search(&config, work_state.clone(), &mut evaluator, &visited_states)
+                .expect("MCTS search should succeed");
+
+        let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
+        let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
+        let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+
+        let total_visits: u32 = visit_counts.iter().sum();
+        let mut policy = vec![0.0f32; work_mask.len()];
+        if total_visits > 0 {
+            for child in &children {
+                policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
+            }
+        }
+
+        writeln!(&mut trace, "V,{step},{}", vec_f32_to_hex(&[root_value])).unwrap();
+        writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy)).unwrap();
+        writeln!(&mut trace, "A,{step},{selected_idx}").unwrap();
+
+        let selected_action = action_index_to_action(board_size, selected_idx);
+        let action = if state.current_player == 1 {
+            let (rr, rc, rt) = rotate_action_coords(
+                board_size,
+                selected_action[0],
+                selected_action[1],
+                selected_action[2],
+            );
+            [rr, rc, rt]
+        } else {
+            selected_action
+        };
+        state.step(action);
+        step += 1;
+    }
+
+    trace
+}
+
+#[cfg(feature = "binary")]
+fn assert_snapshot_fields_match(
+    seq_name: &str,
+    step: usize,
+    left: &StepSnapshot,
+    right: &StepSnapshot,
+) {
+    assert_eq!(
+        left.step, right.step,
+        "[{seq_name}] step {step}: step mismatch"
+    );
+    assert_eq!(
+        left.grid_hex, right.grid_hex,
+        "[{seq_name}] step {step}: grid mismatch"
+    );
+    assert_eq!(
+        left.player_positions, right.player_positions,
+        "[{seq_name}] step {step}: player positions mismatch"
+    );
+    assert_eq!(
+        left.walls_remaining, right.walls_remaining,
+        "[{seq_name}] step {step}: walls mismatch"
+    );
+    assert_eq!(
+        left.current_player, right.current_player,
+        "[{seq_name}] step {step}: current player mismatch"
+    );
+    assert_eq!(
+        left.action_mask, right.action_mask,
+        "[{seq_name}] step {step}: action mask mismatch"
+    );
+    assert_eq!(
+        left.tensor_hex, right.tensor_hex,
+        "[{seq_name}] step {step}: tensor mismatch"
+    );
+    assert_eq!(
+        left.rotated_mask, right.rotated_mask,
+        "[{seq_name}] step {step}: rotated action mask mismatch"
+    );
+    assert_eq!(
+        left.rotated_tensor_hex, right.rotated_tensor_hex,
+        "[{seq_name}] step {step}: rotated tensor mismatch"
+    );
+
+    match (&left.root_value_hex, &right.root_value_hex) {
+        (Some(left_hex), Some(right_hex)) => {
+            let left_value = hex_to_f32(left_hex);
+            let right_value = hex_to_f32(right_hex);
+            assert!(
+                (left_value - right_value).abs() < 1e-6,
+                "[{seq_name}] step {step}: root value mismatch (left={}, right={})",
+                left_value,
+                right_value
+            );
+        }
+        (None, None) => {}
+        _ => panic!("[{seq_name}] step {step}: root value presence mismatch"),
+    }
+
+    assert_eq!(
+        left.root_policy_hex, right.root_policy_hex,
+        "[{seq_name}] step {step}: root policy mismatch"
+    );
+    assert_eq!(
+        left.selected_action_index, right.selected_action_index,
+        "[{seq_name}] step {step}: selected action mismatch"
+    );
+}
+
+#[cfg(feature = "binary")]
+fn temp_trace_path(prefix: &str) -> std::path::PathBuf {
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time should be after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}_{pid}_{nanos}.trace"))
+}
+
+#[cfg(feature = "binary")]
+fn panic_with_trace_explanations(message: String, py_trace: &str, rust_trace: &str) -> ! {
+    let py_path = temp_trace_path("python_mcts_trace");
+    let rust_path = temp_trace_path("rust_mcts_trace");
+    fs::write(&py_path, py_trace).expect("should write python trace");
+    fs::write(&rust_path, rust_trace).expect("should write rust trace");
+
+    let py_explain = explain_mcts_trace_python(&py_path);
+    let rust_explain = explain_mcts_trace_python(&rust_path);
+
+    panic!(
+        "{message}\n\nPython trace: {}\nRust trace: {}\n\nPython explanation:\n{}\nRust explanation:\n{}",
+        py_path.display(),
+        rust_path.display(),
+        py_explain,
+        rust_explain
+    );
 }
 
 /// Compare one snapshot field, returning a descriptive error message on mismatch.
@@ -461,101 +695,41 @@ fn test_mcts_game_trace_matches_python() {
     let max_steps = 50;
     let mcts_n = 50;
 
-    let output = run_mcts_game_python(board_size, max_walls, max_steps, mcts_n);
-    let snapshots = parse_step_trace_output(&output);
-    assert!(!snapshots.is_empty(), "expected at least one MCTS snapshot");
+    let py_trace = run_mcts_game_python(board_size, max_walls, max_steps, mcts_n);
+    let rust_trace = generate_rust_mcts_trace(board_size, max_walls, max_steps, mcts_n);
 
-    let mut state = GameState::new(board_size, max_walls);
-    let config = MCTSConfig {
-        n: Some(mcts_n),
-        k: None,
-        ucb_c: 1.4,
-        noise_epsilon: 0.0,
-        noise_alpha: Some(1.0),
-        max_steps: Some(max_steps),
-        penalize_visited_states: false,
-    };
-    let visited_states = std::collections::HashSet::new();
-    let mut evaluator = UniformMockEvaluator;
+    let comparison = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let py_snapshots = parse_step_trace_output(&py_trace);
+        let rust_snapshots = parse_step_trace_output(&rust_trace);
+        assert!(
+            !py_snapshots.is_empty(),
+            "expected at least one python MCTS snapshot"
+        );
+        assert!(
+            !rust_snapshots.is_empty(),
+            "expected at least one rust MCTS snapshot"
+        );
 
-    for (i, snap) in snapshots.iter().enumerate() {
-        assert_eq!(snap.step, i, "MCTS snapshot step number mismatch");
-        assert_snapshot_matches("MCTS", i, snap, &state);
-
-        let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
-
-        if should_select {
-            let work_state = if state.current_player == 1 {
-                build_rotated_state(&state)
-            } else {
-                state.clone()
-            };
-
-            let work_mask = work_state.get_action_mask();
-            let (children, root_value): (Vec<ChildInfo>, f32) =
-                search(&config, work_state.clone(), &mut evaluator, &visited_states)
-                    .expect("MCTS search should succeed");
-
-            let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
-            let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-
-            let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
-
-            let total_visits: u32 = visit_counts.iter().sum();
-            let mut policy = vec![0.0f32; work_mask.len()];
-            if total_visits > 0 {
-                for child in &children {
-                    policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
-                }
-            }
-
-            let py_value_hex = snap
-                .root_value_hex
-                .as_ref()
-                .unwrap_or_else(|| panic!("missing V for step {i}"));
-            let py_policy_hex = snap
-                .root_policy_hex
-                .as_ref()
-                .unwrap_or_else(|| panic!("missing Q for step {i}"));
-            let py_action_idx = snap
-                .selected_action_index
-                .unwrap_or_else(|| panic!("missing A for step {i}"));
-
-            let py_value = hex_to_f32(py_value_hex);
-            assert!(
-                (root_value - py_value).abs() < 1e-6,
-                "MCTS step {i}: root value mismatch (rust={}, py={})",
-                root_value,
-                py_value
-            );
-            assert_eq!(
-                vec_f32_to_hex(&policy),
-                *py_policy_hex,
-                "MCTS step {i}: root policy mismatch"
-            );
-            assert_eq!(
-                selected_idx, py_action_idx,
-                "MCTS step {i}: selected action index mismatch"
-            );
-
-            let selected_action = action_index_to_action(board_size, selected_idx);
-            let action = if state.current_player == 1 {
-                let (rr, rc, rt) = rotate_action_coords(
-                    board_size,
-                    selected_action[0],
-                    selected_action[1],
-                    selected_action[2],
-                );
-                [rr, rc, rt]
-            } else {
-                selected_action
-            };
-            state.step(action);
-        } else {
-            assert!(
-                snap.selected_action_index.is_none(),
-                "MCTS step {i}: final snapshot should not include selected action"
-            );
+        for (i, (py_snap, rust_snap)) in py_snapshots.iter().zip(rust_snapshots.iter()).enumerate()
+        {
+            assert_snapshot_fields_match("MCTS", i, py_snap, rust_snap);
         }
+
+        assert_eq!(
+            py_snapshots.len(),
+            rust_snapshots.len(),
+            "MCTS trace length mismatch"
+        );
+    }));
+
+    if let Err(payload) = comparison {
+        let message = if let Some(text) = payload.downcast_ref::<String>() {
+            text.clone()
+        } else if let Some(text) = payload.downcast_ref::<&str>() {
+            text.to_string()
+        } else {
+            "MCTS trace comparison failed".to_string()
+        };
+        panic_with_trace_explanations(message, &py_trace, &rust_trace);
     }
 }
