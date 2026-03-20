@@ -78,7 +78,7 @@ We discussed 4 ideas and chose to start with Idea A:
 ### Idea A: Deterministic Scripted Game Trace (IMPLEMENTED ✅)
 Replay scripted action sequences (no NN/MCTS) and compare every field at every step between Python and Rust. Pure game-engine + rotation + tensor comparison.
 
-### Idea B: Single-Game Replay Comparison
+### Idea B: Single-Game Replay Comparison (IMPLEMENTED ✅)
 Record a real Rust self-play game, replay it in Python, compare at each step.
 
 ### Idea C: Round-Trip Replay Buffer
@@ -116,6 +116,57 @@ At **every step** of all 4 sequences, Python and Rust produce **identical**:
 ### 2. CI Pipeline Fix — IN PROGRESS
 The `rust-ci.yml` needed updating to use `deep_quoridor/ci_requirements.txt` instead of manual `pip install` since `step_trace_reference.py` imports `torch`.
 
+### 3. Deterministic MCTS Trace Parity Harness (Idea D) — IMPLEMENTED ✅
+
+Added a deterministic Rust/Python MCTS parity test and trace tooling around B5W2:
+
+- Added `UniformMockEvaluator` in Rust (value=0, uniform priors over valid actions).
+- Added Python reference script `mcts_game_reference.py` that emits full step-by-step MCTS traces.
+- Extended `python_consistency.rs` to parse and compare MCTS trace fields (`V`, `Q`, `A`) step-by-step.
+- Added a new test: `test_mcts_game_trace_matches_python`.
+
+This exposed a reproducible divergence at step 0 (root policy mismatch), which made the remaining MCTS differences actionable.
+
+### 3b. Single-Game Replay Comparison (Idea B) — IMPLEMENTED ✅
+
+Idea B is covered by the same trace harness in a deterministic form:
+
+- A full game is generated and serialized step-by-step for Python and Rust from the same initial state and config.
+- The test compares both traces field-by-field at each step (`G/P/W/C/M/T/RM/RT/V/Q/A`).
+- On mismatch, both traces are auto-explained to make the first divergence immediately readable.
+
+Difference vs original wording of Idea B: instead of replaying one previously recorded Rust game in Python, both engines generate the game deterministically under identical conditions and are compared directly step-by-step.
+
+### 4. Trace-First Debug Explainers + MCTS Parity Fixes — IMPLEMENTED ✅
+
+Refactored the debug flow so explanations are generated from serialized trace files (not in-memory objects):
+
+- `mcts_game_reference.py` now supports `--explain-trace` and includes `CFG` metadata headers in traces.
+- Rust test harness now generates both Python and Rust MCTS traces, and auto-runs the Python explainer on failure.
+- Failure output now includes side-by-side, human-readable explanations of both traces.
+
+Using this tooling, three parity bugs were identified and fixed:
+
+1. **Root visit-count mismatch (50 vs 49)**
+	- Rust expanded root before the simulation loop.
+	- Python expands root inside iteration 0.
+	- Fix: defer Rust root expansion to the first loop iteration.
+
+2. **Player-1 action-space mismatch**
+	- Rust trace generation rotated state before calling MCTS search.
+	- Python MCTS search stays in original action-index space and evaluator handles rotation.
+	- Fix: run trace MCTS on original state for both players.
+
+3. **Root value mismatch**
+	- Rust returned raw evaluator root value.
+	- Python returns `-(root.value_sum / root.visit_count)`.
+	- Fix: return mean backpropagated root value in Rust.
+
+Result after fixes:
+
+- `cargo test --features binary test_mcts_game_trace_matches_python -- --nocapture` passes.
+- Full Rust test suite with binary feature passes (`131 passed, 0 failed`).
+
 ## What To Try Next
 
 Priority-ordered based on likelihood of being the root cause:
@@ -134,12 +185,11 @@ Compare win/loss/truncation value assignment between Python and Rust:
 - Are game lengths comparable?
 - Add test sequences that reach game-over (win condition)
 
-### Priority 3: MCTS Comparison (Idea D)
-Given identical NN evaluations, do Python and Rust MCTS produce the same visit counts and policies?
-- Dirichlet noise seeding
-- UCB formula differences
-- Tree expansion order
-- Policy normalization
+### Priority 3: Replay Sampling / Trainer Ingestion Validation
+Now that deterministic MCTS parity is passing, validate that training consumes Rust replay data identically to Python replay data:
+- Confirm NPZ loading path and sampler batching are equivalent across data sources.
+- Compare sampled tensors/masks/policies/values distributions between Python- and Rust-generated games.
+- Verify no silent dtype/shape coercions alter training targets.
 
 ### Priority 4: Subtle Edge Cases
 - Wall placement pathfinding validation (do both check path existence the same way?)
