@@ -13,8 +13,6 @@ use crate::agents::alphazero::evaluator::UniformMockEvaluator;
 use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
-#[cfg(feature = "binary")]
-use crate::rotation::rotate_action_coords;
 use crate::rotation::{rotate_goal_rows, rotate_grid_180, rotate_player_positions};
 
 fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool>) {

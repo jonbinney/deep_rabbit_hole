@@ -25,6 +25,10 @@ import struct
 import sys
 from pathlib import Path
 
+if len(sys.argv) < 4:
+  print("Usage: python step_trace_reference.py <src_dir> <board_size> <max_walls> <action_idx_0> [action_idx_1 ...]", file=sys.stderr)
+  sys.exit(2)
+
 src_dir = Path(sys.argv[1])
 board_size = int(sys.argv[2])
 max_walls = int(sys.argv[3])
@@ -59,11 +63,11 @@ def tensor_to_hex(arr):
 
 def emit_snapshot(game, step):
     """Print all fields for the given step."""
-    grid = game.board._grid
+    grid = game.board.get_grid()
     p0 = game.board.get_player_position(Player.ONE)
     p1 = game.board.get_player_position(Player.TWO)
-    w0 = int(game.board._walls_remaining[Player.ONE])
-    w1 = int(game.board._walls_remaining[Player.TWO])
+    w0 = int(game.board.get_walls_remaining(Player.ONE))
+    w1 = int(game.board.get_walls_remaining(Player.TWO))
     cp = int(game.get_current_player())
 
     print(f"G,{step},{grid_to_hex(grid)}")

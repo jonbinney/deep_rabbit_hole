@@ -105,11 +105,11 @@ def select_best_child(root_children, encoder):
 
 
 def emit_snapshot(game, step, net, player_enum):
-    grid = game.board._grid
+    grid = game.board.get_grid()
     p0 = game.board.get_player_position(player_enum.ONE)
     p1 = game.board.get_player_position(player_enum.TWO)
-    w0 = int(game.board._walls_remaining[player_enum.ONE])
-    w1 = int(game.board._walls_remaining[player_enum.TWO])
+    w0 = int(game.board.get_walls_remaining(player_enum.ONE))
+    w1 = int(game.board.get_walls_remaining(player_enum.TWO))
     cp = int(game.get_current_player())
 
     print(f"G,{step},{grid_to_hex(grid)}")
