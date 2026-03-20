@@ -3,8 +3,16 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::actions::{action_index_to_action, policy_size};
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::agent::apply_temperature_and_sample;
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::evaluator::UniformMockEvaluator;
+#[cfg(feature = "binary")]
+use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
+#[cfg(feature = "binary")]
+use crate::rotation::rotate_action_coords;
 use crate::rotation::{rotate_goal_rows, rotate_grid_180, rotate_player_positions};
 
 fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool>) {
@@ -114,6 +122,7 @@ fn test_initial_action_mask_matches_python() {
 
 /// One snapshot of game state at a particular step, as reported by Python.
 #[derive(Debug)]
+#[allow(dead_code)]
 struct StepSnapshot {
     step: usize,
     grid_hex: String,
@@ -126,6 +135,12 @@ struct StepSnapshot {
     rotated_mask: Option<Vec<bool>>,
     /// Rotated tensor (Some only when current_player == 1)
     rotated_tensor_hex: Option<String>,
+    /// Root value hex-encoded float32 bytes (Some only when a move is selected)
+    root_value_hex: Option<String>,
+    /// Root policy hex-encoded float32 bytes (Some only when a move is selected)
+    root_policy_hex: Option<String>,
+    /// Selected action index in the working frame (Some only when a move is selected)
+    selected_action_index: Option<usize>,
 }
 
 /// Call the step_trace_reference.py script and return its raw stdout.
@@ -149,6 +164,27 @@ fn run_step_trace_python(board_size: i32, max_walls: i32, action_indices: &[usiz
     run_python(&script_path.to_string_lossy(), &args)
 }
 
+/// Call the mcts_game_reference.py script and return its raw stdout.
+#[cfg(feature = "binary")]
+fn run_mcts_game_python(board_size: i32, max_walls: i32, max_steps: i32, mcts_n: u32) -> String {
+    let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust crate should live under deep_quoridor/")
+        .join("src");
+
+    let script_path = src_dir.join("mcts_game_reference.py");
+
+    let args = [
+        src_dir.to_string_lossy().into_owned(),
+        board_size.to_string(),
+        max_walls.to_string(),
+        max_steps.to_string(),
+        mcts_n.to_string(),
+    ];
+
+    run_python(&script_path.to_string_lossy(), &args)
+}
+
 /// Parse step_trace_reference.py output into a vector of snapshots.
 fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
     // Collect lines by step, then build snapshots.
@@ -163,6 +199,9 @@ fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
         tensor_hex: Option<String>,
         rotated_mask: Option<Vec<bool>>,
         rotated_tensor_hex: Option<String>,
+        root_value_hex: Option<String>,
+        root_policy_hex: Option<String>,
+        selected_action_index: Option<usize>,
     }
 
     let mut steps: BTreeMap<usize, RawStep> = BTreeMap::new();
@@ -185,6 +224,9 @@ fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
             tensor_hex: None,
             rotated_mask: None,
             rotated_tensor_hex: None,
+            root_value_hex: None,
+            root_policy_hex: None,
+            selected_action_index: None,
         });
 
         match tag {
@@ -208,6 +250,9 @@ fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
                 entry.rotated_mask = Some(rest.chars().map(|c| c == '1').collect());
             }
             "RT" => entry.rotated_tensor_hex = Some(rest.to_string()),
+            "V" => entry.root_value_hex = Some(rest.to_string()),
+            "Q" => entry.root_policy_hex = Some(rest.to_string()),
+            "A" => entry.selected_action_index = Some(rest.parse().unwrap()),
             _ => {} // ignore unknown tags
         }
     }
@@ -236,6 +281,9 @@ fn parse_step_trace_output(output: &str) -> Vec<StepSnapshot> {
                 .unwrap_or_else(|| panic!("missing T for step {step}")),
             rotated_mask: raw.rotated_mask,
             rotated_tensor_hex: raw.rotated_tensor_hex,
+            root_value_hex: raw.root_value_hex,
+            root_policy_hex: raw.root_policy_hex,
+            selected_action_index: raw.selected_action_index,
         })
         .collect()
 }
@@ -252,6 +300,28 @@ fn tensor_to_hex(tensor: &ndarray::Array4<f32>) -> String {
         .flat_map(|&v| v.to_le_bytes())
         .map(|b| format!("{:02x}", b))
         .collect()
+}
+
+/// Encode f32 vector as hex string of little-endian float32 bytes.
+#[cfg(feature = "binary")]
+fn vec_f32_to_hex(values: &[f32]) -> String {
+    values
+        .iter()
+        .flat_map(|&v| v.to_le_bytes())
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+#[cfg(feature = "binary")]
+fn hex_to_f32(hex: &str) -> f32 {
+    assert_eq!(hex.len(), 8, "expected 4-byte float hex");
+    let mut bytes = [0u8; 4];
+    for i in 0..4 {
+        let start = i * 2;
+        let end = start + 2;
+        bytes[i] = u8::from_str_radix(&hex[start..end], 16).expect("valid hex byte");
+    }
+    f32::from_le_bytes(bytes)
 }
 
 /// Build a rotated GameState for Player 1 (mirrors game_runner.rs logic).
@@ -379,6 +449,113 @@ fn test_step_trace_matches_python() {
                 let action = action_index_to_action(board_size, actions[i]);
                 state.step(action);
             }
+        }
+    }
+}
+
+#[cfg(feature = "binary")]
+#[test]
+fn test_mcts_game_trace_matches_python() {
+    let board_size = 5;
+    let max_walls = 2;
+    let max_steps = 50;
+    let mcts_n = 50;
+
+    let output = run_mcts_game_python(board_size, max_walls, max_steps, mcts_n);
+    let snapshots = parse_step_trace_output(&output);
+    assert!(!snapshots.is_empty(), "expected at least one MCTS snapshot");
+
+    let mut state = GameState::new(board_size, max_walls);
+    let config = MCTSConfig {
+        n: Some(mcts_n),
+        k: None,
+        ucb_c: 1.4,
+        noise_epsilon: 0.0,
+        noise_alpha: Some(1.0),
+        max_steps: Some(max_steps),
+        penalize_visited_states: false,
+    };
+    let visited_states = std::collections::HashSet::new();
+    let mut evaluator = UniformMockEvaluator;
+
+    for (i, snap) in snapshots.iter().enumerate() {
+        assert_eq!(snap.step, i, "MCTS snapshot step number mismatch");
+        assert_snapshot_matches("MCTS", i, snap, &state);
+
+        let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
+
+        if should_select {
+            let work_state = if state.current_player == 1 {
+                build_rotated_state(&state)
+            } else {
+                state.clone()
+            };
+
+            let work_mask = work_state.get_action_mask();
+            let (children, root_value): (Vec<ChildInfo>, f32) =
+                search(&config, work_state.clone(), &mut evaluator, &visited_states)
+                    .expect("MCTS search should succeed");
+
+            let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
+            let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
+
+            let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+
+            let total_visits: u32 = visit_counts.iter().sum();
+            let mut policy = vec![0.0f32; work_mask.len()];
+            if total_visits > 0 {
+                for child in &children {
+                    policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
+                }
+            }
+
+            let py_value_hex = snap
+                .root_value_hex
+                .as_ref()
+                .unwrap_or_else(|| panic!("missing V for step {i}"));
+            let py_policy_hex = snap
+                .root_policy_hex
+                .as_ref()
+                .unwrap_or_else(|| panic!("missing Q for step {i}"));
+            let py_action_idx = snap
+                .selected_action_index
+                .unwrap_or_else(|| panic!("missing A for step {i}"));
+
+            let py_value = hex_to_f32(py_value_hex);
+            assert!(
+                (root_value - py_value).abs() < 1e-6,
+                "MCTS step {i}: root value mismatch (rust={}, py={})",
+                root_value,
+                py_value
+            );
+            assert_eq!(
+                vec_f32_to_hex(&policy),
+                *py_policy_hex,
+                "MCTS step {i}: root policy mismatch"
+            );
+            assert_eq!(
+                selected_idx, py_action_idx,
+                "MCTS step {i}: selected action index mismatch"
+            );
+
+            let selected_action = action_index_to_action(board_size, selected_idx);
+            let action = if state.current_player == 1 {
+                let (rr, rc, rt) = rotate_action_coords(
+                    board_size,
+                    selected_action[0],
+                    selected_action[1],
+                    selected_action[2],
+                );
+                [rr, rc, rt]
+            } else {
+                selected_action
+            };
+            state.step(action);
+        } else {
+            assert!(
+                snap.selected_action_index.is_none(),
+                "MCTS step {i}: final snapshot should not include selected action"
+            );
         }
     }
 }
