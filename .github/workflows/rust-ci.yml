@@ -66,7 +66,7 @@ jobs:
         run: cargo build --verbose
 
       - name: Install Python deps for cross-language tests
-        run: pip install numpy numba
+        run: pip install numpy numba gymnasium
 
       - name: Run tests with all features
         working-directory: deep_quoridor/rust
