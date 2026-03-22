@@ -22,6 +22,11 @@ pub struct OnnxEvaluator {
     session: Session,
 }
 
+/// Deterministic evaluator for cross-language consistency tests.
+///
+/// Returns value=0.0 and a uniform prior over valid actions.
+pub struct UniformMockEvaluator;
+
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
     pub fn new(model_path: &str) -> Result<Self> {
@@ -65,6 +70,22 @@ impl Evaluator for OnnxEvaluator {
         let priors = masked_softmax(policy_logits.1, action_mask);
 
         Ok((value, priors))
+    }
+}
+
+impl Evaluator for UniformMockEvaluator {
+    fn evaluate(&mut self, _state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
+        let valid_count = action_mask.iter().filter(|&&valid| valid).count();
+        let mut priors = vec![0.0f32; action_mask.len()];
+        if valid_count > 0 {
+            let p = 1.0f32 / valid_count as f32;
+            for (i, &valid) in action_mask.iter().enumerate() {
+                if valid {
+                    priors[i] = p;
+                }
+            }
+        }
+        Ok((0.0, priors))
     }
 }
 

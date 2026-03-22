@@ -66,7 +66,7 @@ jobs:
         run: cargo build --verbose
 
       - name: Install Python deps for cross-language tests
-        run: pip install numpy numba
+        run: pip install -r deep_quoridor/ci_requirements.txt
 
       - name: Run tests with all features
         working-directory: deep_quoridor/rust

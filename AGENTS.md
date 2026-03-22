@@ -1,3 +1,5 @@
+At the top of the plan always say "I'm using AGENTS.md"
+
 Always separate commits between actual function change and formatting / linting. Create one commit with the actual functional changes, and then another separate
 commit with only the formatting and linting changes. This will make it easier for reviewers to review the functionality first and the formatting separately.
 
