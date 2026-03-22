@@ -294,16 +294,6 @@ fn latest_npz_in_ready_dir(output_dir: &std::path::Path) -> PathBuf {
 }
 
 #[cfg(feature = "binary")]
-fn parity_deterministic_ties_enabled() -> bool {
-    std::env::var("DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES")
-        .map(|value| {
-            let normalized = value.trim().to_ascii_lowercase();
-            matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
-        })
-        .unwrap_or(false)
-}
-
-#[cfg(feature = "binary")]
 fn explain_mcts_trace_python(trace_path: &std::path::Path) -> String {
     let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1249,7 +1239,8 @@ fn test_real_model_selfplay_trace_and_npz_matches_python() {
     let max_walls = 2;
     let max_steps = 50;
     let mcts_n = 20;
-    let deterministic_tie_break = parity_deterministic_ties_enabled();
+    // This parity test must be deterministic in CI and local all-features runs.
+    let deterministic_tie_break = true;
 
     let (pt_model_path, onnx_model_path) = resolve_real_model_fixture_paths();
 
