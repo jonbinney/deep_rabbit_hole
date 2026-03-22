@@ -4,16 +4,26 @@ use std::process::Command;
 #[cfg(feature = "binary")]
 use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 
+#[cfg(feature = "binary")]
+use crate::actions::action_to_index;
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::agent::apply_temperature_and_sample;
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::evaluator::UniformMockEvaluator;
+use crate::agents::alphazero::evaluator::{OnnxEvaluator, UniformMockEvaluator};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
+#[cfg(feature = "binary")]
+use crate::game_runner::{GameResult, ReplayBufferItem};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
+#[cfg(feature = "binary")]
+use crate::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
 use crate::rotation::{rotate_goal_rows, rotate_grid_180, rotate_player_positions};
+#[cfg(feature = "binary")]
+use ndarray::{Array1, Array2, Array4, Ix2, OwnedRepr};
+#[cfg(feature = "binary")]
+use ndarray_npy::NpzReader;
 
 fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool>) {
     let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -186,6 +196,101 @@ fn run_mcts_game_python(board_size: i32, max_walls: i32, max_steps: i32, mcts_n:
 }
 
 #[cfg(feature = "binary")]
+fn resolve_real_model_fixture_paths() -> (PathBuf, PathBuf) {
+    let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust crate should live under deep_quoridor/")
+        .to_path_buf();
+    let fixtures_dir = root_dir.join("rust").join("fixtures");
+
+    let pt_path = std::env::var("DEEP_QUORIDOR_PT_MODEL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| fixtures_dir.join("alphazero_B5W2_mv1.pt"));
+    let onnx_path = std::env::var("DEEP_QUORIDOR_ONNX_MODEL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| fixtures_dir.join("alphazero_B5W2_mv1.onnx"));
+
+    assert!(
+        pt_path.exists(),
+        "Missing PT model fixture: {}. Set DEEP_QUORIDOR_PT_MODEL or add deep_quoridor/rust/fixtures/alphazero_B5W2_mv1.pt",
+        pt_path.display()
+    );
+    assert!(
+        onnx_path.exists(),
+        "Missing ONNX model fixture: {}. Set DEEP_QUORIDOR_ONNX_MODEL or add deep_quoridor/rust/fixtures/alphazero_B5W2_mv1.onnx",
+        onnx_path.display()
+    );
+
+    (pt_path, onnx_path)
+}
+
+#[cfg(feature = "binary")]
+fn run_real_model_selfplay_python(
+    board_size: i32,
+    max_walls: i32,
+    max_steps: i32,
+    mcts_n: u32,
+    pt_model_path: &std::path::Path,
+    output_dir: &std::path::Path,
+) -> String {
+    let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust crate should live under deep_quoridor/")
+        .join("src");
+
+    let script_path = src_dir.join("selfplay_real_model_reference.py");
+
+    let args = [
+        src_dir.to_string_lossy().into_owned(),
+        board_size.to_string(),
+        max_walls.to_string(),
+        max_steps.to_string(),
+        mcts_n.to_string(),
+        pt_model_path.to_string_lossy().into_owned(),
+        output_dir.to_string_lossy().into_owned(),
+    ];
+
+    run_python(&script_path.to_string_lossy(), &args)
+}
+
+#[cfg(feature = "binary")]
+fn action_index_rotated_to_original(board_size: i32, idx: usize) -> usize {
+    let rotated = action_index_to_action(board_size, idx);
+    let (row, col, action_type) =
+        crate::rotation::rotate_action_coords(board_size, rotated[0], rotated[1], rotated[2]);
+    action_to_index(board_size, &[row, col, action_type])
+}
+
+#[cfg(feature = "binary")]
+fn policy_rotated_to_original(board_size: i32, rotated_policy: &[f32]) -> Vec<f32> {
+    let mut out = vec![0.0f32; rotated_policy.len()];
+    for (idx, &probability) in rotated_policy.iter().enumerate() {
+        if probability == 0.0 {
+            continue;
+        }
+        let original_idx = action_index_rotated_to_original(board_size, idx);
+        out[original_idx] = probability;
+    }
+    out
+}
+
+#[cfg(feature = "binary")]
+fn latest_npz_in_ready_dir(output_dir: &std::path::Path) -> PathBuf {
+    let ready = output_dir.join("ready");
+    let mut files: Vec<PathBuf> = fs::read_dir(&ready)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", ready.display()))
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|x| x.to_str()) == Some("npz"))
+        .collect();
+    files.sort();
+    files
+        .last()
+        .cloned()
+        .unwrap_or_else(|| panic!("no npz file found in {}", ready.display()))
+}
+
+#[cfg(feature = "binary")]
 fn explain_mcts_trace_python(trace_path: &std::path::Path) -> String {
     let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -351,6 +456,16 @@ fn hex_to_f32(hex: &str) -> f32 {
     f32::from_le_bytes(bytes)
 }
 
+#[cfg(feature = "binary")]
+fn hex_to_f32_vec(hex: &str) -> Vec<f32> {
+    assert!(hex.len() % 8 == 0, "expected float32-packed hex string");
+    let mut out = Vec::with_capacity(hex.len() / 8);
+    for i in (0..hex.len()).step_by(8) {
+        out.push(hex_to_f32(&hex[i..i + 8]));
+    }
+    out
+}
+
 /// Build a rotated GameState for Player 1 (mirrors game_runner.rs logic).
 fn build_rotated_state(state: &GameState) -> GameState {
     let work_grid = rotate_grid_180(&state.grid());
@@ -462,6 +577,179 @@ fn generate_rust_mcts_trace(
 }
 
 #[cfg(feature = "binary")]
+fn generate_rust_real_model_trace_and_write_npz(
+    board_size: i32,
+    max_walls: i32,
+    max_steps: i32,
+    mcts_n: u32,
+    onnx_model_path: &std::path::Path,
+    output_dir: &std::path::Path,
+) -> String {
+    let mut trace = String::new();
+    writeln!(
+        &mut trace,
+        "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
+    )
+    .unwrap();
+
+    let mut state = GameState::new(board_size, max_walls);
+    let config = MCTSConfig {
+        n: Some(mcts_n),
+        k: None,
+        ucb_c: 1.4,
+        noise_epsilon: 0.0,
+        noise_alpha: Some(1.0),
+        max_steps: Some(max_steps),
+        penalize_visited_states: false,
+    };
+    let visited_states = std::collections::HashSet::new();
+    let mut evaluator = OnnxEvaluator::new(
+        onnx_model_path
+            .to_str()
+            .expect("onnx model path should be valid utf-8"),
+    )
+    .expect("failed to construct onnx evaluator for real-model parity");
+    let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
+    let mut winner: Option<i32> = None;
+    let mut step = 0usize;
+
+    loop {
+        let pp = state.player_positions();
+        let wr = state.walls_remaining();
+        writeln!(&mut trace, "G,{step},{}", grid_to_hex(&state.grid())).unwrap();
+        writeln!(
+            &mut trace,
+            "P,{step},{},{},{},{}",
+            pp[[0, 0]],
+            pp[[0, 1]],
+            pp[[1, 0]],
+            pp[[1, 1]]
+        )
+        .unwrap();
+        writeln!(&mut trace, "W,{step},{},{}", wr[0], wr[1]).unwrap();
+        writeln!(&mut trace, "C,{step},{}", state.current_player).unwrap();
+
+        let mask_original = state.get_action_mask();
+        writeln!(&mut trace, "M,{step},{}", mask_to_string(&mask_original)).unwrap();
+        let tensor_original = grid_game_state_to_resnet_input(&state);
+        writeln!(&mut trace, "T,{step},{}", tensor_to_hex(&tensor_original)).unwrap();
+
+        let work_state = if state.current_player == 1 {
+            let rotated = build_rotated_state(&state);
+            let rmask = rotated.get_action_mask();
+            writeln!(&mut trace, "RM,{step},{}", mask_to_string(&rmask)).unwrap();
+            let rtensor = grid_game_state_to_resnet_input(&rotated);
+            writeln!(&mut trace, "RT,{step},{}", tensor_to_hex(&rtensor)).unwrap();
+            rotated
+        } else {
+            state.clone()
+        };
+
+        let action_mask_work = work_state.get_action_mask();
+
+        let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
+        if !should_select {
+            break;
+        }
+
+        let (children, root_value): (Vec<ChildInfo>, f32) =
+            search(&config, work_state.clone(), &mut evaluator, &visited_states)
+                .expect("MCTS search should succeed with real model");
+
+        let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
+        let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
+        let selected_idx_work = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+
+        let total_visits: u32 = visit_counts.iter().sum();
+        let mut policy_work = vec![0.0f32; action_mask_work.len()];
+        if total_visits > 0 {
+            for child in &children {
+                policy_work[child.action_index] = child.visit_count as f32 / total_visits as f32;
+            }
+        }
+
+        let policy_original = if state.current_player == 1 {
+            policy_rotated_to_original(board_size, &policy_work)
+        } else {
+            policy_work.clone()
+        };
+        let selected_idx_original = if state.current_player == 1 {
+            action_index_rotated_to_original(board_size, selected_idx_work)
+        } else {
+            selected_idx_work
+        };
+
+        writeln!(&mut trace, "V,{step},{}", vec_f32_to_hex(&[root_value])).unwrap();
+        writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy_original)).unwrap();
+        writeln!(&mut trace, "A,{step},{selected_idx_original}").unwrap();
+
+        let input_3d = grid_game_state_to_resnet_input(&work_state)
+            .index_axis(ndarray::Axis(0), 0)
+            .to_owned();
+        replay_items.push(ReplayBufferItem {
+            input_array: input_3d,
+            policy: policy_work,
+            action_mask: action_mask_work,
+            value: 0.0,
+            player: state.current_player,
+        });
+
+        let selected_action_work = action_index_to_action(board_size, selected_idx_work);
+        let selected_action_original = if state.current_player == 1 {
+            let (row, col, action_type) = crate::rotation::rotate_action_coords(
+                board_size,
+                selected_action_work[0],
+                selected_action_work[1],
+                selected_action_work[2],
+            );
+            [row, col, action_type]
+        } else {
+            selected_action_work
+        };
+
+        let acted_player = state.current_player;
+        state.step(selected_action_original);
+
+        if state.check_win(acted_player) {
+            winner = Some(acted_player);
+            for item in replay_items.iter_mut() {
+                item.value = if item.player == acted_player {
+                    1.0
+                } else {
+                    -1.0
+                };
+            }
+            break;
+        }
+
+        step += 1;
+    }
+
+    let result = GameResult {
+        winner,
+        num_turns: step as i32,
+        replay_items,
+    };
+
+    let ready_dir = output_dir.join("ready");
+    fs::create_dir_all(&ready_dir).expect("failed to create rust output ready dir");
+    let npz_path = ready_dir.join("rust_real_model_game.npz");
+    let yaml_path = ready_dir.join("rust_real_model_game.yaml");
+    write_game_npz(&npz_path, &result).expect("failed to write rust real-model npz");
+    write_game_yaml(
+        &yaml_path,
+        &GameMetadata {
+            model_version: 0,
+            game_length: result.replay_items.len(),
+            creator: "rust-parity".to_string(),
+        },
+    )
+    .expect("failed to write rust real-model yaml");
+
+    trace
+}
+
+#[cfg(feature = "binary")]
 fn assert_snapshot_fields_match(
     seq_name: &str,
     step: usize,
@@ -531,6 +819,94 @@ fn assert_snapshot_fields_match(
 }
 
 #[cfg(feature = "binary")]
+fn assert_snapshot_fields_match_real_model(
+    seq_name: &str,
+    step: usize,
+    left: &StepSnapshot,
+    right: &StepSnapshot,
+) {
+    assert_eq!(
+        left.step, right.step,
+        "[{seq_name}] step {step}: step mismatch"
+    );
+    assert_eq!(
+        left.grid_hex, right.grid_hex,
+        "[{seq_name}] step {step}: grid mismatch"
+    );
+    assert_eq!(
+        left.player_positions, right.player_positions,
+        "[{seq_name}] step {step}: player positions mismatch"
+    );
+    assert_eq!(
+        left.walls_remaining, right.walls_remaining,
+        "[{seq_name}] step {step}: walls mismatch"
+    );
+    assert_eq!(
+        left.current_player, right.current_player,
+        "[{seq_name}] step {step}: current player mismatch"
+    );
+    assert_eq!(
+        left.action_mask, right.action_mask,
+        "[{seq_name}] step {step}: action mask mismatch"
+    );
+    assert_eq!(
+        left.tensor_hex, right.tensor_hex,
+        "[{seq_name}] step {step}: tensor mismatch"
+    );
+    assert_eq!(
+        left.rotated_mask, right.rotated_mask,
+        "[{seq_name}] step {step}: rotated action mask mismatch"
+    );
+    assert_eq!(
+        left.rotated_tensor_hex, right.rotated_tensor_hex,
+        "[{seq_name}] step {step}: rotated tensor mismatch"
+    );
+
+    match (&left.root_value_hex, &right.root_value_hex) {
+        (Some(left_hex), Some(right_hex)) => {
+            let left_value = hex_to_f32(left_hex);
+            let right_value = hex_to_f32(right_hex);
+            assert!(
+                (left_value - right_value).abs() < 2e-2,
+                "[{seq_name}] step {step}: root value mismatch (left={}, right={})",
+                left_value,
+                right_value
+            );
+        }
+        (None, None) => {}
+        _ => panic!("[{seq_name}] step {step}: root value presence mismatch"),
+    }
+
+    match (&left.root_policy_hex, &right.root_policy_hex) {
+        (Some(left_hex), Some(right_hex)) => {
+            let left_values = hex_to_f32_vec(left_hex);
+            let right_values = hex_to_f32_vec(right_hex);
+            assert_eq!(
+                left_values.len(),
+                right_values.len(),
+                "[{seq_name}] step {step}: root policy length mismatch"
+            );
+            for (i, (l, r)) in left_values.iter().zip(right_values.iter()).enumerate() {
+                assert!(
+                    (l - r).abs() < 1e-4,
+                    "[{seq_name}] step {step}: root policy mismatch at idx {} (left={}, right={})",
+                    i,
+                    l,
+                    r
+                );
+            }
+        }
+        (None, None) => {}
+        _ => panic!("[{seq_name}] step {step}: root policy presence mismatch"),
+    }
+
+    assert_eq!(
+        left.selected_action_index, right.selected_action_index,
+        "[{seq_name}] step {step}: selected action mismatch"
+    );
+}
+
+#[cfg(feature = "binary")]
 fn temp_trace_path(prefix: &str) -> std::path::PathBuf {
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
@@ -557,6 +933,142 @@ fn panic_with_trace_explanations(message: String, py_trace: &str, rust_trace: &s
         py_explain,
         rust_explain
     );
+}
+
+#[cfg(feature = "binary")]
+struct NpzGameData {
+    input_arrays: Array4<f32>,
+    policies: Array2<f32>,
+    action_masks: Array2<f32>,
+    values: Array1<f32>,
+    players: Array1<i32>,
+}
+
+#[cfg(feature = "binary")]
+fn load_npz_game(path: &std::path::Path) -> NpzGameData {
+    let file = std::fs::File::open(path)
+        .unwrap_or_else(|e| panic!("failed to open npz {}: {e}", path.display()));
+    let mut reader = NpzReader::new(file)
+        .unwrap_or_else(|e| panic!("failed to parse npz {}: {e}", path.display()));
+
+    let input_arrays: Array4<f32> = reader
+        .by_name("input_arrays.npy")
+        .unwrap_or_else(|e| panic!("missing/invalid input_arrays in {}: {e}", path.display()));
+    let policies: Array2<f32> = reader
+        .by_name("policies.npy")
+        .unwrap_or_else(|e| panic!("missing/invalid policies in {}: {e}", path.display()));
+
+    let action_masks: Array2<f32> = match reader.by_name::<OwnedRepr<f32>, Ix2>("action_masks.npy")
+    {
+        Ok(mask_f32) => mask_f32,
+        Err(_) => {
+            let mask_bool: ndarray::Array2<bool> =
+                reader.by_name("action_masks.npy").unwrap_or_else(|e| {
+                    panic!("missing/invalid action_masks in {}: {e}", path.display())
+                });
+            mask_bool.mapv(|x| if x { 1.0 } else { 0.0 })
+        }
+    };
+
+    let values: Array1<f32> = reader
+        .by_name("values.npy")
+        .unwrap_or_else(|e| panic!("missing/invalid values in {}: {e}", path.display()));
+    let players: Array1<i32> = reader
+        .by_name("players.npy")
+        .unwrap_or_else(|e| panic!("missing/invalid players in {}: {e}", path.display()));
+
+    NpzGameData {
+        input_arrays,
+        policies,
+        action_masks,
+        values,
+        players,
+    }
+}
+
+#[cfg(feature = "binary")]
+fn assert_f32_iter_close<'a>(
+    seq_name: &str,
+    field: &str,
+    left: impl Iterator<Item = &'a f32>,
+    right: impl Iterator<Item = &'a f32>,
+    epsilon: f32,
+) {
+    for (idx, (l, r)) in left.zip(right).enumerate() {
+        assert!(
+            (*l - *r).abs() <= epsilon,
+            "[{seq_name}] {field} mismatch at idx {idx}: left={l}, right={r}, eps={epsilon}"
+        );
+    }
+}
+
+#[cfg(feature = "binary")]
+fn assert_npz_games_match(
+    seq_name: &str,
+    left_path: &std::path::Path,
+    right_path: &std::path::Path,
+) {
+    let left = load_npz_game(left_path);
+    let right = load_npz_game(right_path);
+
+    assert_eq!(
+        left.input_arrays.shape(),
+        right.input_arrays.shape(),
+        "[{seq_name}] input_arrays shape mismatch"
+    );
+    assert_eq!(
+        left.policies.shape(),
+        right.policies.shape(),
+        "[{seq_name}] policies shape mismatch"
+    );
+    assert_eq!(
+        left.action_masks.shape(),
+        right.action_masks.shape(),
+        "[{seq_name}] action_masks shape mismatch"
+    );
+    assert_eq!(
+        left.values.shape(),
+        right.values.shape(),
+        "[{seq_name}] values shape mismatch"
+    );
+    assert_eq!(
+        left.players.shape(),
+        right.players.shape(),
+        "[{seq_name}] players shape mismatch"
+    );
+
+    assert_f32_iter_close(
+        seq_name,
+        "input_arrays",
+        left.input_arrays.iter(),
+        right.input_arrays.iter(),
+        1e-5,
+    );
+    assert_f32_iter_close(
+        seq_name,
+        "policies",
+        left.policies.iter(),
+        right.policies.iter(),
+        1e-5,
+    );
+    assert_f32_iter_close(
+        seq_name,
+        "action_masks",
+        left.action_masks.iter(),
+        right.action_masks.iter(),
+        1e-6,
+    );
+    assert_f32_iter_close(
+        seq_name,
+        "values",
+        left.values.iter(),
+        right.values.iter(),
+        1e-6,
+    );
+
+    for (idx, (l, r)) in left.players.iter().zip(right.players.iter()).enumerate() {
+        assert_eq!(l, r, "[{seq_name}] players mismatch at idx {idx}");
+    }
 }
 
 /// Compare one snapshot field, returning a descriptive error message on mismatch.
@@ -714,6 +1226,79 @@ fn test_mcts_game_trace_matches_python() {
             text.to_string()
         } else {
             "MCTS trace comparison failed".to_string()
+        };
+        panic_with_trace_explanations(message, &py_trace, &rust_trace);
+    }
+}
+
+#[cfg(feature = "binary")]
+#[test]
+fn test_real_model_selfplay_trace_and_npz_matches_python() {
+    let board_size = 5;
+    let max_walls = 2;
+    let max_steps = 50;
+    let mcts_n = 20;
+
+    let (pt_model_path, onnx_model_path) = resolve_real_model_fixture_paths();
+
+    let py_output_dir = temp_trace_path("python_real_model_output");
+    let rust_output_dir = temp_trace_path("rust_real_model_output");
+    fs::create_dir_all(&py_output_dir).expect("failed to create python output dir");
+    fs::create_dir_all(&rust_output_dir).expect("failed to create rust output dir");
+
+    let py_trace = run_real_model_selfplay_python(
+        board_size,
+        max_walls,
+        max_steps,
+        mcts_n,
+        &pt_model_path,
+        &py_output_dir,
+    );
+    let rust_trace = generate_rust_real_model_trace_and_write_npz(
+        board_size,
+        max_walls,
+        max_steps,
+        mcts_n,
+        &onnx_model_path,
+        &rust_output_dir,
+    );
+
+    let comparison = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let py_snapshots = parse_step_trace_output(&py_trace);
+        let rust_snapshots = parse_step_trace_output(&rust_trace);
+
+        assert!(
+            !py_snapshots.is_empty(),
+            "expected at least one python real-model snapshot"
+        );
+        assert!(
+            !rust_snapshots.is_empty(),
+            "expected at least one rust real-model snapshot"
+        );
+
+        for (i, (py_snap, rust_snap)) in py_snapshots.iter().zip(rust_snapshots.iter()).enumerate()
+        {
+            assert_snapshot_fields_match_real_model("REAL_MODEL", i, py_snap, rust_snap);
+        }
+
+        assert_eq!(
+            py_snapshots.len(),
+            rust_snapshots.len(),
+            "REAL_MODEL trace length mismatch"
+        );
+
+        let py_npz = latest_npz_in_ready_dir(&py_output_dir);
+        let rust_npz = latest_npz_in_ready_dir(&rust_output_dir);
+        assert_npz_games_match("REAL_MODEL_NPZ", &py_npz, &rust_npz);
+    }));
+
+    if let Err(payload) = comparison {
+        let message = if let Some(text) = payload.downcast_ref::<String>() {
+            text.clone()
+        } else if let Some(text) = payload.downcast_ref::<&str>() {
+            text.to_string()
+        } else {
+            "Real-model selfplay parity comparison failed".to_string()
         };
         panic_with_trace_explanations(message, &py_trace, &rust_trace);
     }
