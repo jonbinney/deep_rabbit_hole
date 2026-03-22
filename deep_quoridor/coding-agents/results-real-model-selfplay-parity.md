@@ -50,32 +50,42 @@ Deterministic parity mode added (non-default):
 3. Added plan artifact:
    - File: `deep_quoridor/coding-agents/real-model-selfplay-parity-plan.md`
 
+## Latest Changes
+Production-path rotation alignment was implemented in Rust:
+- `rust/src/agents/alphazero/evaluator.rs`
+   - On evaluator input, player 1 states are rotated to current-player-downward orientation.
+   - The evaluated priors are remapped back to original action-index space before returning.
+- `rust/src/game_runner.rs`
+   - Action selection now runs in original orientation for both players.
+   - Replay storage remains current-player-downward by rotating player 1 replay state/policy/mask.
+- `rust/src/python_consistency.rs`
+   - Real-model parity trace generation mirrors the production behavior above.
+   - Deterministic tie logic in the mock-trace test path was preserved to match Python reference behavior.
+
+NPZ compatibility fix:
+- `action_masks.npy` loading now accepts `float32`, `bool`, `int8` (`|i1`), and `uint8`.
+
 ## Current Test Outcome
-Command used:
+Commands used:
 
 ```bash
 cd deep_quoridor/rust
 source /home/julian/aaae/deep-rabbit-hole/code/deep_rabbit_hole/.venv/bin/activate
+cargo fmt && cargo fmt --check
+cargo check --features "python binary"
+export DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES=1
+cargo test --features "python binary" test_mcts_game_trace_matches_python -- --nocapture
 cargo test --features "python binary" test_real_model_selfplay_trace_and_npz_matches_python -- --nocapture
+cargo test --features "python binary"
 ```
 
 Result:
-- Test now fails during Python model load under the unmodified production path.
-- Failure is a checkpoint inconsistency:
-  - The fixture state_dict has ResNet keys.
-  - Checkpoint params cause Python to construct `MLPNetwork`.
-  - `load_state_dict` errors with missing/unexpected keys.
-
-After fixture replacement and tie-handling alignment:
-- Python model loading issue is resolved with refreshed PT fixture.
-- Parity test still diverges at step 0 due random tie resolution using independent RNG streams.
-
-With deterministic parity mode enabled:
-- First mismatch moves from step 0 to step 3 (`27` vs `40`), confirming tie randomness was one immediate source of divergence.
+- `test_mcts_game_trace_matches_python`: PASS
+- `test_real_model_selfplay_trace_and_npz_matches_python`: PASS
+- Full feature-enabled Rust suite (`--features "python binary"`): PASS (`132 passed, 0 failed`)
 
 ## Interpretation
-After cleanup, the runner is faithful to production behavior. The previous temporary metadata patch was masking a fixture-format inconsistency. To continue parity comparison without harness-side patching, the `.pt` fixture itself must be made internally consistent for the Python loader.
+The parity harness now runs with production-faithful Rust rotation timing and action-index handling, while preserving deterministic behavior only where the Python mock reference is deterministic by construction. The previous NPZ mask dtype blocker is resolved.
 
 ## Next Recommended Debug Step
-- Fix or regenerate the `.pt` fixture so its saved params match its ResNet weights.
-- Then rerun parity and evaluate first action-level divergence without any harness overrides.
+- If deeper parity confidence is needed, run multiple deterministic and non-deterministic seeds with the same fixture pair and capture the first divergence step plus root-policy deltas.

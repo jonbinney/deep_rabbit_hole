@@ -51,3 +51,10 @@ Implement deterministic cross-language parity checks using real model inference:
 	- pick the first max-visit child (stable, no RNG).
 3. Keep default behavior unchanged (stochastic tie sampling among max-visit children).
 4. Thread deterministic mode from Rust parity test -> Python runner CLI and Rust trace generator.
+
+## Rotation Alignment Refactor (Current)
+1. Align Rust to Python rotation timing by moving player-2 orientation handling into Rust evaluator codepaths.
+2. Remove player-2 pre-rotation from game-loop parity paths that should operate in original action-index space.
+3. Undo the temporary deterministic tie-order quick fix that depended on rotated-vs-original ordering differences.
+4. Keep changes isolated to minimum required Rust files and avoid unrelated behavior changes.
+5. Run formatting/check plus full Rust unit-test battery before commit.
