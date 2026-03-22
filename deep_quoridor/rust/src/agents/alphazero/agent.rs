@@ -39,7 +39,7 @@ impl Default for AlphaZeroAgentConfig {
 
 /// Apply temperature to visit counts and sample an action.
 ///
-/// If temperature is 0, returns the action with the highest visit count (greedy).
+/// If temperature is 0, samples uniformly among actions with the highest visit count.
 /// Otherwise, samples proportionally to visit_count^(1/T).
 pub fn apply_temperature_and_sample(
     visit_counts: &[u32],
@@ -47,14 +47,21 @@ pub fn apply_temperature_and_sample(
     temperature: f32,
 ) -> usize {
     if temperature == 0.0 {
-        // Greedy: pick highest visit count
+        // Match Python semantics: uniformly sample among max-visit ties.
         let max_visits = visit_counts.iter().max().unwrap_or(&0);
-        for (i, &v) in visit_counts.iter().enumerate() {
-            if v == *max_visits {
-                return action_indices[i];
-            }
+        let tied_indices: Vec<usize> = visit_counts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v == *max_visits { Some(i) } else { None })
+            .collect();
+
+        if tied_indices.is_empty() {
+            return action_indices[0];
         }
-        action_indices[0]
+
+        let mut rng = rand::thread_rng();
+        let pick = rng.gen_range(0..tied_indices.len());
+        action_indices[tied_indices[pick]]
     } else {
         // Sample proportionally to visit_count^(1/T)
         let total: f64 = visit_counts

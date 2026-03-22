@@ -14,6 +14,11 @@ Cleanup pass completed:
 - Removed deterministic override of Python random tie sampling.
 - Kept only passive instrumentation for trace capture/logging.
 
+Parity difference found and fixed:
+- Rust temperature=0 tie handling was first-max deterministic.
+- Python temperature=0 tie handling samples among max-visit ties.
+- Rust was updated to sample among max-visit ties to match Python behavior.
+
 ## Implemented
 1. Added Python runner:
    - File: `deep_quoridor/src/selfplay_real_model_reference.py`
@@ -53,6 +58,10 @@ Result:
   - The fixture state_dict has ResNet keys.
   - Checkpoint params cause Python to construct `MLPNetwork`.
   - `load_state_dict` errors with missing/unexpected keys.
+
+After fixture replacement and tie-handling alignment:
+- Python model loading issue is resolved with refreshed PT fixture.
+- Parity test still diverges at step 0 due random tie resolution using independent RNG streams.
 
 ## Interpretation
 After cleanup, the runner is faithful to production behavior. The previous temporary metadata patch was masking a fixture-format inconsistency. To continue parity comparison without harness-side patching, the `.pt` fixture itself must be made internally consistent for the Python loader.

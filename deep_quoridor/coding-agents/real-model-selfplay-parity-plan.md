@@ -39,3 +39,8 @@ Implement deterministic cross-language parity checks using real model inference:
 	- Keep trace emission and root-policy reconstruction for logging/parity assertions.
 3. Re-run real-model parity test with unchanged production behavior and record new first divergence.
 4. Document why any remaining helper exists and whether it is decision-affecting or logging-only.
+
+## Next Alignment Step
+1. Update Rust temperature=0 action selection to match Python semantics:
+	- Sample uniformly among max-visit children instead of first-max deterministic pick.
+2. Re-run `test_real_model_selfplay_trace_and_npz_matches_python` and stop at the first remaining mismatch for user review.
