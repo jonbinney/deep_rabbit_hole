@@ -15,7 +15,8 @@ use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 use crate::rotation::{
-    rotate_action_coords, rotate_goal_rows, rotate_grid_180, rotate_player_positions,
+    create_rotation_mapping, remap_policy, rotate_goal_rows, rotate_grid_180,
+    rotate_player_positions,
 };
 
 /// Format an action triple as a human-readable string.
@@ -137,9 +138,8 @@ pub struct GameResult {
 /// Play a complete game between two agents.
 ///
 /// `agent_p1` controls player 0 and `agent_p2` controls player 1.
-/// Player 0 moves first. When Player 1 is the current player, the board is
-/// rotated 180° before being passed to `agent_p2` so the network always sees
-/// "current player moving downward".
+/// Player 0 moves first. Action selection runs in original orientation; any
+/// current-player-downward rotation is handled inside evaluator codepaths.
 ///
 /// When `trace` is `true`, each step prints whose turn it is, the action
 /// chosen, and the resulting board state in the original (un-rotated)
@@ -160,26 +160,8 @@ pub fn play_game(
     for step in 0..max_steps {
         let current_player = state.current_player;
 
-        // Create a working state (rotated for Player 1)
-        let work_state: GameState;
-        if current_player == 1 {
-            let work_grid = rotate_grid_180(&state.grid());
-            let work_positions = rotate_player_positions(&state.player_positions(), board_size);
-            let work_goals = rotate_goal_rows(&state.goal_rows());
-            work_state = GameState {
-                grid: work_grid,
-                player_positions: work_positions,
-                walls_remaining: state.walls_remaining.clone(),
-                goal_rows: work_goals,
-                current_player,
-                board_size,
-                completed_steps: state.completed_steps,
-            };
-        } else {
-            work_state = state.clone();
-        }
-
-        // Compute action mask in the working (possibly rotated) frame
+        // Match Python: run action selection in original orientation.
+        let work_state = state.clone();
         let mask = work_state.get_action_mask();
 
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
@@ -199,12 +181,36 @@ pub fn play_game(
         };
         let (action_idx, policy) = agent.select_action(&work_state, &mask)?;
 
-        // Store replay item (in rotated frame — the frame the model saw)
-        let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
+        // Match Python storage semantics: replay is stored in current-player-downward frame.
+        let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
+            let rotated_state = GameState {
+                grid: rotate_grid_180(&state.grid()),
+                player_positions: rotate_player_positions(&state.player_positions(), board_size),
+                walls_remaining: state.walls_remaining.clone(),
+                goal_rows: rotate_goal_rows(&state.goal_rows()),
+                current_player,
+                board_size,
+                completed_steps: state.completed_steps,
+            };
+            let rotated_input = grid_game_state_to_resnet_input(&rotated_state)
+                .index_axis(ndarray::Axis(0), 0)
+                .to_owned();
+            let (orig_to_rot, _) = create_rotation_mapping(board_size);
+            let rotated_policy = remap_policy(&policy, &orig_to_rot);
+            let rotated_mask = rotated_state.get_action_mask();
+            (rotated_input, rotated_policy, rotated_mask)
+        } else {
+            (
+                resnet_input.index_axis(ndarray::Axis(0), 0).to_owned(),
+                policy.clone(),
+                mask.clone(),
+            )
+        };
+
         replay_items.push(ReplayBufferItem {
-            input_array: input_3d,
-            policy: policy.clone(),
-            action_mask: mask.clone(),
+            input_array: stored_input_3d,
+            policy: stored_policy,
+            action_mask: stored_mask,
             value: 0.0, // placeholder, backfilled after game ends
             player: current_player,
         });
@@ -212,17 +218,7 @@ pub fn play_game(
         // Decode action index → (row, col, type) in working frame
         let action_triple = action_index_to_action(board_size, action_idx);
 
-        // If Player 1, un-rotate action coordinates back to original frame
-        let (a_row, a_col, a_type) = if current_player == 1 {
-            rotate_action_coords(
-                board_size,
-                action_triple[0],
-                action_triple[1],
-                action_triple[2],
-            )
-        } else {
-            (action_triple[0], action_triple[1], action_triple[2])
-        };
+        let (a_row, a_col, a_type) = (action_triple[0], action_triple[1], action_triple[2]);
 
         // Apply action on the ORIGINAL game state
         state.step([a_row, a_col, a_type]);

@@ -8,9 +8,7 @@ use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 use crate::actions::action_to_index;
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::agent::{
-    apply_temperature_and_sample, apply_temperature_and_sample_with_mode,
-};
+use crate::agents::alphazero::agent::apply_temperature_and_sample_with_mode;
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::evaluator::{OnnxEvaluator, UniformMockEvaluator};
 #[cfg(feature = "binary")]
@@ -270,14 +268,11 @@ fn action_index_rotated_to_original(board_size: i32, idx: usize) -> usize {
 }
 
 #[cfg(feature = "binary")]
-fn policy_rotated_to_original(board_size: i32, rotated_policy: &[f32]) -> Vec<f32> {
-    let mut out = vec![0.0f32; rotated_policy.len()];
-    for (idx, &probability) in rotated_policy.iter().enumerate() {
-        if probability == 0.0 {
-            continue;
-        }
-        let original_idx = action_index_rotated_to_original(board_size, idx);
-        out[original_idx] = probability;
+fn policy_original_to_rotated(board_size: i32, original_policy: &[f32]) -> Vec<f32> {
+    let mut out = vec![0.0f32; original_policy.len()];
+    for (rotated_idx, slot) in out.iter_mut().enumerate() {
+        let original_idx = action_index_rotated_to_original(board_size, rotated_idx);
+        *slot = original_policy[original_idx];
     }
     out
 }
@@ -571,7 +566,10 @@ fn generate_rust_mcts_trace(
 
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
         let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-        let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+        // Keep this path deterministic to match `mcts_game_reference.py`, which
+        // picks the first child among max-visit ties.
+        let selected_idx =
+            apply_temperature_and_sample_with_mode(&visit_counts, &action_indices, 0.0, true);
 
         let total_visits: u32 = visit_counts.iter().sum();
         let mut policy = vec![0.0f32; mask.len()];
@@ -653,18 +651,13 @@ fn generate_rust_real_model_trace_and_write_npz(
         let tensor_original = grid_game_state_to_resnet_input(&state);
         writeln!(&mut trace, "T,{step},{}", tensor_to_hex(&tensor_original)).unwrap();
 
-        let work_state = if state.current_player == 1 {
+        if state.current_player == 1 {
             let rotated = build_rotated_state(&state);
             let rmask = rotated.get_action_mask();
             writeln!(&mut trace, "RM,{step},{}", mask_to_string(&rmask)).unwrap();
             let rtensor = grid_game_state_to_resnet_input(&rotated);
             writeln!(&mut trace, "RT,{step},{}", tensor_to_hex(&rtensor)).unwrap();
-            rotated
-        } else {
-            state.clone()
-        };
-
-        let action_mask_work = work_state.get_action_mask();
+        }
 
         let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
         if !should_select {
@@ -672,12 +665,12 @@ fn generate_rust_real_model_trace_and_write_npz(
         }
 
         let (children, root_value): (Vec<ChildInfo>, f32) =
-            search(&config, work_state.clone(), &mut evaluator, &visited_states)
+            search(&config, state.clone(), &mut evaluator, &visited_states)
                 .expect("MCTS search should succeed with real model");
 
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
         let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-        let selected_idx_work = apply_temperature_and_sample_with_mode(
+        let selected_idx = apply_temperature_and_sample_with_mode(
             &visit_counts,
             &action_indices,
             0.0,
@@ -685,54 +678,44 @@ fn generate_rust_real_model_trace_and_write_npz(
         );
 
         let total_visits: u32 = visit_counts.iter().sum();
-        let mut policy_work = vec![0.0f32; action_mask_work.len()];
+        let mut policy = vec![0.0f32; mask_original.len()];
         if total_visits > 0 {
             for child in &children {
-                policy_work[child.action_index] = child.visit_count as f32 / total_visits as f32;
+                policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
             }
         }
 
-        let policy_original = if state.current_player == 1 {
-            policy_rotated_to_original(board_size, &policy_work)
-        } else {
-            policy_work.clone()
-        };
-        let selected_idx_original = if state.current_player == 1 {
-            action_index_rotated_to_original(board_size, selected_idx_work)
-        } else {
-            selected_idx_work
-        };
-
         writeln!(&mut trace, "V,{step},{}", vec_f32_to_hex(&[root_value])).unwrap();
-        writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy_original)).unwrap();
-        writeln!(&mut trace, "A,{step},{selected_idx_original}").unwrap();
+        writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy)).unwrap();
+        writeln!(&mut trace, "A,{step},{selected_idx}").unwrap();
 
-        let input_3d = grid_game_state_to_resnet_input(&work_state)
-            .index_axis(ndarray::Axis(0), 0)
-            .to_owned();
+        let (stored_input_3d, stored_policy, stored_mask) = if state.current_player == 1 {
+            let rotated = build_rotated_state(&state);
+            let input_3d = grid_game_state_to_resnet_input(&rotated)
+                .index_axis(ndarray::Axis(0), 0)
+                .to_owned();
+            (
+                input_3d,
+                policy_original_to_rotated(board_size, &policy),
+                rotated.get_action_mask(),
+            )
+        } else {
+            let input_3d = grid_game_state_to_resnet_input(&state)
+                .index_axis(ndarray::Axis(0), 0)
+                .to_owned();
+            (input_3d, policy.clone(), mask_original.clone())
+        };
+
         replay_items.push(ReplayBufferItem {
-            input_array: input_3d,
-            policy: policy_work,
-            action_mask: action_mask_work,
+            input_array: stored_input_3d,
+            policy: stored_policy,
+            action_mask: stored_mask,
             value: 0.0,
             player: state.current_player,
         });
 
-        let selected_action_work = action_index_to_action(board_size, selected_idx_work);
-        let selected_action_original = if state.current_player == 1 {
-            let (row, col, action_type) = crate::rotation::rotate_action_coords(
-                board_size,
-                selected_action_work[0],
-                selected_action_work[1],
-                selected_action_work[2],
-            );
-            [row, col, action_type]
-        } else {
-            selected_action_work
-        };
-
         let acted_player = state.current_player;
-        state.step(selected_action_original);
+        state.step(action_index_to_action(board_size, selected_idx));
 
         if state.check_win(acted_player) {
             winner = Some(acted_player);
@@ -986,11 +969,15 @@ fn load_npz_game(path: &std::path::Path) -> NpzGameData {
     {
         Ok(mask_f32) => mask_f32,
         Err(_) => {
-            let mask_bool: ndarray::Array2<bool> =
-                reader.by_name("action_masks.npy").unwrap_or_else(|e| {
-                    panic!("missing/invalid action_masks in {}: {e}", path.display())
-                });
-            mask_bool.mapv(|x| if x { 1.0 } else { 0.0 })
+            if let Ok(mask_bool) = reader.by_name::<OwnedRepr<bool>, Ix2>("action_masks.npy") {
+                mask_bool.mapv(|x| if x { 1.0 } else { 0.0 })
+            } else if let Ok(mask_i8) = reader.by_name::<OwnedRepr<i8>, Ix2>("action_masks.npy") {
+                mask_i8.mapv(|x| if x != 0 { 1.0 } else { 0.0 })
+            } else if let Ok(mask_u8) = reader.by_name::<OwnedRepr<u8>, Ix2>("action_masks.npy") {
+                mask_u8.mapv(|x| if x != 0 { 1.0 } else { 0.0 })
+            } else {
+                panic!("missing/invalid action_masks in {}", path.display())
+            }
         }
     };
 
