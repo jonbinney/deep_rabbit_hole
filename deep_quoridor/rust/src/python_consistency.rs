@@ -8,7 +8,9 @@ use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 use crate::actions::action_to_index;
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::agent::apply_temperature_and_sample;
+use crate::agents::alphazero::agent::{
+    apply_temperature_and_sample, apply_temperature_and_sample_with_mode,
+};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::evaluator::{OnnxEvaluator, UniformMockEvaluator};
 #[cfg(feature = "binary")]
@@ -232,6 +234,7 @@ fn run_real_model_selfplay_python(
     mcts_n: u32,
     pt_model_path: &std::path::Path,
     output_dir: &std::path::Path,
+    deterministic_tie_break: bool,
 ) -> String {
     let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -248,6 +251,11 @@ fn run_real_model_selfplay_python(
         mcts_n.to_string(),
         pt_model_path.to_string_lossy().into_owned(),
         output_dir.to_string_lossy().into_owned(),
+        if deterministic_tie_break {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        },
     ];
 
     run_python(&script_path.to_string_lossy(), &args)
@@ -288,6 +296,16 @@ fn latest_npz_in_ready_dir(output_dir: &std::path::Path) -> PathBuf {
         .last()
         .cloned()
         .unwrap_or_else(|| panic!("no npz file found in {}", ready.display()))
+}
+
+#[cfg(feature = "binary")]
+fn parity_deterministic_ties_enabled() -> bool {
+    std::env::var("DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES")
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(feature = "binary")]
@@ -584,6 +602,7 @@ fn generate_rust_real_model_trace_and_write_npz(
     mcts_n: u32,
     onnx_model_path: &std::path::Path,
     output_dir: &std::path::Path,
+    deterministic_tie_break: bool,
 ) -> String {
     let mut trace = String::new();
     writeln!(
@@ -658,7 +677,12 @@ fn generate_rust_real_model_trace_and_write_npz(
 
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
         let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-        let selected_idx_work = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+        let selected_idx_work = apply_temperature_and_sample_with_mode(
+            &visit_counts,
+            &action_indices,
+            0.0,
+            deterministic_tie_break,
+        );
 
         let total_visits: u32 = visit_counts.iter().sum();
         let mut policy_work = vec![0.0f32; action_mask_work.len()];
@@ -1238,6 +1262,7 @@ fn test_real_model_selfplay_trace_and_npz_matches_python() {
     let max_walls = 2;
     let max_steps = 50;
     let mcts_n = 20;
+    let deterministic_tie_break = parity_deterministic_ties_enabled();
 
     let (pt_model_path, onnx_model_path) = resolve_real_model_fixture_paths();
 
@@ -1253,6 +1278,7 @@ fn test_real_model_selfplay_trace_and_npz_matches_python() {
         mcts_n,
         &pt_model_path,
         &py_output_dir,
+        deterministic_tie_break,
     );
     let rust_trace = generate_rust_real_model_trace_and_write_npz(
         board_size,
@@ -1261,6 +1287,7 @@ fn test_real_model_selfplay_trace_and_npz_matches_python() {
         mcts_n,
         &onnx_model_path,
         &rust_output_dir,
+        deterministic_tie_break,
     );
 
     let comparison = std::panic::catch_unwind(AssertUnwindSafe(|| {

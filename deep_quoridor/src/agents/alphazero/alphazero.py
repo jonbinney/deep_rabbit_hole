@@ -165,6 +165,10 @@ class AlphaZeroParams(SubargsBase):
     # The options are "mlp" or "resnet"
     nn_type: str = "mlp"
 
+    # If True, when temperature=0 and multiple actions tie for max visit probability,
+    # choose the first tied action deterministically instead of sampling among ties.
+    deterministic_tie_break: bool = False
+
     # Number of residual blocks in the resnet. Only used if nn_type is set to "resnet"
     # If set to None, then 2*(dimension of combined grid)+2 is used. Alphazero used a value of 20 for chess
     # and 40 for Go, so we also choose something a little more than double the input dimension.
@@ -791,14 +795,18 @@ class AlphaZeroAgent(TrainableAgent):
 
             if temperature == 0.0:
                 max_value = np.max(visit_probs)
-                visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
-                visit_probs /= np.sum(visit_probs)
+                tied_indices = [i for i, v in enumerate(visit_probs) if v == max_value]
+                if self.params.deterministic_tie_break:
+                    best_child = root_children[tied_indices[0]]
+                else:
+                    visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])
+                    visit_probs /= np.sum(visit_probs)
+                    best_child = np.random.choice(root_children, p=visit_probs)
             else:
                 visit_probs = visit_probs ** (1.0 / temperature)
                 visit_probs = visit_probs / np.sum(visit_probs)
-
-            # Sample from probability distribution
-            best_child = np.random.choice(root_children, p=visit_probs)
+                # Sample from probability distribution
+                best_child = np.random.choice(root_children, p=visit_probs)
             action = best_child.action_taken
             actions.append((game_idx, self.action_encoder.action_to_index(action)))
 

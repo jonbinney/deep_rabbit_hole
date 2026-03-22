@@ -24,6 +24,8 @@ pub struct AlphaZeroAgentConfig {
     pub drop_t_on_step: Option<usize>,
     /// Whether to penalize visited states.
     pub penalize_visited_states: bool,
+    /// If true, temperature=0 ties are resolved by first max child (deterministic).
+    pub deterministic_tie_break: bool,
 }
 
 impl Default for AlphaZeroAgentConfig {
@@ -33,6 +35,7 @@ impl Default for AlphaZeroAgentConfig {
             temperature: 1.0,
             drop_t_on_step: None,
             penalize_visited_states: false,
+            deterministic_tie_break: false,
         }
     }
 }
@@ -46,8 +49,22 @@ pub fn apply_temperature_and_sample(
     action_indices: &[usize],
     temperature: f32,
 ) -> usize {
+    apply_temperature_and_sample_with_mode(visit_counts, action_indices, temperature, false)
+}
+
+/// Same as `apply_temperature_and_sample` but supports deterministic tie mode.
+///
+/// When `deterministic_tie_break` is true and temperature is 0, the first
+/// max-visit action is selected.
+pub fn apply_temperature_and_sample_with_mode(
+    visit_counts: &[u32],
+    action_indices: &[usize],
+    temperature: f32,
+    deterministic_tie_break: bool,
+) -> usize {
     if temperature == 0.0 {
-        // Match Python semantics: uniformly sample among max-visit ties.
+        // Match Python semantics by default (sample among max-visit ties).
+        // Deterministic parity mode can pick first max tie.
         let max_visits = visit_counts.iter().max().unwrap_or(&0);
         let tied_indices: Vec<usize> = visit_counts
             .iter()
@@ -57,6 +74,10 @@ pub fn apply_temperature_and_sample(
 
         if tied_indices.is_empty() {
             return action_indices[0];
+        }
+
+        if deterministic_tie_break {
+            return action_indices[tied_indices[0]];
         }
 
         let mut rng = rand::thread_rng();
@@ -155,8 +176,12 @@ impl ActionSelector for AlphaZeroAgent {
         };
 
         // Select action using temperature
-        let selected_idx =
-            apply_temperature_and_sample(&visit_counts, &action_indices, temperature);
+        let selected_idx = apply_temperature_and_sample_with_mode(
+            &visit_counts,
+            &action_indices,
+            temperature,
+            self.config.deterministic_tie_break,
+        );
 
         // Build full policy vector from visit counts
         let total_visits: u32 = visit_counts.iter().sum();

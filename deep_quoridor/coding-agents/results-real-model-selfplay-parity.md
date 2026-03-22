@@ -19,6 +19,13 @@ Parity difference found and fixed:
 - Python temperature=0 tie handling samples among max-visit ties.
 - Rust was updated to sample among max-visit ties to match Python behavior.
 
+Deterministic parity mode added (non-default):
+- Toggle via `DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES=1` in Rust parity test runs.
+- Mode is threaded to both sides:
+   - Rust uses deterministic tie-break (first max-visit child) in parity harness.
+   - Python parity runner enables deterministic tie-break in AlphaZero action selection.
+- Default behavior remains unchanged (stochastic tie sampling among max-visit ties).
+
 ## Implemented
 1. Added Python runner:
    - File: `deep_quoridor/src/selfplay_real_model_reference.py`
@@ -62,6 +69,9 @@ Result:
 After fixture replacement and tie-handling alignment:
 - Python model loading issue is resolved with refreshed PT fixture.
 - Parity test still diverges at step 0 due random tie resolution using independent RNG streams.
+
+With deterministic parity mode enabled:
+- First mismatch moves from step 0 to step 3 (`27` vs `40`), confirming tie randomness was one immediate source of divergence.
 
 ## Interpretation
 After cleanup, the runner is faithful to production behavior. The previous temporary metadata patch was masking a fixture-format inconsistency. To continue parity comparison without harness-side patching, the `.pt` fixture itself must be made internally consistent for the Python loader.

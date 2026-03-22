@@ -44,3 +44,10 @@ Implement deterministic cross-language parity checks using real model inference:
 1. Update Rust temperature=0 action selection to match Python semantics:
 	- Sample uniformly among max-visit children instead of first-max deterministic pick.
 2. Re-run `test_real_model_selfplay_trace_and_npz_matches_python` and stop at the first remaining mismatch for user review.
+
+## Deterministic Parity Mode (Next)
+1. Add a non-default deterministic tie mode to both sides for parity runs only.
+2. Deterministic mode behavior at temperature=0:
+	- pick the first max-visit child (stable, no RNG).
+3. Keep default behavior unchanged (stochastic tie sampling among max-visit children).
+4. Thread deterministic mode from Rust parity test -> Python runner CLI and Rust trace generator.

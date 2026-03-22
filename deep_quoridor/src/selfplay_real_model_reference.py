@@ -5,7 +5,8 @@ model, emits per-step traces, and writes one replay game (`.npz` + `.yaml`).
 
 Usage:
     python selfplay_real_model_reference.py \
-        <src_dir> <board_size> <max_walls> <max_steps> <mcts_n> <pt_model> <output_dir>
+        <src_dir> <board_size> <max_walls> <max_steps> <mcts_n> <pt_model> <output_dir> \
+        [deterministic_tie_break:0|1]
 
 Trace format:
     CFG,<board_size>,<max_walls>,<max_steps>,<mcts_n>
@@ -120,6 +121,7 @@ def run_trace_and_write_game(
     mcts_n: int,
     pt_model: Path,
     output_dir: Path,
+    deterministic_tie_break: bool,
 ):
     quoridor_env, AlphaZeroAgent, AlphaZeroParams, Player, construct_game_from_observation = configure_imports(src_dir)
 
@@ -134,6 +136,7 @@ def run_trace_and_write_game(
         temperature=0.0,
         drop_t_on_step=0,
         nn_type="resnet",
+        deterministic_tie_break=deterministic_tie_break,
     )
 
     agent = AlphaZeroAgent(board_size=board_size, max_walls=max_walls, max_steps=max_steps, params=params)
@@ -197,11 +200,16 @@ def run_trace_and_write_game(
 
 
 def parse_cli_args(argv: list[str]):
-    if len(argv) != 8:
+    if len(argv) not in (8, 9):
         raise SystemExit(
             "usage: python selfplay_real_model_reference.py "
-            "<src_dir> <board_size> <max_walls> <max_steps> <mcts_n> <pt_model> <output_dir>"
+            "<src_dir> <board_size> <max_walls> <max_steps> <mcts_n> <pt_model> <output_dir> "
+            "[deterministic_tie_break:0|1]"
         )
+
+    deterministic_tie_break = False
+    if len(argv) == 9:
+        deterministic_tie_break = argv[8].strip().lower() in ("1", "true", "yes", "on")
 
     return {
         "src_dir": Path(argv[1]),
@@ -211,6 +219,7 @@ def parse_cli_args(argv: list[str]):
         "mcts_n": int(argv[5]),
         "pt_model": Path(argv[6]),
         "output_dir": Path(argv[7]),
+        "deterministic_tie_break": deterministic_tie_break,
     }
 
 
@@ -232,6 +241,7 @@ def main(argv: list[str]):
         mcts_n=parsed["mcts_n"],
         pt_model=pt_model,
         output_dir=parsed["output_dir"],
+        deterministic_tie_break=parsed["deterministic_tie_break"],
     )
 
 
