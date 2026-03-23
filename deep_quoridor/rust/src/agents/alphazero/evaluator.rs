@@ -1,5 +1,7 @@
 //! Evaluator trait and ONNX implementation for MCTS.
 
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use ort::session::Session;
 
@@ -24,6 +26,7 @@ pub trait Evaluator {
 /// returning both a value estimate and policy priors.
 pub struct OnnxEvaluator {
     session: Session,
+    rotated_to_original_by_board_size: HashMap<i32, Vec<usize>>,
 }
 
 /// Deterministic evaluator for cross-language consistency tests.
@@ -38,12 +41,19 @@ impl OnnxEvaluator {
             .context("Failed to create ONNX session builder")?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            rotated_to_original_by_board_size: HashMap::new(),
+        })
     }
 }
 
 impl Evaluator for OnnxEvaluator {
     fn evaluate(&mut self, state: &GameState, action_mask: &[bool]) -> Result<(f32, Vec<f32>)> {
+        let rotated_to_original = self
+            .rotated_to_original_by_board_size
+            .entry(state.board_size)
+            .or_insert_with(|| create_rotation_mapping(state.board_size).1);
         let (work_state, work_action_mask, rotated_to_original) = if state.current_player == 1 {
             let rotated_state = GameState {
                 grid: rotate_grid_180(&state.grid.view()),
@@ -58,8 +68,7 @@ impl Evaluator for OnnxEvaluator {
                 completed_steps: state.completed_steps,
             };
             let mask = rotated_state.get_action_mask();
-            let (_, rot_to_orig) = create_rotation_mapping(state.board_size);
-            (rotated_state, mask, Some(rot_to_orig))
+            (rotated_state, mask, Some(rotated_to_original.as_slice()))
         } else {
             (state.clone(), action_mask.to_vec(), None)
         };
@@ -93,7 +102,7 @@ impl Evaluator for OnnxEvaluator {
         // Apply masked softmax to get priors
         let priors_work = masked_softmax(policy_logits.1, &work_action_mask);
         let priors = if let Some(rot_to_orig) = rotated_to_original {
-            remap_policy(&priors_work, &rot_to_orig)
+            remap_policy(&priors_work, rot_to_orig)
         } else {
             priors_work
         };

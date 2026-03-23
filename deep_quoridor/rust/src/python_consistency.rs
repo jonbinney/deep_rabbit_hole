@@ -4,8 +4,6 @@ use std::process::Command;
 #[cfg(feature = "binary")]
 use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 
-#[cfg(feature = "binary")]
-use crate::actions::action_to_index;
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::agent::apply_temperature_and_sample_with_mode;
@@ -19,7 +17,10 @@ use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 #[cfg(feature = "binary")]
 use crate::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
-use crate::rotation::{rotate_goal_rows, rotate_grid_180, rotate_player_positions};
+use crate::rotation::{
+    create_rotation_mapping, remap_policy, rotate_goal_rows, rotate_grid_180,
+    rotate_player_positions,
+};
 #[cfg(feature = "binary")]
 use ndarray::{Array1, Array2, Array4, Ix2, OwnedRepr};
 #[cfg(feature = "binary")]
@@ -257,24 +258,6 @@ fn run_real_model_selfplay_python(
     ];
 
     run_python(&script_path.to_string_lossy(), &args)
-}
-
-#[cfg(feature = "binary")]
-fn action_index_rotated_to_original(board_size: i32, idx: usize) -> usize {
-    let rotated = action_index_to_action(board_size, idx);
-    let (row, col, action_type) =
-        crate::rotation::rotate_action_coords(board_size, rotated[0], rotated[1], rotated[2]);
-    action_to_index(board_size, &[row, col, action_type])
-}
-
-#[cfg(feature = "binary")]
-fn policy_original_to_rotated(board_size: i32, original_policy: &[f32]) -> Vec<f32> {
-    let mut out = vec![0.0f32; original_policy.len()];
-    for (rotated_idx, slot) in out.iter_mut().enumerate() {
-        let original_idx = action_index_rotated_to_original(board_size, rotated_idx);
-        *slot = original_policy[original_idx];
-    }
-    out
 }
 
 #[cfg(feature = "binary")]
@@ -593,6 +576,7 @@ fn generate_rust_real_model_trace_and_write_npz(
     deterministic_tie_break: bool,
 ) -> String {
     let mut trace = String::new();
+    let (original_to_rotated, _) = create_rotation_mapping(board_size);
     writeln!(
         &mut trace,
         "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
@@ -686,7 +670,7 @@ fn generate_rust_real_model_trace_and_write_npz(
                 .to_owned();
             (
                 input_3d,
-                policy_original_to_rotated(board_size, &policy),
+                remap_policy(&policy, &original_to_rotated),
                 rotated.get_action_mask(),
             )
         } else {

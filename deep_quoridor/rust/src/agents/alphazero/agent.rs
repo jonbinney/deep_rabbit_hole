@@ -62,6 +62,20 @@ pub fn apply_temperature_and_sample_with_mode(
     temperature: f32,
     deterministic_tie_break: bool,
 ) -> usize {
+    assert!(
+        !visit_counts.is_empty(),
+        "apply_temperature_and_sample_with_mode requires non-empty visit_counts"
+    );
+    assert!(
+        !action_indices.is_empty(),
+        "apply_temperature_and_sample_with_mode requires non-empty action_indices"
+    );
+    assert_eq!(
+        visit_counts.len(),
+        action_indices.len(),
+        "apply_temperature_and_sample_with_mode requires visit_counts and action_indices to have the same length"
+    );
+
     if temperature == 0.0 {
         // Match Python semantics by default (sample among max-visit ties).
         // Deterministic parity mode can pick first max tie.
@@ -71,10 +85,6 @@ pub fn apply_temperature_and_sample_with_mode(
             .enumerate()
             .filter_map(|(i, &v)| if v == *max_visits { Some(i) } else { None })
             .collect();
-
-        if tied_indices.is_empty() {
-            return action_indices[0];
-        }
 
         if deterministic_tie_break {
             return action_indices[tied_indices[0]];

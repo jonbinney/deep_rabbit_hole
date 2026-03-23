@@ -153,6 +153,7 @@ pub fn play_game(
     trace: bool,
 ) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
+    let (original_to_rotated, _) = create_rotation_mapping(board_size);
 
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let mut winner: Option<i32> = None;
@@ -195,8 +196,7 @@ pub fn play_game(
             let rotated_input = grid_game_state_to_resnet_input(&rotated_state)
                 .index_axis(ndarray::Axis(0), 0)
                 .to_owned();
-            let (orig_to_rot, _) = create_rotation_mapping(board_size);
-            let rotated_policy = remap_policy(&policy, &orig_to_rot);
+            let rotated_policy = remap_policy(&policy, &original_to_rotated);
             let rotated_mask = rotated_state.get_action_mask();
             (rotated_input, rotated_policy, rotated_mask)
         } else {
