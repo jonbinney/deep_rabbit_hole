@@ -58,3 +58,9 @@ Implement deterministic cross-language parity checks using real model inference:
 3. Undo the temporary deterministic tie-order quick fix that depended on rotated-vs-original ordering differences.
 4. Keep changes isolated to minimum required Rust files and avoid unrelated behavior changes.
 5. Run formatting/check plus full Rust unit-test battery before commit.
+
+## Reviewer Follow-up (Current)
+1. Reuse shared rotation helpers in parity code instead of duplicating remapping logic.
+2. Cache board-size-invariant rotation mappings in evaluator and game loop hot paths.
+3. Add explicit precondition checks in temperature sampling helper for empty/mismatched inputs.
+4. Re-run full `cargo test --all-features --verbose` before commit and push.

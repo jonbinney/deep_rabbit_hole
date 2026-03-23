@@ -65,6 +65,15 @@ Production-path rotation alignment was implemented in Rust:
 NPZ compatibility fix:
 - `action_masks.npy` loading now accepts `float32`, `bool`, `int8` (`|i1`), and `uint8`.
 
+Reviewer follow-up fixes:
+- Rotation remapping in the parity harness now reuses `create_rotation_mapping` + `remap_policy` from `rotation.rs` instead of duplicating local mapping code.
+- Board-size-invariant rotation mappings are cached/reused in hot paths:
+   - `OnnxEvaluator` caches rotated-to-original policy mappings by board size.
+   - `game_runner` computes original-to-rotated mapping once per game.
+   - `python_consistency` computes original-to-rotated mapping once per parity trace.
+- `apply_temperature_and_sample_with_mode` now asserts non-empty, equal-length inputs with explicit messages.
+- The real-model parity test is now deterministic by default in-code, so `cargo test --all-features` no longer depends on `DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES`.
+
 ## Current Test Outcome
 Commands used:
 
@@ -83,6 +92,9 @@ Result:
 - `test_mcts_game_trace_matches_python`: PASS
 - `test_real_model_selfplay_trace_and_npz_matches_python`: PASS
 - Full feature-enabled Rust suite (`--features "python binary"`): PASS (`132 passed, 0 failed`)
+
+After reviewer follow-up:
+- Full Rust all-features suite: PASS (`cargo test --all-features`, `132 passed, 0 failed`)
 
 ## Interpretation
 The parity harness now runs with production-faithful Rust rotation timing and action-index handling, while preserving deterministic behavior only where the Python mock reference is deterministic by construction. The previous NPZ mask dtype blocker is resolved.
