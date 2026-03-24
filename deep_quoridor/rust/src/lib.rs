@@ -1,5 +1,7 @@
 #[cfg(feature = "python")]
-use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
+use numpy::{
+    PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2,
+};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -452,6 +454,110 @@ fn policy_db_lookup<'py>(
     }
 }
 
+/// Convert a compact state blob to a float32 feature vector for neural network input.
+///
+/// The feature vector contains:
+///   - Wall bits: one float per wall position (0.0 or 1.0), num_wall_positions values
+///   - Player 0 position: one-hot over board_size² cells
+///   - Player 1 position: one-hot over board_size² cells
+///   - Player 0 walls remaining: normalized to [0, 1]
+///   - Player 1 walls remaining: normalized to [0, 1]
+///   - Current player: 0.0 or 1.0
+#[cfg(feature = "python")]
+#[pyfunction]
+fn compact_state_to_features<'py>(
+    py: Python<'py>,
+    state: &[u8],
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+) -> Bound<'py, PyArray1<f32>> {
+    use compact::q_bit_repr::QBitRepr;
+
+    let repr = QBitRepr::new(board_size, max_walls, max_steps);
+    let num_cells = board_size * board_size;
+    let num_wall_positions = repr.num_wall_positions();
+
+    let feature_dim = num_wall_positions + 2 * num_cells + 3;
+    let mut features = vec![0.0f32; feature_dim];
+
+    // Wall bits
+    let b = board_size - 1;
+    let mut idx = 0;
+    for orientation in 0..2usize {
+        for row in 0..b {
+            for col in 0..b {
+                features[idx] = if repr.get_wall(state, row, col, orientation) {
+                    1.0
+                } else {
+                    0.0
+                };
+                idx += 1;
+            }
+        }
+    }
+
+    // Player positions (one-hot)
+    for player in 0..2 {
+        let (row, col) = repr.get_player_position(state, player);
+        features[idx + row * board_size + col] = 1.0;
+        idx += num_cells;
+    }
+
+    // Walls remaining (normalized)
+    let denom = if max_walls == 0 {
+        1.0
+    } else {
+        max_walls as f32
+    };
+    features[idx] = repr.get_walls_remaining(state, 0) as f32 / denom;
+    features[idx + 1] = repr.get_walls_remaining(state, 1) as f32 / denom;
+    features[idx + 2] = repr.get_current_player(state) as f32;
+
+    PyArray1::from_owned_array_bound(py, ndarray::Array1::from(features))
+}
+
+/// Return all child states reachable from a compact state.
+///
+/// Returns a list of (row, col, action_type, child_state_bytes) tuples where
+/// action_type is 0=vertical wall, 1=horizontal wall, 2=pawn move.
+#[cfg(feature = "python")]
+#[pyfunction]
+fn get_compact_child_states(
+    state: &[u8],
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+) -> Vec<(usize, usize, usize, Vec<u8>)> {
+    use compact::q_game_mechanics::QGameMechanics;
+
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
+    let current_player = mechanics.repr().get_current_player(state);
+    let mut data = state.to_vec();
+
+    let mut children = Vec::new();
+
+    // Pawn moves (action_type = 2)
+    let moves = mechanics.get_valid_moves(&data);
+    for (row, col) in moves {
+        let mut child = data.clone();
+        mechanics.execute_move(&mut child, current_player, row, col);
+        mechanics.switch_player(&mut child);
+        children.push((row, col, 2usize, child));
+    }
+
+    // Wall placements (action_type = 0 or 1)
+    let wall_placements = mechanics.get_valid_wall_placements(&mut data);
+    for (row, col, orientation) in wall_placements {
+        let mut child = data.clone();
+        mechanics.execute_wall_placement(&mut child, current_player, row, col, orientation);
+        mechanics.switch_player(&mut child);
+        children.push((row, col, orientation, child));
+    }
+
+    children
+}
+
 /// A Python module implemented in Rust.
 #[cfg(feature = "python")]
 #[pymodule]
@@ -486,6 +592,10 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Policy DB lookup
     m.add_function(wrap_pyfunction!(policy_db_lookup, m)?)?;
+
+    // Compact state utilities for training
+    m.add_function(wrap_pyfunction!(compact_state_to_features, m)?)?;
+    m.add_function(wrap_pyfunction!(get_compact_child_states, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;

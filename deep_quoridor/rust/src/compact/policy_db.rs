@@ -86,7 +86,11 @@ impl PolicyDb {
             .into_iter()
             .map(|(r, c)| (r as u8, c as u8, 2))
             .collect();
-        actions.extend(walls.into_iter().map(|(r, c, t)| (r as u8, c as u8, t as u8)));
+        actions.extend(
+            walls
+                .into_iter()
+                .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
+        );
 
         if actions.is_empty() {
             return Ok(None);
@@ -116,7 +120,11 @@ impl PolicyDb {
             let value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
                 // child_opponent just won
                 any_found = true;
-                if child_opponent == 0 { -1 } else { 1 }
+                if child_opponent == 0 {
+                    -1
+                } else {
+                    1
+                }
             } else if mechanics.repr().get_completed_steps(&child_data)
                 >= mechanics.repr().max_steps()
             {
