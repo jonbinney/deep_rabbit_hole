@@ -795,8 +795,8 @@ class AlphaZeroAgent(TrainableAgent):
 
             if temperature == 0.0:
                 max_value = np.max(visit_probs)
-                tied_indices = [i for i, v in enumerate(visit_probs) if v == max_value]
                 if self.params.deterministic_tie_break:
+                    tied_indices = [i for i, v in enumerate(visit_probs) if v == max_value]
                     best_child = root_children[tied_indices[0]]
                 else:
                     visit_probs = np.array([1.0 if v == max_value else 0.0 for v in visit_probs])

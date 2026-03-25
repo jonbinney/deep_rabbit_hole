@@ -48,32 +48,20 @@ pub fn apply_temperature_and_sample(
     visit_counts: &[u32],
     action_indices: &[usize],
     temperature: f32,
-) -> usize {
-    apply_temperature_and_sample_with_mode(visit_counts, action_indices, temperature, false)
-}
-
-/// Same as `apply_temperature_and_sample` but supports deterministic tie mode.
-///
-/// When `deterministic_tie_break` is true and temperature is 0, the first
-/// max-visit action is selected.
-pub fn apply_temperature_and_sample_with_mode(
-    visit_counts: &[u32],
-    action_indices: &[usize],
-    temperature: f32,
     deterministic_tie_break: bool,
 ) -> usize {
     assert!(
         !visit_counts.is_empty(),
-        "apply_temperature_and_sample_with_mode requires non-empty visit_counts"
+        "apply_temperature_and_sample requires non-empty visit_counts"
     );
     assert!(
         !action_indices.is_empty(),
-        "apply_temperature_and_sample_with_mode requires non-empty action_indices"
+        "apply_temperature_and_sample requires non-empty action_indices"
     );
     assert_eq!(
         visit_counts.len(),
         action_indices.len(),
-        "apply_temperature_and_sample_with_mode requires visit_counts and action_indices to have the same length"
+        "apply_temperature_and_sample requires visit_counts and action_indices to have the same length"
     );
 
     if temperature == 0.0 {
@@ -186,7 +174,7 @@ impl ActionSelector for AlphaZeroAgent {
         };
 
         // Select action using temperature
-        let selected_idx = apply_temperature_and_sample_with_mode(
+        let selected_idx = apply_temperature_and_sample(
             &visit_counts,
             &action_indices,
             temperature,
@@ -229,7 +217,7 @@ mod tests {
 
         // Greedy should always pick action 1 (highest visits)
         for _ in 0..10 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0, true);
             assert_eq!(selected, 1);
         }
     }
@@ -242,7 +230,7 @@ mod tests {
         // With equal visits and T=1, should see some distribution
         let mut counts = [0u32; 4];
         for _ in 0..100 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 1.0);
+            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 1.0, false);
             counts[selected] += 1;
         }
 
@@ -260,7 +248,8 @@ mod tests {
         // With very high temperature, distribution should be more uniform
         let mut counts = [0u32; 4];
         for _ in 0..400 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 10.0);
+            let selected =
+                apply_temperature_and_sample(&visit_counts, &action_indices, 10.0, false);
             counts[selected] += 1;
         }
 

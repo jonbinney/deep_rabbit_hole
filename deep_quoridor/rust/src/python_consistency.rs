@@ -6,7 +6,7 @@ use std::{fmt::Write as _, fs, panic::AssertUnwindSafe};
 
 use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::agent::apply_temperature_and_sample_with_mode;
+use crate::agents::alphazero::agent::apply_temperature_and_sample;
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::evaluator::{OnnxEvaluator, UniformMockEvaluator};
 #[cfg(feature = "binary")]
@@ -541,8 +541,7 @@ fn generate_rust_mcts_trace(
         let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
         // Keep this path deterministic to match `mcts_game_reference.py`, which
         // picks the first child among max-visit ties.
-        let selected_idx =
-            apply_temperature_and_sample_with_mode(&visit_counts, &action_indices, 0.0, true);
+        let selected_idx = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0, true);
 
         let total_visits: u32 = visit_counts.iter().sum();
         let mut policy = vec![0.0f32; mask.len()];
@@ -644,7 +643,7 @@ fn generate_rust_real_model_trace_and_write_npz(
 
         let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
         let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-        let selected_idx = apply_temperature_and_sample_with_mode(
+        let selected_idx = apply_temperature_and_sample(
             &visit_counts,
             &action_indices,
             0.0,
