@@ -246,6 +246,7 @@ fn run_batch(
             q.max_walls,
             q.max_steps as i32,
             cli.trace,
+            None,
         )?;
 
         match result.winner {
@@ -410,6 +411,7 @@ fn run_continuous(
             q.max_walls,
             q.max_steps as i32,
             false,
+            None,
         )?;
         let game_elapsed = game_start.elapsed().as_secs_f64();
         println!("{} - selfplay finished in {:.4}", pid, game_elapsed);

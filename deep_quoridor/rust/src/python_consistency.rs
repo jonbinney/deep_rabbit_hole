@@ -14,7 +14,7 @@ use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::{AlphaZeroAgent, AlphaZeroAgentConfig};
 #[cfg(feature = "binary")]
-use crate::game_runner::{play_game_with_observer, GameResult, PlayGameObserver};
+use crate::game_runner::{play_game, GameResult, PlayGameObserver};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 #[cfg(feature = "binary")]
@@ -669,7 +669,7 @@ fn generate_rust_real_model_trace_and_write_npz(
     .expect("failed to construct p2 alphazero agent for real-model parity");
     let mut observer = RealModelTraceObserver::new(board_size, max_walls, max_steps, mcts_n);
 
-    let result: GameResult = play_game_with_observer(
+    let result: GameResult = play_game(
         &mut agent_p1,
         &mut agent_p2,
         board_size,

@@ -160,19 +160,6 @@ pub fn play_game(
     max_walls: i32,
     max_steps: i32,
     trace: bool,
-) -> anyhow::Result<GameResult> {
-    play_game_with_observer(
-        agent_p1, agent_p2, board_size, max_walls, max_steps, trace, None,
-    )
-}
-
-pub fn play_game_with_observer(
-    agent_p1: &mut dyn ActionSelector,
-    agent_p2: &mut dyn ActionSelector,
-    board_size: i32,
-    max_walls: i32,
-    max_steps: i32,
-    trace: bool,
     mut observer: Option<&mut dyn PlayGameObserver>,
 ) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
@@ -334,7 +321,7 @@ mod tests {
     fn test_play_game_completes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, None).unwrap();
 
         // Game should complete within 200 steps on a 5×5 board
         assert!(result.num_turns > 0);
@@ -345,7 +332,7 @@ mod tests {
     fn test_play_game_alternating_players() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, None).unwrap();
 
         // With 0 walls the game should end quickly via moves only
         // Players should alternate
@@ -358,7 +345,7 @@ mod tests {
     fn test_play_game_winner_values() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, None).unwrap();
 
         if let Some(w) = result.winner {
             for item in &result.replay_items {
@@ -376,7 +363,7 @@ mod tests {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
         // Very short max_steps to force truncation
-        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false, None).unwrap();
 
         if result.winner.is_none() {
             for item in &result.replay_items {
@@ -389,7 +376,7 @@ mod tests {
     fn test_replay_items_have_correct_shapes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, None).unwrap();
 
         let grid_size = 5 * 2 + 3; // 13
         let total_actions = policy_size(5);
