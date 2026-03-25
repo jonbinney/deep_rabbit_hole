@@ -8,19 +8,18 @@ use crate::actions::{action_index_to_action, policy_size};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::agent::apply_temperature_and_sample;
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::evaluator::{OnnxEvaluator, UniformMockEvaluator};
+use crate::agents::alphazero::evaluator::UniformMockEvaluator;
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
 #[cfg(feature = "binary")]
-use crate::game_runner::{GameResult, ReplayBufferItem};
+use crate::agents::alphazero::{AlphaZeroAgent, AlphaZeroAgentConfig};
+#[cfg(feature = "binary")]
+use crate::game_runner::{play_game_with_observer, GameResult, PlayGameObserver};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 #[cfg(feature = "binary")]
 use crate::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
-use crate::rotation::{
-    create_rotation_mapping, remap_policy, rotate_goal_rows, rotate_grid_180,
-    rotate_player_positions,
-};
+use crate::rotation::build_rotated_state;
 #[cfg(feature = "binary")]
 use ndarray::{Array1, Array2, Array4, Ix2, OwnedRepr};
 #[cfg(feature = "binary")]
@@ -452,22 +451,6 @@ fn hex_to_f32_vec(hex: &str) -> Vec<f32> {
     out
 }
 
-/// Build a rotated GameState for Player 1 (mirrors game_runner.rs logic).
-fn build_rotated_state(state: &GameState) -> GameState {
-    let work_grid = rotate_grid_180(&state.grid());
-    let work_positions = rotate_player_positions(&state.player_positions(), state.board_size);
-    let work_goals = rotate_goal_rows(&state.goal_rows());
-    GameState {
-        grid: work_grid,
-        player_positions: work_positions,
-        walls_remaining: state.walls_remaining.clone(),
-        goal_rows: work_goals,
-        current_player: state.current_player,
-        board_size: state.board_size,
-        completed_steps: state.completed_steps,
-    }
-}
-
 #[cfg(feature = "binary")]
 fn generate_rust_mcts_trace(
     board_size: i32,
@@ -565,6 +548,87 @@ fn generate_rust_mcts_trace(
 }
 
 #[cfg(feature = "binary")]
+struct RealModelTraceObserver {
+    trace: String,
+}
+
+#[cfg(feature = "binary")]
+impl RealModelTraceObserver {
+    fn new(board_size: i32, max_walls: i32, max_steps: i32, mcts_n: u32) -> Self {
+        let mut trace = String::new();
+        writeln!(
+            &mut trace,
+            "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
+        )
+        .unwrap();
+        Self { trace }
+    }
+
+    fn finish(self) -> String {
+        self.trace
+    }
+}
+
+#[cfg(feature = "binary")]
+impl PlayGameObserver for RealModelTraceObserver {
+    fn on_state_snapshot(&mut self, step: usize, state: &GameState, action_mask: &[bool]) {
+        let pp = state.player_positions();
+        let wr = state.walls_remaining();
+        writeln!(&mut self.trace, "G,{step},{}", grid_to_hex(&state.grid())).unwrap();
+        writeln!(
+            &mut self.trace,
+            "P,{step},{},{},{},{}",
+            pp[[0, 0]],
+            pp[[0, 1]],
+            pp[[1, 0]],
+            pp[[1, 1]]
+        )
+        .unwrap();
+        writeln!(&mut self.trace, "W,{step},{},{}", wr[0], wr[1]).unwrap();
+        writeln!(&mut self.trace, "C,{step},{}", state.current_player).unwrap();
+        writeln!(&mut self.trace, "M,{step},{}", mask_to_string(action_mask)).unwrap();
+        let tensor = grid_game_state_to_resnet_input(state);
+        writeln!(&mut self.trace, "T,{step},{}", tensor_to_hex(&tensor)).unwrap();
+
+        if state.current_player == 1 {
+            let rotated = build_rotated_state(state);
+            let rotated_mask = rotated.get_action_mask();
+            writeln!(
+                &mut self.trace,
+                "RM,{step},{}",
+                mask_to_string(&rotated_mask)
+            )
+            .unwrap();
+            let rotated_tensor = grid_game_state_to_resnet_input(&rotated);
+            writeln!(
+                &mut self.trace,
+                "RT,{step},{}",
+                tensor_to_hex(&rotated_tensor)
+            )
+            .unwrap();
+        }
+    }
+
+    fn on_action_selected(
+        &mut self,
+        step: usize,
+        root_value: Option<f32>,
+        policy: &[f32],
+        selected_action_index: usize,
+    ) {
+        let root_value = root_value.expect("AlphaZero production path should expose root value");
+        writeln!(
+            &mut self.trace,
+            "V,{step},{}",
+            vec_f32_to_hex(&[root_value])
+        )
+        .unwrap();
+        writeln!(&mut self.trace, "Q,{step},{}", vec_f32_to_hex(policy)).unwrap();
+        writeln!(&mut self.trace, "A,{step},{selected_action_index}").unwrap();
+    }
+}
+
+#[cfg(feature = "binary")]
 fn generate_rust_real_model_trace_and_write_npz(
     board_size: i32,
     max_walls: i32,
@@ -574,142 +638,47 @@ fn generate_rust_real_model_trace_and_write_npz(
     output_dir: &std::path::Path,
     deterministic_tie_break: bool,
 ) -> String {
-    let mut trace = String::new();
-    let (original_to_rotated, _) = create_rotation_mapping(board_size);
-    writeln!(
-        &mut trace,
-        "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
-    )
-    .unwrap();
-
-    let mut state = GameState::new(board_size, max_walls);
-    let config = MCTSConfig {
-        n: Some(mcts_n),
-        k: None,
-        ucb_c: 1.4,
-        noise_epsilon: 0.0,
-        noise_alpha: Some(1.0),
-        max_steps: Some(max_steps),
+    let agent_config = AlphaZeroAgentConfig {
+        mcts: MCTSConfig {
+            n: Some(mcts_n),
+            k: None,
+            ucb_c: 1.4,
+            noise_epsilon: 0.0,
+            noise_alpha: Some(1.0),
+            max_steps: Some(max_steps),
+            penalize_visited_states: false,
+        },
+        temperature: 0.0,
+        drop_t_on_step: None,
         penalize_visited_states: false,
+        deterministic_tie_break,
     };
-    let visited_states = std::collections::HashSet::new();
-    let mut evaluator = OnnxEvaluator::new(
+    let mut agent_p1 = AlphaZeroAgent::new(
         onnx_model_path
             .to_str()
             .expect("onnx model path should be valid utf-8"),
+        agent_config.clone(),
     )
-    .expect("failed to construct onnx evaluator for real-model parity");
-    let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
-    let mut winner: Option<i32> = None;
-    let mut step = 0usize;
+    .expect("failed to construct p1 alphazero agent for real-model parity");
+    let mut agent_p2 = AlphaZeroAgent::new(
+        onnx_model_path
+            .to_str()
+            .expect("onnx model path should be valid utf-8"),
+        agent_config,
+    )
+    .expect("failed to construct p2 alphazero agent for real-model parity");
+    let mut observer = RealModelTraceObserver::new(board_size, max_walls, max_steps, mcts_n);
 
-    loop {
-        let pp = state.player_positions();
-        let wr = state.walls_remaining();
-        writeln!(&mut trace, "G,{step},{}", grid_to_hex(&state.grid())).unwrap();
-        writeln!(
-            &mut trace,
-            "P,{step},{},{},{},{}",
-            pp[[0, 0]],
-            pp[[0, 1]],
-            pp[[1, 0]],
-            pp[[1, 1]]
-        )
-        .unwrap();
-        writeln!(&mut trace, "W,{step},{},{}", wr[0], wr[1]).unwrap();
-        writeln!(&mut trace, "C,{step},{}", state.current_player).unwrap();
-
-        let mask_original = state.get_action_mask();
-        writeln!(&mut trace, "M,{step},{}", mask_to_string(&mask_original)).unwrap();
-        let tensor_original = grid_game_state_to_resnet_input(&state);
-        writeln!(&mut trace, "T,{step},{}", tensor_to_hex(&tensor_original)).unwrap();
-
-        if state.current_player == 1 {
-            let rotated = build_rotated_state(&state);
-            let rmask = rotated.get_action_mask();
-            writeln!(&mut trace, "RM,{step},{}", mask_to_string(&rmask)).unwrap();
-            let rtensor = grid_game_state_to_resnet_input(&rotated);
-            writeln!(&mut trace, "RT,{step},{}", tensor_to_hex(&rtensor)).unwrap();
-        }
-
-        let should_select = !state.is_game_over() && state.completed_steps < max_steps as usize;
-        if !should_select {
-            break;
-        }
-
-        let (children, root_value): (Vec<ChildInfo>, f32) =
-            search(&config, state.clone(), &mut evaluator, &visited_states)
-                .expect("MCTS search should succeed with real model");
-
-        let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
-        let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
-        let selected_idx = apply_temperature_and_sample(
-            &visit_counts,
-            &action_indices,
-            0.0,
-            deterministic_tie_break,
-        );
-
-        let total_visits: u32 = visit_counts.iter().sum();
-        let mut policy = vec![0.0f32; mask_original.len()];
-        if total_visits > 0 {
-            for child in &children {
-                policy[child.action_index] = child.visit_count as f32 / total_visits as f32;
-            }
-        }
-
-        writeln!(&mut trace, "V,{step},{}", vec_f32_to_hex(&[root_value])).unwrap();
-        writeln!(&mut trace, "Q,{step},{}", vec_f32_to_hex(&policy)).unwrap();
-        writeln!(&mut trace, "A,{step},{selected_idx}").unwrap();
-
-        let (stored_input_3d, stored_policy, stored_mask) = if state.current_player == 1 {
-            let rotated = build_rotated_state(&state);
-            let input_3d = grid_game_state_to_resnet_input(&rotated)
-                .index_axis(ndarray::Axis(0), 0)
-                .to_owned();
-            (
-                input_3d,
-                remap_policy(&policy, &original_to_rotated),
-                rotated.get_action_mask(),
-            )
-        } else {
-            let input_3d = grid_game_state_to_resnet_input(&state)
-                .index_axis(ndarray::Axis(0), 0)
-                .to_owned();
-            (input_3d, policy.clone(), mask_original.clone())
-        };
-
-        replay_items.push(ReplayBufferItem {
-            input_array: stored_input_3d,
-            policy: stored_policy,
-            action_mask: stored_mask,
-            value: 0.0,
-            player: state.current_player,
-        });
-
-        let acted_player = state.current_player;
-        state.step(action_index_to_action(board_size, selected_idx));
-
-        if state.check_win(acted_player) {
-            winner = Some(acted_player);
-            for item in replay_items.iter_mut() {
-                item.value = if item.player == acted_player {
-                    1.0
-                } else {
-                    -1.0
-                };
-            }
-            break;
-        }
-
-        step += 1;
-    }
-
-    let result = GameResult {
-        winner,
-        num_turns: step as i32,
-        replay_items,
-    };
+    let result: GameResult = play_game_with_observer(
+        &mut agent_p1,
+        &mut agent_p2,
+        board_size,
+        max_walls,
+        max_steps,
+        false,
+        Some(&mut observer),
+    )
+    .expect("production play_game should succeed with real model parity config");
 
     let ready_dir = output_dir.join("ready");
     fs::create_dir_all(&ready_dir).expect("failed to create rust output ready dir");
@@ -726,7 +695,7 @@ fn generate_rust_real_model_trace_and_write_npz(
     )
     .expect("failed to write rust real-model yaml");
 
-    trace
+    observer.finish()
 }
 
 #[cfg(feature = "binary")]

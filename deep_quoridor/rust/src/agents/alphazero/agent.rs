@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use rand::Rng;
 
-use crate::agents::ActionSelector;
+use crate::agents::{ActionSelectionTrace, ActionSelector};
 use crate::game_state::GameState;
 
 use super::evaluator::OnnxEvaluator;
@@ -119,6 +119,7 @@ pub struct AlphaZeroAgent {
     evaluator: OnnxEvaluator,
     config: AlphaZeroAgentConfig,
     visited_states: HashSet<u64>,
+    last_selection_trace: Option<ActionSelectionTrace>,
 }
 
 impl AlphaZeroAgent {
@@ -129,12 +130,14 @@ impl AlphaZeroAgent {
             evaluator,
             config,
             visited_states: HashSet::new(),
+            last_selection_trace: None,
         })
     }
 
     /// Reset visited states between games.
     pub fn reset_game(&mut self) {
         self.visited_states.clear();
+        self.last_selection_trace = None;
     }
 }
 
@@ -151,7 +154,7 @@ impl ActionSelector for AlphaZeroAgent {
         } else {
             &empty_visited
         };
-        let (children, _root_value) = search(
+        let (children, root_value) = search(
             &self.config.mcts,
             state.clone(),
             &mut self.evaluator,
@@ -202,7 +205,15 @@ impl ActionSelector for AlphaZeroAgent {
             self.visited_states.insert(next_state.get_fast_hash());
         }
 
+        self.last_selection_trace = Some(ActionSelectionTrace {
+            root_value: Some(root_value),
+        });
+
         Ok((selected_idx, policy))
+    }
+
+    fn last_selection_trace(&self) -> Option<ActionSelectionTrace> {
+        self.last_selection_trace.clone()
     }
 }
 

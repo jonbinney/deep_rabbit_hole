@@ -14,10 +14,19 @@ use crate::agents::ActionSelector;
 use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
-use crate::rotation::{
-    create_rotation_mapping, remap_policy, rotate_goal_rows, rotate_grid_180,
-    rotate_player_positions,
-};
+use crate::rotation::{build_rotated_state, create_rotation_mapping, remap_policy};
+
+pub trait PlayGameObserver {
+    fn on_state_snapshot(&mut self, step: usize, state: &GameState, action_mask: &[bool]);
+
+    fn on_action_selected(
+        &mut self,
+        step: usize,
+        root_value: Option<f32>,
+        policy: &[f32],
+        selected_action_index: usize,
+    );
+}
 
 /// Format an action triple as a human-readable string.
 fn format_action(_board_size: i32, row: i32, col: i32, action_type: i32) -> String {
@@ -152,11 +161,27 @@ pub fn play_game(
     max_steps: i32,
     trace: bool,
 ) -> anyhow::Result<GameResult> {
+    play_game_with_observer(
+        agent_p1, agent_p2, board_size, max_walls, max_steps, trace, None,
+    )
+}
+
+pub fn play_game_with_observer(
+    agent_p1: &mut dyn ActionSelector,
+    agent_p2: &mut dyn ActionSelector,
+    board_size: i32,
+    max_walls: i32,
+    max_steps: i32,
+    trace: bool,
+    mut observer: Option<&mut dyn PlayGameObserver>,
+) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
     let (original_to_rotated, _) = create_rotation_mapping(board_size);
 
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let mut winner: Option<i32> = None;
+
+    let mut emitted_terminal_snapshot = false;
 
     for step in 0..max_steps {
         let current_player = state.current_player;
@@ -165,9 +190,14 @@ pub fn play_game(
         let work_state = state.clone();
         let mask = work_state.get_action_mask();
 
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_state_snapshot(step as usize, &state, &mask);
+        }
+
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
         if !mask.iter().any(|&m| m) {
             // Truncate
+            emitted_terminal_snapshot = true;
             break;
         }
 
@@ -181,18 +211,17 @@ pub fn play_game(
             agent_p2
         };
         let (action_idx, policy) = agent.select_action(&work_state, &mask)?;
+        let root_value = agent
+            .last_selection_trace()
+            .and_then(|trace| trace.root_value);
+
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_action_selected(step as usize, root_value, &policy, action_idx);
+        }
 
         // Match Python storage semantics: replay is stored in current-player-downward frame.
         let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
-            let rotated_state = GameState {
-                grid: rotate_grid_180(&state.grid()),
-                player_positions: rotate_player_positions(&state.player_positions(), board_size),
-                walls_remaining: state.walls_remaining.clone(),
-                goal_rows: rotate_goal_rows(&state.goal_rows()),
-                current_player,
-                board_size,
-                completed_steps: state.completed_steps,
-            };
+            let rotated_state = build_rotated_state(&state);
             let rotated_input = grid_game_state_to_resnet_input(&rotated_state)
                 .index_axis(ndarray::Axis(0), 0)
                 .to_owned();
@@ -258,6 +287,14 @@ pub fn play_game(
                 num_turns: step + 1,
                 replay_items,
             });
+        }
+    }
+
+    if winner.is_none() && !emitted_terminal_snapshot && state.completed_steps >= max_steps as usize
+    {
+        let mask = state.get_action_mask();
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_state_snapshot(state.completed_steps, &state, &mask);
         }
     }
 

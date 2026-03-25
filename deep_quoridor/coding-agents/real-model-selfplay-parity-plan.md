@@ -64,3 +64,23 @@ Implement deterministic cross-language parity checks using real model inference:
 2. Cache board-size-invariant rotation mappings in evaluator and game loop hot paths.
 3. Add explicit precondition checks in temperature sampling helper for empty/mismatched inputs.
 4. Re-run full `cargo test --all-features --verbose` before commit and push.
+
+## Reviewer Follow-up Phase Split (Current)
+1. Small cleanup pass first:
+	- fold Python deterministic tie helper work into the deterministic-only branch
+	- collapse Rust temperature sampling back to a single public helper with explicit deterministic flag
+	- run tests and commit this pass separately
+2. Larger refactor second:
+	- remove remaining duplicated rotated-state construction helpers
+	- instrument production Rust self-play/game-runner paths so parity tests observe production logic instead of reimplementing it
+	- run full all-features tests again and commit the refactor separately
+
+## Production-Path Observer Refactor (Current)
+1. Move real-model Rust parity execution onto production self-play:
+	- add minimal observer hooks to `game_runner::play_game`
+	- expose read-only per-move AlphaZero trace metadata needed by parity checks
+2. Remove duplicated state-rotation construction from parity-specific code:
+	- promote the rotated-state builder into shared rotation utilities
+	- reuse it from evaluator, game runner, and parity tracing
+3. Re-run full formatting and `cargo test --all-features` after the refactor.
+4. Update results notes so the PR write-up reflects the production-path tracing change.

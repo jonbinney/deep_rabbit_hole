@@ -74,6 +74,18 @@ Reviewer follow-up fixes:
 - `apply_temperature_and_sample_with_mode` now asserts non-empty, equal-length inputs with explicit messages.
 - The real-model parity test is now deterministic by default in-code, so `cargo test --all-features` no longer depends on `DEEP_QUORIDOR_PARITY_DETERMINISTIC_TIES`.
 
+Production-path observer refactor:
+- `rust/src/game_runner.rs`
+   - Added an optional observer hook so parity tests can capture per-step state snapshots and chosen actions from the production self-play loop.
+- `rust/src/agents/mod.rs`
+   - Added a small `ActionSelectionTrace` payload so agents can expose read-only metadata from the last production move selection.
+- `rust/src/agents/alphazero/agent.rs`
+   - Records the MCTS root value from the production action-selection path for parity tracing.
+- `rust/src/rotation.rs`
+   - Added a shared rotated-state builder used by evaluator, game runner, and parity code.
+- `rust/src/python_consistency.rs`
+   - The real-model parity path now runs `play_game_with_observer(...)` with real `AlphaZeroAgent`s instead of reimplementing the self-play loop locally.
+
 ## Current Test Outcome
 Commands used:
 
@@ -96,8 +108,12 @@ Result:
 After reviewer follow-up:
 - Full Rust all-features suite: PASS (`cargo test --all-features`, `132 passed, 0 failed`)
 
+After production-path observer refactor:
+- `cargo fmt`: PASS
+- Full Rust all-features suite: PASS (`cargo test --all-features --quiet`, `132 passed, 0 failed`)
+
 ## Interpretation
-The parity harness now runs with production-faithful Rust rotation timing and action-index handling, while preserving deterministic behavior only where the Python mock reference is deterministic by construction. The previous NPZ mask dtype blocker is resolved.
+The parity harness now runs with production-faithful Rust rotation timing and action-index handling, while preserving deterministic behavior only where the Python mock reference is deterministic by construction. The Rust real-model trace no longer depends on a duplicated self-play loop, so future production changes in `game_runner` are much less likely to drift away from parity coverage. The previous NPZ mask dtype blocker is resolved.
 
 ## Next Recommended Debug Step
 - If deeper parity confidence is needed, run multiple deterministic and non-deterministic seeds with the same fixture pair and capture the first divergence step plus root-policy deltas.

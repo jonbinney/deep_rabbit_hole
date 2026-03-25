@@ -8,10 +8,7 @@ use ort::session::Session;
 use crate::agents::onnx_agent::softmax;
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
-use crate::rotation::{
-    create_rotation_mapping, remap_policy, rotate_goal_rows, rotate_grid_180,
-    rotate_player_positions,
-};
+use crate::rotation::{build_rotated_state, create_rotation_mapping, remap_policy};
 
 /// Trait for evaluating game positions.
 ///
@@ -55,18 +52,7 @@ impl Evaluator for OnnxEvaluator {
             .entry(state.board_size)
             .or_insert_with(|| create_rotation_mapping(state.board_size).1);
         let (work_state, work_action_mask, rotated_to_original) = if state.current_player == 1 {
-            let rotated_state = GameState {
-                grid: rotate_grid_180(&state.grid.view()),
-                player_positions: rotate_player_positions(
-                    &state.player_positions.view(),
-                    state.board_size,
-                ),
-                walls_remaining: state.walls_remaining.clone(),
-                goal_rows: rotate_goal_rows(&state.goal_rows.view()),
-                current_player: state.current_player,
-                board_size: state.board_size,
-                completed_steps: state.completed_steps,
-            };
+            let rotated_state = build_rotated_state(state);
             let mask = rotated_state.get_action_mask();
             (rotated_state, mask, Some(rotated_to_original.as_slice()))
         } else {
