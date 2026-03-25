@@ -14,9 +14,19 @@ use crate::agents::ActionSelector;
 use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
-use crate::rotation::{
-    rotate_action_coords, rotate_goal_rows, rotate_grid_180, rotate_player_positions,
-};
+use crate::rotation::{build_rotated_state, create_rotation_mapping, remap_policy};
+
+pub trait PlayGameObserver {
+    fn on_state_snapshot(&mut self, step: usize, state: &GameState, action_mask: &[bool]);
+
+    fn on_action_selected(
+        &mut self,
+        step: usize,
+        root_value: Option<f32>,
+        policy: &[f32],
+        selected_action_index: usize,
+    );
+}
 
 /// Format an action triple as a human-readable string.
 fn format_action(_board_size: i32, row: i32, col: i32, action_type: i32) -> String {
@@ -137,9 +147,8 @@ pub struct GameResult {
 /// Play a complete game between two agents.
 ///
 /// `agent_p1` controls player 0 and `agent_p2` controls player 1.
-/// Player 0 moves first. When Player 1 is the current player, the board is
-/// rotated 180° before being passed to `agent_p2` so the network always sees
-/// "current player moving downward".
+/// Player 0 moves first. Action selection runs in original orientation; any
+/// current-player-downward rotation is handled inside evaluator codepaths.
 ///
 /// When `trace` is `true`, each step prints whose turn it is, the action
 /// chosen, and the resulting board state in the original (un-rotated)
@@ -151,40 +160,31 @@ pub fn play_game(
     max_walls: i32,
     max_steps: i32,
     trace: bool,
+    mut observer: Option<&mut dyn PlayGameObserver>,
 ) -> anyhow::Result<GameResult> {
     let mut state = GameState::new(board_size, max_walls);
+    let (original_to_rotated, _) = create_rotation_mapping(board_size);
 
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let mut winner: Option<i32> = None;
 
+    let mut emitted_terminal_snapshot = false;
+
     for step in 0..max_steps {
         let current_player = state.current_player;
 
-        // Create a working state (rotated for Player 1)
-        let work_state: GameState;
-        if current_player == 1 {
-            let work_grid = rotate_grid_180(&state.grid());
-            let work_positions = rotate_player_positions(&state.player_positions(), board_size);
-            let work_goals = rotate_goal_rows(&state.goal_rows());
-            work_state = GameState {
-                grid: work_grid,
-                player_positions: work_positions,
-                walls_remaining: state.walls_remaining.clone(),
-                goal_rows: work_goals,
-                current_player,
-                board_size,
-                completed_steps: state.completed_steps,
-            };
-        } else {
-            work_state = state.clone();
-        }
-
-        // Compute action mask in the working (possibly rotated) frame
+        // Match Python: run action selection in original orientation.
+        let work_state = state.clone();
         let mask = work_state.get_action_mask();
+
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_state_snapshot(step as usize, &state, &mask);
+        }
 
         // Check for no valid actions (shouldn't happen in Quoridor, but be safe)
         if !mask.iter().any(|&m| m) {
             // Truncate
+            emitted_terminal_snapshot = true;
             break;
         }
 
@@ -198,13 +198,35 @@ pub fn play_game(
             agent_p2
         };
         let (action_idx, policy) = agent.select_action(&work_state, &mask)?;
+        let root_value = agent
+            .last_selection_trace()
+            .and_then(|trace| trace.root_value);
 
-        // Store replay item (in rotated frame — the frame the model saw)
-        let input_3d = resnet_input.index_axis(ndarray::Axis(0), 0).to_owned();
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_action_selected(step as usize, root_value, &policy, action_idx);
+        }
+
+        // Match Python storage semantics: replay is stored in current-player-downward frame.
+        let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
+            let rotated_state = build_rotated_state(&state);
+            let rotated_input = grid_game_state_to_resnet_input(&rotated_state)
+                .index_axis(ndarray::Axis(0), 0)
+                .to_owned();
+            let rotated_policy = remap_policy(&policy, &original_to_rotated);
+            let rotated_mask = rotated_state.get_action_mask();
+            (rotated_input, rotated_policy, rotated_mask)
+        } else {
+            (
+                resnet_input.index_axis(ndarray::Axis(0), 0).to_owned(),
+                policy.clone(),
+                mask.clone(),
+            )
+        };
+
         replay_items.push(ReplayBufferItem {
-            input_array: input_3d,
-            policy: policy.clone(),
-            action_mask: mask.clone(),
+            input_array: stored_input_3d,
+            policy: stored_policy,
+            action_mask: stored_mask,
             value: 0.0, // placeholder, backfilled after game ends
             player: current_player,
         });
@@ -212,17 +234,7 @@ pub fn play_game(
         // Decode action index → (row, col, type) in working frame
         let action_triple = action_index_to_action(board_size, action_idx);
 
-        // If Player 1, un-rotate action coordinates back to original frame
-        let (a_row, a_col, a_type) = if current_player == 1 {
-            rotate_action_coords(
-                board_size,
-                action_triple[0],
-                action_triple[1],
-                action_triple[2],
-            )
-        } else {
-            (action_triple[0], action_triple[1], action_triple[2])
-        };
+        let (a_row, a_col, a_type) = (action_triple[0], action_triple[1], action_triple[2]);
 
         // Apply action on the ORIGINAL game state
         state.step([a_row, a_col, a_type]);
@@ -265,6 +277,14 @@ pub fn play_game(
         }
     }
 
+    if winner.is_none() && !emitted_terminal_snapshot && state.completed_steps >= max_steps as usize
+    {
+        let mask = state.get_action_mask();
+        if let Some(obs) = observer.as_deref_mut() {
+            obs.on_state_snapshot(state.completed_steps, &state, &mask);
+        }
+    }
+
     // Truncated — values stay 0.0
     Ok(GameResult {
         winner,
@@ -301,7 +321,7 @@ mod tests {
     fn test_play_game_completes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, None).unwrap();
 
         // Game should complete within 200 steps on a 5×5 board
         assert!(result.num_turns > 0);
@@ -312,7 +332,7 @@ mod tests {
     fn test_play_game_alternating_players() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, None).unwrap();
 
         // With 0 walls the game should end quickly via moves only
         // Players should alternate
@@ -325,7 +345,7 @@ mod tests {
     fn test_play_game_winner_values() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 0, 200, false, None).unwrap();
 
         if let Some(w) = result.winner {
             for item in &result.replay_items {
@@ -343,7 +363,7 @@ mod tests {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
         // Very short max_steps to force truncation
-        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 2, false, None).unwrap();
 
         if result.winner.is_none() {
             for item in &result.replay_items {
@@ -356,7 +376,7 @@ mod tests {
     fn test_replay_items_have_correct_shapes() {
         let mut p1 = FirstValidAgent;
         let mut p2 = FirstValidAgent;
-        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false).unwrap();
+        let result = play_game(&mut p1, &mut p2, 5, 3, 200, false, None).unwrap();
 
         let grid_size = 5 * 2 + 3; // 13
         let total_actions = policy_size(5);

@@ -195,6 +195,7 @@ impl AlphaZeroConfig {
             temperature: self.temperature.unwrap_or(1.0),
             drop_t_on_step: self.drop_t_on_step,
             penalize_visited_states: self.penalize_visited_states,
+            deterministic_tie_break: false,
         }
     }
 

@@ -11,6 +11,11 @@ pub mod random_agent;
 #[cfg(feature = "binary")]
 pub mod alphazero;
 
+#[derive(Debug, Clone, Default)]
+pub struct ActionSelectionTrace {
+    pub root_value: Option<f32>,
+}
+
 /// Trait for agents that select actions given a game state.
 ///
 /// The provided state may already be rotated for Player 1.
@@ -27,4 +32,8 @@ pub trait ActionSelector {
         state: &GameState,
         action_mask: &[bool],
     ) -> anyhow::Result<(usize, Vec<f32>)>;
+
+    fn last_selection_trace(&self) -> Option<ActionSelectionTrace> {
+        None
+    }
 }

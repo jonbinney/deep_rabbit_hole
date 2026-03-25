@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use rand::Rng;
 
-use crate::agents::ActionSelector;
+use crate::agents::{ActionSelectionTrace, ActionSelector};
 use crate::game_state::GameState;
 
 use super::evaluator::OnnxEvaluator;
@@ -24,6 +24,8 @@ pub struct AlphaZeroAgentConfig {
     pub drop_t_on_step: Option<usize>,
     /// Whether to penalize visited states.
     pub penalize_visited_states: bool,
+    /// If true, temperature=0 ties are resolved by first max child (deterministic).
+    pub deterministic_tie_break: bool,
 }
 
 impl Default for AlphaZeroAgentConfig {
@@ -33,28 +35,52 @@ impl Default for AlphaZeroAgentConfig {
             temperature: 1.0,
             drop_t_on_step: None,
             penalize_visited_states: false,
+            deterministic_tie_break: false,
         }
     }
 }
 
 /// Apply temperature to visit counts and sample an action.
 ///
-/// If temperature is 0, returns the action with the highest visit count (greedy).
+/// If temperature is 0, samples uniformly among actions with the highest visit count.
 /// Otherwise, samples proportionally to visit_count^(1/T).
 pub fn apply_temperature_and_sample(
     visit_counts: &[u32],
     action_indices: &[usize],
     temperature: f32,
+    deterministic_tie_break: bool,
 ) -> usize {
+    assert!(
+        !visit_counts.is_empty(),
+        "apply_temperature_and_sample requires non-empty visit_counts"
+    );
+    assert!(
+        !action_indices.is_empty(),
+        "apply_temperature_and_sample requires non-empty action_indices"
+    );
+    assert_eq!(
+        visit_counts.len(),
+        action_indices.len(),
+        "apply_temperature_and_sample requires visit_counts and action_indices to have the same length"
+    );
+
     if temperature == 0.0 {
-        // Greedy: pick highest visit count
+        // Match Python semantics by default (sample among max-visit ties).
+        // Deterministic parity mode can pick first max tie.
         let max_visits = visit_counts.iter().max().unwrap_or(&0);
-        for (i, &v) in visit_counts.iter().enumerate() {
-            if v == *max_visits {
-                return action_indices[i];
-            }
+        let tied_indices: Vec<usize> = visit_counts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v == *max_visits { Some(i) } else { None })
+            .collect();
+
+        if deterministic_tie_break {
+            return action_indices[tied_indices[0]];
         }
-        action_indices[0]
+
+        let mut rng = rand::thread_rng();
+        let pick = rng.gen_range(0..tied_indices.len());
+        action_indices[tied_indices[pick]]
     } else {
         // Sample proportionally to visit_count^(1/T)
         let total: f64 = visit_counts
@@ -93,6 +119,7 @@ pub struct AlphaZeroAgent {
     evaluator: OnnxEvaluator,
     config: AlphaZeroAgentConfig,
     visited_states: HashSet<u64>,
+    last_selection_trace: Option<ActionSelectionTrace>,
 }
 
 impl AlphaZeroAgent {
@@ -103,12 +130,14 @@ impl AlphaZeroAgent {
             evaluator,
             config,
             visited_states: HashSet::new(),
+            last_selection_trace: None,
         })
     }
 
     /// Reset visited states between games.
     pub fn reset_game(&mut self) {
         self.visited_states.clear();
+        self.last_selection_trace = None;
     }
 }
 
@@ -125,7 +154,7 @@ impl ActionSelector for AlphaZeroAgent {
         } else {
             &empty_visited
         };
-        let (children, _root_value) = search(
+        let (children, root_value) = search(
             &self.config.mcts,
             state.clone(),
             &mut self.evaluator,
@@ -148,8 +177,12 @@ impl ActionSelector for AlphaZeroAgent {
         };
 
         // Select action using temperature
-        let selected_idx =
-            apply_temperature_and_sample(&visit_counts, &action_indices, temperature);
+        let selected_idx = apply_temperature_and_sample(
+            &visit_counts,
+            &action_indices,
+            temperature,
+            self.config.deterministic_tie_break,
+        );
 
         // Build full policy vector from visit counts
         let total_visits: u32 = visit_counts.iter().sum();
@@ -172,7 +205,15 @@ impl ActionSelector for AlphaZeroAgent {
             self.visited_states.insert(next_state.get_fast_hash());
         }
 
+        self.last_selection_trace = Some(ActionSelectionTrace {
+            root_value: Some(root_value),
+        });
+
         Ok((selected_idx, policy))
+    }
+
+    fn last_selection_trace(&self) -> Option<ActionSelectionTrace> {
+        self.last_selection_trace.clone()
     }
 }
 
@@ -187,7 +228,7 @@ mod tests {
 
         // Greedy should always pick action 1 (highest visits)
         for _ in 0..10 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0);
+            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 0.0, true);
             assert_eq!(selected, 1);
         }
     }
@@ -200,7 +241,7 @@ mod tests {
         // With equal visits and T=1, should see some distribution
         let mut counts = [0u32; 4];
         for _ in 0..100 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 1.0);
+            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 1.0, false);
             counts[selected] += 1;
         }
 
@@ -218,7 +259,8 @@ mod tests {
         // With very high temperature, distribution should be more uniform
         let mut counts = [0u32; 4];
         for _ in 0..400 {
-            let selected = apply_temperature_and_sample(&visit_counts, &action_indices, 10.0);
+            let selected =
+                apply_temperature_and_sample(&visit_counts, &action_indices, 10.0, false);
             counts[selected] += 1;
         }
 

@@ -1,0 +1,86 @@
+I'm using AGENTS.md
+
+# Real-Model Selfplay Parity Plan
+
+## Goal
+Implement deterministic cross-language parity checks using real model inference:
+- Python selfplay path uses paired `.pt` fixture.
+- Rust selfplay path uses paired `.onnx` fixture.
+- Compare both per-step traces and generated replay `.npz` content.
+
+## Scope
+- Keep production code paths as intact as possible.
+- Add focused test hooks/runners with minimal refactoring.
+- Deterministic config only (no Dirichlet noise, temperature 0, fixed MCTS settings).
+
+## Phases
+1. Add a dedicated Python parity runner script reusing `AlphaZeroAgent` + selfplay loop behavior.
+2. Extend Rust `python_consistency.rs` to invoke Python runner and generate Rust trace with real ONNX evaluator.
+3. Persist one-game NPZ outputs for both sides and compare fields/shape/dtypes/values.
+4. Add fixture resolution with explicit CLI args and deterministic defaults in `rust/fixtures`.
+5. Run targeted parity test and document results.
+
+## Expected Artifacts
+- New Python runner script under `deep_quoridor/src`.
+- Extended Rust parity test(s) in `deep_quoridor/rust/src/python_consistency.rs`.
+- Updated debugging prompt context to reflect expanded Idea D.
+- Results markdown under `deep_quoridor/coding-agents`.
+
+## Constraints
+- Fail hard if required fixtures are missing.
+- Maintain existing trace format compatibility (`CFG/G/P/W/C/M/T/RM/RT/V/Q/A`).
+- Compare structural fields exactly; float fields with small epsilon.
+
+## Cleanup Pass (Current)
+1. Remove non-production behavior from Python reference runner:
+	- Remove temporary checkpoint metadata normalization.
+	- Remove deterministic override of numpy random selection.
+2. Keep only instrumentation that does not alter decisions:
+	- Keep trace emission and root-policy reconstruction for logging/parity assertions.
+3. Re-run real-model parity test with unchanged production behavior and record new first divergence.
+4. Document why any remaining helper exists and whether it is decision-affecting or logging-only.
+
+## Next Alignment Step
+1. Update Rust temperature=0 action selection to match Python semantics:
+	- Sample uniformly among max-visit children instead of first-max deterministic pick.
+2. Re-run `test_real_model_selfplay_trace_and_npz_matches_python` and stop at the first remaining mismatch for user review.
+
+## Deterministic Parity Mode (Next)
+1. Add a non-default deterministic tie mode to both sides for parity runs only.
+2. Deterministic mode behavior at temperature=0:
+	- pick the first max-visit child (stable, no RNG).
+3. Keep default behavior unchanged (stochastic tie sampling among max-visit children).
+4. Thread deterministic mode from Rust parity test -> Python runner CLI and Rust trace generator.
+
+## Rotation Alignment Refactor (Current)
+1. Align Rust to Python rotation timing by moving player-2 orientation handling into Rust evaluator codepaths.
+2. Remove player-2 pre-rotation from game-loop parity paths that should operate in original action-index space.
+3. Undo the temporary deterministic tie-order quick fix that depended on rotated-vs-original ordering differences.
+4. Keep changes isolated to minimum required Rust files and avoid unrelated behavior changes.
+5. Run formatting/check plus full Rust unit-test battery before commit.
+
+## Reviewer Follow-up (Current)
+1. Reuse shared rotation helpers in parity code instead of duplicating remapping logic.
+2. Cache board-size-invariant rotation mappings in evaluator and game loop hot paths.
+3. Add explicit precondition checks in temperature sampling helper for empty/mismatched inputs.
+4. Re-run full `cargo test --all-features --verbose` before commit and push.
+
+## Reviewer Follow-up Phase Split (Current)
+1. Small cleanup pass first:
+	- fold Python deterministic tie helper work into the deterministic-only branch
+	- collapse Rust temperature sampling back to a single public helper with explicit deterministic flag
+	- run tests and commit this pass separately
+2. Larger refactor second:
+	- remove remaining duplicated rotated-state construction helpers
+	- instrument production Rust self-play/game-runner paths so parity tests observe production logic instead of reimplementing it
+	- run full all-features tests again and commit the refactor separately
+
+## Production-Path Observer Refactor (Current)
+1. Move real-model Rust parity execution onto production self-play:
+	- add minimal observer hooks to `game_runner::play_game`
+	- expose read-only per-move AlphaZero trace metadata needed by parity checks
+2. Remove duplicated state-rotation construction from parity-specific code:
+	- promote the rotated-state builder into shared rotation utilities
+	- reuse it from evaluator, game runner, and parity tracing
+3. Re-run full formatting and `cargo test --all-features` after the refactor.
+4. Update results notes so the PR write-up reflects the production-path tracing change.

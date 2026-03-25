@@ -10,6 +10,7 @@
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
 use crate::actions::{action_index_to_action, action_to_index, policy_size, ACTION_MOVE};
+use crate::game_state::GameState;
 
 /// Rotate a 2D grid 180° — equivalent to `np.rot90(grid, k=2)`.
 ///
@@ -40,6 +41,19 @@ pub fn rotate_player_positions(positions: &ArrayView2<i32>, board_size: i32) -> 
 /// Rotate goal rows — swaps the two players' goal rows.
 pub fn rotate_goal_rows(goal_rows: &ArrayView1<i32>) -> Array1<i32> {
     Array1::from(vec![goal_rows[1], goal_rows[0]])
+}
+
+/// Build a 180-degree rotated game state preserving metadata.
+pub fn build_rotated_state(state: &GameState) -> GameState {
+    GameState {
+        grid: rotate_grid_180(&state.grid()),
+        player_positions: rotate_player_positions(&state.player_positions(), state.board_size),
+        walls_remaining: state.walls_remaining.clone(),
+        goal_rows: rotate_goal_rows(&state.goal_rows()),
+        current_player: state.current_player,
+        board_size: state.board_size,
+        completed_steps: state.completed_steps,
+    }
 }
 
 /// Rotate a single action's coordinates 180°.
