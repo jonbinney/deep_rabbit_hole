@@ -748,6 +748,21 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_log.action_score_ranking(scores)
         self.action_log.action_text(root_action, f"{root_value:0.2f}")
 
+    def visit_probs_from_root_children(self, root_children) -> np.ndarray:
+        visit_counts = np.array([child.visit_count for child in root_children], dtype=np.float32)
+        visit_counts_sum = np.sum(visit_counts)
+        if visit_counts_sum == 0:
+            raise RuntimeError("No nodes visited during MCTS")
+        return visit_counts / visit_counts_sum
+
+    def build_policy_vector_from_root_children(self, root_children, visit_probs) -> np.ndarray:
+        """Build a full action-space policy vector from root children visit counts."""
+        policy = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
+        for i, child in enumerate(root_children):
+            action_index = self.action_encoder.action_to_index(child.action_taken)
+            policy[action_index] = visit_probs[i]
+        return policy
+
     def get_action_batch(self, observations_with_ids: list[tuple[int, dict]]) -> list[tuple[int, int]]:
         """
         Get actions for multiple observations.  Each entry in observation_with_ids needs a distinct id that can be
@@ -771,12 +786,7 @@ class AlphaZeroAgent(TrainableAgent):
         for game_idx, root_children, root_value, game, player in zip(
             game_indices, root_children_batch, root_value_batch, games, players
         ):
-            visit_counts = np.array([child.visit_count for child in root_children])
-            visit_counts_sum = np.sum(visit_counts)
-            if visit_counts_sum == 0:
-                raise RuntimeError("No nodes visited during MCTS")
-
-            visit_probs = visit_counts / visit_counts_sum
+            visit_probs = self.visit_probs_from_root_children(root_children)
 
             # _log_action is used to display information about the action (e.g. probabilities of moves) in the GUI.
             # We allow that only when there's one game at the time, since we won't be playing multiple games and
@@ -817,11 +827,7 @@ class AlphaZeroAgent(TrainableAgent):
 
             # Store training data if in training mode
             if self.params.training_mode:
-                # Convert visit counts to policy target (normalized)
-                policy_target = np.zeros(self.action_encoder.num_actions, dtype=np.float32)
-                for child in root_children:
-                    action_index = self.action_encoder.action_to_index(child.action_taken)
-                    policy_target[action_index] = child.visit_count / visit_counts_sum
+                policy_target = self.build_policy_vector_from_root_children(root_children, visit_probs)
                 self.store_training_data(game, policy_target, player, game_idx)
 
         return actions
