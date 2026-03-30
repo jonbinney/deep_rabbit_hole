@@ -29,6 +29,7 @@ import os
 import random
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -72,19 +73,6 @@ def tensor_to_hex(arr):
 
 def float32_to_hex(value):
     return np.asarray([value], dtype=np.float32).tobytes().hex()
-
-
-def build_policy_vector(root_children, action_encoder):
-    visit_counts = np.array([child.visit_count for child in root_children], dtype=np.int64)
-    total_visits = int(visit_counts.sum())
-    if total_visits <= 0:
-        raise RuntimeError("No nodes visited during MCTS")
-
-    policy = np.zeros(action_encoder.num_actions, dtype=np.float32)
-    for child in root_children:
-        idx = action_encoder.action_to_index(child.action_taken)
-        policy[idx] = np.float32(child.visit_count / total_visits)
-    return policy
 
 
 def emit_snapshot(agent, game, step, player_enum):
@@ -144,11 +132,11 @@ def run_trace_and_write_game(
 
     agent = AlphaZeroAgent(board_size=board_size, max_walls=max_walls, max_steps=max_steps, params=params)
 
-    captured = {"children_batch": None, "root_values": None}
+    captured: dict[str, Any] = {"children_batch": None, "root_values": None}
     original_search_batch = agent.mcts.search_batch
 
-    def wrapped_search_batch(games):
-        children_batch, root_values = original_search_batch(games)
+    def wrapped_search_batch(initial_games):
+        children_batch, root_values = original_search_batch(initial_games)
         captured["children_batch"] = children_batch
         captured["root_values"] = root_values
         return children_batch, root_values
@@ -185,7 +173,8 @@ def run_trace_and_write_game(
 
         root_children = children_batch[0]
         root_value = float(root_values[0])
-        policy = build_policy_vector(root_children, game.action_encoder)
+        visit_probs = agent.visit_probs_from_root_children(root_children)
+        policy = agent.build_policy_vector_from_root_children(root_children, visit_probs)
 
         print(f"V,{step},{float32_to_hex(np.float32(root_value))}")
         print(f"Q,{step},{policy.astype(np.float32).tobytes().hex()}")
