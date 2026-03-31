@@ -1,6 +1,7 @@
 #[cfg(feature = "python")]
 use numpy::{
-    PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2,
+    PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
+    PyReadwriteArray2,
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -517,6 +518,60 @@ fn compact_state_to_features<'py>(
     PyArray1::from_owned_array_bound(py, ndarray::Array1::from(features))
 }
 
+/// Convert a compact state blob to full game state arrays.
+///
+/// Returns (grid, player_positions, walls_remaining, old_style_walls, current_player, completed_steps).
+#[cfg(feature = "python")]
+#[pyfunction]
+fn compact_state_to_game_state<'py>(
+    py: Python<'py>,
+    state: &[u8],
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+) -> (
+    Bound<'py, PyArray2<i8>>,
+    Bound<'py, PyArray2<i32>>,
+    Bound<'py, PyArray1<i32>>,
+    Bound<'py, PyArray3<i8>>,
+    i32,
+    i32,
+) {
+    use compact::q_bit_repr::QBitRepr;
+
+    let repr = QBitRepr::new(board_size, max_walls, max_steps);
+
+    let grid = repr.to_grid(state);
+    let player_positions = repr.to_player_positions(state);
+    let walls_remaining = repr.to_walls_remaining(state);
+    let current_player = repr.get_current_player(state) as i32;
+    let completed_steps = repr.get_completed_steps(state) as i32;
+
+    // Build old_style_walls: (board_size-1, board_size-1, 2) array where
+    // [:,:,0] = vertical walls, [:,:,1] = horizontal walls.
+    let b = board_size - 1;
+    let mut old_style_walls = ndarray::Array3::<i8>::zeros((b, b, 2));
+    for row in 0..b {
+        for col in 0..b {
+            if repr.get_wall(state, row, col, 0) {
+                old_style_walls[[row, col, 0]] = 1;
+            }
+            if repr.get_wall(state, row, col, 1) {
+                old_style_walls[[row, col, 1]] = 1;
+            }
+        }
+    }
+
+    (
+        PyArray2::from_owned_array_bound(py, grid),
+        PyArray2::from_owned_array_bound(py, player_positions),
+        PyArray1::from_owned_array_bound(py, walls_remaining),
+        PyArray3::from_owned_array_bound(py, old_style_walls),
+        current_player,
+        completed_steps,
+    )
+}
+
 /// Return all child states reachable from a compact state.
 ///
 /// Returns a list of (row, col, action_type, child_state_bytes) tuples where
@@ -595,6 +650,7 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Compact state utilities for training
     m.add_function(wrap_pyfunction!(compact_state_to_features, m)?)?;
+    m.add_function(wrap_pyfunction!(compact_state_to_game_state, m)?)?;
     m.add_function(wrap_pyfunction!(get_compact_child_states, m)?)?;
 
     // Export constants to match qgrid.py

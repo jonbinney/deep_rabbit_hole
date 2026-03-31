@@ -205,7 +205,7 @@ impl PolicyDb {
             params![max_walls as f32],
         )?;
 
-        // Create table WITHOUT primary key index — insert first, index later.
+        // Create table with autoincrementing ID for efficient random sampling.
         conn.execute(
             "CREATE TABLE policy (
                 state BLOB,
@@ -237,6 +237,14 @@ impl PolicyDb {
 
         // Create index after all inserts (much faster than maintaining during insert).
         conn.execute("CREATE UNIQUE INDEX idx_policy_state ON policy(state)", [])?;
+
+        // Store the number of policy states in metadata for efficient random sampling.
+        let num_policy_rows: i64 =
+            conn.query_row("SELECT COUNT(*) FROM policy", [], |row| row.get(0))?;
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('num_states', ?1)",
+            params![num_policy_rows as f64],
+        )?;
 
         Ok(num_entries)
     }
