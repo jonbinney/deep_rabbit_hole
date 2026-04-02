@@ -57,32 +57,92 @@ def compact_state_to_game(state_bytes, board_size, max_walls, max_steps):
     return Quoridor(board, Player(current_player))
 
 
+def child_action_index(row, col, action_type, board_size):
+    """Map (row, col, action_type) from get_compact_child_states to an ActionEncoder index."""
+    wall_size = board_size - 1
+    if action_type == 2:  # pawn move
+        return row * board_size + col
+    elif action_type == 0:  # vertical wall
+        return board_size ** 2 + row * wall_size + col
+    elif action_type == 1:  # horizontal wall
+        return board_size ** 2 + wall_size ** 2 + row * wall_size + col
+    raise ValueError(f"Unknown action_type {action_type}")
+
+
+def build_policy_from_children(conn, state_bytes, current_player, board_size, max_walls, max_steps, num_actions):
+    """Build a policy vector from DB child state values.
+
+    Finds the optimal child value (max for P0, min for P1) and assigns
+    uniform probability across all actions that achieve that value.
+    All other actions get zero probability.
+
+    Returns the policy array, or None if some children are missing from the DB.
+    """
+    children = quoridor_rs.get_compact_child_states(state_bytes, board_size, max_walls, max_steps)
+    if not children:
+        return None
+
+    child_blobs = [bytes(c[3]) for c in children]
+    placeholders = ",".join("?" * len(child_blobs))
+    child_rows = conn.execute(
+        f"SELECT state, value FROM policy WHERE state IN ({placeholders})",
+        child_blobs,
+    ).fetchall()
+    if len(child_rows) != len(child_blobs):
+        return None  # Some children not in DB.
+    child_db_vals = {bytes(s): v for s, v in child_rows}
+
+    # Find optimal value from current player's perspective.
+    child_values = [child_db_vals[bytes(c[3])] for c in children]
+    best_value = max(child_values) if current_player == 0 else min(child_values)
+
+    # Assign equal probability to all actions achieving the best value.
+    policy = np.zeros(num_actions, dtype=np.float32)
+    for (row, col, action_type, child_state) in children:
+        if child_db_vals[bytes(child_state)] == best_value:
+            idx = child_action_index(row, col, action_type, board_size)
+            policy[idx] = 1.0
+    policy /= policy.sum()
+    return policy
+
+
 def fetch_batch(conn, ids, evaluator, board_size, max_walls, max_steps):
     """Fetch rows by rowid from the policy table and compute features on the fly.
 
     Returns a list of sample dicts compatible with NNEvaluator.compute_losses.
     Each dict has keys: input_array, value, action_mask, mcts_policy, current_player.
 
-    mcts_policy is set to a uniform distribution over valid actions since the policy
-    head is not used for the DB evaluator (only the value head matters).
+    mcts_policy is derived from the DB values of child states: uniform over
+    actions that lead to the optimal child value (max for P0, min for P1),
+    zero for all others. States whose children are not all present in the
+    DB are skipped.
     """
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
         f"SELECT state, value FROM policy WHERE rowid IN ({placeholders})",
         ids,
     ).fetchall()
+    num_actions = evaluator.action_encoder.num_actions
     samples = []
     for state, value in rows:
-        game = compact_state_to_game(bytes(state), board_size, max_walls, max_steps)
+        state_bytes = bytes(state)
+        game = compact_state_to_game(state_bytes, board_size, max_walls, max_steps)
+        current_player = int(game.current_player)
+
+        mcts_policy = build_policy_from_children(
+            conn, state_bytes, current_player, board_size, max_walls, max_steps, num_actions,
+        )
+        if mcts_policy is None:
+            continue
+
         action_mask = game.get_action_mask().astype(np.float32)
-        mcts_policy = action_mask / action_mask.sum()
         samples.append(
             {
                 "input_array": evaluator.game_to_input_array(game),
                 "value": value,
                 "action_mask": action_mask,
                 "mcts_policy": mcts_policy,
-                "current_player": int(game.current_player),
+                "current_player": current_player,
             }
         )
     return samples
@@ -114,12 +174,12 @@ def compute_accuracy(test_ids, conn, evaluator, board_size, max_walls, max_steps
     with torch.no_grad():
         for state_blob, _value in rows:
             state_bytes = bytes(state_blob)
+            game = compact_state_to_game(state_bytes, board_size, max_walls, max_steps)
+            current_player = int(game.current_player)
 
             # Filter by player if requested.
-            if test_player is not None:
-                game_for_player = compact_state_to_game(state_bytes, board_size, max_walls, max_steps)
-                if int(game_for_player.current_player) != test_player:
-                    continue
+            if test_player is not None and current_player != test_player:
+                continue
 
             children = quoridor_rs.get_compact_child_states(state_bytes, board_size, max_walls, max_steps)
             if not children:
@@ -141,17 +201,16 @@ def compute_accuracy(test_ids, conn, evaluator, board_size, max_walls, max_steps
             # Model predictions for children.
             child_features = []
             for cb in child_blobs:
-                game = compact_state_to_game(cb, board_size, max_walls, max_steps)
-                child_features.append(evaluator.game_to_input_array(game))
+                child_game = compact_state_to_game(cb, board_size, max_walls, max_steps)
+                child_features.append(evaluator.game_to_input_array(child_game))
             x = torch.tensor(np.stack(child_features), dtype=torch.float32, device=device)
             _, model_vals = evaluator.network(x)
             model_vals = model_vals.squeeze(-1).cpu().numpy()
 
-            # Determine current player from compact state.
-            game = compact_state_to_game(state_bytes, board_size, max_walls, max_steps)
-            current_player = int(game.current_player)
-            pick = np.argmin if current_player == 1 else np.argmax
-            if pick(db_vals) == pick(model_vals):
+            # The model's pick is correct if it leads to a child with the best DB value.
+            best_db_val = max(db_vals) if current_player == 0 else min(db_vals)
+            model_pick = np.argmax(model_vals) if current_player == 0 else np.argmin(model_vals)
+            if db_vals[model_pick] == best_db_val:
                 correct += 1
             total += 1
 
@@ -259,8 +318,9 @@ def main():
     batch_size = az_params.batch_size
 
     for step in range(1, args.num_steps + 1):
-        # Oversample to account for test ID removal and optional player filtering.
-        oversample = 2 if test_player is None else 4
+        # Oversample to account for test ID removal, player filtering, and states
+        # dropped by build_policy_from_children (missing children in DB).
+        oversample = 4 if test_player is None else 8
         batch_ids = random.sample(range(1, num_states + 1), min(batch_size * oversample, num_states))
         batch_ids = [i for i in batch_ids if i not in test_id_set]
         batch_samples = fetch_batch(conn, batch_ids, evaluator, board_size, max_walls, max_steps)
