@@ -455,69 +455,6 @@ fn policy_db_lookup<'py>(
     }
 }
 
-/// Convert a compact state blob to a float32 feature vector for neural network input.
-///
-/// The feature vector contains:
-///   - Wall bits: one float per wall position (0.0 or 1.0), num_wall_positions values
-///   - Player 0 position: one-hot over board_size² cells
-///   - Player 1 position: one-hot over board_size² cells
-///   - Player 0 walls remaining: normalized to [0, 1]
-///   - Player 1 walls remaining: normalized to [0, 1]
-///   - Current player: 0.0 or 1.0
-#[cfg(feature = "python")]
-#[pyfunction]
-fn compact_state_to_features<'py>(
-    py: Python<'py>,
-    state: &[u8],
-    board_size: usize,
-    max_walls: usize,
-    max_steps: usize,
-) -> Bound<'py, PyArray1<f32>> {
-    use compact::q_bit_repr::QBitRepr;
-
-    let repr = QBitRepr::new(board_size, max_walls, max_steps);
-    let num_cells = board_size * board_size;
-    let num_wall_positions = repr.num_wall_positions();
-
-    let feature_dim = num_wall_positions + 2 * num_cells + 3;
-    let mut features = vec![0.0f32; feature_dim];
-
-    // Wall bits
-    let b = board_size - 1;
-    let mut idx = 0;
-    for orientation in 0..2usize {
-        for row in 0..b {
-            for col in 0..b {
-                features[idx] = if repr.get_wall(state, row, col, orientation) {
-                    1.0
-                } else {
-                    0.0
-                };
-                idx += 1;
-            }
-        }
-    }
-
-    // Player positions (one-hot)
-    for player in 0..2 {
-        let (row, col) = repr.get_player_position(state, player);
-        features[idx + row * board_size + col] = 1.0;
-        idx += num_cells;
-    }
-
-    // Walls remaining (normalized)
-    let denom = if max_walls == 0 {
-        1.0
-    } else {
-        max_walls as f32
-    };
-    features[idx] = repr.get_walls_remaining(state, 0) as f32 / denom;
-    features[idx + 1] = repr.get_walls_remaining(state, 1) as f32 / denom;
-    features[idx + 2] = repr.get_current_player(state) as f32;
-
-    PyArray1::from_owned_array_bound(py, ndarray::Array1::from(features))
-}
-
 /// Convert a compact state blob to full game state arrays.
 ///
 /// Returns (grid, player_positions, walls_remaining, old_style_walls, current_player, completed_steps).
@@ -649,7 +586,6 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policy_db_lookup, m)?)?;
 
     // Compact state utilities for training
-    m.add_function(wrap_pyfunction!(compact_state_to_features, m)?)?;
     m.add_function(wrap_pyfunction!(compact_state_to_game_state, m)?)?;
     m.add_function(wrap_pyfunction!(get_compact_child_states, m)?)?;
 
