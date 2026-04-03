@@ -179,6 +179,19 @@ class Board:
         new_board._walls_remaining = self._walls_remaining.copy()
         return new_board
 
+    @classmethod
+    def from_arrays(cls, board_size, max_walls, grid, player_positions, walls_remaining, old_style_walls):
+        """Construct a Board from raw arrays (e.g. from compact state conversion)."""
+        board = cls.__new__(cls)
+        board.board_size = board_size
+        board.max_walls = max_walls
+        board._grid = grid
+        board._old_style_walls = old_style_walls
+        board._players = [Player.ONE, Player.TWO]
+        board._player_positions = player_positions
+        board._walls_remaining = walls_remaining
+        return board
+
     def get_player_position(self, player: Player) -> tuple[int, int]:
         """
         Get the position of the player's pawn.
