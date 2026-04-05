@@ -1,5 +1,8 @@
 #[cfg(feature = "python")]
-use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
+use numpy::{
+    PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
+    PyReadwriteArray2,
+};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -394,9 +397,9 @@ fn q_evaluate_actions<'py>(
 
 /// Look up a game state in a pre-computed policy database.
 ///
-/// The DB stores only (state, value). This function enumerates all valid
-/// actions, computes each child state, queries the DB for each child's value,
-/// and returns (actions, values) from the current player's perspective.
+/// Enumerates all valid actions, computes each child state, queries the DB
+/// for each child's value, and returns (actions, values) from the current
+/// player's perspective.
 #[cfg(feature = "python")]
 #[pyfunction]
 fn policy_db_lookup<'py>(
@@ -411,13 +414,11 @@ fn policy_db_lookup<'py>(
     max_steps: usize,
     db_path: &str,
 ) -> PyResult<Option<(Bound<'py, PyArray2<i32>>, Bound<'py, numpy::PyArray1<i32>>)>> {
+    use compact::policy_db::PolicyDb;
     use compact::q_game_mechanics::QGameMechanics;
-    use rusqlite::Connection;
-    use std::path::Path;
 
     let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
 
-    // Convert game state to QBitRepr format
     let mut data = mechanics.repr().create_data();
     mechanics.repr().from_game_state(
         &mut data,
@@ -427,106 +428,126 @@ fn policy_db_lookup<'py>(
         current_player,
         completed_steps,
     );
-    let cp = current_player as usize;
 
-    // Get all valid actions for current player
-    let moves = mechanics.get_valid_moves(&mut data);
-    let walls = mechanics.get_valid_wall_placements(&mut data);
+    let db = PolicyDb::open(db_path)
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
 
-    let mut actions: Vec<(u8, u8, u8)> = moves
-        .into_iter()
-        .map(|(r, c)| (r as u8, c as u8, 2))
-        .collect();
-    actions.extend(
-        walls
-            .into_iter()
-            .map(|(r, c, t)| (r as u8, c as u8, t as u8)),
-    );
-
-    if actions.is_empty() {
-        return Ok(None);
-    }
-
-    // Open the database
-    let conn = Connection::open_with_flags(
-        Path::new(db_path),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to open DB: {e}")))?;
-
-    let mut stmt = conn
-        .prepare_cached("SELECT value FROM policy WHERE state = ?1")
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("SQL prepare: {e}")))?;
-
-    let n = actions.len();
-    let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
-    let mut values_array = ndarray::Array1::<i32>::zeros(n);
-    let mut any_found = false;
-
-    for (i, &(row, col, action_type)) in actions.iter().enumerate() {
-        actions_array[[i, 0]] = row as i32;
-        actions_array[[i, 1]] = col as i32;
-        actions_array[[i, 2]] = action_type as i32;
-
-        // Create child state
-        let mut child_data = data.clone();
-        let (r, c, t) = (row as usize, col as usize, action_type as usize);
-        if action_type == 2 {
-            mechanics.execute_move(&mut child_data, cp, r, c);
-        } else {
-            mechanics.execute_wall_placement(&mut child_data, cp, r, c, t);
+    match db
+        .lookup_action_values(&mechanics, &data)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("DB query error: {e}")))?
+    {
+        None => Ok(None),
+        Some((actions, values)) => {
+            let n = actions.len();
+            let mut actions_array = ndarray::Array2::<i32>::zeros((n, 3));
+            let mut values_array = ndarray::Array1::<i32>::zeros(n);
+            for (i, &(row, col, action_type)) in actions.iter().enumerate() {
+                actions_array[[i, 0]] = row as i32;
+                actions_array[[i, 1]] = col as i32;
+                actions_array[[i, 2]] = action_type as i32;
+                values_array[i] = values[i];
+            }
+            Ok(Some((
+                PyArray2::from_owned_array_bound(py, actions_array),
+                numpy::PyArray1::from_owned_array_bound(py, values_array),
+            )))
         }
-        mechanics.switch_player(&mut child_data);
-
-        // Check for terminal states first (not stored in DB).
-        let child_cp = mechanics.repr().get_current_player(&child_data);
-        let child_opponent = 1 - child_cp;
-        let child_value_p0: i32 = if mechanics.check_win(&child_data, child_opponent) {
-            // child_opponent just won
-            any_found = true;
-            if child_opponent == 0 {
-                -1
-            } else {
-                1
-            }
-        } else if mechanics.repr().get_completed_steps(&child_data) >= mechanics.repr().max_steps()
-        {
-            any_found = true;
-            0
-        } else {
-            // Non-terminal: query DB
-            let result: Result<i32, _> =
-                stmt.query_row(rusqlite::params![child_data], |row| row.get(0));
-
-            match result {
-                Ok(v) => {
-                    any_found = true;
-                    if current_player == 0 {
-                        v
-                    } else {
-                        -v
-                    }
-                }
-                Err(rusqlite::Error::QueryReturnedNoRows) => panic!("No state found for action"),
-                Err(e) => {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "DB query error: {e}"
-                    )));
-                }
-            }
-        };
-
-        // DB stores P0-perspective. Convert to acting player's perspective.
-        values_array[i] = child_value_p0;
     }
-    if !any_found {
-        return Ok(None);
+}
+
+/// Convert a compact state blob to full game state arrays.
+///
+/// Returns (grid, player_positions, walls_remaining, old_style_walls, current_player, completed_steps).
+#[cfg(feature = "python")]
+#[pyfunction]
+fn compact_state_to_game_state<'py>(
+    py: Python<'py>,
+    state: &[u8],
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+) -> (
+    Bound<'py, PyArray2<i8>>,
+    Bound<'py, PyArray2<i32>>,
+    Bound<'py, PyArray1<i32>>,
+    Bound<'py, PyArray3<i8>>,
+    i32,
+    i32,
+) {
+    use compact::q_bit_repr::QBitRepr;
+
+    let repr = QBitRepr::new(board_size, max_walls, max_steps);
+
+    let grid = repr.to_grid(state);
+    let player_positions = repr.to_player_positions(state);
+    let walls_remaining = repr.to_walls_remaining(state);
+    let current_player = repr.get_current_player(state) as i32;
+    let completed_steps = repr.get_completed_steps(state) as i32;
+
+    // Build old_style_walls: (board_size-1, board_size-1, 2) array where
+    // [:,:,0] = vertical walls, [:,:,1] = horizontal walls.
+    let b = board_size - 1;
+    let mut old_style_walls = ndarray::Array3::<i8>::zeros((b, b, 2));
+    for row in 0..b {
+        for col in 0..b {
+            if repr.get_wall(state, row, col, 0) {
+                old_style_walls[[row, col, 0]] = 1;
+            }
+            if repr.get_wall(state, row, col, 1) {
+                old_style_walls[[row, col, 1]] = 1;
+            }
+        }
     }
 
-    Ok(Some((
-        PyArray2::from_owned_array_bound(py, actions_array),
-        numpy::PyArray1::from_owned_array_bound(py, values_array),
-    )))
+    (
+        PyArray2::from_owned_array_bound(py, grid),
+        PyArray2::from_owned_array_bound(py, player_positions),
+        PyArray1::from_owned_array_bound(py, walls_remaining),
+        PyArray3::from_owned_array_bound(py, old_style_walls),
+        current_player,
+        completed_steps,
+    )
+}
+
+/// Return all child states reachable from a compact state.
+///
+/// Returns a list of (row, col, action_type, child_state_bytes) tuples where
+/// action_type is 0=vertical wall, 1=horizontal wall, 2=pawn move.
+#[cfg(feature = "python")]
+#[pyfunction]
+fn get_compact_child_states(
+    state: &[u8],
+    board_size: usize,
+    max_walls: usize,
+    max_steps: usize,
+) -> Vec<(usize, usize, usize, Vec<u8>)> {
+    use compact::q_game_mechanics::QGameMechanics;
+
+    let mechanics = QGameMechanics::new(board_size, max_walls, max_steps);
+    let current_player = mechanics.repr().get_current_player(state);
+    let mut data = state.to_vec();
+
+    let mut children = Vec::new();
+
+    // Pawn moves (action_type = 2)
+    let moves = mechanics.get_valid_moves(&data);
+    for (row, col) in moves {
+        let mut child = data.clone();
+        mechanics.execute_move(&mut child, current_player, row, col);
+        mechanics.switch_player(&mut child);
+        children.push((row, col, 2usize, child));
+    }
+
+    // Wall placements (action_type = 0 or 1)
+    let wall_placements = mechanics.get_valid_wall_placements(&mut data);
+    for (row, col, orientation) in wall_placements {
+        let mut child = data.clone();
+        mechanics.execute_wall_placement(&mut child, current_player, row, col, orientation);
+        mechanics.switch_player(&mut child);
+        children.push((row, col, orientation, child));
+    }
+
+    children
 }
 
 /// A Python module implemented in Rust.
@@ -563,6 +584,10 @@ fn quoridor_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Policy DB lookup
     m.add_function(wrap_pyfunction!(policy_db_lookup, m)?)?;
+
+    // Compact state utilities for training
+    m.add_function(wrap_pyfunction!(compact_state_to_game_state, m)?)?;
+    m.add_function(wrap_pyfunction!(get_compact_child_states, m)?)?;
 
     // Export constants to match qgrid.py
     m.add("CELL_FREE", grid::CELL_FREE)?;

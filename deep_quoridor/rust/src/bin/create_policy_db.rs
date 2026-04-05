@@ -3,11 +3,9 @@
 
 use clap::Parser;
 use quoridor_rs::compact::{
-    policy_db::{self, TranspositionTable},
+    policy_db::{self, PolicyDb, TranspositionTable},
     q_game_mechanics::QGameMechanics,
 };
-use rusqlite::{params, Connection};
-use std::path::Path;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
@@ -33,89 +31,13 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     num_threads: usize,
 
+    /// Only save states where the number of completed steps is a multiple of this value
+    #[arg(long, default_value_t = 1)]
+    step_interval: usize,
+
     /// Output SQLite database file path
     #[arg(short, long, default_value = "policy_db.sqlite")]
     output: String,
-}
-
-#[allow(dead_code)]
-pub fn save_policy_to_sqlite(
-    _mechanics: &QGameMechanics,
-    entries: TranspositionTable,
-    filename: &str,
-    board_size: usize,
-    max_steps: usize,
-    max_walls: usize,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let mut conn = Connection::open(Path::new(filename))?;
-
-    // Performance pragmas: disable journaling and syncs during bulk insert
-    conn.execute_batch(
-        "PRAGMA journal_mode = OFF;
-         PRAGMA synchronous = OFF;
-         PRAGMA locking_mode = EXCLUSIVE;
-         PRAGMA temp_store = MEMORY;
-         PRAGMA cache_size = -64000;",
-    )?;
-
-    // Drop existing tables to avoid schema conflicts
-    conn.execute("DROP TABLE IF EXISTS policy", [])?;
-    conn.execute("DROP TABLE IF EXISTS metadata", [])?;
-
-    // Create metadata table for global parameters
-    conn.execute(
-        "CREATE TABLE metadata (
-            key TEXT PRIMARY KEY,
-            value FLOAT NOT NULL
-        )",
-        [],
-    )?;
-
-    // Insert metadata
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('board_size', ?1)",
-        params![board_size as f32],
-    )?;
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('max_steps', ?1)",
-        params![max_steps as f32],
-    )?;
-    conn.execute(
-        "INSERT INTO metadata (key, value) VALUES ('max_walls', ?1)",
-        params![max_walls as f32],
-    )?;
-
-    // Create table WITHOUT primary key index — insert first, index later
-    conn.execute(
-        "CREATE TABLE policy (
-            state BLOB,
-            value INTEGER NOT NULL
-        )",
-        [],
-    )?;
-
-    let num_entries = entries.len();
-
-    // Bulk insert in a transaction
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare("INSERT INTO policy (state, value) VALUES (?1, ?2)")?;
-
-        for item in entries.into_iter() {
-            let (key, value) = item;
-
-            // Transposition table already stores P0-absolute values
-            // (1=P0 wins, -1=P0 loses). Store directly.
-            stmt.execute(params![key.as_slice(), value as i32])?;
-        }
-        drop(stmt);
-    }
-    tx.commit()?;
-
-    // Create index after all inserts (much faster than maintaining during insert)
-    conn.execute("CREATE UNIQUE INDEX idx_policy_state ON policy(state)", [])?;
-
-    Ok(num_entries)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -167,18 +89,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  minimax took {:.3}s", eval_elapsed.as_secs_f64());
     println!("  Root value: {:?}", value);
 
-    // Write transposition table entries to SQLite database
     let num_entries = transposition_table.len();
     println!("  Collected {} transposition table entries", num_entries);
 
     let write_start = Instant::now();
-    save_policy_to_sqlite(
+    PolicyDb::write(
         &mechanics,
         transposition_table,
         &args.output,
         args.board_size,
         args.max_steps,
         args.max_walls,
+        args.step_interval,
     )?;
     let write_elapsed = write_start.elapsed();
     println!(
