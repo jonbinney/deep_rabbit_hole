@@ -247,6 +247,12 @@ def parse_args():
         choices=[1, 2],
         help="Only evaluate test loss and accuracy on positions where this player is to move (1 or 2)",
     )
+    p.add_argument(
+        "--exclude-test-set",
+        action="store_true",
+        default=False,
+        help="Exclude test set IDs from training batches (default: allow overlap)",
+    )
     return p.parse_args()
 
 
@@ -318,11 +324,12 @@ def main():
     batch_size = az_params.batch_size
 
     for step in range(1, args.num_steps + 1):
-        # Oversample to account for test ID removal, player filtering, and states
-        # dropped by build_policy_from_children (missing children in DB).
+        # Oversample to account for player filtering and states dropped by
+        # build_policy_from_children (missing children in DB).
         oversample = 4 if test_player is None else 8
         batch_ids = random.sample(range(1, num_states + 1), min(batch_size * oversample, num_states))
-        batch_ids = [i for i in batch_ids if i not in test_id_set]
+        if args.exclude_test_set:
+            batch_ids = [i for i in batch_ids if i not in test_id_set]
         batch_samples = fetch_batch(conn, batch_ids, evaluator, board_size, max_walls, max_steps)
         if test_player is not None:
             batch_samples = [s for s in batch_samples if s["current_player"] == test_player]
