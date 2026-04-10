@@ -121,9 +121,9 @@ impl PolicyDb {
                 // child_opponent just won
                 any_found = true;
                 if child_opponent == 0 {
-                    -1
-                } else {
                     1
+                } else {
+                    -1
                 }
             } else if mechanics.repr().get_completed_steps(&child_data)
                 >= mechanics.repr().max_steps()
