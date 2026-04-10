@@ -13,6 +13,7 @@ Two metrics are logged during training:
 """
 
 import argparse
+import os
 import random
 import sqlite3
 import sys
@@ -21,6 +22,7 @@ from dataclasses import asdict
 import numpy as np
 import quoridor_rs
 import torch
+import wandb
 from agents.alphazero.alphazero import AlphaZeroParams
 from agents.alphazero.nn_evaluator import NNConfig, NNEvaluator
 from quoridor import ActionEncoder, Board, Player, Quoridor
@@ -253,6 +255,15 @@ def parse_args():
         default=False,
         help="Exclude test set IDs from training batches (default: allow overlap)",
     )
+    p.add_argument(
+        "-w",
+        "--wandb",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="Enable wandb logging. Optionally pass project name (default: policydb_evaluator)",
+    )
     return p.parse_args()
 
 
@@ -268,6 +279,28 @@ def main():
     az_params = parse_subargs(args.params, AlphaZeroParams)
     nn_config = NNConfig.from_alphazero_params(az_params)
     print(f"AlphaZero params: {az_params}")
+
+    # ------------------------------------------------------------------
+    # Wandb
+    # ------------------------------------------------------------------
+    use_wandb = args.wandb is not None
+    if use_wandb:
+        wandb_project = args.wandb if args.wandb else "policydb_evaluator"
+        wandb.init(
+            project=wandb_project,
+            config={
+                "db_path": os.path.basename(args.db_path),
+                "num_steps": args.num_steps,
+                "test_fraction": args.test_fraction,
+                "test_player": args.test_player,
+                "exclude_test_set": args.exclude_test_set,
+                "output": args.output,
+                **asdict(az_params),
+            },
+        )
+        wandb.define_metric("step", hidden=True)
+        wandb.define_metric("train/*", step_metric="step")
+        wandb.define_metric("test/*", step_metric="step")
 
     # ------------------------------------------------------------------
     # Open DB and read metadata
@@ -317,6 +350,17 @@ def main():
     feature_dim = test_samples[0]["input_array"].shape[0]
     print(f"Feature dim: {feature_dim}")
 
+    if use_wandb:
+        wandb.config.update({
+            "board_size": board_size,
+            "max_walls": max_walls,
+            "max_steps": max_steps,
+            "num_states": num_states,
+            "train_size": num_states - test_size,
+            "test_size": len(test_samples),
+            "feature_dim": feature_dim,
+        })
+
     # ------------------------------------------------------------------
     # Training loop
     # ------------------------------------------------------------------
@@ -334,12 +378,20 @@ def main():
         if test_player is not None:
             batch_samples = [s for s in batch_samples if s["current_player"] == test_player]
         batch_samples = batch_samples[:batch_size]
-        _, train_value_loss, train_total_loss = evaluator.train_iteration_v2(batch_samples)
+        train_policy_loss, train_value_loss, train_total_loss = evaluator.train_iteration_v2(batch_samples)
+
+        if use_wandb:
+            wandb.log({
+                "train/value_loss": train_value_loss,
+                "train/policy_loss": train_policy_loss,
+                "train/total_loss": train_total_loss,
+                "step": step,
+            })
 
         if step % args.log_interval == 0 or step == 1:
             evaluator.network.eval()
             with torch.no_grad():
-                _, test_value_loss, _ = evaluator.compute_losses(test_samples)
+                test_policy_loss, test_value_loss, test_total_loss = evaluator.compute_losses(test_samples)
             test_loss = test_value_loss.item()
             evaluator.network.train()
 
@@ -359,6 +411,15 @@ def main():
             )
             sys.stdout.flush()
 
+            if use_wandb:
+                wandb.log({
+                    "test/value_loss": test_loss,
+                    "test/policy_loss": test_policy_loss.item(),
+                    "test/total_loss": test_total_loss.item(),
+                    "test/accuracy": acc,
+                    "step": step,
+                })
+
             if test_loss < best_test_loss:
                 best_test_loss = test_loss
                 torch.save(
@@ -374,6 +435,10 @@ def main():
 
     conn.close()
     print(f"Training complete. Best test loss: {best_test_loss:.4f}. Model saved to {args.output}")
+
+    if use_wandb:
+        wandb.summary["best_test_loss"] = best_test_loss
+        wandb.finish()
 
 
 if __name__ == "__main__":
