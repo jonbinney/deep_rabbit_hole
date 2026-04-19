@@ -134,6 +134,23 @@ class BenchmarkScheduleConfig(StrictBaseModel):
     jobs: list[BenchmarkJobConfig]
 
 
+class AIReportConfig(StrictBaseModel):
+    """Configuration for periodic AI-generated training reports.
+
+    When this section is present in the yaml, train_v2 spawns a sibling process
+    that periodically invokes an AI tool (currently only Claude) to generate a
+    markdown report summarizing training progress. When absent, no reports are
+    generated.
+    """
+
+    every: str
+    """How often to generate a report. Parsed by JobTrigger.from_string
+    (e.g. '100 models', '30 minutes')."""
+
+    ai: str = "claude"
+    """Which AI backend to use. Currently only 'claude' is supported."""
+
+
 class UserConfig(StrictBaseModel):
     """A normal pydantic model that can be used as an inner class."""
 
@@ -144,6 +161,7 @@ class UserConfig(StrictBaseModel):
     self_play: SelfPlayConfig
     training: TrainingConfig
     benchmarks: list[BenchmarkScheduleConfig] = []
+    ai_report: Optional[AIReportConfig] = None
 
     @field_validator("run_id")
     @classmethod
@@ -164,6 +182,7 @@ class PathsConfig(StrictBaseModel):
     replay_buffers_ready: Path
     replay_buffers_tmp: Path
     config_file: Path
+    reports: Path
 
     @classmethod
     def create(cls, base_dir: str, run_id: str, create_dirs: bool = True) -> "PathsConfig":
@@ -176,6 +195,7 @@ class PathsConfig(StrictBaseModel):
         replay_buffers = run_dir / "replay_buffers"
         replay_buffers_ready = replay_buffers / "ready"
         replay_buffers_tmp = replay_buffers_ready / "tmp"
+        reports = run_dir / "reports"
 
         if create_dirs:
             for path in (
@@ -184,6 +204,7 @@ class PathsConfig(StrictBaseModel):
                 replay_buffers,
                 replay_buffers_ready,
                 replay_buffers_tmp,
+                reports,
             ):
                 path.mkdir(parents=True, exist_ok=True)
 
@@ -196,6 +217,7 @@ class PathsConfig(StrictBaseModel):
             replay_buffers_ready=replay_buffers_ready,
             replay_buffers_tmp=replay_buffers_tmp,
             config_file=config_file,
+            reports=reports,
         )
 
 
