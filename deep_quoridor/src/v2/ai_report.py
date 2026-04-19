@@ -77,6 +77,11 @@ class AIBackend(ABC):
 class ClaudeBackend(AIBackend):
     name = "claude"
 
+    def __init__(self, model: Optional[str] = None):
+        """``model``: optional Claude model identifier (e.g. 'sonnet', 'opus',
+        'haiku', or a full model ID). ``None`` uses the CLI's default."""
+        self.model = model
+
     def check_available(self) -> None:
         if shutil.which("claude") is None:
             raise RuntimeError(
@@ -95,9 +100,12 @@ class ClaudeBackend(AIBackend):
             "--print",
             "--permission-mode",
             "acceptEdits",
-            prompt,
         ]
-        print(f"[ai_report] invoking claude (cwd={cwd})")
+        if self.model:
+            cmd += ["--model", self.model]
+        cmd.append(prompt)
+        model_label = self.model or "default"
+        print(f"[ai_report] invoking claude (model={model_label}, cwd={cwd})")
         result = subprocess.run(
             cmd,
             cwd=str(cwd),
@@ -118,9 +126,9 @@ class ClaudeBackend(AIBackend):
         return self._run(prompt, cwd).stdout
 
 
-def backend_for(ai: str) -> AIBackend:
+def backend_for(ai: str, model: Optional[str] = None) -> AIBackend:
     if ai == "claude":
-        return ClaudeBackend()
+        return ClaudeBackend(model=model)
     raise ValueError(f"Unknown ai_report.ai={ai!r}. Supported: {', '.join(SUPPORTED_AIS)}")
 
 
@@ -371,6 +379,7 @@ def generate_on_demand_report(
     ai: str = "claude",
     entity: Optional[str] = None,
     guidance: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> str:
     """Generate an AI training report on demand and return it as text.
 
@@ -384,11 +393,13 @@ def generate_on_demand_report(
         entity: wandb entity (user/team), optional.
         guidance: Optional extra text appended to the prompt. Useful for asking
             the AI specific questions or steering the analysis.
+        model: Optional AI model identifier (e.g. 'sonnet', 'opus'). None uses
+            the backend's default.
 
     Returns:
         The AI's response text — a markdown report.
     """
-    backend = backend_for(ai)
+    backend = backend_for(ai, model=model)
     backend.check_available()
 
     # ai_report.py lives at <repo>/deep_quoridor/src/v2/ai_report.py
@@ -542,7 +553,7 @@ def run_ai_reporter(config: Config) -> None:
         return
 
     try:
-        backend = _backend_for(config.ai_report.ai)
+        backend = _backend_for(config.ai_report.ai, model=config.ai_report.model)
     except Exception as e:
         print(f"[ai_report] cannot start reporter: {e}")
         return

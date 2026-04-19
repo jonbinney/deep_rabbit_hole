@@ -150,6 +150,11 @@ class AIReportConfig(StrictBaseModel):
     ai: str = "claude"
     """Which AI backend to use. Currently only 'claude' is supported."""
 
+    model: Optional[str] = None
+    """Model identifier passed to the AI backend. For Claude, values like
+    'sonnet', 'opus', 'haiku', or a full model ID work. If None, the backend's
+    default model is used."""
+
 
 class UserConfig(StrictBaseModel):
     """A normal pydantic model that can be used as an inner class."""

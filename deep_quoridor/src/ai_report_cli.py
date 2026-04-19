@@ -49,6 +49,14 @@ def main() -> int:
         help="AI backend to use (default: claude).",
     )
     parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Model identifier passed to the AI backend. For Claude: 'sonnet', "
+            "'opus', 'haiku', or a full model ID. Defaults to the backend's default."
+        ),
+    )
+    parser.add_argument(
         "-g",
         "--guidance",
         default=None,
@@ -64,7 +72,8 @@ def main() -> int:
         f"from project '{args.project}'...",
         file=sys.stderr,
     )
-    print(f"Running {args.ai}...", file=sys.stderr)
+    model_label = args.model or "default"
+    print(f"Running {args.ai} (model={model_label})...", file=sys.stderr)
 
     try:
         text = generate_on_demand_report(
@@ -73,6 +82,7 @@ def main() -> int:
             ai=args.ai,
             entity=args.entity,
             guidance=args.guidance,
+            model=args.model,
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
