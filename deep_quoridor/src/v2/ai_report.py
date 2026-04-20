@@ -257,6 +257,35 @@ Do not write anything outside the markdown file. When you're done, just confirm
 with the path you wrote."""
 
 
+def _hyperparameter_and_code_sections(schema_reference_sentence: str) -> str:
+    """Sections 5 and 6 of a training report, shared by the periodic and on-demand
+    prompts. ``schema_reference_sentence`` fills in the one part that differs
+    between callers: where to find the authoritative list of tweakable fields.
+    The periodic prompt points at a precomputed context doc; the on-demand prompt
+    points directly at ``config.py``.
+    """
+    return f"""5. **Recommended hyperparameter adjustments for the next run.**
+
+   CRITICAL CONSTRAINT: every recommendation in this section MUST correspond to
+   a field that already exists in the project's config schema. {schema_reference_sentence}
+   Reference each suggestion by its dotted config path
+   (e.g. `training.learning_rate`, `alphazero.mcts_n`,
+   `alphazero.network.num_channels`, `self_play.alphazero.mcts_noise_epsilon`,
+   `training.batch_size`). If a value must be an existing enum / literal
+   (e.g. `alphazero.network.type` is `mlp` or `resnet`), respect that.
+   DO NOT suggest anything that requires code changes here (no new schedulers,
+   no new loss functions, no new network types — those go in section 6).
+   Each suggestion: config path, proposed value (or direction), one-line
+   rationale tied to a metric you observed.
+
+6. **(Optional) Suggested code changes / new features.** ONLY include this
+   section if there's something concrete worth implementing — e.g. "add cosine
+   learning-rate decay", "support a different optimizer", "expose a new MCTS
+   parameter". Each item: what to implement, why the metrics suggest it would
+   help, and (if relevant) which file would change. If nothing concrete comes
+   to mind, OMIT this section entirely — do not fill it with speculation."""
+
+
 def _build_report_prompt(
     config: Config,
     context_md: Path,
@@ -303,28 +332,12 @@ The report MUST contain these sections, in this order:
 4. **Is it worth continuing this run?** Especially if the likelihood is low,
    argue whether continuing will at least yield useful signal for tuning
    hyperparameters for the next run, or whether it's better to stop now.
-5. **Recommended hyperparameter adjustments for the next run.**
-
-   CRITICAL CONSTRAINT: every recommendation in this section MUST correspond to
-   a field that already exists in the project's config schema. The context doc
-   you read above enumerates the authoritative list. You can also cross-check
-   against the pydantic models at {_src_root() / "v2" / "config.py"}, or the
-   run's `config.yaml` at {config.paths.config_file}. Reference each suggestion
-   by its dotted config path (e.g. `training.learning_rate`,
-   `alphazero.mcts_n`, `alphazero.network.num_channels`,
-   `self_play.alphazero.mcts_noise_epsilon`, `training.batch_size`).
-   If a value must be an existing enum / literal (e.g. `alphazero.network.type`
-   is `mlp` or `resnet`), respect that.
-   DO NOT suggest anything that requires code changes here (no new schedulers,
-   no new loss functions, no new network types — those go in section 6).
-   Each suggestion gets one line of rationale tied to a metric you observed.
-
-6. **(Optional) Suggested code changes / new features.** ONLY include this
-   section if there's something concrete worth implementing — e.g. "add cosine
-   learning-rate decay", "support a different optimizer", "expose a new MCTS
-   parameter". Each item: what to implement, why the metrics suggest it would
-   help, and (if relevant) which file would change. If nothing concrete comes
-   to mind, OMIT this section entirely — do not fill it with speculation.
+{_hyperparameter_and_code_sections(
+    f"The context doc you read above enumerates the authoritative list. "
+    f"You can also cross-check against the pydantic models at "
+    f"{_src_root() / 'v2' / 'config.py'}, or the run's `config.yaml` at "
+    f"{config.paths.config_file}."
+)}
 
 Keep the report readable (headings, short paragraphs, bullets where helpful).
 Be honest about uncertainty. Do not write anything outside {report_path.name}."""
@@ -396,27 +409,10 @@ Produce a markdown report with these sections (adapted for ad-hoc use):
    one-paragraph justification.
 4. **Was/is it worth continuing this run?** Even if the answer is no, call out
    what signal (if any) it yields for tuning the next run.
-5. **Recommended hyperparameter adjustments for the next run.**
-
-   CRITICAL CONSTRAINT: every recommendation in this section MUST correspond to
-   a field that already exists in the project's config schema — read
-   {repo_root / "deep_quoridor/src/v2/config.py"} for the authoritative list of
-   tweakable fields. Reference each suggestion by its dotted config path
-   (e.g. `training.learning_rate`, `alphazero.mcts_n`,
-   `alphazero.network.num_channels`, `self_play.alphazero.mcts_noise_epsilon`,
-   `training.batch_size`). If a value must be an existing enum / literal
-   (e.g. `alphazero.network.type` is `mlp` or `resnet`), respect that.
-   DO NOT suggest anything that requires code changes here (no new schedulers,
-   no new loss functions — those go in section 6).
-   Each suggestion: config path, proposed value (or direction), one-line
-   rationale tied to a metric you observed.
-
-6. **(Optional) Suggested code changes / new features.** ONLY include this
-   section if there's something concrete worth implementing — e.g. "add cosine
-   learning-rate decay", "support a different optimizer", "expose a new MCTS
-   parameter". Each item: what to implement, why the metrics suggest it would
-   help, and (if relevant) which file would change. If nothing concrete comes
-   to mind, OMIT this section entirely — do not fill it with speculation.
+{_hyperparameter_and_code_sections(
+    f"Read {repo_root / 'deep_quoridor/src/v2/config.py'} for the "
+    f"authoritative list of tweakable fields."
+)}
 
 Be honest about uncertainty. Keep it readable."""
 
