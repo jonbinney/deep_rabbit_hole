@@ -241,8 +241,18 @@ The markdown file should cover:
 4. Any non-obvious project conventions you notice (e.g. the `every: N models`
    scheduling idiom, `raw_` prefix meaning, `dumb_score` scale 0-100 where
    lower is better).
+5. **Tweakable config fields.** Enumerate every hyperparameter that future
+   reports are allowed to recommend adjusting. Source of truth: the pydantic
+   models in config.py (QuoridorConfig, AlphaZeroBaseConfig, MLPConfig /
+   ResnetConfig, SelfPlayConfig, AlphaZeroSelfPlayConfig, TrainingConfig, and
+   the benchmark configs). For each field give: the dotted path
+   (e.g. `training.learning_rate`), the type / valid range, and a one-line
+   note on what it controls. Be exhaustive — this list is the authoritative
+   reference future reports use when recommending hyperparameter changes, and
+   they are explicitly forbidden from suggesting anything outside it.
 
-Keep it tight — aim for something a future report can skim in under a minute.
+Keep it tight — aim for something a future report can skim in under a minute
+(except section 5, which can be a longer reference table).
 Do not write anything outside the markdown file. When you're done, just confirm
 with the path you wrote."""
 
@@ -293,9 +303,28 @@ The report MUST contain these sections, in this order:
 4. **Is it worth continuing this run?** Especially if the likelihood is low,
    argue whether continuing will at least yield useful signal for tuning
    hyperparameters for the next run, or whether it's better to stop now.
-5. **Recommended hyperparameter adjustments for the next run.** Concrete
-   suggestions tied to specific config fields (learning_rate, mcts_n,
-   batch_size, network architecture, etc.), each with a one-line rationale.
+5. **Recommended hyperparameter adjustments for the next run.**
+
+   CRITICAL CONSTRAINT: every recommendation in this section MUST correspond to
+   a field that already exists in the project's config schema. The context doc
+   you read above enumerates the authoritative list. You can also cross-check
+   against the pydantic models at {_src_root() / "v2" / "config.py"}, or the
+   run's `config.yaml` at {config.paths.config_file}. Reference each suggestion
+   by its dotted config path (e.g. `training.learning_rate`,
+   `alphazero.mcts_n`, `alphazero.network.num_channels`,
+   `self_play.alphazero.mcts_noise_epsilon`, `training.batch_size`).
+   If a value must be an existing enum / literal (e.g. `alphazero.network.type`
+   is `mlp` or `resnet`), respect that.
+   DO NOT suggest anything that requires code changes here (no new schedulers,
+   no new loss functions, no new network types — those go in section 6).
+   Each suggestion gets one line of rationale tied to a metric you observed.
+
+6. **(Optional) Suggested code changes / new features.** ONLY include this
+   section if there's something concrete worth implementing — e.g. "add cosine
+   learning-rate decay", "support a different optimizer", "expose a new MCTS
+   parameter". Each item: what to implement, why the metrics suggest it would
+   help, and (if relevant) which file would change. If nothing concrete comes
+   to mind, OMIT this section entirely — do not fill it with speculation.
 
 Keep the report readable (headings, short paragraphs, bullets where helpful).
 Be honest about uncertainty. Do not write anything outside {report_path.name}."""
@@ -367,8 +396,27 @@ Produce a markdown report with these sections (adapted for ad-hoc use):
    one-paragraph justification.
 4. **Was/is it worth continuing this run?** Even if the answer is no, call out
    what signal (if any) it yields for tuning the next run.
-5. **Recommended hyperparameter adjustments for the next run.** Concrete
-   suggestions tied to specific config fields, each with a one-line rationale.
+5. **Recommended hyperparameter adjustments for the next run.**
+
+   CRITICAL CONSTRAINT: every recommendation in this section MUST correspond to
+   a field that already exists in the project's config schema — read
+   {repo_root / "deep_quoridor/src/v2/config.py"} for the authoritative list of
+   tweakable fields. Reference each suggestion by its dotted config path
+   (e.g. `training.learning_rate`, `alphazero.mcts_n`,
+   `alphazero.network.num_channels`, `self_play.alphazero.mcts_noise_epsilon`,
+   `training.batch_size`). If a value must be an existing enum / literal
+   (e.g. `alphazero.network.type` is `mlp` or `resnet`), respect that.
+   DO NOT suggest anything that requires code changes here (no new schedulers,
+   no new loss functions — those go in section 6).
+   Each suggestion: config path, proposed value (or direction), one-line
+   rationale tied to a metric you observed.
+
+6. **(Optional) Suggested code changes / new features.** ONLY include this
+   section if there's something concrete worth implementing — e.g. "add cosine
+   learning-rate decay", "support a different optimizer", "expose a new MCTS
+   parameter". Each item: what to implement, why the metrics suggest it would
+   help, and (if relevant) which file would change. If nothing concrete comes
+   to mind, OMIT this section entirely — do not fill it with speculation.
 
 Be honest about uncertainty. Keep it readable."""
 
