@@ -184,6 +184,24 @@ class NNEvaluator:
         self.batch_size = batch_size
         self.batches_per_iteration = batches_per_iteration
         self.optimizer = torch.optim.AdamW(self.network.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        self.scheduler = None
+
+    def setup_lr_scheduler(self, scheduler_config) -> None:
+        assert self.optimizer is not None, "Call train_prepare before setup_lr_scheduler"
+        if scheduler_config is None:
+            return
+        if scheduler_config.type == "cosine_warm_restarts":
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                self.optimizer,
+                T_0=scheduler_config.t_0,
+                T_mult=scheduler_config.t_mult,
+                eta_min=scheduler_config.eta_min,
+            )
+        else:
+            raise ValueError(f"Unknown lr_scheduler type: {scheduler_config.type}")
+
+    def get_learning_rate(self) -> float:
+        return self.optimizer.param_groups[0]["lr"]
 
     def split_data(self, replay_buffer, validation_ratio: float, test_set_lsbs: set[int]) -> tuple[list, list, list]:
         """
@@ -292,6 +310,8 @@ class NNEvaluator:
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
 
         return policy_loss.item(), value_loss.item(), total_loss.item()
 

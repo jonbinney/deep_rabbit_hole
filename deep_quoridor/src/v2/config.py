@@ -84,6 +84,16 @@ class InitialModel(StrictBaseModel):
         return v
 
 
+class CosineWarmRestartsSchedulerConfig(StrictBaseModel):
+    type: Literal["cosine_warm_restarts"] = "cosine_warm_restarts"
+    t_0: int = 200
+    t_mult: int = 2
+    eta_min: float = 1e-5
+
+
+LRSchedulerConfig = CosineWarmRestartsSchedulerConfig
+
+
 class TrainingConfig(StrictBaseModel):
     games_per_training_step: float
     learning_rate: float
@@ -95,6 +105,7 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
+    lr_scheduler: Optional[LRSchedulerConfig] = None
 
 
 class TournamentBenchmarkConfig(StrictBaseModel):

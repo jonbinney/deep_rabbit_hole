@@ -127,6 +127,8 @@ def alphazero_params_dict_from_config(
     params_dict = {
         "mcts_n": config.alphazero.mcts_n,
         "mcts_ucb_c": config.alphazero.mcts_c_puct,
+        "learning_rate": config.training.learning_rate,
+        "weight_decay": config.training.weight_decay,
     }
 
     if config.training.initial_model:
