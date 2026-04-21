@@ -192,3 +192,6 @@ replay_buffers
 # Rust
 target
 Cargo.lock
+
+# Mac crap
+.DS_Store

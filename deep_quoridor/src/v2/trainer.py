@@ -73,6 +73,7 @@ def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdow
 def train(config: Config):
     batch_size = config.training.batch_size
     alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
+    alphazero_agent.evaluator.setup_lr_scheduler(config.training.lr_scheduler)
 
     upload_model_thread = None
     shutdown_event = None
@@ -200,6 +201,7 @@ def train(config: Config):
                 "policy_loss": policy_loss,
                 "value_loss": value_loss,
                 "total_loss": total_loss,
+                "learning_rate": alphazero_agent.evaluator.get_learning_rate(),
                 "games_played": last_game,
                 "replay_buffer_games": buffer_size,
                 "replay_buffer_moves": total_moves,
