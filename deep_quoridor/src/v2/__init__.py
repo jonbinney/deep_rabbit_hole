@@ -10,8 +10,12 @@ __all__ = [
     "GameInfo",
     "ShutdownSignal",
     "upload_model",
+    "check_ai_available",
+    "run_ai_reporter",
+    "generate_on_demand_report",
 ]
 
+from v2.ai_report import check_ai_available, generate_on_demand_report, run_ai_reporter
 from v2.benchmarks import create_benchmark_processes
 from v2.common import JobTrigger, MockWandb, ShutdownSignal, create_alphazero, upload_model
 from v2.config import load_config_and_setup_run
