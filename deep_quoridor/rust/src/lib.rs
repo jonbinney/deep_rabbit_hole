@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 use numpy::{
-    PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
+    PyArray1, PyArray2, PyArray3, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     PyReadwriteArray2,
 };
 #[cfg(feature = "python")]
@@ -610,6 +610,176 @@ impl PyPolicyDb {
         self.db
             .lookup_action_values(state)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))
+    }
+
+    /// Fetch a training batch in one Rust call.
+    ///
+    /// For each rowid:
+    ///   1. Read `(state, db_value)` from the DB (db_value is P0-perspective).
+    ///   2. Look up child action values to build an `mcts_policy` (uniform
+    ///      over actions whose value equals the maximum, in the unrotated
+    ///      action layout).
+    ///   3. Build the action mask in the unrotated layout via game mechanics.
+    ///   4. If the current player is P1, rotate the state and build
+    ///      features from the rotated state; permute `mcts_policy` and
+    ///      `action_mask` via the rotation index permutation.
+    ///   5. Flip `db_value` to the acting player's perspective.
+    ///
+    /// Returns `(input_arrays, values, action_masks, mcts_policies, current_players)`.
+    /// `input_arrays` shape depends on `nn_type`: `(N, D)` for `"mlp"`,
+    /// `(N, 5, M, M)` for `"resnet"` where `M = 2*board_size+3`.
+    #[pyo3(signature = (rowids, nn_type))]
+    fn fetch_training_batch<'py>(
+        &self,
+        py: Python<'py>,
+        rowids: Vec<i64>,
+        nn_type: &str,
+    ) -> PyResult<(
+        Bound<'py, PyArrayDyn<f32>>,
+        Bound<'py, PyArray1<i32>>,
+        Bound<'py, PyArray2<f32>>,
+        Bound<'py, PyArray2<f32>>,
+        Bound<'py, PyArray1<i32>>,
+    )> {
+        use compact::q_features::{
+            build_action_mask, build_mlp_features, build_resnet_features,
+            build_rotation_permutation, child_action_index, mlp_features_len, num_actions,
+            permute_into, resnet_features_len, resnet_grid_size, rotate_state, NnType,
+        };
+
+        let nn = NnType::from_str(nn_type)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+        let mechanics = self.db.mechanics();
+        let bs = mechanics.repr().board_size();
+        let n_actions = num_actions(bs);
+        let feature_len = match nn {
+            NnType::Mlp => mlp_features_len(bs),
+            NnType::Resnet => resnet_features_len(bs),
+        };
+
+        let rows = self
+            .db
+            .fetch_states_by_rowid(&rowids)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+        let n = rows.len();
+
+        let perm = build_rotation_permutation(bs);
+
+        // Flat output buffers — single allocation per output array.
+        let mut features_buf = vec![0.0f32; n * feature_len];
+        let mut values_buf = vec![0i32; n];
+        let mut masks_buf = vec![0.0f32; n * n_actions];
+        let mut policies_buf = vec![0.0f32; n * n_actions];
+        let mut cps_buf = vec![0i32; n];
+
+        // Scratch buffers for the per-state policy and mask in the
+        // unrotated frame, before any rotation permutation.
+        let mut policy_scratch = vec![0.0f32; n_actions];
+        let mut mask_scratch = vec![0.0f32; n_actions];
+
+        for (i, (state, db_value)) in rows.into_iter().enumerate() {
+            let cp = mechanics.repr().get_current_player(state);
+
+            // ---- mcts_policy (unrotated frame) ----
+            let lookup = self
+                .db
+                .lookup_action_values(state)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "lookup_action_values returned None for rowid index {i}"
+                    ))
+                })?;
+            let (actions, action_values) = lookup;
+            for v in policy_scratch.iter_mut() {
+                *v = 0.0;
+            }
+            let best_value = *action_values.iter().max().unwrap();
+            let mut count = 0usize;
+            for (&(r, c, t), &v) in actions.iter().zip(action_values.iter()) {
+                if v == best_value {
+                    let idx = child_action_index(r as usize, c as usize, t as usize, bs);
+                    policy_scratch[idx] = 1.0;
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                let inv = 1.0 / count as f32;
+                for v in policy_scratch.iter_mut() {
+                    if *v > 0.0 {
+                        *v = inv;
+                    }
+                }
+            }
+
+            // ---- action_mask (unrotated frame) ----
+            build_action_mask(state, mechanics, &mut mask_scratch);
+
+            // ---- features (rotated frame iff cp==1) ----
+            let working_state = if cp == 1 {
+                rotate_state(state, mechanics)
+            } else {
+                state
+            };
+            let f_off = i * feature_len;
+            let f_slice = &mut features_buf[f_off..f_off + feature_len];
+            match nn {
+                NnType::Mlp => build_mlp_features(working_state, mechanics, f_slice),
+                NnType::Resnet => build_resnet_features(working_state, mechanics, f_slice),
+            };
+
+            // ---- write policy + mask, permuting if rotated ----
+            let p_off = i * n_actions;
+            let m_off = i * n_actions;
+            if cp == 1 {
+                permute_into(
+                    &policy_scratch,
+                    &perm,
+                    &mut policies_buf[p_off..p_off + n_actions],
+                );
+                permute_into(
+                    &mask_scratch,
+                    &perm,
+                    &mut masks_buf[m_off..m_off + n_actions],
+                );
+            } else {
+                policies_buf[p_off..p_off + n_actions].copy_from_slice(&policy_scratch);
+                masks_buf[m_off..m_off + n_actions].copy_from_slice(&mask_scratch);
+            }
+
+            // ---- value (acting player's perspective) and current_player ----
+            values_buf[i] = if cp == 0 { db_value } else { -db_value };
+            cps_buf[i] = cp as i32;
+        }
+
+        // Wrap flat buffers as numpy arrays of the right shape.
+        let features_arr = match nn {
+            NnType::Mlp => ndarray::Array::from_shape_vec(
+                ndarray::IxDyn(&[n, feature_len]),
+                features_buf,
+            )
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?,
+            NnType::Resnet => {
+                let m = resnet_grid_size(bs);
+                ndarray::Array::from_shape_vec(ndarray::IxDyn(&[n, 5, m, m]), features_buf)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
+            }
+        };
+        let masks_arr = ndarray::Array2::from_shape_vec((n, n_actions), masks_buf)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+        let policies_arr = ndarray::Array2::from_shape_vec((n, n_actions), policies_buf)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+        let values_arr = ndarray::Array1::from(values_buf);
+        let cps_arr = ndarray::Array1::from(cps_buf);
+
+        Ok((
+            PyArrayDyn::from_owned_array_bound(py, features_arr),
+            PyArray1::from_owned_array_bound(py, values_arr),
+            PyArray2::from_owned_array_bound(py, masks_arr),
+            PyArray2::from_owned_array_bound(py, policies_arr),
+            PyArray1::from_owned_array_bound(py, cps_arr),
+        ))
     }
 }
 

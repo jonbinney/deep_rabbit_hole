@@ -315,6 +315,56 @@ class NNEvaluator:
 
         return policy_loss.item(), value_loss.item(), total_loss.item()
 
+    def compute_losses_batched(self, input_arrays, values, action_masks, mcts_policies):
+        """Compute (policy_loss, value_loss, total_loss) on already-stacked
+        NumPy arrays — typically the output of `PyPolicyDb.fetch_training_batch`.
+
+        Skips the per-sample dict construction and tensor stacking that
+        `compute_losses` does. Returns (None, None, None) for empty input.
+        """
+        if input_arrays.shape[0] == 0:
+            return None, None, None
+
+        inputs = torch.from_numpy(input_arrays).to(self.device)
+        target_values = torch.from_numpy(values).float().unsqueeze(-1).to(self.device)
+        target_policies = torch.from_numpy(mcts_policies).to(self.device)
+        masks = torch.from_numpy(action_masks).to(self.device)
+
+        assert not (inputs.isnan().any() or target_policies.isnan().any() or target_values.isnan().any()), (
+            "NaN in training data"
+        )
+
+        pred_logits, pred_values = self.network(inputs)
+        if self.config.mask_training_predictions:
+            pred_logits = pred_logits * masks + INVALID_ACTION_VALUE * (1 - masks)
+
+        policy_loss = F.cross_entropy(pred_logits, target_policies, reduction="mean")
+        value_loss = F.mse_loss(pred_values.squeeze(), target_values.squeeze(), reduction="mean")
+        total_loss = policy_loss + value_loss
+        return policy_loss, value_loss, total_loss
+
+    def train_iteration_batched(self, input_arrays, values, action_masks, mcts_policies):
+        """Train one step on already-stacked tensors. Sibling of
+        `train_iteration_v2`; same semantics but no per-sample dict path."""
+        assert self.optimizer is not None, "Call train_prepare before training"
+
+        if not self.network.training:
+            self.network.train()
+        self.cache = LRUCache(max_size=self.max_cache_size)
+
+        policy_loss, value_loss, total_loss = self.compute_losses_batched(
+            input_arrays, values, action_masks, mcts_policies
+        )
+        assert policy_loss is not None, "Expected policy_loss"
+
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        self.optimizer.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
+
+        return policy_loss.item(), value_loss.item(), total_loss.item()
+
     def train_iteration(
         self,
         replay_buffer,

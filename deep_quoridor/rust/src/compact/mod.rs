@@ -2,5 +2,6 @@
 pub mod policy_db;
 pub mod q_bit_repr;
 mod q_bit_repr_conversions;
+pub mod q_features;
 pub mod q_game_mechanics;
 pub mod q_minimax;

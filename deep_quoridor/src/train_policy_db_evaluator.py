@@ -106,61 +106,40 @@ def build_policy_from_action_values(db, state, board_size, num_actions):
 
 
 @timer("fetch_batch")
-def fetch_batch(db, ids, evaluator: NNEvaluator, board_size, max_walls, max_steps):
-    """Fetch rows by rowid from the policy table and compute features on the fly.
+def fetch_batch(db, ids, nn_type):
+    """Fetch a training batch from the policy DB in one Rust call.
 
-    Returns a list of sample dicts compatible with NNEvaluator.compute_losses.
-    Each dict has keys: input_array, value, action_mask, mcts_policy, current_player.
-
-    mcts_policy is derived from lookup_action_values: uniform over actions
-    with the best value, zero for all others.
+    Returns a dict of pre-stacked NumPy arrays (one row per requested rowid):
+      input_arrays:    shape depends on nn_type (MLP: (N, D); ResNet: (N, 5, M, M))
+      values:          (N,) int32, acting-player perspective
+      action_masks:    (N, num_actions) float32
+      mcts_policies:   (N, num_actions) float32, uniform over best-valued actions
+      current_players: (N,) int32, 0 or 1 in unrotated frame
     """
-    rows = db.fetch_states_by_rowid(ids)
-    num_actions = evaluator.action_encoder.num_actions
-    samples = []
-    for state, value in rows:
-        game = compact_state_to_game(state, board_size, max_walls, max_steps)
-        current_player = int(game.current_player)
-        if current_player == 1:
-            # DB Values are always from P1 perspective
-            value = -value
+    inputs, values, masks, policies, cps = db.fetch_training_batch(ids, nn_type)
+    return {
+        "input_arrays": inputs,
+        "values": values,
+        "action_masks": masks,
+        "mcts_policies": policies,
+        "current_players": cps,
+    }
 
-        mcts_policy = build_policy_from_action_values(
-            db,
-            state,
-            board_size,
-            num_actions,
-        )
-        db_policy_original = mcts_policy.copy()
 
-        Timer.start("game_rotation_and_features")
-        # Do the rotation, in the same way AlphaZeroAgent.store_training_data() does
-        game, is_rotated = evaluator.rotate_if_needed_to_point_downwards(game)
-        input_array = evaluator.game_to_input_array(game)
-        action_mask = game.get_action_mask()
-        if is_rotated:
-            mcts_policy = evaluator.rotate_policy_from_original(mcts_policy)
-        Timer.finish("game_rotation_and_features")
+def _filter_by_player(batch, test_player):
+    """Keep only rows where current_player matches test_player. No-op if test_player is None."""
+    if test_player is None:
+        return batch
+    keep = batch["current_players"] == test_player
+    return {k: v[keep] for k, v in batch.items()}
 
-        if DEBUG:
-            print("")
-            print(game)
-            print(f"Value: {value}")
-            print(f"Optimal actions: {policy_to_str(mcts_policy, evaluator.action_encoder)}")
-            print(f"Valid actions: {policy_to_str(action_mask, evaluator.action_encoder)}")
 
-        samples.append(
-            {
-                "input_array": input_array,
-                "value": value,
-                "action_mask": action_mask,
-                "mcts_policy": mcts_policy,
-                "current_player": current_player,
-                "state": state,
-                "db_policy_original": db_policy_original,
-            }
-        )
-    return samples
+def _slice_batch(batch, start, stop):
+    return {k: v[start:stop] for k, v in batch.items()}
+
+
+def _concat_batches(a, b):
+    return {k: np.concatenate([a[k], b[k]]) for k in a}
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +149,7 @@ def fetch_batch(db, ids, evaluator: NNEvaluator, board_size, max_walls, max_step
 
 @timer("compute_test_metrics_batched")
 def compute_test_metrics_batched(
-    test_ids, db, evaluator: NNEvaluator, board_size, max_walls, max_steps, batch_size, test_player=None
+    test_ids, db, evaluator: NNEvaluator, batch_size, *, nn_type, test_player=None
 ):
     """Iterate `test_ids` in chunks, emitting batches of exactly `batch_size`
     samples (post player filter). Only the final batch may be smaller.
@@ -181,51 +160,63 @@ def compute_test_metrics_batched(
 
     Returns (policy_loss, value_loss, total_loss, accuracy) as floats.
     """
+    from agents.alphazero.nn_evaluator import INVALID_ACTION_VALUE
+
     total_pol = total_val = total_tot = 0.0
     correct = total = 0
 
     n_test_ids = len(test_ids)
     ids_idx = 0
-    buffer = []
+    buffer = None  # dict of np arrays, or None when empty
+
+    def buffer_size(buf):
+        return 0 if buf is None else buf["values"].shape[0]
 
     evaluator.network.eval()
     with torch.no_grad():
-        while ids_idx < n_test_ids or buffer:
-            # Top up the buffer until it has at least one full batch worth
-            # of samples (or test_ids is exhausted).
-            while len(buffer) < batch_size and ids_idx < n_test_ids:
+        while ids_idx < n_test_ids or buffer_size(buffer) > 0:
+            while buffer_size(buffer) < batch_size and ids_idx < n_test_ids:
                 end = min(ids_idx + batch_size, n_test_ids)
                 next_ids = test_ids[ids_idx:end]
                 ids_idx = end
-                new_samples = fetch_batch(db, next_ids, evaluator, board_size, max_walls, max_steps)
-                if test_player is not None:
-                    new_samples = [s for s in new_samples if s["current_player"] == test_player]
-                buffer.extend(new_samples)
+                new_batch = fetch_batch(db, next_ids, nn_type)
+                new_batch = _filter_by_player(new_batch, test_player)
+                buffer = new_batch if buffer is None else _concat_batches(buffer, new_batch)
 
-            # Emit a batch from the front of the buffer.
-            batch = buffer[:batch_size]
-            buffer = buffer[batch_size:]
-            n = len(batch)
+            n = min(batch_size, buffer_size(buffer))
             if n == 0:
                 break
+            front = _slice_batch(buffer, 0, n)
+            buffer = _slice_batch(buffer, n, buffer_size(buffer))
 
-            pol, val, tot = evaluator.compute_losses(batch)
+            print(f"Evaluating test batch {total + 1}-{total + n} of ~{n_test_ids}")
+            pol, val, tot = evaluator.compute_losses_batched(
+                front["input_arrays"],
+                front["values"],
+                front["action_masks"],
+                front["mcts_policies"],
+            )
             total_pol += pol.item() * n
             total_val += val.item() * n
             total_tot += tot.item() * n
 
-            # Run model inference for the whole batch at once so accuracy
-            # picks the same code path the deployed agent uses.
-            games = [compact_state_to_game(s["state"], board_size, max_walls, max_steps) for s in batch]
-            _, model_policies = evaluator.evaluate_batch(games)
-            for s, model_policy in zip(batch, model_policies):
-                db_policy = s["db_policy_original"]
-                best_db_prob = max(db_policy)
-                model_pick = int(np.argmax(model_policy))
-                if db_policy[model_pick] == best_db_prob:
+            # Accuracy: forward pass on the same inputs, mask logits, argmax,
+            # compare against the (uniform-over-best) mcts_policy. A pick
+            # whose mcts_policy entry equals the maximum is "correct".
+            inputs = torch.from_numpy(front["input_arrays"]).to(evaluator.device)
+            pred_logits, _ = evaluator.network(inputs)
+            masks_t = torch.from_numpy(front["action_masks"]).to(evaluator.device)
+            if evaluator.config.mask_training_predictions:
+                pred_logits = pred_logits * masks_t + INVALID_ACTION_VALUE * (1 - masks_t)
+            picks = pred_logits.argmax(dim=1).cpu().numpy()
+            policies = front["mcts_policies"]
+            best_probs = policies.max(axis=1)
+            for i, pick in enumerate(picks):
+                if policies[i, pick] == best_probs[i]:
                     correct += 1
                 total += 1
 
+            Timer.log_totals()
     evaluator.network.train()
 
     assert total > 0, "No test samples found (check test_player filter?)"
@@ -403,9 +394,10 @@ def main():
     # ------------------------------------------------------------------
     # Probe one sample for feature_dim
     # ------------------------------------------------------------------
-    probe = fetch_batch(db, [test_ids[0]], evaluator, board_size, max_walls, max_steps)
-    feature_dim = probe[0]["input_array"].shape[0]
-    print(f"Feature dim: {feature_dim}")
+    nn_type = nn_config.type
+    probe = fetch_batch(db, [test_ids[0]], nn_type)
+    feature_dim = probe["input_arrays"].shape[1:]
+    print(f"NN type: {nn_type}, feature shape per sample: {feature_dim}")
 
     if use_wandb:
         wandb.config.update(
@@ -416,7 +408,7 @@ def main():
                 "num_states": num_states,
                 "train_size": num_states - test_size,
                 "test_size": len(test_ids),
-                "feature_dim": feature_dim,
+                "feature_shape": list(feature_dim),
             }
         )
 
@@ -452,13 +444,17 @@ def main():
         # build_policy_from_children (missing children in DB).
         oversample = 4 if test_player is None else 8
         batch_ids = random.sample(range(1, num_states + 1), min(batch_size * oversample, num_states))
-        if args.exclude_test_set and test_id_set is not None:
+        if args.exclude_test_set:
             batch_ids = [i for i in batch_ids if i not in test_id_set]
-        batch_samples = fetch_batch(db, batch_ids, evaluator, board_size, max_walls, max_steps)
-        if test_player is not None:
-            batch_samples = [s for s in batch_samples if s["current_player"] == test_player]
-        batch_samples = batch_samples[:batch_size]
-        train_policy_loss, train_value_loss, train_total_loss = evaluator.train_iteration_v2(batch_samples)
+        batch = fetch_batch(db, batch_ids, nn_type)
+        batch = _filter_by_player(batch, test_player)
+        batch = _slice_batch(batch, 0, batch_size)
+        train_policy_loss, train_value_loss, train_total_loss = evaluator.train_iteration_batched(
+            batch["input_arrays"],
+            batch["values"],
+            batch["action_masks"],
+            batch["mcts_policies"],
+        )
 
         if use_wandb:
             wandb.log(
@@ -475,10 +471,8 @@ def main():
                 test_ids,
                 db,
                 evaluator,
-                board_size,
-                max_walls,
-                max_steps,
                 args.test_batch_size,
+                nn_type=nn_type,
                 test_player=test_player,
             )
 
