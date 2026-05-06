@@ -148,9 +148,7 @@ def _concat_batches(a, b):
 
 
 @timer("compute_test_metrics_batched")
-def compute_test_metrics_batched(
-    test_ids, db, evaluator: NNEvaluator, batch_size, *, nn_type, test_player=None
-):
+def compute_test_metrics_batched(test_ids, db, evaluator: NNEvaluator, batch_size, *, nn_type, test_player=None):
     """Iterate `test_ids` in chunks, emitting batches of exactly `batch_size`
     samples (post player filter). Only the final batch may be smaller.
 
@@ -189,7 +187,6 @@ def compute_test_metrics_batched(
             front = _slice_batch(buffer, 0, n)
             buffer = _slice_batch(buffer, n, buffer_size(buffer))
 
-            print(f"Evaluating test batch {total + 1}-{total + n} of ~{n_test_ids}")
             pol, val, tot = evaluator.compute_losses_batched(
                 front["input_arrays"],
                 front["values"],
@@ -216,7 +213,6 @@ def compute_test_metrics_batched(
                     correct += 1
                 total += 1
 
-            Timer.log_totals()
     evaluator.network.train()
 
     assert total > 0, "No test samples found (check test_player filter?)"
@@ -236,17 +232,14 @@ def resolve_db_path(db_path: str) -> str:
     """
     if not db_path.startswith("wandb:"):
         return db_path
-    artifact_ref = db_path[len("wandb:"):]
+    artifact_ref = db_path[len("wandb:") :]
     print(f"Fetching wandb artifact: {artifact_ref}")
     api = wandb.Api()
     artifact = api.artifact(artifact_ref, type="policy_db")
     download_dir = artifact.download()
     parquet_files = list(Path(download_dir).glob("*.parquet"))
     if len(parquet_files) != 1:
-        raise RuntimeError(
-            f"Expected exactly one .parquet in artifact {artifact_ref}, "
-            f"found {parquet_files}"
-        )
+        raise RuntimeError(f"Expected exactly one .parquet in artifact {artifact_ref}, found {parquet_files}")
     print(f"Using downloaded DB: {parquet_files[0]}")
     return str(parquet_files[0])
 
@@ -263,8 +256,7 @@ def parse_args():
     p.add_argument(
         "db_path",
         help=(
-            "Path to a .parquet policy DB, or "
-            "'wandb:<entity>/<project>/<name>:<alias>' to fetch from a wandb artifact"
+            "Path to a .parquet policy DB, or 'wandb:<entity>/<project>/<name>:<alias>' to fetch from a wandb artifact"
         ),
     )
     p.add_argument(
@@ -283,6 +275,12 @@ def parse_args():
     )
     p.add_argument("--num-steps", type=int, default=10000)
     p.add_argument("--log-interval", type=int, default=200)
+    p.add_argument(
+        "--lr-halve-interval",
+        type=int,
+        default=None,
+        help="If set, halve the learning rate every N steps. Default: never halve.",
+    )
     p.add_argument("--output", default="evaluator.pt")
     p.add_argument("--device", default=None, help="cpu or cuda (default: auto)")
     p.add_argument(
@@ -347,6 +345,7 @@ def main():
                 "test_batch_size": args.test_batch_size,
                 "test_player": args.test_player,
                 "exclude_test_set": args.exclude_test_set,
+                "lr_halve_interval": args.lr_halve_interval,
                 "output": args.output,
                 **asdict(az_params),
             },
@@ -428,7 +427,7 @@ def main():
         )
 
     for step in range(1, args.num_steps + 1):
-        if step % 100000 == 0:
+        if args.lr_halve_interval is not None and step % args.lr_halve_interval == 0:
             learning_rate = learning_rate / 2.0
             print(f"Lowering learning rate to {learning_rate}")
             evaluator.train_prepare(learning_rate, az_params.batch_size, args.num_steps, az_params.weight_decay)
