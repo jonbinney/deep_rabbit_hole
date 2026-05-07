@@ -497,14 +497,14 @@ fn generate_rust_mcts_trace(
 
         let mask = state.get_action_mask();
         writeln!(&mut trace, "M,{step},{}", mask_to_string(&mask)).unwrap();
-        let tensor = grid_game_state_to_resnet_input(&state);
+        let tensor = grid_game_state_to_resnet_input(&state, max_steps);
         writeln!(&mut trace, "T,{step},{}", tensor_to_hex(&tensor)).unwrap();
 
         if state.current_player == 1 {
             let rotated = build_rotated_state(&state);
             let rmask = rotated.get_action_mask();
             writeln!(&mut trace, "RM,{step},{}", mask_to_string(&rmask)).unwrap();
-            let rtensor = grid_game_state_to_resnet_input(&rotated);
+            let rtensor = grid_game_state_to_resnet_input(&rotated, max_steps);
             writeln!(&mut trace, "RT,{step},{}", tensor_to_hex(&rtensor)).unwrap();
         }
 
@@ -550,6 +550,7 @@ fn generate_rust_mcts_trace(
 #[cfg(feature = "binary")]
 struct RealModelTraceObserver {
     trace: String,
+    max_steps: i32,
 }
 
 #[cfg(feature = "binary")]
@@ -561,7 +562,7 @@ impl RealModelTraceObserver {
             "CFG,{board_size},{max_walls},{max_steps},{mcts_n}"
         )
         .unwrap();
-        Self { trace }
+        Self { trace, max_steps }
     }
 
     fn finish(self) -> String {
@@ -587,7 +588,7 @@ impl PlayGameObserver for RealModelTraceObserver {
         writeln!(&mut self.trace, "W,{step},{},{}", wr[0], wr[1]).unwrap();
         writeln!(&mut self.trace, "C,{step},{}", state.current_player).unwrap();
         writeln!(&mut self.trace, "M,{step},{}", mask_to_string(action_mask)).unwrap();
-        let tensor = grid_game_state_to_resnet_input(state);
+        let tensor = grid_game_state_to_resnet_input(state, self.max_steps);
         writeln!(&mut self.trace, "T,{step},{}", tensor_to_hex(&tensor)).unwrap();
 
         if state.current_player == 1 {
@@ -599,7 +600,7 @@ impl PlayGameObserver for RealModelTraceObserver {
                 mask_to_string(&rotated_mask)
             )
             .unwrap();
-            let rotated_tensor = grid_game_state_to_resnet_input(&rotated);
+            let rotated_tensor = grid_game_state_to_resnet_input(&rotated, self.max_steps);
             writeln!(
                 &mut self.trace,
                 "RT,{step},{}",
@@ -658,6 +659,7 @@ fn generate_rust_real_model_trace_and_write_npz(
             .to_str()
             .expect("onnx model path should be valid utf-8"),
         agent_config.clone(),
+        max_steps,
     )
     .expect("failed to construct p1 alphazero agent for real-model parity");
     let mut agent_p2 = AlphaZeroAgent::new(
@@ -665,6 +667,7 @@ fn generate_rust_real_model_trace_and_write_npz(
             .to_str()
             .expect("onnx model path should be valid utf-8"),
         agent_config,
+        max_steps,
     )
     .expect("failed to construct p2 alphazero agent for real-model parity");
     let mut observer = RealModelTraceObserver::new(board_size, max_walls, max_steps, mcts_n);
@@ -1025,7 +1028,13 @@ fn assert_npz_games_match(
 }
 
 /// Compare one snapshot field, returning a descriptive error message on mismatch.
-fn assert_snapshot_matches(seq_name: &str, step: usize, py: &StepSnapshot, state: &GameState) {
+fn assert_snapshot_matches(
+    seq_name: &str,
+    step: usize,
+    py: &StepSnapshot,
+    state: &GameState,
+    max_steps: i32,
+) {
     // 1. Grid
     let rust_grid_hex = grid_to_hex(&state.grid());
     assert_eq!(
@@ -1063,7 +1072,7 @@ fn assert_snapshot_matches(seq_name: &str, step: usize, py: &StepSnapshot, state
     );
 
     // 6. Tensor
-    let rust_tensor = grid_game_state_to_resnet_input(state);
+    let rust_tensor = grid_game_state_to_resnet_input(state, max_steps);
     let rust_tensor_hex = tensor_to_hex(&rust_tensor);
     assert_eq!(
         rust_tensor_hex, py.tensor_hex,
@@ -1083,7 +1092,7 @@ fn assert_snapshot_matches(seq_name: &str, step: usize, py: &StepSnapshot, state
         }
 
         if let Some(ref py_rtensor_hex) = py.rotated_tensor_hex {
-            let rust_rtensor = grid_game_state_to_resnet_input(&rotated);
+            let rust_rtensor = grid_game_state_to_resnet_input(&rotated, max_steps);
             let rust_rtensor_hex = tensor_to_hex(&rust_rtensor);
             assert_eq!(
                 rust_rtensor_hex, *py_rtensor_hex,
@@ -1126,7 +1135,10 @@ fn test_step_trace_matches_python() {
 
         for (i, snap) in snapshots.iter().enumerate() {
             assert_eq!(snap.step, i, "[{name}] snapshot step number mismatch");
-            assert_snapshot_matches(name, i, snap, &state);
+            // step_trace_reference.py builds the ResnetNetwork without a
+            // max_steps, so its 6th channel is filled with 0; pass -1 here
+            // to make the Rust path match.
+            assert_snapshot_matches(name, i, snap, &state, -1);
 
             // Apply action to advance to next state (except after the last snapshot)
             if i < actions.len() {

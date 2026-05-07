@@ -189,7 +189,7 @@ pub fn play_game(
         }
 
         // Build ResNet input from the working state
-        let resnet_input = grid_game_state_to_resnet_input(&work_state);
+        let resnet_input = grid_game_state_to_resnet_input(&work_state, max_steps);
 
         // Ask the appropriate agent for action
         let agent: &mut dyn ActionSelector = if current_player == 0 {
@@ -209,7 +209,7 @@ pub fn play_game(
         // Match Python storage semantics: replay is stored in current-player-downward frame.
         let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
             let rotated_state = build_rotated_state(&state);
-            let rotated_input = grid_game_state_to_resnet_input(&rotated_state)
+            let rotated_input = grid_game_state_to_resnet_input(&rotated_state, max_steps)
                 .index_axis(ndarray::Axis(0), 0)
                 .to_owned();
             let rotated_policy = remap_policy(&policy, &original_to_rotated);

@@ -24,6 +24,10 @@ pub trait Evaluator {
 pub struct OnnxEvaluator {
     session: Session,
     rotated_to_original_by_board_size: HashMap<i32, Vec<usize>>,
+    /// Maximum number of moves in the game. Used to populate the
+    /// "moves remaining" channel in the ResNet input. Pass `-1` if
+    /// unknown — that channel is filled with 0.
+    max_steps: i32,
 }
 
 /// Deterministic evaluator for cross-language consistency tests.
@@ -33,7 +37,7 @@ pub struct UniformMockEvaluator;
 
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
-    pub fn new(model_path: &str) -> Result<Self> {
+    pub fn new(model_path: &str, max_steps: i32) -> Result<Self> {
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
             .commit_from_file(model_path)
@@ -41,6 +45,7 @@ impl OnnxEvaluator {
         Ok(Self {
             session,
             rotated_to_original_by_board_size: HashMap::new(),
+            max_steps,
         })
     }
 }
@@ -60,7 +65,7 @@ impl Evaluator for OnnxEvaluator {
         };
 
         // Build ResNet input tensor
-        let resnet_input = grid_game_state_to_resnet_input(&work_state);
+        let resnet_input = grid_game_state_to_resnet_input(&work_state, self.max_steps);
 
         // Convert to flat vec for ORT
         let shape = resnet_input.shape().to_vec();

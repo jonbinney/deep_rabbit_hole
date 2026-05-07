@@ -3,23 +3,29 @@
 use crate::game_state::GameState;
 use crate::grid::CELL_WALL;
 
-/// Convert grid-based game state to 5-channel ResNet input format
+/// Convert grid-based game state to 6-channel ResNet input format
 ///
-/// ResNet expects input of shape (batch_size, 5, M, M) where M = board_size * 2 + 3
+/// ResNet expects input of shape (batch_size, 6, M, M) where M = board_size * 2 + 3
 /// For a 5x5 board, M = 13
-/// The 5 channels are:
+/// The 6 channels are:
 /// 1. Walls (1 where there is a wall, 0 otherwise)
 /// 2. Current player's position (1-hot encoding)
 /// 3. Opponent's position (1-hot encoding)
 /// 4. Current player walls remaining (same value for entire plane)
 /// 5. Opponent walls remaining (same value for entire plane)
+/// 6. Moves remaining (max_steps - completed_steps; same value for entire
+///    plane). Pass `max_steps = -1` to indicate "unknown" — that channel
+///    is then filled with 0.
 ///
 /// The grid is a 2D array where:
 /// - Border walls are represented as 10
 /// - Player 0's position is represented as 0
 /// - Player 1's position is represented as 1
 /// - Empty cells are represented as -1
-pub fn grid_game_state_to_resnet_input(state: &GameState) -> ndarray::Array4<f32> {
+pub fn grid_game_state_to_resnet_input(
+    state: &GameState,
+    max_steps: i32,
+) -> ndarray::Array4<f32> {
     let grid = state.grid();
     let player_positions = state.player_positions();
     let walls_remaining = state.walls_remaining();
@@ -27,7 +33,7 @@ pub fn grid_game_state_to_resnet_input(state: &GameState) -> ndarray::Array4<f32
     let grid_size = grid.ncols();
     let opponent = 1 - current_player;
 
-    let mut input = ndarray::Array4::<f32>::zeros((1, 5, grid_size, grid_size));
+    let mut input = ndarray::Array4::<f32>::zeros((1, 6, grid_size, grid_size));
 
     // Channel 0: Walls - extract from grid
     for i in 0..grid_size {
@@ -60,6 +66,16 @@ pub fn grid_game_state_to_resnet_input(state: &GameState) -> ndarray::Array4<f32
     let opp_walls = walls_remaining[opponent as usize] as f32;
     input.slice_mut(ndarray::s![0, 4, .., ..]).fill(opp_walls);
 
+    // Channel 5: Moves remaining (max_steps - completed_steps), broadcast.
+    // -1 sentinel means "unknown"; we fill with 0 so models treat it as
+    // "no signal" rather than as the literal value -1.
+    let moves_remaining = if max_steps < 0 {
+        0.0
+    } else {
+        (max_steps - state.completed_steps as i32).max(0) as f32
+    };
+    input.slice_mut(ndarray::s![0, 5, .., ..]).fill(moves_remaining);
+
     input
 }
 
@@ -73,9 +89,9 @@ mod tests {
     #[test]
     fn test_resnet_input_shape() {
         let state = GameState::new(5, 3);
-        let input = grid_game_state_to_resnet_input(&state);
-        // Check shape: (1, 5, 13, 13) for 5x5 board
-        assert_eq!(input.shape(), &[1, 5, 13, 13]);
+        let input = grid_game_state_to_resnet_input(&state, -1);
+        // Check shape: (1, 6, 13, 13) for 5x5 board
+        assert_eq!(input.shape(), &[1, 6, 13, 13]);
     }
 
     #[test]
@@ -83,7 +99,7 @@ mod tests {
         let mut state = GameState::new(5, 3);
         // Add a vertical wall at position (0, 0)
         set_wall_cells(&mut state.grid.view_mut(), 0, 0, 0, CELL_WALL);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 0 should have walls marked
         // Border walls should be present
@@ -104,7 +120,7 @@ mod tests {
     #[test]
     fn test_resnet_input_channel1_current_player() {
         let state = GameState::new(5, 3); // current_player = 0 by default
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 1 should have current player (player 0) position marked
         // Player 0 is at board position (0, 2) -> grid position (2, 6)
@@ -118,7 +134,7 @@ mod tests {
     #[test]
     fn test_resnet_input_channel2_opponent() {
         let state = GameState::new(5, 3);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 2 should have opponent (player 1) position marked
         // Player 1 is at board position (4, 2) -> grid position (10, 6)
@@ -132,7 +148,7 @@ mod tests {
     #[test]
     fn test_resnet_input_channel3_current_player_walls() {
         let state = GameState::new(5, 3);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 3 should have current player's walls remaining (3) everywhere
         assert_eq!(input[[0, 3, 0, 0]], 3.0);
@@ -143,7 +159,7 @@ mod tests {
     #[test]
     fn test_resnet_input_channel4_opponent_walls() {
         let state = GameState::new(5, 3);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 4 should have opponent's walls remaining (3) everywhere
         assert_eq!(input[[0, 4, 0, 0]], 3.0);
@@ -157,8 +173,8 @@ mod tests {
         let mut state_p1 = GameState::new(5, 3);
         state_p1.current_player = 1;
 
-        let input_p0 = grid_game_state_to_resnet_input(&state_p0);
-        let input_p1 = grid_game_state_to_resnet_input(&state_p1);
+        let input_p0 = grid_game_state_to_resnet_input(&state_p0, -1);
+        let input_p1 = grid_game_state_to_resnet_input(&state_p1, -1);
 
         // Channel 0 (walls) should be the same
         assert_eq!(input_p0[[0, 0, 2, 6]], input_p1[[0, 0, 2, 6]]);
@@ -178,7 +194,7 @@ mod tests {
     fn test_resnet_input_different_walls_remaining() {
         let mut state = GameState::new(5, 3);
         state.walls_remaining = Array1::from(vec![5, 1]); // Different wall counts
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Channel 3 should have current player's walls remaining (5)
         assert_eq!(input[[0, 3, 6, 6]], 5.0);
@@ -192,7 +208,7 @@ mod tests {
         let mut state = GameState::new(5, 3);
         // Add a horizontal wall at position (1, 1)
         set_wall_cells(&mut state.grid.view_mut(), 1, 1, 1, CELL_WALL);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
         // Horizontal wall at (1,1) should be marked at grid positions (5,4), (5,5), (5,6)
         assert_eq!(input[[0, 0, 5, 4]], 1.0);
@@ -203,10 +219,10 @@ mod tests {
     #[test]
     fn test_resnet_input_3x3_board() {
         let state = GameState::new(3, 3);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
-        // Check shape: (1, 5, 9, 9) for 3x3 board
-        assert_eq!(input.shape(), &[1, 5, 9, 9]);
+        // Check shape: (1, 6, 9, 9) for 3x3 board
+        assert_eq!(input.shape(), &[1, 6, 9, 9]);
 
         // Player 0 at (0, 1) -> grid (2, 4)
         assert_eq!(input[[0, 1, 2, 4]], 1.0);
@@ -218,10 +234,10 @@ mod tests {
     #[test]
     fn test_resnet_input_9x9_board() {
         let state = GameState::new(9, 10);
-        let input = grid_game_state_to_resnet_input(&state);
+        let input = grid_game_state_to_resnet_input(&state, -1);
 
-        // Check shape: (1, 5, 21, 21) for 9x9 board
-        assert_eq!(input.shape(), &[1, 5, 21, 21]);
+        // Check shape: (1, 6, 21, 21) for 9x9 board
+        assert_eq!(input.shape(), &[1, 6, 21, 21]);
 
         // Player 0 at (0, 4) -> grid (2, 10)
         assert_eq!(input[[0, 1, 2, 10]], 1.0);

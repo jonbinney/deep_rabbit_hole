@@ -762,7 +762,7 @@ impl PyPolicyDb {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?,
             NnType::Resnet => {
                 let m = resnet_grid_size(bs);
-                ndarray::Array::from_shape_vec(ndarray::IxDyn(&[n, 5, m, m]), features_buf)
+                ndarray::Array::from_shape_vec(ndarray::IxDyn(&[n, 6, m, m]), features_buf)
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             }
         };

@@ -124,8 +124,11 @@ pub struct AlphaZeroAgent {
 
 impl AlphaZeroAgent {
     /// Create a new AlphaZero agent.
-    pub fn new(model_path: &str, config: AlphaZeroAgentConfig) -> Result<Self> {
-        let evaluator = OnnxEvaluator::new(model_path)?;
+    ///
+    /// `max_steps` is forwarded to the evaluator so the "moves remaining"
+    /// ResNet input channel can be populated. Pass `-1` if unknown.
+    pub fn new(model_path: &str, config: AlphaZeroAgentConfig, max_steps: i32) -> Result<Self> {
+        let evaluator = OnnxEvaluator::new(model_path, max_steps)?;
         Ok(Self {
             evaluator,
             config,

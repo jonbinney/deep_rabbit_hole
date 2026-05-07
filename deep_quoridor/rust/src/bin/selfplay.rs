@@ -132,6 +132,7 @@ fn create_agent(
     az_config: &AlphaZeroConfig,
     board_size: i32,
     max_walls: i32,
+    max_steps: i32,
 ) -> Result<BoxedAgent> {
     if let Some("random") = p2_override {
         return Ok(BoxedAgent::Random(RandomAgent::new()));
@@ -140,11 +141,12 @@ fn create_agent(
         anyhow::bail!("Unknown --p2 agent: '{}'. Valid: random", other);
     }
     if use_raw_onnx {
-        Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path)?))
+        Ok(BoxedAgent::Onnx(OnnxAgent::new(model_path, max_steps)?))
     } else {
         Ok(BoxedAgent::AlphaZero(AlphaZeroAgent::new(
             model_path,
             az_config.to_agent_config(board_size, max_walls),
+            max_steps,
         )?))
     }
 }
@@ -216,6 +218,7 @@ fn run_batch(
         az_config,
         q.board_size,
         q.max_walls,
+        q.max_steps as i32,
     )?;
     let mut agent_p2 = create_agent(
         cli.use_raw_onnx_agent,
@@ -224,6 +227,7 @@ fn run_batch(
         az_config,
         q.board_size,
         q.max_walls,
+        q.max_steps as i32,
     )?;
 
     println!("Model loaded.");
@@ -345,6 +349,7 @@ fn run_continuous(
         az_config,
         q.board_size,
         q.max_walls,
+        q.max_steps as i32,
     )?;
     let mut agent_p2 = create_agent(
         false,
@@ -353,6 +358,7 @@ fn run_continuous(
         az_config,
         q.board_size,
         q.max_walls,
+        q.max_steps as i32,
     )?;
 
     let pid = process::id();
@@ -387,6 +393,7 @@ fn run_continuous(
                         az_config,
                         q.board_size,
                         q.max_walls,
+                        q.max_steps as i32,
                     )?;
                     agent_p2 = create_agent(
                         false,
@@ -395,6 +402,7 @@ fn run_continuous(
                         az_config,
                         q.board_size,
                         q.max_walls,
+                        q.max_steps as i32,
                     )?;
                 }
             }

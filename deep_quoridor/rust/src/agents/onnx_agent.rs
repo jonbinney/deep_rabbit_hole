@@ -20,16 +20,20 @@ pub fn softmax(logits: &[f32]) -> Vec<f32> {
 /// An agent that uses an ONNX model to select actions (greedy argmax).
 pub struct OnnxAgent {
     session: Session,
+    /// Maximum number of moves in the game. Used to populate the
+    /// "moves remaining" channel in the ResNet input. Pass `-1` if
+    /// unknown — that channel is filled with 0.
+    max_steps: i32,
 }
 
 impl OnnxAgent {
     /// Load an ONNX model from the given path.
-    pub fn new(model_path: &str) -> Result<Self> {
+    pub fn new(model_path: &str, max_steps: i32) -> Result<Self> {
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
-        Ok(Self { session })
+        Ok(Self { session, max_steps })
     }
 }
 
@@ -40,7 +44,7 @@ impl ActionSelector for OnnxAgent {
         action_mask: &[bool],
     ) -> Result<(usize, Vec<f32>)> {
         // Build ResNet input tensor
-        let resnet_input = grid_game_state_to_resnet_input(state);
+        let resnet_input = grid_game_state_to_resnet_input(state, self.max_steps);
 
         // Convert to flat vec for ORT
         let shape = resnet_input.shape().to_vec();

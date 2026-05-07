@@ -141,16 +141,19 @@ pub fn mlp_features_len(board_size: usize) -> usize {
     2 * bs * bs + 2 * (bs - 1) * (bs - 1) + 2
 }
 
-/// ResNet feature tensor side length: `2*bs + 3`. Total elements: `5 * M * M`.
+/// ResNet feature tensor side length: `2*bs + 3`. Total elements: `6 * M * M`.
 #[inline]
 pub fn resnet_grid_size(board_size: usize) -> usize {
     2 * board_size + 3
 }
 
+/// Number of channels in the ResNet input tensor.
+pub const RESNET_CHANNELS: usize = 6;
+
 #[inline]
 pub fn resnet_features_len(board_size: usize) -> usize {
     let m = resnet_grid_size(board_size);
-    5 * m * m
+    RESNET_CHANNELS * m * m
 }
 
 /// Write the MLP feature vector for `state` into `out`. `out.len()` must
@@ -199,15 +202,17 @@ pub fn build_mlp_features(state: u64, mechanics: &QGameMechanics, out: &mut [f32
     out[trailer + 1] = repr.get_walls_remaining(state, opp) as f32;
 }
 
-/// Write the ResNet 5-channel feature tensor for `state` into `out`.
+/// Write the ResNet 6-channel feature tensor for `state` into `out`.
 /// `out.len()` must equal `resnet_features_len(board_size)`. Layout in `out`
-/// is C-order `(5, M, M)` with `M = 2*bs+3`. Channels match
+/// is C-order `(6, M, M)` with `M = 2*bs+3`. Channels match
 /// `ResnetNetwork.game_to_input_array`:
 ///   0: walls (1.0 wherever the padded grid has a wall, including border)
 ///   1: current player position 1-hot at grid `(r*2+2, c*2+2)`
 ///   2: opponent position 1-hot
 ///   3: current player walls remaining (broadcast)
 ///   4: opponent walls remaining (broadcast)
+///   5: moves remaining = max_steps - completed_steps (broadcast,
+///      saturating-subtract so we never underflow)
 pub fn build_resnet_features(state: u64, mechanics: &QGameMechanics, out: &mut [f32]) {
     let repr = mechanics.repr();
     let bs = repr.board_size();
@@ -269,6 +274,16 @@ pub fn build_resnet_features(state: u64, mechanics: &QGameMechanics, out: &mut [
     }
     for v in &mut out[ch(4)..ch(5)] {
         *v = opp_walls;
+    }
+
+    // Channel 5: moves remaining (broadcast). Saturating-subtract guards
+    // against `completed_steps > max_steps` from corrupted callers.
+    let moves_remaining = mechanics
+        .repr()
+        .max_steps()
+        .saturating_sub(repr.get_completed_steps(state)) as f32;
+    for v in &mut out[ch(5)..ch(6)] {
+        *v = moves_remaining;
     }
 }
 
@@ -360,8 +375,7 @@ mod tests {
 
     #[test]
     fn test_resnet_features_shape() {
-        let mechanics =
-            crate::compact::q_game_mechanics::QGameMechanics::new(5, 3, 50);
+        let mechanics = crate::compact::q_game_mechanics::QGameMechanics::new(5, 3, 50);
         let state = mechanics.create_initial_state();
         let mut out = vec![0.0f32; resnet_features_len(5)];
         build_resnet_features(state, &mechanics, &mut out);
@@ -377,6 +391,10 @@ mod tests {
         // Channel 0: corners are border walls.
         assert_eq!(out[0 * m * m + 0 * m + 0], 1.0);
         assert_eq!(out[0 * m * m + (m - 1) * m + (m - 1)], 1.0);
+        // Channel 5: max_steps - completed_steps = 50 - 0 = 50, broadcast.
+        assert_eq!(out[5 * m * m + 0 * m + 0], 50.0);
+        assert_eq!(out[5 * m * m + 6 * m + 6], 50.0);
+        assert_eq!(out[5 * m * m + (m - 1) * m + (m - 1)], 50.0);
     }
 
     #[test]

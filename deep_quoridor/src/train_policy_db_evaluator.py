@@ -115,14 +115,26 @@ def fetch_batch(db, ids, nn_type):
       action_masks:    (N, num_actions) float32
       mcts_policies:   (N, num_actions) float32, uniform over best-valued actions
       current_players: (N,) int32, 0 or 1 in unrotated frame
+      states:          (N,) object array of the raw u64 states, in the same
+                       order as the other arrays. Used by diagnostic code
+                       (e.g. printing the worst pick per eval).
     """
     inputs, values, masks, policies, cps = db.fetch_training_batch(ids, nn_type)
+    # `fetch_training_batch` and `fetch_states_by_rowid` both internally
+    # sort by rowid, so their per-row outputs align by index.
+    rows = db.fetch_states_by_rowid(ids)
+    # Use an object array because Python ints from PyO3 can exceed the
+    # signed-int64 range; numpy refuses to cast those to a fixed dtype.
+    states = np.empty(len(rows), dtype=object)
+    for i, (s, _v) in enumerate(rows):
+        states[i] = s
     return {
         "input_arrays": inputs,
         "values": values,
         "action_masks": masks,
         "mcts_policies": policies,
         "current_players": cps,
+        "states": states,
     }
 
 
@@ -148,7 +160,18 @@ def _concat_batches(a, b):
 
 
 @timer("compute_test_metrics_batched")
-def compute_test_metrics_batched(test_ids, db, evaluator: NNEvaluator, batch_size, *, nn_type, test_player=None):
+def compute_test_metrics_batched(
+    test_ids,
+    db,
+    evaluator: NNEvaluator,
+    batch_size,
+    *,
+    nn_type,
+    board_size,
+    max_walls,
+    max_steps,
+    test_player=None,
+):
     """Iterate `test_ids` in chunks, emitting batches of exactly `batch_size`
     samples (post player filter). Only the final batch may be smaller.
 
@@ -156,16 +179,26 @@ def compute_test_metrics_batched(test_ids, db, evaluator: NNEvaluator, batch_siz
     fetching more `test_ids` and refilling a buffer until the batch is full
     or `test_ids` is exhausted.
 
-    Returns (policy_loss, value_loss, total_loss, accuracy) as floats.
+    Returns (policy_loss, value_loss, total_loss, accuracy) as floats. Side
+    effect: prints the test-set state where the model's chosen action has
+    the largest value gap (regret) vs. the optimal DB action.
     """
     from agents.alphazero.nn_evaluator import INVALID_ACTION_VALUE
+    from agents.core.rotation import create_rotation_mapping
 
     total_pol = total_val = total_tot = 0.0
     correct = total = 0
 
+    # `_, rotated_to_original`: index `i` in the rotated frame maps to
+    # `rotated_to_original[i]` in the unrotated frame.
+    _, rotated_to_original = create_rotation_mapping(board_size)
+
+    # Worst (max-regret) pick we've seen so far this eval.
+    worst = None  # dict with state, regret, cp, unrot_pick, actions+values, best_v
+
     n_test_ids = len(test_ids)
     ids_idx = 0
-    buffer = None  # dict of np arrays, or None when empty
+    buffer = None
 
     def buffer_size(buf):
         return 0 if buf is None else buf["values"].shape[0]
@@ -199,24 +232,80 @@ def compute_test_metrics_batched(test_ids, db, evaluator: NNEvaluator, batch_siz
 
             # Accuracy: forward pass on the same inputs, mask logits, argmax,
             # compare against the (uniform-over-best) mcts_policy. A pick
-            # whose mcts_policy entry equals the maximum is "correct".
+            # whose mcts_policy entry equals the maximum is "correct". We
+            # always mask out invalid actions for accuracy regardless of
+            # `mask_training_predictions`, matching what `evaluate_batch`
+            # does at inference time.
             inputs = torch.from_numpy(front["input_arrays"]).to(evaluator.device)
             pred_logits, _ = evaluator.network(inputs)
             masks_t = torch.from_numpy(front["action_masks"]).to(evaluator.device)
-            if evaluator.config.mask_training_predictions:
-                pred_logits = pred_logits * masks_t + INVALID_ACTION_VALUE * (1 - masks_t)
+            pred_logits = pred_logits * masks_t + INVALID_ACTION_VALUE * (1 - masks_t)
             picks = pred_logits.argmax(dim=1).cpu().numpy()
             policies = front["mcts_policies"]
             best_probs = policies.max(axis=1)
+            cps_arr = front["current_players"]
+            states_arr = front["states"]
             for i, pick in enumerate(picks):
+                pick = int(pick)
                 if policies[i, pick] == best_probs[i]:
                     correct += 1
+                else:
+                    # Sub-optimal pick: do an extra DB lookup to find the
+                    # raw action values and compute regret in DB units.
+                    cp = int(cps_arr[i])
+                    unrot_pick = int(rotated_to_original[pick]) if cp == 1 else pick
+                    state_int = int(states_arr[i])
+                    actions, action_values = db.lookup_action_values(state_int)
+                    best_v = max(action_values)
+                    model_v = None
+                    for (r, c, t), v in zip(actions, action_values):
+                        if child_action_index(r, c, t, board_size) == unrot_pick:
+                            model_v = v
+                            break
+                    if model_v is not None:
+                        regret = best_v - model_v
+                        if worst is None or regret > worst["regret"]:
+                            worst = {
+                                "regret": regret,
+                                "state": state_int,
+                                "cp": cp,
+                                "unrot_pick": unrot_pick,
+                                "actions": list(actions),
+                                "action_values": list(action_values),
+                                "best_v": best_v,
+                                "model_v": model_v,
+                            }
                 total += 1
 
     evaluator.network.train()
 
     assert total > 0, "No test samples found (check test_player filter?)"
+
+    if worst is not None:
+        _print_worst_pick(worst, board_size, max_walls, max_steps, evaluator.action_encoder)
+
     return total_pol / total, total_val / total, total_tot / total, correct / total
+
+
+def _print_worst_pick(worst, board_size, max_walls, max_steps, action_encoder):
+    """Print diagnostic info for the test-set state with the largest model
+    regret seen during this evaluation."""
+    print(f"\n=== Worst pick this eval (regret={worst['regret']}, current_player=P{worst['cp'] + 1}) ===")
+    print(quoridor_rs.compact_state_display(worst["state"], board_size, max_walls, max_steps))
+    model_action = action_encoder.index_to_action(worst["unrot_pick"])
+    print(f"  Model pick:  {model_action}  (db value = {worst['model_v']})")
+    print(f"  Best db value (acting player perspective): {worst['best_v']}")
+    print("  All actions (acting player perspective):")
+    for (r, c, t), v in zip(worst["actions"], worst["action_values"]):
+        idx = child_action_index(r, c, t, board_size)
+        action = action_encoder.index_to_action(idx)
+        marks = []
+        if idx == worst["unrot_pick"]:
+            marks.append("<-model")
+        if v == worst["best_v"]:
+            marks.append("*best*")
+        suffix = (" " + " ".join(marks)) if marks else ""
+        print(f"    {action}: value={v}{suffix}")
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +400,12 @@ def parse_args():
         type=str,
         help="Enable wandb logging. Optionally pass project name (default: policydb_evaluator)",
     )
+    p.add_argument(
+        "--wandb-name",
+        type=str,
+        default=None,
+        help="Name for the wandb run (default: wandb auto-generates one)",
+    )
     return p.parse_args()
 
 
@@ -338,6 +433,7 @@ def main():
         wandb_project = args.wandb if args.wandb else "policydb_evaluator"
         wandb_run = wandb.init(
             project=wandb_project,
+            name=args.wandb_name,
             config={
                 "db_path": os.path.basename(args.db_path),
                 "num_steps": args.num_steps,
@@ -387,6 +483,10 @@ def main():
     # Create NNEvaluator and set up optimizer
     # ------------------------------------------------------------------
     action_encoder = ActionEncoder(board_size)
+    # Forward max_steps to the ResNet so the "moves remaining" input plane
+    # can be populated. (No effect for MLP.)
+    if nn_config.resnet is not None:
+        nn_config.resnet.max_steps = max_steps
     evaluator = NNEvaluator(action_encoder, device, nn_config, max_cache_size=100000)
     evaluator.train_prepare(az_params.learning_rate, az_params.batch_size, args.num_steps, az_params.weight_decay)
 
@@ -472,6 +572,9 @@ def main():
                 evaluator,
                 args.test_batch_size,
                 nn_type=nn_type,
+                board_size=board_size,
+                max_walls=max_walls,
+                max_steps=max_steps,
                 test_player=test_player,
             )
 

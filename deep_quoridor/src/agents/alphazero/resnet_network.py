@@ -11,6 +11,9 @@ from quoridor import ActionEncoder, Player, Quoridor
 class ResnetConfig:
     num_blocks: Optional[int] = None
     num_channels: int = 32
+    # Maximum number of moves in the game. Used for the "moves remaining"
+    # input channel. None means "unknown" — that channel is filled with 0.
+    max_steps: Optional[int] = None
 
 
 class ResidualBlock(nn.Module):
@@ -49,10 +52,11 @@ class ResnetNetwork(nn.Module):
 
         self.action_encoder = action_encoder
         self.device = device
+        self.max_steps = config.max_steps
         num_channels = config.num_channels
         num_blocks = config.num_blocks
 
-        # Calculate input dimensions: MxMx5 where M = board_size * 2 + 3
+        # Calculate input dimensions: MxMx6 where M = board_size * 2 + 3
         self.input_size = action_encoder.board_size * 2 + 3
 
         if num_blocks is None:
@@ -60,8 +64,8 @@ class ResnetNetwork(nn.Module):
             # than double the board dimension.
             num_blocks = self.input_size * 2 + 2
 
-        # Initial convolutional block
-        self.conv_input = nn.Conv2d(5, num_channels, kernel_size=3, padding=1)
+        # Initial convolutional block (6 input channels — see game_to_input_array)
+        self.conv_input = nn.Conv2d(6, num_channels, kernel_size=3, padding=1)
         self.bn_input = nn.BatchNorm2d(num_channels)
 
         # Residual tower
@@ -119,18 +123,20 @@ class ResnetNetwork(nn.Module):
         """
         Convert Quoridor game state to an input array for the neural network.
 
-        The returned array is 5xMxM, where M is the dimension of the combined
+        The returned array is 6xMxM, where M is the dimension of the combined
         grid representation, which is twice the board dimension plus three.
 
-        The 5 planes in the array are:
+        The 6 planes in the array are:
 
             1. Walls (1 where there is a wall, zero otherwise)
             2. Current player's position, as a 1-hot encoding
             3. Opponent's position, as a 1-hot encoding
             4. Current player walls remaining (same value for entire plane)
             5. Opponent walls remaining (same value for the entire plane)
+            6. Moves remaining (max_steps - completed_steps; same value for
+               entire plane). Filled with 0 if max_steps is unknown.
         """
-        input_array = np.zeros((5, self.input_size, self.input_size), dtype=np.float32)
+        input_array = np.zeros((6, self.input_size, self.input_size), dtype=np.float32)
 
         # First channel is a 1 where there are walls
         input_array[0, :, :] = game.board._grid == game.board.WALL
@@ -148,5 +154,12 @@ class ResnetNetwork(nn.Module):
 
         # Fifth channel is opponent walls remaining (all values the same)
         input_array[4, :, :] = game.board._walls_remaining[opponent]
+
+        # Sixth channel is moves remaining (broadcast).
+        if self.max_steps is not None:
+            input_array[5, :, :] = max(0, self.max_steps - game.completed_steps)
+        else:
+            # REMOVE ME
+            assert False, "max_steps must be set for ResNet input array"
 
         return input_array

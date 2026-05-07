@@ -40,15 +40,21 @@ def _make_small_db(tmp_path):
     repo_root = Path(__file__).parent.parent.parent
     binary = repo_root / "deep_quoridor" / "rust" / "target" / "release" / "create_policy_db"
     if not binary.exists():
-        pytest.skip(f"create_policy_db binary not found at {binary} — build with `cargo build --release --features binary --bins`")
+        pytest.skip(
+            f"create_policy_db binary not found at {binary} — build with `cargo build --release --features binary --bins`"
+        )
     out_path = tmp_path / "parity.parquet"
     subprocess.run(
         [
             str(binary),
-            "--board-size", "3",
-            "--max-walls", "0",
-            "--max-steps", "8",
-            "--output", str(out_path),
+            "--board-size",
+            "3",
+            "--max-walls",
+            "0",
+            "--max-steps",
+            "8",
+            "--output",
+            str(out_path),
         ],
         check=True,
         capture_output=True,
@@ -66,6 +72,8 @@ def test_fetch_training_batch_matches_python_pipeline(tmp_path, nn_type):
     az_params = AlphaZeroParams()
     az_params.nn_type = nn_type
     nn_config = NNConfig.from_alphazero_params(az_params)
+    if nn_config.resnet is not None:
+        nn_config.resnet.max_steps = max_steps
     evaluator = NNEvaluator(
         ActionEncoder(board_size),
         torch.device("cpu"),
@@ -75,9 +83,7 @@ def test_fetch_training_batch_matches_python_pipeline(tmp_path, nn_type):
 
     # Pull every state in the DB through both pipelines.
     rowids = list(range(1, num_states + 1))
-    inputs_rust, values_rust, masks_rust, policies_rust, cps_rust = db.fetch_training_batch(
-        rowids, nn_type
-    )
+    inputs_rust, values_rust, masks_rust, policies_rust, cps_rust = db.fetch_training_batch(rowids, nn_type)
     rows = db.fetch_states_by_rowid(rowids)
     num_actions = evaluator.action_encoder.num_actions
 
