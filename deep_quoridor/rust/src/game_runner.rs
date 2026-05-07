@@ -382,7 +382,7 @@ mod tests {
         let total_actions = policy_size(5);
 
         for item in &result.replay_items {
-            assert_eq!(item.input_array.shape(), &[5, grid_size, grid_size]);
+            assert_eq!(item.input_array.shape(), &[6, grid_size, grid_size]);
             assert_eq!(item.policy.len(), total_actions);
             assert_eq!(item.action_mask.len(), total_actions);
         }

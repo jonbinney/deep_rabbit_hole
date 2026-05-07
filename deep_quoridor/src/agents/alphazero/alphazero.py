@@ -236,6 +236,11 @@ class AlphaZeroAgent(TrainableAgent):
         self.action_encoder = ActionEncoder(board_size)
 
         nn_config = NNConfig.from_alphazero_params(params)
+        # Forward max_steps to the ResNet so the "moves remaining" input
+        # plane reflects how many turns are left before truncation. (No
+        # effect for MLP.)
+        if nn_config.resnet is not None:
+            nn_config.resnet.max_steps = max_steps
         self.evaluator = NNEvaluator(self.action_encoder, self.device, nn_config, params.max_cache_size)
 
         self._fetch_model_from_wandb_and_update_params()
@@ -480,8 +485,7 @@ class AlphaZeroAgent(TrainableAgent):
                 if init.name in state_dict_names
             }
             print(
-                f"AlphaZero model exported to ONNX at {path} "
-                f"({len(self._onnx_init_name_to_idx)} initializers cached)"
+                f"AlphaZero model exported to ONNX at {path} ({len(self._onnx_init_name_to_idx)} initializers cached)"
             )
         else:
             # Subsequent saves: update only the weight tensors in the cached proto.

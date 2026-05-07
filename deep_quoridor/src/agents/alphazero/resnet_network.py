@@ -158,8 +158,5 @@ class ResnetNetwork(nn.Module):
         # Sixth channel is moves remaining (broadcast).
         if self.max_steps is not None:
             input_array[5, :, :] = max(0, self.max_steps - game.completed_steps)
-        else:
-            # REMOVE ME
-            assert False, "max_steps must be set for ResNet input array"
 
         return input_array
