@@ -10,6 +10,7 @@ use super::q_bit_repr::{WALL_HORIZONTAL, WALL_VERTICAL};
 use super::q_game_mechanics::QGameMechanics;
 
 /// Which feature representation to build.
+#[derive(Clone, Copy, Debug)]
 pub enum NnType {
     Mlp,
     Resnet,

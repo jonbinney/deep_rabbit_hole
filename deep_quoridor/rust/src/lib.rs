@@ -646,6 +646,7 @@ impl PyPolicyDb {
             build_rotation_permutation, child_action_index, mlp_features_len, num_actions,
             permute_into, resnet_features_len, resnet_grid_size, rotate_state, NnType,
         };
+        use rayon::prelude::*;
 
         let nn = NnType::from_str(nn_type)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
@@ -673,85 +674,81 @@ impl PyPolicyDb {
         let mut policies_buf = vec![0.0f32; n * n_actions];
         let mut cps_buf = vec![0i32; n];
 
-        // Scratch buffers for the per-state policy and mask in the
-        // unrotated frame, before any rotation permutation.
-        let mut policy_scratch = vec![0.0f32; n_actions];
-        let mut mask_scratch = vec![0.0f32; n_actions];
+        // Per-row work runs in parallel over rayon's thread pool. Each
+        // row writes to its own non-overlapping slices of the output
+        // buffers, so no synchronization is needed beyond the implicit
+        // join at the end of the parallel iterator.
+        let db = &self.db;
+        features_buf
+            .par_chunks_mut(feature_len)
+            .zip(masks_buf.par_chunks_mut(n_actions))
+            .zip(policies_buf.par_chunks_mut(n_actions))
+            .zip(values_buf.par_iter_mut())
+            .zip(cps_buf.par_iter_mut())
+            .zip(rows.par_iter().enumerate())
+            .try_for_each(
+                |(((((f_slice, m_slice), p_slice), v_ref), c_ref), (i, &(state, db_value)))| -> PyResult<()> {
+                    let cp = mechanics.repr().get_current_player(state);
 
-        for (i, (state, db_value)) in rows.into_iter().enumerate() {
-            let cp = mechanics.repr().get_current_player(state);
+                    // ---- mcts_policy (unrotated frame) ----
+                    let (actions, action_values) = db
+                        .lookup_action_values(state)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
+                        .ok_or_else(|| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "lookup_action_values returned None for rowid index {i}"
+                            ))
+                        })?;
 
-            // ---- mcts_policy (unrotated frame) ----
-            let lookup = self
-                .db
-                .lookup_action_values(state)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
-                .ok_or_else(|| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "lookup_action_values returned None for rowid index {i}"
-                    ))
-                })?;
-            let (actions, action_values) = lookup;
-            for v in policy_scratch.iter_mut() {
-                *v = 0.0;
-            }
-            let best_value = *action_values.iter().max().unwrap();
-            let mut count = 0usize;
-            for (&(r, c, t), &v) in actions.iter().zip(action_values.iter()) {
-                if v == best_value {
-                    let idx = child_action_index(r as usize, c as usize, t as usize, bs);
-                    policy_scratch[idx] = 1.0;
-                    count += 1;
-                }
-            }
-            if count > 0 {
-                let inv = 1.0 / count as f32;
-                for v in policy_scratch.iter_mut() {
-                    if *v > 0.0 {
-                        *v = inv;
+                    let mut policy_scratch = vec![0.0f32; n_actions];
+                    let best_value = *action_values.iter().max().unwrap();
+                    let mut count = 0usize;
+                    for (&(r, c, t), &v) in actions.iter().zip(action_values.iter()) {
+                        if v == best_value {
+                            let idx = child_action_index(r as usize, c as usize, t as usize, bs);
+                            policy_scratch[idx] = 1.0;
+                            count += 1;
+                        }
                     }
-                }
-            }
+                    if count > 0 {
+                        let inv = 1.0 / count as f32;
+                        for v in policy_scratch.iter_mut() {
+                            if *v > 0.0 {
+                                *v = inv;
+                            }
+                        }
+                    }
 
-            // ---- action_mask (unrotated frame) ----
-            build_action_mask(state, mechanics, &mut mask_scratch);
+                    // ---- action_mask (unrotated frame) ----
+                    let mut mask_scratch = vec![0.0f32; n_actions];
+                    build_action_mask(state, mechanics, &mut mask_scratch);
 
-            // ---- features (rotated frame iff cp==1) ----
-            let working_state = if cp == 1 {
-                rotate_state(state, mechanics)
-            } else {
-                state
-            };
-            let f_off = i * feature_len;
-            let f_slice = &mut features_buf[f_off..f_off + feature_len];
-            match nn {
-                NnType::Mlp => build_mlp_features(working_state, mechanics, f_slice),
-                NnType::Resnet => build_resnet_features(working_state, mechanics, f_slice),
-            };
+                    // ---- features (rotated frame iff cp==1) ----
+                    let working_state = if cp == 1 {
+                        rotate_state(state, mechanics)
+                    } else {
+                        state
+                    };
+                    match nn {
+                        NnType::Mlp => build_mlp_features(working_state, mechanics, f_slice),
+                        NnType::Resnet => build_resnet_features(working_state, mechanics, f_slice),
+                    };
 
-            // ---- write policy + mask, permuting if rotated ----
-            let p_off = i * n_actions;
-            let m_off = i * n_actions;
-            if cp == 1 {
-                permute_into(
-                    &policy_scratch,
-                    &perm,
-                    &mut policies_buf[p_off..p_off + n_actions],
-                );
-                permute_into(
-                    &mask_scratch,
-                    &perm,
-                    &mut masks_buf[m_off..m_off + n_actions],
-                );
-            } else {
-                policies_buf[p_off..p_off + n_actions].copy_from_slice(&policy_scratch);
-                masks_buf[m_off..m_off + n_actions].copy_from_slice(&mask_scratch);
-            }
+                    // ---- write policy + mask, permuting if rotated ----
+                    if cp == 1 {
+                        permute_into(&policy_scratch, &perm, p_slice);
+                        permute_into(&mask_scratch, &perm, m_slice);
+                    } else {
+                        p_slice.copy_from_slice(&policy_scratch);
+                        m_slice.copy_from_slice(&mask_scratch);
+                    }
 
-            // ---- value (acting player's perspective) and current_player ----
-            values_buf[i] = if cp == 0 { db_value } else { -db_value };
-            cps_buf[i] = cp as i32;
-        }
+                    // ---- value (acting player's perspective) and cp ----
+                    *v_ref = if cp == 0 { db_value } else { -db_value };
+                    *c_ref = cp as i32;
+                    Ok(())
+                },
+            )?;
 
         // Wrap flat buffers as numpy arrays of the right shape.
         let features_arr = match nn {
