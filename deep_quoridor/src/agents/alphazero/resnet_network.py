@@ -155,8 +155,12 @@ class ResnetNetwork(nn.Module):
         # Fifth channel is opponent walls remaining (all values the same)
         input_array[4, :, :] = game.board._walls_remaining[opponent]
 
-        # Sixth channel is moves remaining (broadcast).
-        if self.max_steps is not None:
-            input_array[5, :, :] = max(0, self.max_steps - game.completed_steps)
+        # Sixth channel is the fraction of moves remaining (broadcast). We
+        # divide by max_steps so this stays in [0, 1] alongside the other
+        # channels — keeping channel 5 within roughly the same magnitude
+        # as channels 0–4 prevents BatchNorm running stats from lagging
+        # the training-mode batch stats.
+        if self.max_steps is not None and self.max_steps > 0:
+            input_array[5, :, :] = max(0.0, (self.max_steps - game.completed_steps) / self.max_steps)
 
         return input_array

@@ -66,13 +66,15 @@ pub fn grid_game_state_to_resnet_input(
     let opp_walls = walls_remaining[opponent as usize] as f32;
     input.slice_mut(ndarray::s![0, 4, .., ..]).fill(opp_walls);
 
-    // Channel 5: Moves remaining (max_steps - completed_steps), broadcast.
-    // -1 sentinel means "unknown"; we fill with 0 so models treat it as
-    // "no signal" rather than as the literal value -1.
-    let moves_remaining = if max_steps < 0 {
+    // Channel 5: Fraction of moves remaining (broadcast), in [0, 1].
+    // Normalized by max_steps so the channel doesn't dominate the conv
+    // input. -1 sentinel means "unknown"; we fill with 0 so models treat
+    // it as "no signal" rather than as a literal value.
+    let moves_remaining = if max_steps <= 0 {
         0.0
     } else {
-        (max_steps - state.completed_steps as i32).max(0) as f32
+        let raw = (max_steps - state.completed_steps as i32).max(0) as f32;
+        raw / max_steps as f32
     };
     input.slice_mut(ndarray::s![0, 5, .., ..]).fill(moves_remaining);
 

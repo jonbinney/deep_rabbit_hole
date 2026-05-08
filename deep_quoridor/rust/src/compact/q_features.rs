@@ -276,12 +276,17 @@ pub fn build_resnet_features(state: u64, mechanics: &QGameMechanics, out: &mut [
         *v = opp_walls;
     }
 
-    // Channel 5: moves remaining (broadcast). Saturating-subtract guards
+    // Channel 5: fraction of moves remaining (broadcast), in [0, 1].
+    // Normalized by `max_steps` so it sits alongside the binary channels
+    // and doesn't dominate the conv input. Saturating-subtract guards
     // against `completed_steps > max_steps` from corrupted callers.
-    let moves_remaining = mechanics
-        .repr()
-        .max_steps()
-        .saturating_sub(repr.get_completed_steps(state)) as f32;
+    let max_steps = mechanics.repr().max_steps();
+    let moves_remaining = if max_steps > 0 {
+        let raw = max_steps.saturating_sub(repr.get_completed_steps(state));
+        raw as f32 / max_steps as f32
+    } else {
+        0.0
+    };
     for v in &mut out[ch(5)..ch(6)] {
         *v = moves_remaining;
     }
@@ -391,10 +396,11 @@ mod tests {
         // Channel 0: corners are border walls.
         assert_eq!(out[0 * m * m + 0 * m + 0], 1.0);
         assert_eq!(out[0 * m * m + (m - 1) * m + (m - 1)], 1.0);
-        // Channel 5: max_steps - completed_steps = 50 - 0 = 50, broadcast.
-        assert_eq!(out[5 * m * m + 0 * m + 0], 50.0);
-        assert_eq!(out[5 * m * m + 6 * m + 6], 50.0);
-        assert_eq!(out[5 * m * m + (m - 1) * m + (m - 1)], 50.0);
+        // Channel 5: (max_steps - completed_steps) / max_steps = 50/50 = 1.0,
+        // broadcast across the plane.
+        assert_eq!(out[5 * m * m + 0 * m + 0], 1.0);
+        assert_eq!(out[5 * m * m + 6 * m + 6], 1.0);
+        assert_eq!(out[5 * m * m + (m - 1) * m + (m - 1)], 1.0);
     }
 
     #[test]
