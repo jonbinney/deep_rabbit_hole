@@ -203,7 +203,7 @@ def compute_test_metrics_batched(
     def buffer_size(buf):
         return 0 if buf is None else buf["values"].shape[0]
 
-    evaluator.network.train()
+    evaluator.network.eval()
     with torch.no_grad():
         while ids_idx < n_test_ids or buffer_size(buffer) > 0:
             while buffer_size(buffer) < batch_size and ids_idx < n_test_ids:
@@ -336,6 +336,8 @@ def resolve_db_path(db_path: str) -> str:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+MAX_TEST_SIZE = 10000
 
 
 def parse_args():
@@ -472,7 +474,7 @@ def main():
     # ------------------------------------------------------------------
     # Train/test split by ID (IDs are 1-based, contiguous)
     # ------------------------------------------------------------------
-    test_size = int(num_states * args.test_fraction)
+    test_size = min(max(1, int(num_states * args.test_fraction)), MAX_TEST_SIZE)
     test_id_set = set(random.sample(range(1, num_states + 1), test_size))
     test_ids = sorted(test_id_set)
     print(f"Train size: ~{num_states - test_size}, test size: {len(test_ids)}, test batch size: {args.test_batch_size}")
@@ -483,8 +485,8 @@ def main():
     action_encoder = ActionEncoder(board_size)
     # Forward max_steps to the ResNet so the "moves remaining" input plane
     # can be populated. (No effect for MLP.)
-    # if nn_config.resnet is not None:
-    #    nn_config.resnet.max_steps = max_steps
+    if nn_config.resnet is not None:
+        nn_config.resnet.max_steps = max_steps
     evaluator = NNEvaluator(action_encoder, device, nn_config, max_cache_size=100000)
     evaluator.train_prepare(az_params.learning_rate, az_params.batch_size, args.num_steps, az_params.weight_decay)
 
