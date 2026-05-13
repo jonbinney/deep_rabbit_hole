@@ -337,8 +337,6 @@ def resolve_db_path(db_path: str) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
-MAX_TEST_SIZE = 10000
-
 
 def parse_args():
     p = argparse.ArgumentParser(description="Train a neural network evaluator from a policy DB.")
@@ -474,7 +472,7 @@ def main():
     # ------------------------------------------------------------------
     # Train/test split by ID (IDs are 1-based, contiguous)
     # ------------------------------------------------------------------
-    test_size = min(max(1, int(num_states * args.test_fraction)), MAX_TEST_SIZE)
+    test_size = max(1, int(num_states * args.test_fraction))
     test_id_set = set(random.sample(range(1, num_states + 1), test_size))
     test_ids = sorted(test_id_set)
     print(f"Train size: ~{num_states - test_size}, test size: {len(test_ids)}, test batch size: {args.test_batch_size}")
