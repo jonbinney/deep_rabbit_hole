@@ -76,6 +76,28 @@ pub struct SelfPlayWorkerConfig {
     /// AlphaZero overrides specific to self-play (e.g., noise settings).
     #[serde(default)]
     pub alphazero: Option<AlphaZeroSelfPlayConfig>,
+    /// Rust-specific intra-process parallelism settings.
+    #[serde(default)]
+    pub rust: Option<RustSelfPlayConfig>,
+}
+
+/// Rust intra-process self-play parallelism and eval batching config.
+///
+/// All fields default to values that reproduce the original sequential
+/// behavior: 1 worker thread, 1 game per thread, batch-of-1 eval, no cache.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RustSelfPlayConfig {
+    #[serde(default)]
+    pub num_threads: Option<usize>,
+    #[serde(default)]
+    pub games_per_thread: Option<usize>,
+    #[serde(default)]
+    pub eval_batch_size: Option<usize>,
+    #[serde(default)]
+    pub eval_max_wait_ms: Option<u64>,
+    #[serde(default)]
+    pub eval_cache_max_size: Option<usize>,
 }
 
 /// AlphaZero MCTS configuration — matches Python's config format.

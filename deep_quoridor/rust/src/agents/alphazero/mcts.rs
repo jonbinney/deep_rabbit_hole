@@ -293,11 +293,11 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
 }
 
 /// Run MCTS search and return child information.
-pub fn search<E: Evaluator>(
+pub fn search(
     config: &MCTSConfig,
     root_data: CompactState,
     mechanics: &QGameMechanics,
-    evaluator: &mut E,
+    evaluator: &mut dyn Evaluator,
     visited_states: &HashSet<CompactState>,
 ) -> anyhow::Result<(Vec<ChildInfo>, f32)> {
     let bs = mechanics.repr().board_size() as i32;

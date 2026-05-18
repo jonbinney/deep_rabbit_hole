@@ -11,7 +11,7 @@ use crate::agents::{ActionSelectionTrace, ActionSelector};
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
 
-use super::evaluator::OnnxEvaluator;
+use super::evaluator::{Evaluator, OnnxEvaluator};
 use super::mcts::{search, MCTSConfig};
 
 /// Configuration for the AlphaZero agent.
@@ -116,23 +116,40 @@ pub fn apply_temperature_and_sample(
 /// AlphaZero MCTS agent.
 ///
 /// Combines MCTS search with neural network evaluation for action selection.
+/// The evaluator is held as a boxed trait object so callers can plug in an
+/// `OnnxEvaluator` (own ORT session) or a `BatchingEvaluator` (shared eval
+/// coordinator) without changing the agent.
 pub struct AlphaZeroAgent {
-    evaluator: OnnxEvaluator,
+    evaluator: Box<dyn Evaluator + Send>,
     config: AlphaZeroAgentConfig,
     visited_states: HashSet<CompactState>,
     last_selection_trace: Option<ActionSelectionTrace>,
 }
 
 impl AlphaZeroAgent {
-    /// Create a new AlphaZero agent.
+    /// Create a new AlphaZero agent that owns its own ONNX session.
     pub fn new(model_path: &str, config: AlphaZeroAgentConfig) -> Result<Self> {
-        let evaluator = OnnxEvaluator::new(model_path)?;
+        let evaluator = Box::new(OnnxEvaluator::new(model_path)?);
         Ok(Self {
             evaluator,
             config,
             visited_states: HashSet::new(),
             last_selection_trace: None,
         })
+    }
+
+    /// Create an AlphaZero agent backed by a caller-provided evaluator
+    /// (e.g. a `BatchingEvaluator` sharing a coordinator across threads).
+    pub fn with_evaluator(
+        evaluator: Box<dyn Evaluator + Send>,
+        config: AlphaZeroAgentConfig,
+    ) -> Self {
+        Self {
+            evaluator,
+            config,
+            visited_states: HashSet::new(),
+            last_selection_trace: None,
+        }
     }
 
     /// Reset visited states between games.
@@ -160,7 +177,7 @@ impl ActionSelector for AlphaZeroAgent {
             &self.config.mcts,
             data,
             mechanics,
-            &mut self.evaluator,
+            &mut *self.evaluator,
             visited_ref,
         )?;
 
