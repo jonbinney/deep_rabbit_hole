@@ -23,13 +23,13 @@ def parse_selfplay_line(line):
     return elapsed
 
 
-def run_single_benchmark(config_file, num_workers, parallel_games, duration, runs_dir, extra_overrides):
-    run_id = f"bench-w{num_workers}-g{parallel_games}-{int(time.time())}"
+def run_single_benchmark(config_file, num_workers, games_per_thread, duration, runs_dir, extra_overrides):
+    run_id = f"bench-w{num_workers}-g{games_per_thread}-{int(time.time())}"
 
     overrides = [
         f"run_id={run_id}",
         f"self_play.num_workers={num_workers}",
-        f"self_play.parallel_games={parallel_games}",
+        f"self_play.games_per_thread={games_per_thread}",
         f"training.finish_after={duration}",
         "benchmarks=[]",
         "wandb=None",
@@ -71,14 +71,14 @@ def run_single_benchmark(config_file, num_workers, parallel_games, duration, run
         print("WARNING: couldn't find the duration of the self-play")
         print(all_lines)
 
-    return compute_metrics(num_workers, parallel_games, durations)
+    return compute_metrics(num_workers, games_per_thread, durations)
 
 
-def compute_metrics(num_workers, parallel_games, durations):
+def compute_metrics(num_workers, games_per_thread, durations):
     if not durations:
         return {
             "num_workers": num_workers,
-            "parallel_games": parallel_games,
+            "games_per_thread": games_per_thread,
             "total_rounds": 0,
             "total_games": 0,
             "avg_round_time": float("nan"),
@@ -87,12 +87,12 @@ def compute_metrics(num_workers, parallel_games, durations):
 
     total_rounds = len(durations)
     total_worker_time = sum(durations)
-    total_games = parallel_games * total_rounds
+    total_games = games_per_thread * total_rounds
     avg_throughput = num_workers * total_games / total_worker_time
 
     return {
         "num_workers": num_workers,
-        "parallel_games": parallel_games,
+        "games_per_thread": games_per_thread,
         "total_rounds": total_rounds,
         "total_games": total_games,
         "avg_round_time": total_worker_time / total_rounds,
@@ -112,7 +112,7 @@ def print_results_table(results):
     for r in sorted(results, key=lambda x: x["avg_throughput"], reverse=True):
         print(
             f"{r['num_workers']:>10} "
-            f"{r['parallel_games']:>10} "
+            f"{r['games_per_thread']:>10} "
             f"{r['total_rounds']:>10} "
             f"{r['total_games']:>10} "
             f"{r['avg_round_time']:>14.2f} "
@@ -124,7 +124,7 @@ def main():
     parser = argparse.ArgumentParser(description="Benchmark self-play throughput across configurations")
     parser.add_argument("config_file", type=str, help="Base config YAML file")
     parser.add_argument("--workers", type=str, help="Comma-separated num_workers values")
-    parser.add_argument("--games", type=str, help="Comma-separated parallel_games values")
+    parser.add_argument("--games", type=str, help="Comma-separated games_per_thread values")
     parser.add_argument("--duration", type=str, default="2 minutes", help="Duration per combo (default: '2 minutes')")
     parser.add_argument("--runs-dir", type=str, default=None, help="Directory for runs")
     parser.add_argument("-o", "--overrides", nargs="*", default=[], help="Additional config overrides for train_v2.py")
@@ -136,18 +136,18 @@ def main():
 
     print(f"Benchmarking {len(combos)} configurations, {args.duration} each")
     print(f"  Workers: {workers_list}")
-    print(f"  Parallel games: {games_list}")
+    print(f"  Games per thread: {games_list}")
 
     results = []
-    for i, (num_workers, parallel_games) in enumerate(combos):
+    for i, (num_workers, games_per_thread) in enumerate(combos):
         print(f"\n{'=' * 60}")
-        print(f"[{i + 1}/{len(combos)}] num_workers={num_workers}, parallel_games={parallel_games}")
+        print(f"[{i + 1}/{len(combos)}] num_workers={num_workers}, games_per_thread={games_per_thread}")
         print(f"{'=' * 60}")
 
         result = run_single_benchmark(
             config_file=args.config_file,
             num_workers=num_workers,
-            parallel_games=parallel_games,
+            games_per_thread=games_per_thread,
             duration=args.duration,
             runs_dir=args.runs_dir,
             extra_overrides=args.extra_overrides,

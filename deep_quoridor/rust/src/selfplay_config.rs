@@ -67,37 +67,30 @@ pub struct QuoridorConfig {
 }
 
 /// Self-play worker parameters from the YAML (subset of Python's `SelfPlayConfig`).
+///
+/// `num_workers` controls the number of self-play subprocesses (Python-side
+/// concern). Inside a Rust self-play process, `num_threads × games_per_thread`
+/// games run concurrently and share one ONNX session via the eval coordinator.
+/// `eval_batch_size`, `eval_max_wait_ms`, and `eval_cache_max_size` configure
+/// the coordinator (see `agents::alphazero::eval_coordinator`). Defaults
+/// reproduce sequential behaviour.
 #[derive(Debug, Deserialize)]
 pub struct SelfPlayWorkerConfig {
     #[serde(default)]
     pub num_workers: Option<usize>,
     #[serde(default)]
-    pub parallel_games: Option<usize>,
-    /// AlphaZero overrides specific to self-play (e.g., noise settings).
-    #[serde(default)]
-    pub alphazero: Option<AlphaZeroSelfPlayConfig>,
-    /// Rust-specific intra-process parallelism settings.
-    #[serde(default)]
-    pub rust: Option<RustSelfPlayConfig>,
-}
-
-/// Rust intra-process self-play parallelism and eval batching config.
-///
-/// All fields default to values that reproduce the original sequential
-/// behavior: 1 worker thread, 1 game per thread, batch-of-1 eval, no cache.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct RustSelfPlayConfig {
+    pub games_per_thread: Option<usize>,
     #[serde(default)]
     pub num_threads: Option<usize>,
-    #[serde(default)]
-    pub games_per_thread: Option<usize>,
     #[serde(default)]
     pub eval_batch_size: Option<usize>,
     #[serde(default)]
     pub eval_max_wait_ms: Option<u64>,
     #[serde(default)]
     pub eval_cache_max_size: Option<usize>,
+    /// AlphaZero overrides specific to self-play (e.g., noise settings).
+    #[serde(default)]
+    pub alphazero: Option<AlphaZeroSelfPlayConfig>,
 }
 
 /// AlphaZero MCTS configuration — matches Python's config format.
@@ -300,7 +293,7 @@ alphazero:
   mcts_c_puct: 1.2
 self_play:
   num_workers: 2
-  parallel_games: 2
+  games_per_thread: 2
 training:
   finish_after: 2 minutes
   games_per_training_step: 8.0
@@ -316,7 +309,7 @@ training:
         assert_eq!(config.quoridor.board_size, 5);
         assert_eq!(config.quoridor.max_walls, 1);
         assert_eq!(config.quoridor.max_steps, 50);
-        assert_eq!(config.self_play.unwrap().parallel_games, Some(2));
+        assert_eq!(config.self_play.unwrap().games_per_thread, Some(2));
 
         // Check alphazero config
         let az = config.alphazero.unwrap();

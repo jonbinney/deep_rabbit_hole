@@ -6,7 +6,7 @@ alphazero:
 wandb: null  # Disable wandb for testing
 self_play:
   num_workers: 1
-  parallel_games: 2
+  games_per_thread: 2
   alphazero:
     mcts_noise_epsilon: 0.25
 training:

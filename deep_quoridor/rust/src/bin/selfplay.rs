@@ -35,7 +35,7 @@ use quoridor_rs::agents::ActionSelector;
 use quoridor_rs::game_runner::{play_game, GameResult};
 use quoridor_rs::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
 use quoridor_rs::selfplay_config::{
-    load_config, load_latest_model, AlphaZeroConfig, QuoridorConfig, RustSelfPlayConfig,
+    load_config, load_latest_model, AlphaZeroConfig, QuoridorConfig, SelfPlayWorkerConfig,
 };
 
 /// Convert a `.pt` model path to its corresponding `.onnx` path.
@@ -96,11 +96,11 @@ struct Cli {
     #[arg(long)]
     shutdown_file: Option<String>,
 
-    /// Number of worker threads (default: 1, or value from YAML self_play.rust.num_threads).
+    /// Number of worker threads (default: 1, or value from YAML self_play.num_threads).
     #[arg(long)]
     num_threads: Option<usize>,
 
-    /// Games per worker thread (default: 1, or value from YAML).
+    /// Games per worker thread (default: 1, or value from YAML self_play.games_per_thread).
     #[arg(long)]
     games_per_thread: Option<usize>,
 
@@ -128,7 +128,7 @@ struct ResolvedRustConfig {
 }
 
 impl ResolvedRustConfig {
-    fn resolve(cli: &Cli, yaml: Option<&RustSelfPlayConfig>) -> Self {
+    fn resolve(cli: &Cli, yaml: Option<&SelfPlayWorkerConfig>) -> Self {
         let pick_usize = |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d).max(1);
         let pick_usize_zero_ok =
             |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
@@ -303,10 +303,7 @@ fn main() -> Result<()> {
         base_az
     };
 
-    let rust_cfg = ResolvedRustConfig::resolve(
-        &cli,
-        config.self_play.as_ref().and_then(|s| s.rust.as_ref()),
-    );
+    let rust_cfg = ResolvedRustConfig::resolve(&cli, config.self_play.as_ref());
 
     if cli.use_raw_onnx_agent {
         if cli.continuous {
