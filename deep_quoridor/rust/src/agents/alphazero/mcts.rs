@@ -233,6 +233,28 @@ pub fn select_child(
     best_idx
 }
 
+/// Apply a virtual loss along `path` (root → leaf inclusive). For each node,
+/// `visit_count += vl` and `value_sum -= vl`. Call `undo_virtual_loss` before
+/// real backprop to restore the baseline.
+pub fn apply_virtual_loss(arena: &mut NodeArena, path: &[usize], vl: u32) {
+    let vl_f = vl as f64;
+    for &idx in path {
+        let n = arena.get_mut(idx);
+        n.visit_count += vl;
+        n.value_sum -= vl_f;
+    }
+}
+
+/// Reverse `apply_virtual_loss`.
+pub fn undo_virtual_loss(arena: &mut NodeArena, path: &[usize], vl: u32) {
+    let vl_f = vl as f64;
+    for &idx in path {
+        let n = arena.get_mut(idx);
+        n.visit_count -= vl;
+        n.value_sum += vl_f;
+    }
+}
+
 /// Backpropagate a value up the tree.
 pub fn backpropagate(arena: &mut NodeArena, node_idx: usize, mut value: f64) {
     let mut current = Some(node_idx);
@@ -819,5 +841,37 @@ mod tests {
         for c in &children {
             assert_eq!(action_to_index(bs, &c.action), c.action_index);
         }
+    }
+
+    #[test]
+    fn test_virtual_loss_apply_undo_round_trip() {
+        let (_, data) = make_mech_state();
+        let mut arena = NodeArena::new(data);
+        let c1 = arena.alloc_child(0, 0, data, 0.5);
+        let c2 = arena.alloc_child(c1, 0, data, 0.5);
+        arena.get_mut(0).children = vec![c1];
+        arena.get_mut(c1).children = vec![c2];
+
+        // Snapshot.
+        let (root_v, root_s) = (arena.get(0).visit_count, arena.get(0).value_sum);
+        let (c1_v, c1_s)     = (arena.get(c1).visit_count, arena.get(c1).value_sum);
+        let (c2_v, c2_s)     = (arena.get(c2).visit_count, arena.get(c2).value_sum);
+
+        let path = vec![0usize, c1, c2];
+        apply_virtual_loss(&mut arena, &path, 3);
+
+        assert_eq!(arena.get(0).visit_count, root_v + 3);
+        assert!((arena.get(0).value_sum - (root_s - 3.0)).abs() < 1e-9);
+        assert_eq!(arena.get(c1).visit_count, c1_v + 3);
+        assert_eq!(arena.get(c2).visit_count, c2_v + 3);
+
+        undo_virtual_loss(&mut arena, &path, 3);
+
+        assert_eq!(arena.get(0).visit_count, root_v);
+        assert!((arena.get(0).value_sum - root_s).abs() < 1e-9);
+        assert_eq!(arena.get(c1).visit_count, c1_v);
+        assert!((arena.get(c1).value_sum - c1_s).abs() < 1e-9);
+        assert_eq!(arena.get(c2).visit_count, c2_v);
+        assert!((arena.get(c2).value_sum - c2_s).abs() < 1e-9);
     }
 }
