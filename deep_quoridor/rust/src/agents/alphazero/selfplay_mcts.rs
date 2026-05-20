@@ -40,7 +40,8 @@ pub struct LeafParallelMCTS {
     rotation_mappings: std::collections::HashMap<i32, (Vec<usize>, Vec<usize>)>,
     /// Persistent arena across moves when tree reuse is enabled. None means
     /// the next search should start from a fresh arena.
-    arena: Option<NodeArena>,
+    pub(super) arena: Option<NodeArena>,
+    last_model_version: Option<i64>,
 }
 
 impl LeafParallelMCTS {
@@ -57,12 +58,26 @@ impl LeafParallelMCTS {
             cache,
             rotation_mappings: std::collections::HashMap::new(),
             arena: None,
+            last_model_version: None,
         }
     }
 
     /// Discard any retained tree. Call between games or on model reload.
     pub fn reset_tree(&mut self) {
         self.arena = None;
+    }
+
+    /// Inform the MCTS of the current model version. If it has changed since
+    /// the last call, the retained tree is discarded (its values were from
+    /// the previous network).
+    pub fn note_model_version(&mut self, v: i64) {
+        match self.last_model_version {
+            Some(prev) if prev == v => {}
+            _ => {
+                self.arena = None;
+                self.last_model_version = Some(v);
+            }
+        }
     }
 
     /// After the caller picks `action_idx` at the root, promote that child's
@@ -444,6 +459,48 @@ mod tests {
             assert!(!children_2.is_empty());
 
             // Drop mcts (holds Sender clone) before tx, then await stub.
+            drop(mcts);
+            drop(tx);
+            let _ = stub.await;
+        });
+    }
+
+    #[test]
+    fn test_note_model_version_clears_tree_on_change() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mech = QGameMechanics::new(5, 0, 200);
+            let data = mech.create_initial_state();
+            let cache = Arc::new(EvalCache::new());
+            let (tx, rx) = tokio_mpsc::channel::<FrontMsg>(64);
+            let stub = spawn_stub_coordinator(rx, Arc::clone(&cache));
+
+            let mcts_cfg = MCTSConfig {
+                n: Some(8),
+                ucb_c: 1.4,
+                noise_epsilon: 0.0,
+                ..Default::default()
+            };
+            let lp_cfg = LeafParallelConfig {
+                leaf_parallelism: 2,
+                virtual_loss: 1,
+                enable_tree_reuse: true,
+            };
+            let mut mcts = LeafParallelMCTS::new(mcts_cfg, lp_cfg, tx.clone(), Arc::clone(&cache));
+
+            mcts.note_model_version(1);
+            let visited = std::collections::HashSet::new();
+            let _ = mcts.search(data, &mech, &visited).await.unwrap();
+            assert!(mcts.arena.is_some());
+
+            mcts.note_model_version(2);
+            assert!(mcts.arena.is_none(), "tree should be cleared on version change");
+
+            // Drop mcts (holds Sender clone) before tx so stub exits.
             drop(mcts);
             drop(tx);
             let _ = stub.await;
