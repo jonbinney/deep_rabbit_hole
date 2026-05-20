@@ -347,3 +347,73 @@ fn run_postprocess(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array4;
+    use tokio::sync::oneshot;
+
+    fn make_request(policy_size: usize, board_size: i32) -> (EvalRequest, oneshot::Receiver<Result<EvalResult>>) {
+        let m = (board_size * 2 + 3) as usize;
+        let features = Array4::<f32>::zeros((1, 5, m, m));
+        let mask = vec![true; policy_size];
+        let (tx, rx) = oneshot::channel();
+        let req = EvalRequest {
+            state: CompactState::default(),
+            features,
+            work_action_mask: mask,
+            rot_to_orig: None,
+            responder: tx,
+        };
+        (req, rx)
+    }
+
+    #[test]
+    fn test_postprocess_parallel_matches_serial_finalize() {
+        // Synthesise a batch and feed it directly through run_postprocess via a
+        // hand-driven channel pair; then compare against a serial reference.
+        let cache = Arc::new(EvalCache::new());
+        // Buffer of 2: holds both the Outputs message and the Shutdown sentinel so
+        // both can be enqueued before run_postprocess starts draining the channel.
+        let (post_tx, post_rx) = sync_channel::<PostIn>(2);
+
+        let batch_len = 8usize;
+        let policy_size = 10usize;
+        let mut reqs = Vec::with_capacity(batch_len);
+        let mut rxs = Vec::with_capacity(batch_len);
+        for _ in 0..batch_len {
+            let (r, rx) = make_request(policy_size, 5);
+            reqs.push(r);
+            rxs.push(rx);
+        }
+        let values: Vec<f32> = (0..batch_len).map(|i| i as f32 * 0.1 - 0.4).collect();
+        let policy: Vec<f32> = (0..batch_len * policy_size).map(|i| (i as f32).sin()).collect();
+
+        // Expected from serial loop using finalize_policy directly.
+        let mut expected: Vec<Vec<f32>> = Vec::with_capacity(batch_len);
+        for i in 0..batch_len {
+            let logits = &policy[i * policy_size..(i + 1) * policy_size];
+            expected.push(finalize_policy(logits, &vec![true; policy_size], None));
+        }
+
+        post_tx.send(PostIn::Outputs(BatchOutputs {
+            values: values.clone(),
+            policy: policy.clone(),
+            policy_size,
+            reqs,
+        })).unwrap();
+        post_tx.send(PostIn::Shutdown).unwrap();
+
+        // Drive the post stage on this thread.
+        run_postprocess(Arc::clone(&cache), 1024, post_rx);
+
+        for (i, rx) in rxs.into_iter().enumerate() {
+            let res = rx.blocking_recv().unwrap().unwrap();
+            assert!((res.value - values[i]).abs() < 1e-6);
+            for (p, e) in res.priors.iter().zip(expected[i].iter()) {
+                assert!((p - e).abs() < 1e-6);
+            }
+        }
+    }
+}
