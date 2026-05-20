@@ -68,8 +68,8 @@ pub struct QuoridorConfig {
 
 /// Self-play worker parameters from the YAML (subset of Python's `SelfPlayConfig`).
 ///
-/// `num_workers` controls the number of self-play subprocesses (Python-side
-/// concern). Inside a Rust self-play process, `num_threads × games_per_thread`
+/// `num_processes` controls the number of self-play subprocesses (Python-side
+/// concern). Inside a Rust self-play process, `threads_per_process × games_per_thread`
 /// games run concurrently and share one ONNX session via the eval coordinator.
 /// `eval_batch_size`, `eval_max_wait_ms`, and `eval_cache_max_size` configure
 /// the coordinator (see `agents::alphazero::eval_coordinator`). Defaults
@@ -77,11 +77,11 @@ pub struct QuoridorConfig {
 #[derive(Debug, Deserialize)]
 pub struct SelfPlayWorkerConfig {
     #[serde(default)]
-    pub num_workers: Option<usize>,
+    pub num_processes: Option<usize>,
     #[serde(default)]
     pub games_per_thread: Option<usize>,
     #[serde(default)]
-    pub num_threads: Option<usize>,
+    pub threads_per_process: Option<usize>,
     #[serde(default)]
     pub eval_batch_size: Option<usize>,
     #[serde(default)]
@@ -292,7 +292,7 @@ alphazero:
   mcts_n: 50
   mcts_c_puct: 1.2
 self_play:
-  num_workers: 2
+  num_processes: 2
   games_per_thread: 2
 training:
   finish_after: 2 minutes
@@ -340,7 +340,7 @@ quoridor:
     fn test_load_config_missing_quoridor() {
         let yaml = r#"
 self_play:
-  num_workers: 2
+  num_processes: 2
 "#;
         let mut f = NamedTempFile::new().unwrap();
         f.write_all(yaml.as_bytes()).unwrap();

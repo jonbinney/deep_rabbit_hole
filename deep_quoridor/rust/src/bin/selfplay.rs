@@ -4,7 +4,7 @@
 //! loads an ONNX model, plays games, and writes `.npz` + `.yaml` replay files.
 //!
 //! By default this runs the multi-threaded path: one eval coordinator thread
-//! owns the ORT session and serves batched inference for `num_threads ×
+//! owns the ORT session and serves batched inference for `threads_per_process ×
 //! games_per_thread` worker threads that play games concurrently. The
 //! coordinator maintains a shared `DashMap` eval cache. Defaults reproduce
 //! sequential behaviour (1 worker, batch-of-1, no cache).
@@ -96,9 +96,9 @@ struct Cli {
     #[arg(long)]
     shutdown_file: Option<String>,
 
-    /// Number of worker threads (default: 1, or value from YAML self_play.num_threads).
+    /// Number of worker threads (default: 1, or value from YAML self_play.threads_per_process).
     #[arg(long)]
-    num_threads: Option<usize>,
+    threads_per_process: Option<usize>,
 
     /// Games per worker thread (default: 1, or value from YAML self_play.games_per_thread).
     #[arg(long)]
@@ -120,7 +120,7 @@ struct Cli {
 /// Resolved runtime config (CLI overrides > YAML > defaults).
 #[derive(Debug, Clone, Copy)]
 struct ResolvedRustConfig {
-    num_threads: usize,
+    threads_per_process: usize,
     games_per_thread: usize,
     eval_batch_size: usize,
     eval_max_wait_ms: u64,
@@ -134,7 +134,11 @@ impl ResolvedRustConfig {
             |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
         let pick_u64 = |c: Option<u64>, y: Option<u64>, d: u64| c.or(y).unwrap_or(d);
         Self {
-            num_threads: pick_usize(cli.num_threads, yaml.and_then(|c| c.num_threads), 1),
+            threads_per_process: pick_usize(
+                cli.threads_per_process,
+                yaml.and_then(|c| c.threads_per_process),
+                1,
+            ),
             games_per_thread: pick_usize(
                 cli.games_per_thread,
                 yaml.and_then(|c| c.games_per_thread),
@@ -159,7 +163,7 @@ impl ResolvedRustConfig {
     }
 
     fn total_workers(&self) -> usize {
-        self.num_threads * self.games_per_thread
+        self.threads_per_process * self.games_per_thread
     }
 }
 
@@ -361,8 +365,8 @@ fn run_batch_batched(
     println!("P1: alphazero ({})", model_path);
     println!("P2: {}", p2_desc);
     println!(
-        "Multi-threading: num_threads={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
-        rust_cfg.num_threads,
+        "Multi-threading: threads_per_process={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
+        rust_cfg.threads_per_process,
         rust_cfg.games_per_thread,
         rust_cfg.total_workers(),
         rust_cfg.eval_batch_size,
@@ -525,8 +529,8 @@ fn run_continuous_batched(
         q.board_size, q.max_walls, q.max_steps,
     );
     println!(
-        "Multi-threading: num_threads={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
-        rust_cfg.num_threads,
+        "Multi-threading: threads_per_process={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
+        rust_cfg.threads_per_process,
         rust_cfg.games_per_thread,
         rust_cfg.total_workers(),
         rust_cfg.eval_batch_size,

@@ -7,7 +7,7 @@ EXAMPLE_CONFIG = {
     "quoridor": {"board_size": 5, "max_walls": 3, "max_steps": 50},
     "alphazero": {"network": {"type": "mlp"}, "mcts_n": 300, "mcts_c_puct": 1.2},
     "wandb": {"project": "example", "upload_model": {"every": "20 models", "when_max": ["raw_win_perc", "elo_score"]}},
-    "self_play": {"num_workers": 2, "games_per_thread": 8, "alphazero": {"mcts_noise_epsilon": 0.25}},
+    "self_play": {"num_processes": 2, "games_per_thread": 8, "alphazero": {"mcts_noise_epsilon": 0.25}},
     "training": {
         "games_per_training_step": 25.0,
         "learning_rate": 0.001,

@@ -61,7 +61,7 @@ if __name__ == "__main__":
     if config.self_play.program == "rust":
         # Spawn Rust self-play processes in continuous mode
         config_file_path = str(config.paths.config_file)
-        for i in range(config.self_play.num_workers):
+        for i in range(config.self_play.num_processes):
             cmd = [
                 config.self_play.rust_selfplay_binary,
                 "--config",
@@ -78,7 +78,7 @@ if __name__ == "__main__":
             rust_subprocesses.append(proc)
             print(f"Started Rust self-play process {proc.pid}")
     else:
-        for i in range(config.self_play.num_workers):
+        for i in range(config.self_play.num_processes):
             p = mp.Process(target=self_play, args=[config])
             p.start()
             self_play_processes.append(p)

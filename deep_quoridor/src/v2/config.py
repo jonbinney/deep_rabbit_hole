@@ -64,11 +64,11 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
 
 
 class SelfPlayConfig(StrictBaseModel):
-    num_workers: int
+    num_processes: int
     games_per_thread: int
     # Rust self-play only: intra-process parallelism and eval batching knobs.
     # Python self-play is single-threaded per process and ignores these.
-    num_threads: int = 1
+    threads_per_process: int = 1
     eval_batch_size: int = 1
     eval_max_wait_ms: int = 0
     eval_cache_max_size: int = 0
