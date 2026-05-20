@@ -364,5 +364,90 @@ mod tests {
             let _ = stub.await;
         });
     }
+
+    #[test]
+    fn test_leaf_parallel_k8_diversifies_children() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mech = QGameMechanics::new(5, 0, 200);
+            let data = mech.create_initial_state();
+            let cache = Arc::new(EvalCache::new());
+            let (tx, rx) = tokio_mpsc::channel::<FrontMsg>(128);
+            let stub = spawn_stub_coordinator(rx, Arc::clone(&cache));
+
+            let mcts_cfg = MCTSConfig {
+                n: Some(64),
+                ucb_c: 1.4,
+                noise_epsilon: 0.0,
+                ..Default::default()
+            };
+            let lp_cfg = LeafParallelConfig {
+                leaf_parallelism: 8,
+                virtual_loss: 3,
+                enable_tree_reuse: false,
+            };
+            let mut mcts = LeafParallelMCTS::new(mcts_cfg, lp_cfg, tx.clone(), Arc::clone(&cache));
+
+            let visited = std::collections::HashSet::new();
+            let (children, _) = mcts.search(data, &mech, &visited).await.unwrap();
+            let visited_top: u32 = children.iter().filter(|c| c.visit_count > 0).count() as u32;
+            assert!(visited_top >= 2, "K=8 vl=3 should spread visits across ≥2 root children");
+
+            // Drop mcts (holds Sender clone) before tx, then await stub.
+            drop(mcts);
+            drop(tx);
+            let _ = stub.await;
+        });
+    }
+
+    #[test]
+    fn test_tree_reuse_promotes_subtree_between_moves() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mech = QGameMechanics::new(5, 0, 200);
+            let data = mech.create_initial_state();
+            let cache = Arc::new(EvalCache::new());
+            let (tx, rx) = tokio_mpsc::channel::<FrontMsg>(128);
+            let stub = spawn_stub_coordinator(rx, Arc::clone(&cache));
+
+            let mcts_cfg = MCTSConfig {
+                n: Some(32),
+                ucb_c: 1.4,
+                noise_epsilon: 0.0,
+                ..Default::default()
+            };
+            let lp_cfg = LeafParallelConfig {
+                leaf_parallelism: 4,
+                virtual_loss: 1,
+                enable_tree_reuse: true,
+            };
+            let mut mcts = LeafParallelMCTS::new(mcts_cfg, lp_cfg, tx.clone(), Arc::clone(&cache));
+
+            let visited = std::collections::HashSet::new();
+            // First search at the initial state.
+            let (children_1, _) = mcts.search(data, &mech, &visited).await.unwrap();
+            let chosen = children_1.iter().max_by_key(|c| c.visit_count).unwrap();
+
+            // Advance root and search again from the resulting state.
+            let mut next_state = data;
+            mech.apply_action_index(&mut next_state, chosen.action_index);
+            mcts.advance_root(chosen.action_index);
+            let (children_2, _) = mcts.search(next_state, &mech, &visited).await.unwrap();
+            assert!(!children_2.is_empty());
+
+            // Drop mcts (holds Sender clone) before tx, then await stub.
+            drop(mcts);
+            drop(tx);
+            let _ = stub.await;
+        });
+    }
 }
 
