@@ -139,6 +139,11 @@ pub struct NodeArena {
 }
 
 impl NodeArena {
+    /// Construct from a pre-filled `Vec<Node>` (used by `promote_subtree`).
+    pub fn from_nodes(nodes: Vec<Node>) -> Self {
+        Self { nodes }
+    }
+
     /// Create a new arena with a root node.
     pub fn new(root_data: CompactState) -> Self {
         let root = Node::new_root(root_data);
@@ -367,6 +372,66 @@ pub fn apply_dirichlet_noise_to_root_children(
         let c = arena.get_mut(child_idx);
         c.prior = (1.0 - epsilon) * c.prior_clean + epsilon * noise[i];
     }
+}
+
+/// Copy the subtree rooted at `new_root_idx` of `old_arena` into a fresh
+/// `NodeArena`. The new arena's root is the copy of `new_root_idx`, with its
+/// `parent` and `action_index` cleared. All descendants are copied; siblings
+/// of `new_root_idx` (and their descendants) are dropped.
+///
+/// Statistics (`visit_count`, `value_sum`, `wins`, `losses`, `prior`,
+/// `prior_clean`) carry over unchanged.
+pub fn promote_subtree(old_arena: &NodeArena, new_root_idx: usize) -> NodeArena {
+    let mut new_nodes: Vec<Node> = Vec::new();
+    let mut idx_map: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
+
+    // BFS so parents always get assigned a new index before children.
+    let mut queue: std::collections::VecDeque<usize> =
+        std::collections::VecDeque::new();
+    queue.push_back(new_root_idx);
+    idx_map.insert(new_root_idx, 0);
+    let old_root = old_arena.get(new_root_idx);
+    new_nodes.push(Node {
+        data: old_root.data,
+        parent: None,
+        action_index: None,
+        children: Vec::new(),
+        visit_count: old_root.visit_count,
+        value_sum: old_root.value_sum,
+        wins: old_root.wins,
+        losses: old_root.losses,
+        prior: old_root.prior,
+        prior_clean: old_root.prior_clean,
+    });
+
+    while let Some(old_idx) = queue.pop_front() {
+        let new_idx = idx_map[&old_idx];
+        let old_node = old_arena.get(old_idx);
+        let mut new_children: Vec<usize> = Vec::with_capacity(old_node.children.len());
+        for &old_child in &old_node.children {
+            let new_child_idx = new_nodes.len();
+            idx_map.insert(old_child, new_child_idx);
+            let c = old_arena.get(old_child);
+            new_nodes.push(Node {
+                data: c.data,
+                parent: Some(new_idx),
+                action_index: c.action_index,
+                children: Vec::new(),
+                visit_count: c.visit_count,
+                value_sum: c.value_sum,
+                wins: c.wins,
+                losses: c.losses,
+                prior: c.prior,
+                prior_clean: c.prior_clean,
+            });
+            new_children.push(new_child_idx);
+            queue.push_back(old_child);
+        }
+        new_nodes[new_idx].children = new_children;
+    }
+
+    NodeArena::from_nodes(new_nodes)
 }
 
 /// Run MCTS search and return child information.
@@ -895,6 +960,44 @@ mod tests {
         }
         assert!(first_level_choices.len() >= 2,
             "vl should drive at least two distinct first-level child selections");
+    }
+
+    #[test]
+    fn test_promote_subtree_keeps_only_chosen_branch() {
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+
+        let mask = mech.get_action_mask_immut(data);
+        let valid: Vec<usize> = mask.iter().enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None }).collect();
+        assert!(valid.len() >= 2);
+
+        let mut d1 = data;
+        mech.apply_action_index(&mut d1, valid[0]);
+        let mut d2 = data;
+        mech.apply_action_index(&mut d2, valid[1]);
+        let c1 = arena.alloc_child(0, valid[0], d1, 0.5);
+        let c2 = arena.alloc_child(0, valid[1], d2, 0.5);
+        arena.get_mut(0).children = vec![c1, c2];
+        arena.get_mut(c1).visit_count = 7;
+        arena.get_mut(c1).value_sum = 3.5;
+        // Give c1 a grandchild so we can confirm it survives the promotion.
+        let g = arena.alloc_child(c1, valid[0], d1, 0.5);
+        arena.get_mut(c1).children = vec![g];
+        arena.get_mut(g).visit_count = 4;
+
+        let new_arena = promote_subtree(&arena, c1);
+
+        // New arena has root + g (2 nodes).
+        assert_eq!(new_arena.len(), 2);
+        assert_eq!(new_arena.get(0).visit_count, 7);
+        assert!((new_arena.get(0).value_sum - 3.5).abs() < 1e-9);
+        assert!(new_arena.get(0).parent.is_none());
+        assert_eq!(new_arena.get(0).children.len(), 1);
+        let new_g = new_arena.get(0).children[0];
+        assert_eq!(new_arena.get(new_g).visit_count, 4);
+        assert_eq!(new_arena.get(new_g).parent, Some(0));
     }
 
     #[test]
