@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use rand_distr::{Dirichlet, Distribution};
+use smallvec::SmallVec;
 
 use crate::actions::action_index_to_action;
 #[cfg(test)]
@@ -253,6 +254,30 @@ pub fn undo_virtual_loss(arena: &mut NodeArena, path: &[usize], vl: u32) {
         n.visit_count -= vl;
         n.value_sum += vl_f;
     }
+}
+
+/// Descend from `root_idx` to a leaf using PUCT, applying a virtual loss of
+/// magnitude `vl` to every node touched (including the leaf). Returns the path
+/// root→leaf (inclusive). The caller must eventually call `undo_virtual_loss`
+/// on this path before doing real backprop.
+pub fn select_leaf_with_vl(
+    arena: &mut NodeArena,
+    root_idx: usize,
+    ucb_c: f32,
+    vl: u32,
+    visited_states: &HashSet<CompactState>,
+) -> SmallVec<[usize; 32]> {
+    let mut path: SmallVec<[usize; 32]> = SmallVec::new();
+    let mut current = root_idx;
+    loop {
+        path.push(current);
+        if arena.get(current).should_expand() {
+            break;
+        }
+        current = select_child(arena, current, ucb_c, visited_states);
+    }
+    apply_virtual_loss(arena, &path, vl);
+    path
 }
 
 /// Backpropagate a value up the tree.
@@ -841,6 +866,35 @@ mod tests {
         for c in &children {
             assert_eq!(action_to_index(bs, &c.action), c.action_index);
         }
+    }
+
+    #[test]
+    fn test_select_leaf_with_vl_diversifies_concurrent_selections() {
+        use smallvec::SmallVec;
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+
+        let mask = mech.get_action_mask_immut(data);
+        let total = crate::actions::policy_size(5);
+        let mut priors = vec![0.0f32; total];
+        // Three valid actions with similar priors so vl can spread them out.
+        let valid: Vec<usize> = mask.iter().enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None }).collect();
+        assert!(valid.len() >= 3);
+        for &i in &valid[..3] { priors[i] = 1.0 / 3.0; }
+        expand_node(&mut arena, 0, &priors, &mech);
+        arena.get_mut(0).visit_count = 0;
+
+        let visited = HashSet::new();
+        let mut first_level_choices = std::collections::HashSet::new();
+        for _ in 0..3 {
+            let path: SmallVec<[usize; 32]> = select_leaf_with_vl(&mut arena, 0, 1.4, 3, &visited);
+            // First-level child is path[1] (path[0] is the root).
+            first_level_choices.insert(path[1]);
+        }
+        assert!(first_level_choices.len() >= 2,
+            "vl should drive at least two distinct first-level child selections");
     }
 
     #[test]
