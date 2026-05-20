@@ -117,8 +117,8 @@ pub fn apply_temperature_and_sample(
 ///
 /// Combines MCTS search with neural network evaluation for action selection.
 /// The evaluator is held as a boxed trait object so callers can plug in an
-/// `OnnxEvaluator` (own ORT session) or a `BatchingEvaluator` (shared eval
-/// coordinator) without changing the agent.
+/// `OnnxEvaluator` (own ORT session) or other custom Evaluator implementations
+/// without changing the agent.
 pub struct AlphaZeroAgent {
     evaluator: Box<dyn Evaluator + Send>,
     config: AlphaZeroAgentConfig,
@@ -139,7 +139,7 @@ impl AlphaZeroAgent {
     }
 
     /// Create an AlphaZero agent backed by a caller-provided evaluator
-    /// (e.g. a `BatchingEvaluator` sharing a coordinator across threads).
+    /// (e.g. a pipelined evaluator from eval_pipeline for multi-threaded workloads).
     pub fn with_evaluator(
         evaluator: Box<dyn Evaluator + Send>,
         config: AlphaZeroAgentConfig,
