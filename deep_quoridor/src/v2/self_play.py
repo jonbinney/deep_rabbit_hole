@@ -9,7 +9,7 @@ from v2.yaml_models import LatestModel
 
 def self_play(config: Config):
     LatestModel.wait_for_creation(config)
-    n = config.self_play.games_per_thread
+    n = config.self_play.games_per_process
 
     environments = [
         quoridor_env.env(

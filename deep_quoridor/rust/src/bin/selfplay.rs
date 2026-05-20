@@ -3,11 +3,11 @@
 //! Reads game parameters from a YAML config (same format as the Python pipeline),
 //! loads an ONNX model, plays games, and writes `.npz` + `.yaml` replay files.
 //!
-//! By default this runs the multi-threaded path: one eval coordinator thread
-//! owns the ORT session and serves batched inference for `threads_per_process ×
-//! games_per_thread` worker threads that play games concurrently. The
-//! coordinator maintains a shared `DashMap` eval cache. Defaults reproduce
-//! sequential behaviour (1 worker, batch-of-1, no cache).
+//! By default this runs the async path: one eval coordinator thread
+//! owns the ORT session and serves batched inference for `games_per_process`
+//! async game tasks running leaf-parallel MCTS with `leaf_parallelism`
+//! in-flight evals each. The coordinator maintains a shared `DashMap` eval
+//! cache. Defaults reproduce sequential behaviour (1 game, 1 parallelism, no cache).
 //!
 //! `--use-raw-onnx-agent` selects the legacy single-threaded greedy ONNX path,
 //! unchanged from before.
