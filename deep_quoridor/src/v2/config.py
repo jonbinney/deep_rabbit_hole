@@ -65,13 +65,15 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
 
 class SelfPlayConfig(StrictBaseModel):
     num_processes: int
-    games_per_thread: int
-    # Rust self-play only: intra-process parallelism and eval batching knobs.
-    # Python self-play is single-threaded per process and ignores these.
-    threads_per_process: int = 1
-    eval_batch_size: int = 1
+    games_per_process: int
+    # Leaf-parallel MCTS knobs (Rust self-play only).
+    leaf_parallelism: int = 16
+    virtual_loss: int = 3
+    enable_tree_reuse: bool = True
+    mcts_worker_threads: Optional[int] = None
+    eval_batch_size: int = 2048
     eval_max_wait_ms: int = 0
-    eval_cache_max_size: int = 0
+    eval_cache_max_size: int = 100000
     alphazero: Optional[AlphaZeroSelfPlayConfig] = None
     program: Literal["python", "rust"] = "python"
     rust_selfplay_binary: Optional[str] = None
