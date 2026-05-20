@@ -1,14 +1,11 @@
 //! Evaluator trait and implementations for MCTS.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use ndarray::Array4;
 use ort::session::Session;
 
-use crate::agents::alphazero::eval_coordinator::{EvalCache, EvalRequest, EvalResult};
 use crate::agents::onnx_agent::softmax;
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
@@ -178,72 +175,6 @@ impl Evaluator for UniformMockEvaluator {
             }
         }
         Ok((0.0, priors))
-    }
-}
-
-/// Evaluator that defers inference to a shared eval coordinator thread.
-///
-/// Workflow on `evaluate`:
-/// 1. Look up `data` in the shared eval cache; on hit, return immediately.
-/// 2. On miss, build the rotated state, mask, and ResNet input tensor in the
-///    requesting worker thread (per design).
-/// 3. Send an `EvalRequest` (carrying features + mask + un-rotate mapping) to
-///    the coordinator and block on a oneshot response.
-///
-/// The coordinator handles cache insertion, so this evaluator does no
-/// insertion itself.
-pub struct BatchingEvaluator {
-    sender: SyncSender<EvalRequest>,
-    cache: Arc<EvalCache>,
-    rotation_mappings_by_board_size: HashMap<i32, (Vec<usize>, Vec<usize>)>,
-}
-
-impl BatchingEvaluator {
-    pub fn new(sender: SyncSender<EvalRequest>, cache: Arc<EvalCache>) -> Self {
-        Self {
-            sender,
-            cache,
-            rotation_mappings_by_board_size: HashMap::new(),
-        }
-    }
-}
-
-impl Evaluator for BatchingEvaluator {
-    fn evaluate(
-        &mut self,
-        data: CompactState,
-        mechanics: &QGameMechanics,
-        action_mask: &[bool],
-    ) -> Result<(f32, Vec<f32>)> {
-        // Fast path: cache hit.
-        if let Some(entry) = self.cache.get(&data) {
-            return Ok((entry.value, entry.priors.clone()));
-        }
-
-        // Cache miss: build features in this worker thread and submit.
-        let prepared = prepare_eval_input(
-            mechanics,
-            data,
-            action_mask,
-            &mut self.rotation_mappings_by_board_size,
-        );
-
-        let (tx, rx) = sync_channel::<Result<EvalResult>>(1);
-        let req = EvalRequest {
-            state: data,
-            features: prepared.features,
-            work_action_mask: prepared.work_action_mask,
-            rot_to_orig: prepared.rot_to_orig,
-            responder: tx,
-        };
-        self.sender
-            .send(req)
-            .context("eval coordinator request channel closed")?;
-        let response = rx
-            .recv()
-            .context("eval coordinator dropped responder before responding")??;
-
-        Ok((response.value, response.priors))
     }
 }
 
