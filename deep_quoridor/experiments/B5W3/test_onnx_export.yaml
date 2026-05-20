@@ -6,7 +6,9 @@ alphazero:
 wandb: null  # Disable wandb for testing
 self_play:
   num_processes: 1
-  games_per_thread: 2
+  games_per_process: 16
+  leaf_parallelism: 16
+  virtual_loss: 3
   alphazero:
     mcts_noise_epsilon: 0.25
 training:
