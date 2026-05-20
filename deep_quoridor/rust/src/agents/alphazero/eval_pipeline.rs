@@ -11,7 +11,7 @@
 //! Control messages (`Reload(path)`, `Shutdown`) ride the front mpsc as
 //! enum variants so ordering with batches is preserved.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::Arc;
 use std::thread;
@@ -30,6 +30,16 @@ use crate::compact::q_bit_repr::CompactState;
 
 /// One-time sentinel for cache-saturation warning.
 static FIRST_FULL: AtomicBool = AtomicBool::new(false);
+
+/// Atomic performance counters for the eval pipeline.
+#[derive(Default)]
+pub struct PipelineCounters {
+    pub gpu_ns: AtomicU64,
+    pub batcher_wait_ns: AtomicU64,
+    pub postprocess_ns: AtomicU64,
+    pub batches: AtomicU64,
+    pub items: AtomicU64,
+}
 
 /// Shared eval cache: maps a (compact) state to its (value, masked priors).
 pub type EvalCache = DashMap<CompactState, EvalResult>;
@@ -111,24 +121,32 @@ pub fn spawn_coordinator(
     cache: Arc<EvalCache>,
     config: CoordinatorConfig,
     front_rx: tokio_mpsc::Receiver<FrontMsg>,
+    counters: Arc<PipelineCounters>,
 ) -> CoordinatorHandles {
     let (inf_tx, inf_rx) = sync_channel::<InferenceIn>(1);
     let (post_tx, post_rx) = sync_channel::<PostIn>(1);
 
     let batcher = thread::Builder::new()
         .name("eval-batcher".to_string())
-        .spawn(move || run_batcher(front_rx, inf_tx, config))
+        .spawn({
+            let counters = Arc::clone(&counters);
+            move || run_batcher(front_rx, inf_tx, config, counters)
+        })
         .expect("spawn batcher");
     let inference = thread::Builder::new()
         .name("eval-inference".to_string())
         .spawn({
             let cache = Arc::clone(&cache);
-            move || run_inference(initial_session, cache, inf_rx, post_tx)
+            let counters = Arc::clone(&counters);
+            move || run_inference(initial_session, cache, inf_rx, post_tx, counters)
         })
         .expect("spawn inference");
     let post = thread::Builder::new()
         .name("eval-post".to_string())
-        .spawn(move || run_postprocess(cache, config.eval_cache_max_size, post_rx))
+        .spawn({
+            let counters = Arc::clone(&counters);
+            move || run_postprocess(cache, config.eval_cache_max_size, post_rx, counters)
+        })
         .expect("spawn post");
 
     CoordinatorHandles { batcher, inference, post }
@@ -138,16 +156,19 @@ fn run_batcher(
     mut front_rx: tokio_mpsc::Receiver<FrontMsg>,
     inf_tx: std::sync::mpsc::SyncSender<InferenceIn>,
     config: CoordinatorConfig,
+    counters: Arc<PipelineCounters>,
 ) {
     let batch_size = config.eval_batch_size.max(1);
     let max_wait = Duration::from_millis(config.eval_max_wait_ms);
 
     loop {
-        // Block on first message.
+        // Block on first message; time how long we wait.
+        let t0 = Instant::now();
         let first = match front_rx.blocking_recv() {
             Some(m) => m,
             None => break, // channel closed; drain done
         };
+        counters.batcher_wait_ns.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
         let first_req = match first {
             FrontMsg::Req(r) => r,
             FrontMsg::Reload(p) => {
@@ -228,6 +249,7 @@ fn run_inference(
     cache: Arc<EvalCache>,
     inf_rx: Receiver<InferenceIn>,
     post_tx: std::sync::mpsc::SyncSender<PostIn>,
+    counters: Arc<PipelineCounters>,
 ) {
     while let Ok(msg) = inf_rx.recv() {
         match msg {
@@ -247,6 +269,7 @@ fn run_inference(
                         continue;
                     }
                 };
+                let gpu_t0 = Instant::now();
                 let outputs = match session.run(ort::inputs!["input" => input_value]) {
                     Ok(o) => o,
                     Err(e) => {
@@ -257,6 +280,9 @@ fn run_inference(
                         continue;
                     }
                 };
+                counters.gpu_ns.fetch_add(gpu_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                counters.batches.fetch_add(1, Ordering::Relaxed);
+                counters.items.fetch_add(batch_len as u64, Ordering::Relaxed);
                 let value_tensor = match outputs["value"].try_extract_tensor::<f32>() {
                     Ok(t) => t,
                     Err(e) => {
@@ -305,12 +331,14 @@ fn run_postprocess(
     cache: Arc<EvalCache>,
     cache_max: usize,
     post_rx: Receiver<PostIn>,
+    counters: Arc<PipelineCounters>,
 ) {
     while let Ok(msg) = post_rx.recv() {
         match msg {
             PostIn::Outputs(out) => {
                 let BatchOutputs { values, policy, policy_size, reqs } = out;
                 // Parallel finalize over the request batch.
+                let post_t0 = Instant::now();
                 let finalized: Vec<EvalResult> = reqs
                     .par_iter()
                     .enumerate()
@@ -324,6 +352,7 @@ fn run_postprocess(
                         EvalResult { value: values[i], priors }
                     })
                     .collect();
+                counters.postprocess_ns.fetch_add(post_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
                 // Insert into cache (serial — DashMap is sharded internally, parallel
                 // inserts have contention; serial is fine here).
                 for (req, res) in reqs.iter().zip(finalized.iter()) {
@@ -406,7 +435,7 @@ mod tests {
         post_tx.send(PostIn::Shutdown).unwrap();
 
         // Drive the post stage on this thread.
-        run_postprocess(Arc::clone(&cache), 1024, post_rx);
+        run_postprocess(Arc::clone(&cache), 1024, post_rx, Arc::new(PipelineCounters::default()));
 
         for (i, rx) in rxs.into_iter().enumerate() {
             let res = rx.blocking_recv().unwrap().unwrap();

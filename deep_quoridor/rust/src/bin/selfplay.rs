@@ -119,6 +119,10 @@ struct Cli {
     /// Max entries in the shared eval cache; 0 disables caching (default: 0).
     #[arg(long)]
     eval_cache_max_size: Option<usize>,
+
+    /// Periodically print pipeline counters (GPU time, batcher wait, postprocess time).
+    #[arg(long, default_value = "false")]
+    profile_counters: bool,
 }
 
 /// Resolved runtime config (CLI overrides > YAML > defaults).
@@ -324,10 +328,12 @@ fn run_batch_batched(
         .enable_time()
         .build()?;
 
+    let profile_counters = cli.profile_counters;
     rt.block_on(async move {
         let cache = std::sync::Arc::new(EvalCache::new());
         let (front_tx, front_rx) = tokio_mpsc::channel::<FrontMsg>(1024);
         let session = eval_pipeline::load_session(&model_path)?;
+        let counters = std::sync::Arc::new(eval_pipeline::PipelineCounters::default());
         let coord = eval_pipeline::spawn_coordinator(session, std::sync::Arc::clone(&cache),
             eval_pipeline::CoordinatorConfig {
                 eval_batch_size: rust_cfg.eval_batch_size,
@@ -335,7 +341,42 @@ fn run_batch_batched(
                 eval_cache_max_size: rust_cfg.eval_cache_max_size,
             },
             front_rx,
+            std::sync::Arc::clone(&counters),
         );
+
+        let print_shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let print_task = if profile_counters {
+            let counters = std::sync::Arc::clone(&counters);
+            let shutdown = std::sync::Arc::clone(&print_shutdown);
+            Some(tokio::spawn(async move {
+                let mut prev_gpu = 0u64; let mut prev_wait = 0u64; let mut prev_post = 0u64;
+                let mut prev_batches = 0u64; let mut prev_items = 0u64;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    if shutdown.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                    let gpu = counters.gpu_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let wait = counters.batcher_wait_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let post = counters.postprocess_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let batches = counters.batches.load(std::sync::atomic::Ordering::Relaxed);
+                    let items = counters.items.load(std::sync::atomic::Ordering::Relaxed);
+                    let d_gpu = gpu - prev_gpu;
+                    let d_wait = wait - prev_wait;
+                    let d_post = post - prev_post;
+                    let d_batches = batches - prev_batches;
+                    let d_items = items - prev_items;
+                    let avg_batch = if d_batches > 0 { d_items as f64 / d_batches as f64 } else { 0.0 };
+                    let gpu_busy_pct = (d_gpu as f64 / 5_000_000_000.0) * 100.0;
+                    let batch_wait_ms = if d_batches > 0 { (d_wait as f64 / d_batches as f64) / 1_000_000.0 } else { 0.0 };
+                    let post_ms = if d_batches > 0 { (d_post as f64 / d_batches as f64) / 1_000_000.0 } else { 0.0 };
+                    println!(
+                        "[pipe] batches={} items={} avg_batch={:.1} gpu_busy={:.1}% batch_wait_ms={:.1} post_ms={:.1}",
+                        d_batches, d_items, avg_batch, gpu_busy_pct, batch_wait_ms, post_ms,
+                    );
+                    prev_gpu = gpu; prev_wait = wait; prev_post = post;
+                    prev_batches = batches; prev_items = items;
+                }
+            }))
+        } else { None };
 
         let mcts_cfg = az_config.to_agent_config(q.board_size, q.max_walls).mcts;
         let lp_cfg = LeafParallelConfig {
@@ -411,6 +452,8 @@ fn run_batch_batched(
         let _ = coord.batcher.join();
         let _ = coord.inference.join();
         let _ = coord.post.join();
+        print_shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(t) = print_task { let _ = t.await; }
         Ok::<(), anyhow::Error>(())
     })?;
 
@@ -474,10 +517,12 @@ fn run_continuous_batched(
         .enable_time()
         .build()?;
 
+    let profile_counters = cli.profile_counters;
     rt.block_on(async move {
         let cache = std::sync::Arc::new(EvalCache::new());
         let (front_tx, front_rx) = tokio_mpsc::channel::<FrontMsg>(1024);
         let session = eval_pipeline::load_session(&initial_path)?;
+        let counters = std::sync::Arc::new(eval_pipeline::PipelineCounters::default());
         let coord = eval_pipeline::spawn_coordinator(session, std::sync::Arc::clone(&cache),
             eval_pipeline::CoordinatorConfig {
                 eval_batch_size: rust_cfg.eval_batch_size,
@@ -485,6 +530,7 @@ fn run_continuous_batched(
                 eval_cache_max_size: rust_cfg.eval_cache_max_size,
             },
             front_rx,
+            std::sync::Arc::clone(&counters),
         );
 
         let mcts_cfg = az_config.to_agent_config(q.board_size, q.max_walls).mcts;
@@ -502,6 +548,39 @@ fn run_continuous_batched(
         let model_version = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(initial_version));
         let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pid = std::process::id();
+
+        let print_task = if profile_counters {
+            let counters = std::sync::Arc::clone(&counters);
+            let shutdown = std::sync::Arc::clone(&shutdown);
+            Some(tokio::spawn(async move {
+                let mut prev_gpu = 0u64; let mut prev_wait = 0u64; let mut prev_post = 0u64;
+                let mut prev_batches = 0u64; let mut prev_items = 0u64;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    if shutdown.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                    let gpu = counters.gpu_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let wait = counters.batcher_wait_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let post = counters.postprocess_ns.load(std::sync::atomic::Ordering::Relaxed);
+                    let batches = counters.batches.load(std::sync::atomic::Ordering::Relaxed);
+                    let items = counters.items.load(std::sync::atomic::Ordering::Relaxed);
+                    let d_gpu = gpu - prev_gpu;
+                    let d_wait = wait - prev_wait;
+                    let d_post = post - prev_post;
+                    let d_batches = batches - prev_batches;
+                    let d_items = items - prev_items;
+                    let avg_batch = if d_batches > 0 { d_items as f64 / d_batches as f64 } else { 0.0 };
+                    let gpu_busy_pct = (d_gpu as f64 / 5_000_000_000.0) * 100.0;
+                    let batch_wait_ms = if d_batches > 0 { (d_wait as f64 / d_batches as f64) / 1_000_000.0 } else { 0.0 };
+                    let post_ms = if d_batches > 0 { (d_post as f64 / d_batches as f64) / 1_000_000.0 } else { 0.0 };
+                    println!(
+                        "[pipe] batches={} items={} avg_batch={:.1} gpu_busy={:.1}% batch_wait_ms={:.1} post_ms={:.1}",
+                        d_batches, d_items, avg_batch, gpu_busy_pct, batch_wait_ms, post_ms,
+                    );
+                    prev_gpu = gpu; prev_wait = wait; prev_post = post;
+                    prev_batches = batches; prev_items = items;
+                }
+            }))
+        } else { None };
 
         let mut handles = Vec::with_capacity(rust_cfg.games_per_process);
         for _tid in 0..rust_cfg.games_per_process {
@@ -578,6 +657,7 @@ fn run_continuous_batched(
         let _ = coord.batcher.join();
         let _ = coord.inference.join();
         let _ = coord.post.join();
+        if let Some(t) = print_task { let _ = t.await; }
         Ok::<(), anyhow::Error>(())
     })?;
 
