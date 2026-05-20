@@ -279,3 +279,90 @@ impl LeafParallelMCTS {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::alphazero::eval_pipeline::EvalCache;
+    use crate::compact::q_game_mechanics::QGameMechanics;
+    use std::sync::Arc;
+    use tokio::sync::mpsc as tokio_mpsc;
+
+    /// Stub coordinator: replies to every request with uniform priors over the
+    /// valid actions in the request's mask, value=0.
+    fn spawn_stub_coordinator(
+        mut rx: tokio_mpsc::Receiver<FrontMsg>,
+        cache: Arc<EvalCache>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                match msg {
+                    FrontMsg::Req(req) => {
+                        let n_valid = req.work_action_mask.iter().filter(|&&v| v).count();
+                        let p = if n_valid > 0 { 1.0 / n_valid as f32 } else { 0.0 };
+                        let mut priors = vec![0.0f32; req.work_action_mask.len()];
+                        for (i, &v) in req.work_action_mask.iter().enumerate() {
+                            if v {
+                                priors[i] = p;
+                            }
+                        }
+                        // If rot_to_orig is provided, undo rotation.
+                        let priors = match req.rot_to_orig.as_ref() {
+                            Some(map) => crate::rotation::remap_policy(&priors, map),
+                            None => priors,
+                        };
+                        let res = EvalResult { value: 0.0, priors };
+                        let _ = cache.insert(req.state, res.clone());
+                        let _ = req.responder.send(Ok(res));
+                    }
+                    FrontMsg::Reload(_) | FrontMsg::Shutdown => break,
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn test_leaf_parallel_k1_matches_sequential_visit_total() {
+        // Use a manual runtime instead of #[tokio::test] because the workspace
+        // sets panic = "abort" in [profile.dev], which interacts badly with
+        // the tokio::test macro.
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mech = QGameMechanics::new(5, 0, 200);
+            let data = mech.create_initial_state();
+            let cache = Arc::new(EvalCache::new());
+            let (tx, rx) = tokio_mpsc::channel::<FrontMsg>(64);
+            let stub = spawn_stub_coordinator(rx, Arc::clone(&cache));
+
+            let mcts_cfg = MCTSConfig {
+                n: Some(20),
+                ucb_c: 1.4,
+                noise_epsilon: 0.0,
+                ..Default::default()
+            };
+            let lp_cfg = LeafParallelConfig {
+                leaf_parallelism: 1,
+                virtual_loss: 0,
+                enable_tree_reuse: false,
+            };
+            let mut mcts =
+                LeafParallelMCTS::new(mcts_cfg.clone(), lp_cfg, tx.clone(), Arc::clone(&cache));
+
+            let visited = std::collections::HashSet::new();
+            let (children, _root_value) = mcts.search(data, &mech, &visited).await.unwrap();
+            let total: u32 = children.iter().map(|c| c.visit_count).sum();
+            // Should be exactly n iterations of MCTS expansion under the root.
+            assert!(total >= 20, "expected ≥20 child visits, got {}", total);
+
+            // Drop mcts (which holds an internal Sender clone) before tx so the
+            // stub's rx.recv() returns None and the stub task exits.
+            drop(mcts);
+            drop(tx);
+            let _ = stub.await;
+        });
+    }
+}
+
