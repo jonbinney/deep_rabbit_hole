@@ -68,27 +68,32 @@ pub struct QuoridorConfig {
 
 /// Self-play worker parameters from the YAML (subset of Python's `SelfPlayConfig`).
 ///
-/// `num_processes` controls the number of self-play subprocesses (Python-side
-/// concern). Inside a Rust self-play process, `threads_per_process × games_per_thread`
-/// games run concurrently and share one ONNX session via the eval coordinator.
-/// `eval_batch_size`, `eval_max_wait_ms`, and `eval_cache_max_size` configure
-/// the coordinator (see `agents::alphazero::eval_coordinator`). Defaults
-/// reproduce sequential behaviour.
+/// `num_processes` is the number of self-play subprocesses (Python-side concern).
+/// Inside one Rust process, `games_per_process` async game tasks run concurrently,
+/// each MCTS issuing `leaf_parallelism` in-flight evals per outer iteration with
+/// `virtual_loss` applied during descent. The eval coordinator batches all
+/// in-flight evals together (up to `eval_batch_size`, deadline-bounded by
+/// `eval_max_wait_ms` from first request) and runs one ONNX inference per batch.
 #[derive(Debug, Deserialize)]
 pub struct SelfPlayWorkerConfig {
     #[serde(default)]
     pub num_processes: Option<usize>,
     #[serde(default)]
-    pub games_per_thread: Option<usize>,
+    pub games_per_process: Option<usize>,
     #[serde(default)]
-    pub threads_per_process: Option<usize>,
+    pub leaf_parallelism: Option<usize>,
+    #[serde(default)]
+    pub virtual_loss: Option<u32>,
+    #[serde(default)]
+    pub enable_tree_reuse: Option<bool>,
+    #[serde(default)]
+    pub mcts_worker_threads: Option<usize>,
     #[serde(default)]
     pub eval_batch_size: Option<usize>,
     #[serde(default)]
     pub eval_max_wait_ms: Option<u64>,
     #[serde(default)]
     pub eval_cache_max_size: Option<usize>,
-    /// AlphaZero overrides specific to self-play (e.g., noise settings).
     #[serde(default)]
     pub alphazero: Option<AlphaZeroSelfPlayConfig>,
 }
@@ -293,7 +298,7 @@ alphazero:
   mcts_c_puct: 1.2
 self_play:
   num_processes: 2
-  games_per_thread: 2
+  games_per_process: 16
 training:
   finish_after: 2 minutes
   games_per_training_step: 8.0
@@ -309,7 +314,7 @@ training:
         assert_eq!(config.quoridor.board_size, 5);
         assert_eq!(config.quoridor.max_walls, 1);
         assert_eq!(config.quoridor.max_steps, 50);
-        assert_eq!(config.self_play.unwrap().games_per_thread, Some(2));
+        assert_eq!(config.self_play.unwrap().games_per_process, Some(16));
 
         // Check alphazero config
         let az = config.alphazero.unwrap();
