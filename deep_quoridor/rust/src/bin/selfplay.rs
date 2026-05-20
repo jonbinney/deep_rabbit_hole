@@ -14,20 +14,12 @@
 
 use std::path::Path;
 use std::process;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Parser;
-use dashmap::DashMap;
 
-use quoridor_rs::agents::alphazero::eval_coordinator::{
-    load_session, run_coordinator, CoordinatorConfig, CtrlMsg, EvalCache, EvalRequest,
-};
-use quoridor_rs::agents::alphazero::evaluator::BatchingEvaluator;
 use quoridor_rs::agents::alphazero::AlphaZeroAgent;
 use quoridor_rs::agents::onnx_agent::OnnxAgent;
 use quoridor_rs::agents::random_agent::RandomAgent;
@@ -96,13 +88,25 @@ struct Cli {
     #[arg(long)]
     shutdown_file: Option<String>,
 
-    /// Number of worker threads (default: 1, or value from YAML self_play.threads_per_process).
+    /// Number of concurrent game tasks per process (default: 1, or YAML self_play.games_per_process).
     #[arg(long)]
-    threads_per_process: Option<usize>,
+    games_per_process: Option<usize>,
 
-    /// Games per worker thread (default: 1, or value from YAML self_play.games_per_thread).
+    /// Leaf-parallel batch size: number of in-flight evals per game per outer iteration.
     #[arg(long)]
-    games_per_thread: Option<usize>,
+    leaf_parallelism: Option<usize>,
+
+    /// Virtual loss magnitude applied during descent.
+    #[arg(long)]
+    virtual_loss: Option<u32>,
+
+    /// Disable tree reuse across moves (default: enabled).
+    #[arg(long, default_value = "false")]
+    no_tree_reuse: bool,
+
+    /// Tokio worker threads (default: hardware threads, or YAML self_play.mcts_worker_threads).
+    #[arg(long)]
+    mcts_worker_threads: Option<usize>,
 
     /// Max eval batch size at the coordinator (default: 1).
     #[arg(long)]
@@ -120,8 +124,11 @@ struct Cli {
 /// Resolved runtime config (CLI overrides > YAML > defaults).
 #[derive(Debug, Clone, Copy)]
 struct ResolvedRustConfig {
-    threads_per_process: usize,
-    games_per_thread: usize,
+    games_per_process: usize,
+    leaf_parallelism: usize,
+    virtual_loss: u32,
+    enable_tree_reuse: bool,
+    mcts_worker_threads: usize,
     eval_batch_size: usize,
     eval_max_wait_ms: u64,
     eval_cache_max_size: usize,
@@ -130,41 +137,29 @@ struct ResolvedRustConfig {
 impl ResolvedRustConfig {
     fn resolve(cli: &Cli, yaml: Option<&SelfPlayWorkerConfig>) -> Self {
         let pick_usize = |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d).max(1);
-        let pick_usize_zero_ok =
-            |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
+        let pick_usize_zero_ok = |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
+        let pick_u32 = |c: Option<u32>, y: Option<u32>, d: u32| c.or(y).unwrap_or(d);
         let pick_u64 = |c: Option<u64>, y: Option<u64>, d: u64| c.or(y).unwrap_or(d);
+        let pick_bool = |yaml_v: Option<bool>, d: bool| yaml_v.unwrap_or(d);
+        let default_workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
         Self {
-            threads_per_process: pick_usize(
-                cli.threads_per_process,
-                None, // SelfPlayWorkerConfig uses games_per_process (not split)
-                1,
-            ),
-            games_per_thread: pick_usize(
-                cli.games_per_thread,
-                yaml.and_then(|c| c.games_per_process),
-                1,
-            ),
-            eval_batch_size: pick_usize(
-                cli.eval_batch_size,
-                yaml.and_then(|c| c.eval_batch_size),
-                1,
-            ),
-            eval_max_wait_ms: pick_u64(
-                cli.eval_max_wait_ms,
-                yaml.and_then(|c| c.eval_max_wait_ms),
-                0,
-            ),
-            eval_cache_max_size: pick_usize_zero_ok(
-                cli.eval_cache_max_size,
-                yaml.and_then(|c| c.eval_cache_max_size),
-                0,
-            ),
+            games_per_process: pick_usize(cli.games_per_process, yaml.and_then(|c| c.games_per_process), 1),
+            leaf_parallelism: pick_usize(cli.leaf_parallelism, yaml.and_then(|c| c.leaf_parallelism), 1),
+            virtual_loss: pick_u32(cli.virtual_loss, yaml.and_then(|c| c.virtual_loss), 3),
+            enable_tree_reuse: if cli.no_tree_reuse {
+                false
+            } else {
+                pick_bool(yaml.and_then(|c| c.enable_tree_reuse), true)
+            },
+            mcts_worker_threads: pick_usize(cli.mcts_worker_threads, yaml.and_then(|c| c.mcts_worker_threads), default_workers),
+            eval_batch_size: pick_usize(cli.eval_batch_size, yaml.and_then(|c| c.eval_batch_size), 1),
+            eval_max_wait_ms: pick_u64(cli.eval_max_wait_ms, yaml.and_then(|c| c.eval_max_wait_ms), 0),
+            eval_cache_max_size: pick_usize_zero_ok(cli.eval_cache_max_size, yaml.and_then(|c| c.eval_cache_max_size), 100000),
         }
     }
 
-    fn total_workers(&self) -> usize {
-        self.threads_per_process * self.games_per_thread
-    }
 }
 
 /// Boxed agent trait object for dynamic dispatch.
@@ -187,37 +182,6 @@ impl BoxedAgent {
         if let BoxedAgent::AlphaZero(a) = self {
             a.reset_game();
         }
-    }
-}
-
-/// Build a P1 AlphaZero agent that submits eval requests to the shared coordinator.
-fn build_p1_agent_batched(
-    az_config: &AlphaZeroConfig,
-    board_size: i32,
-    max_walls: i32,
-    sender: SyncSender<EvalRequest>,
-    cache: Arc<EvalCache>,
-) -> BoxedAgent {
-    let agent_cfg = az_config.to_agent_config(board_size, max_walls);
-    let eval = Box::new(BatchingEvaluator::new(sender, cache));
-    BoxedAgent::AlphaZero(AlphaZeroAgent::with_evaluator(eval, agent_cfg))
-}
-
-/// Build a P2 agent: AlphaZero (default, shared coordinator) or "random".
-fn build_p2_agent_batched(
-    p2_override: Option<&str>,
-    az_config: &AlphaZeroConfig,
-    board_size: i32,
-    max_walls: i32,
-    sender: SyncSender<EvalRequest>,
-    cache: Arc<EvalCache>,
-) -> Result<BoxedAgent> {
-    match p2_override {
-        Some("random") => Ok(BoxedAgent::Random(RandomAgent::new())),
-        Some(other) => anyhow::bail!("Unknown --p2 agent: '{}'. Valid: random", other),
-        None => Ok(build_p1_agent_batched(
-            az_config, board_size, max_walls, sender, cache,
-        )),
     }
 }
 
@@ -324,138 +288,98 @@ fn main() -> Result<()> {
     }
 }
 
-fn spawn_coordinator(
-    model_path: &str,
-    cache: Arc<EvalCache>,
-    rust_cfg: ResolvedRustConfig,
-    req_rx: std::sync::mpsc::Receiver<EvalRequest>,
-    ctrl_rx: std::sync::mpsc::Receiver<CtrlMsg>,
-) -> Result<thread::JoinHandle<()>> {
-    let session = load_session(model_path)?;
-    let coord_cfg = CoordinatorConfig {
-        eval_batch_size: rust_cfg.eval_batch_size,
-        eval_max_wait_ms: rust_cfg.eval_max_wait_ms,
-        eval_cache_max_size: rust_cfg.eval_cache_max_size,
-    };
-    let handle = thread::Builder::new()
-        .name("eval-coordinator".to_string())
-        .spawn(move || run_coordinator(session, cache, coord_cfg, req_rx, ctrl_rx))?;
-    Ok(handle)
-}
-
 fn run_batch_batched(
     cli: &Cli,
     q: &QuoridorConfig,
     az_config: &AlphaZeroConfig,
     rust_cfg: ResolvedRustConfig,
 ) -> Result<()> {
+    use quoridor_rs::agents::alphazero::eval_pipeline::{self, EvalCache, FrontMsg};
+    use quoridor_rs::agents::alphazero::selfplay_game::{play_game_async, GameSettings, P2};
+    use quoridor_rs::agents::alphazero::selfplay_mcts::{LeafParallelConfig, LeafParallelMCTS};
+    use tokio::sync::mpsc as tokio_mpsc;
+
     let model_path = cli
         .model_path
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("--model-path is required in batch mode"))?;
+        .ok_or_else(|| anyhow::anyhow!("--model-path is required in batch mode"))?
+        .to_string();
+    let num_games = cli.num_games;
+    let output_dir = cli.output_dir.clone();
+    let p2_kind = cli.p2.clone();
 
-    let p2_desc = match cli.p2.as_deref() {
-        Some(p2) => p2.to_string(),
-        None => "alphazero (same as P1)".to_string(),
-    };
     println!(
-        "Self-play (batched): board_size={}, max_walls={}, max_steps={}, num_games={}",
-        q.board_size, q.max_walls, q.max_steps, cli.num_games,
-    );
-    println!("P1: alphazero ({})", model_path);
-    println!("P2: {}", p2_desc);
-    println!(
-        "Multi-threading: threads_per_process={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
-        rust_cfg.threads_per_process,
-        rust_cfg.games_per_thread,
-        rust_cfg.total_workers(),
-        rust_cfg.eval_batch_size,
-        rust_cfg.eval_max_wait_ms,
-        rust_cfg.eval_cache_max_size,
+        "Self-play (leaf-parallel): board_size={}, max_walls={}, max_steps={}, num_games={}",
+        q.board_size, q.max_walls, q.max_steps, num_games,
     );
     println!(
-        "MCTS config: n={:?}, k={:?}, c_puct={}, noise_epsilon={}",
-        az_config.mcts_n, az_config.mcts_k, az_config.mcts_c_puct, az_config.mcts_noise_epsilon
+        "games_per_process={}, leaf_parallelism={}, virtual_loss={}, tree_reuse={}, eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}, mcts_worker_threads={}",
+        rust_cfg.games_per_process, rust_cfg.leaf_parallelism, rust_cfg.virtual_loss,
+        rust_cfg.enable_tree_reuse, rust_cfg.eval_batch_size, rust_cfg.eval_max_wait_ms,
+        rust_cfg.eval_cache_max_size, rust_cfg.mcts_worker_threads,
     );
-    println!("Output: {}", cli.output_dir);
 
-    let cache: Arc<EvalCache> = Arc::new(DashMap::new());
-    let total_workers = rust_cfg.total_workers();
-    let (req_tx, req_rx) = sync_channel::<EvalRequest>(total_workers.max(1) * 4);
-    let (ctrl_tx, ctrl_rx) = sync_channel::<CtrlMsg>(4);
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(rust_cfg.mcts_worker_threads)
+        .enable_time()
+        .build()?;
 
-    let coord_handle =
-        spawn_coordinator(model_path, Arc::clone(&cache), rust_cfg, req_rx, ctrl_rx)?;
+    rt.block_on(async move {
+        let cache = std::sync::Arc::new(EvalCache::new());
+        let (front_tx, front_rx) = tokio_mpsc::channel::<FrontMsg>(1024);
+        let session = eval_pipeline::load_session(&model_path)?;
+        let coord = eval_pipeline::spawn_coordinator(session, std::sync::Arc::clone(&cache),
+            eval_pipeline::CoordinatorConfig {
+                eval_batch_size: rust_cfg.eval_batch_size,
+                eval_max_wait_ms: rust_cfg.eval_max_wait_ms,
+                eval_cache_max_size: rust_cfg.eval_cache_max_size,
+            },
+            front_rx,
+        );
 
-    println!("Model loaded.");
+        let mcts_cfg = az_config.to_agent_config(q.board_size, q.max_walls).mcts;
+        let lp_cfg = LeafParallelConfig {
+            leaf_parallelism: rust_cfg.leaf_parallelism as u32,
+            virtual_loss: rust_cfg.virtual_loss,
+            enable_tree_reuse: rust_cfg.enable_tree_reuse,
+        };
+        let settings = GameSettings {
+            temperature: az_config.temperature.unwrap_or(1.0),
+            drop_t_on_step: az_config.drop_t_on_step,
+            deterministic_tie_break: false,
+        };
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let pid = std::process::id();
+        let start = std::time::Instant::now();
+        let stats = std::sync::Arc::new(std::sync::Mutex::new(Stats::default()));
 
-    let counter = Arc::new(AtomicUsize::new(0));
-    let stats = Arc::new(Mutex::new(Stats::default()));
-    let model_version_atomic = Arc::new(AtomicI64::new(cli.model_version));
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let pid = process::id();
-    let start = Instant::now();
-
-    let mut worker_handles = Vec::with_capacity(total_workers);
-    for tid in 0..total_workers {
-        let az_config = az_config.clone();
-        let p2_override = cli.p2.clone();
-        let board_size = q.board_size;
-        let max_walls = q.max_walls;
-        let max_steps = q.max_steps as i32;
-        let trace = cli.trace;
-        let req_tx = req_tx.clone();
-        let cache = Arc::clone(&cache);
-        let counter = Arc::clone(&counter);
-        let stats = Arc::clone(&stats);
-        let mv = Arc::clone(&model_version_atomic);
-        let shutdown = Arc::clone(&shutdown);
-        let output_dir = cli.output_dir.clone();
-        let num_games = cli.num_games;
-
-        let handle = thread::Builder::new()
-            .name(format!("selfplay-worker-{}", tid))
-            .spawn(move || -> Result<()> {
-                let mut agent_p1 = build_p1_agent_batched(
-                    &az_config,
-                    board_size,
-                    max_walls,
-                    req_tx.clone(),
-                    Arc::clone(&cache),
-                );
-                let mut agent_p2 = build_p2_agent_batched(
-                    p2_override.as_deref(),
-                    &az_config,
-                    board_size,
-                    max_walls,
-                    req_tx.clone(),
-                    Arc::clone(&cache),
-                )?;
-
+        let mut handles = Vec::with_capacity(rust_cfg.games_per_process);
+        for _ in 0..rust_cfg.games_per_process {
+            let front_tx = front_tx.clone();
+            let cache = std::sync::Arc::clone(&cache);
+            let counter = std::sync::Arc::clone(&counter);
+            let stats = std::sync::Arc::clone(&stats);
+            let output_dir = output_dir.clone();
+            let p2_kind = p2_kind.clone();
+            let mcts_cfg = mcts_cfg.clone();
+            let board_size = q.board_size;
+            let max_walls = q.max_walls;
+            let max_steps = q.max_steps as i32;
+            let model_version = cli.model_version;
+            handles.push(tokio::spawn(async move {
+                let mut p1 = LeafParallelMCTS::new(mcts_cfg.clone(), lp_cfg, front_tx.clone(), std::sync::Arc::clone(&cache));
+                let mut p2: P2 = match p2_kind.as_deref() {
+                    Some("random") => P2::Random,
+                    Some(other) => return Err(anyhow::anyhow!("Unknown --p2 agent: '{}'", other)),
+                    None => P2::AlphaZero(LeafParallelMCTS::new(mcts_cfg, lp_cfg, front_tx.clone(), std::sync::Arc::clone(&cache))),
+                };
                 loop {
-                    if shutdown.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let game_idx = counter.fetch_add(1, Ordering::Relaxed);
-                    if game_idx >= num_games {
-                        break;
-                    }
-
-                    let game_mv = mv.load(Ordering::Relaxed);
-                    agent_p1.reset_game();
-                    agent_p2.reset_game();
-                    let result = play_game(
-                        agent_p1.as_mut(),
-                        agent_p2.as_mut(),
-                        board_size,
-                        max_walls,
-                        max_steps,
-                        trace,
-                        None,
-                    )?;
-
-                    write_replay(&output_dir, None, &result, game_mv, game_idx, pid)?;
-
+                    let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if idx >= num_games { break; }
+                    p1.reset_tree();
+                    if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
+                    let result = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
+                    write_replay(&output_dir, None, &result, model_version, idx, pid)?;
                     let mut s = stats.lock().unwrap();
                     match result.winner {
                         Some(0) => s.wins[0] += 1,
@@ -470,37 +394,27 @@ fn run_batch_batched(
                     let draws = s.draws;
                     let avg_turns = s.total_turns as f64 / done.max(1) as f64;
                     drop(s);
-
                     if done % 10 == 0 || done == num_games {
                         let elapsed = start.elapsed().as_secs_f64();
                         let gps = done as f64 / elapsed;
-                        println!(
-                            "[{}/{}] P1 wins: {}, P2 wins: {}, draws: {}, avg turns: {:.1}, {:.1} games/s",
-                            done, num_games, p1w, p2w, draws, avg_turns, gps,
-                        );
+                        println!("[{}/{}] P1 wins: {}, P2 wins: {}, draws: {}, avg turns: {:.1}, {:.1} games/s",
+                            done, num_games, p1w, p2w, draws, avg_turns, gps);
                     }
                 }
-                Ok(())
-            })?;
-        worker_handles.push(handle);
-    }
+                Ok::<(), anyhow::Error>(())
+            }));
+        }
+        drop(front_tx);
+        for h in handles {
+            h.await??;
+        }
+        let _ = coord.batcher.join();
+        let _ = coord.inference.join();
+        let _ = coord.post.join();
+        Ok::<(), anyhow::Error>(())
+    })?;
 
-    // Drop our handle to the request sender so the coordinator sees disconnect
-    // once all workers finish.
-    drop(req_tx);
-
-    for h in worker_handles {
-        h.join()
-            .map_err(|e| anyhow::anyhow!("worker thread panicked: {:?}", e))??;
-    }
-
-    let _ = ctrl_tx.send(CtrlMsg::Shutdown);
-    let _ = coord_handle.join();
-
-    println!(
-        "Done. {} games written to {}",
-        cli.num_games, cli.output_dir
-    );
+    println!("Done. {} games written to {}", num_games, cli.output_dir);
     Ok(())
 }
 
@@ -510,175 +424,162 @@ fn run_continuous_batched(
     az_config: &AlphaZeroConfig,
     rust_cfg: ResolvedRustConfig,
 ) -> Result<()> {
-    let latest_yaml_path = cli
-        .latest_model_yaml
-        .as_deref()
+    use quoridor_rs::agents::alphazero::eval_pipeline::{self, EvalCache, FrontMsg};
+    use quoridor_rs::agents::alphazero::selfplay_game::{play_game_async, GameSettings, P2};
+    use quoridor_rs::agents::alphazero::selfplay_mcts::{LeafParallelConfig, LeafParallelMCTS};
+    use quoridor_rs::selfplay_config::load_latest_model;
+    use tokio::sync::mpsc as tokio_mpsc;
+
+    let latest_yaml_path = cli.latest_model_yaml.as_deref()
         .ok_or_else(|| anyhow::anyhow!("--latest-model-yaml is required with --continuous"))?
         .to_string();
-    let shutdown_path = cli
-        .shutdown_file
-        .as_deref()
+    let shutdown_path = cli.shutdown_file.as_deref()
         .ok_or_else(|| anyhow::anyhow!("--shutdown-file is required with --continuous"))?
         .to_string();
-
     let tmp_dir = format!("{}/tmp", cli.output_dir);
     std::fs::create_dir_all(&tmp_dir)?;
 
     println!(
-        "Continuous self-play (batched): board_size={}, max_walls={}, max_steps={}",
+        "Continuous self-play (leaf-parallel): board_size={}, max_walls={}, max_steps={}",
         q.board_size, q.max_walls, q.max_steps,
     );
     println!(
-        "Multi-threading: threads_per_process={}, games_per_thread={} (total in-flight={}), eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}",
-        rust_cfg.threads_per_process,
-        rust_cfg.games_per_thread,
-        rust_cfg.total_workers(),
-        rust_cfg.eval_batch_size,
-        rust_cfg.eval_max_wait_ms,
-        rust_cfg.eval_cache_max_size,
+        "games_per_process={}, leaf_parallelism={}, virtual_loss={}, tree_reuse={}, eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}, mcts_worker_threads={}",
+        rust_cfg.games_per_process, rust_cfg.leaf_parallelism, rust_cfg.virtual_loss,
+        rust_cfg.enable_tree_reuse, rust_cfg.eval_batch_size, rust_cfg.eval_max_wait_ms,
+        rust_cfg.eval_cache_max_size, rust_cfg.mcts_worker_threads,
     );
-    println!("Polling: {}", latest_yaml_path);
-    println!("Shutdown: {}", shutdown_path);
-    println!("Output: {}", cli.output_dir);
+    println!("Polling: {}\nShutdown: {}\nOutput: {}", latest_yaml_path, shutdown_path, cli.output_dir);
 
     println!("Waiting for initial model...");
     loop {
-        if Path::new(&shutdown_path).exists() {
+        if std::path::Path::new(&shutdown_path).exists() {
             println!("Shutdown signal detected before model was available. Exiting.");
             return Ok(());
         }
-        if Path::new(&latest_yaml_path).exists() {
+        if std::path::Path::new(&latest_yaml_path).exists() {
             let onnx_path = pt_to_onnx_path(
-                &load_latest_model(&latest_yaml_path)
-                    .map(|m| m.filename)
-                    .unwrap_or_default(),
+                &load_latest_model(&latest_yaml_path).map(|m| m.filename).unwrap_or_default(),
             );
-            if Path::new(&onnx_path).exists() {
-                break;
-            }
+            if std::path::Path::new(&onnx_path).exists() { break; }
         }
-        thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
-
     let latest = load_latest_model(&latest_yaml_path)?;
-    let initial_model_version = latest.version;
-    let initial_model_path = pt_to_onnx_path(&latest.filename);
-    println!(
-        "Loading initial model: version={}, path={}",
-        initial_model_version, initial_model_path
-    );
+    let initial_version = latest.version;
+    let initial_path = pt_to_onnx_path(&latest.filename);
 
-    let cache: Arc<EvalCache> = Arc::new(DashMap::new());
-    let total_workers = rust_cfg.total_workers();
-    let (req_tx, req_rx) = sync_channel::<EvalRequest>(total_workers.max(1) * 4);
-    let (ctrl_tx, ctrl_rx) = sync_channel::<CtrlMsg>(4);
-    let coord_handle = spawn_coordinator(
-        &initial_model_path,
-        Arc::clone(&cache),
-        rust_cfg,
-        req_rx,
-        ctrl_rx,
-    )?;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(rust_cfg.mcts_worker_threads)
+        .enable_time()
+        .build()?;
 
-    let counter = Arc::new(AtomicUsize::new(0));
-    let model_version_atomic = Arc::new(AtomicI64::new(initial_model_version));
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let pid = process::id();
+    rt.block_on(async move {
+        let cache = std::sync::Arc::new(EvalCache::new());
+        let (front_tx, front_rx) = tokio_mpsc::channel::<FrontMsg>(1024);
+        let session = eval_pipeline::load_session(&initial_path)?;
+        let coord = eval_pipeline::spawn_coordinator(session, std::sync::Arc::clone(&cache),
+            eval_pipeline::CoordinatorConfig {
+                eval_batch_size: rust_cfg.eval_batch_size,
+                eval_max_wait_ms: rust_cfg.eval_max_wait_ms,
+                eval_cache_max_size: rust_cfg.eval_cache_max_size,
+            },
+            front_rx,
+        );
 
-    let mut worker_handles = Vec::with_capacity(total_workers);
-    for tid in 0..total_workers {
-        let az_config = az_config.clone();
-        let p2_override = cli.p2.clone();
-        let board_size = q.board_size;
-        let max_walls = q.max_walls;
-        let max_steps = q.max_steps as i32;
-        let req_tx = req_tx.clone();
-        let cache = Arc::clone(&cache);
-        let counter = Arc::clone(&counter);
-        let mv = Arc::clone(&model_version_atomic);
-        let shutdown = Arc::clone(&shutdown);
-        let output_dir = cli.output_dir.clone();
-        let tmp_dir = tmp_dir.clone();
+        let mcts_cfg = az_config.to_agent_config(q.board_size, q.max_walls).mcts;
+        let lp_cfg = LeafParallelConfig {
+            leaf_parallelism: rust_cfg.leaf_parallelism as u32,
+            virtual_loss: rust_cfg.virtual_loss,
+            enable_tree_reuse: rust_cfg.enable_tree_reuse,
+        };
+        let settings = GameSettings {
+            temperature: az_config.temperature.unwrap_or(1.0),
+            drop_t_on_step: az_config.drop_t_on_step,
+            deterministic_tie_break: false,
+        };
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let model_version = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(initial_version));
+        let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pid = std::process::id();
 
-        let handle = thread::Builder::new()
-            .name(format!("selfplay-worker-{}", tid))
-            .spawn(move || -> Result<()> {
-                let mut agent_p1 = build_p1_agent_batched(
-                    &az_config,
-                    board_size,
-                    max_walls,
-                    req_tx.clone(),
-                    Arc::clone(&cache),
-                );
-                let mut agent_p2 = build_p2_agent_batched(
-                    p2_override.as_deref(),
-                    &az_config,
-                    board_size,
-                    max_walls,
-                    req_tx.clone(),
-                    Arc::clone(&cache),
-                )?;
-
+        let mut handles = Vec::with_capacity(rust_cfg.games_per_process);
+        for _tid in 0..rust_cfg.games_per_process {
+            let front_tx = front_tx.clone();
+            let cache = std::sync::Arc::clone(&cache);
+            let counter = std::sync::Arc::clone(&counter);
+            let model_version = std::sync::Arc::clone(&model_version);
+            let shutdown = std::sync::Arc::clone(&shutdown);
+            let output_dir = cli.output_dir.clone();
+            let tmp_dir = tmp_dir.clone();
+            let p2_kind = cli.p2.clone();
+            let mcts_cfg = mcts_cfg.clone();
+            let board_size = q.board_size;
+            let max_walls = q.max_walls;
+            let max_steps = q.max_steps as i32;
+            handles.push(tokio::spawn(async move {
+                let mut p1 = LeafParallelMCTS::new(mcts_cfg.clone(), lp_cfg, front_tx.clone(), std::sync::Arc::clone(&cache));
+                let mut p2: P2 = match p2_kind.as_deref() {
+                    Some("random") => P2::Random,
+                    Some(other) => return Err(anyhow::anyhow!("Unknown --p2 agent: '{}'", other)),
+                    None => P2::AlphaZero(LeafParallelMCTS::new(mcts_cfg, lp_cfg, front_tx.clone(), std::sync::Arc::clone(&cache))),
+                };
                 loop {
-                    if shutdown.load(Ordering::Relaxed) {
+                    if shutdown.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                    let mv = model_version.load(std::sync::atomic::Ordering::Relaxed);
+                    p1.note_model_version(mv);
+                    if let P2::AlphaZero(m) = &mut p2 { m.note_model_version(mv); }
+                    p1.reset_tree();
+                    if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
+                    let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let game_start = std::time::Instant::now();
+                    let result = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
+                    let elapsed = game_start.elapsed().as_secs_f64();
+                    println!("{}-{} - selfplay finished in {:.4}", pid, idx, elapsed);
+                    write_replay(&output_dir, Some(&tmp_dir), &result, mv, idx, pid)?;
+                }
+                Ok::<(), anyhow::Error>(())
+            }));
+        }
+
+        // Main coordinator-poll loop: watches latest.yaml + shutdown sentinel.
+        let main_handle = {
+            let front_tx = front_tx.clone();
+            let shutdown = std::sync::Arc::clone(&shutdown);
+            let model_version = std::sync::Arc::clone(&model_version);
+            tokio::spawn(async move {
+                let mut current = initial_version;
+                loop {
+                    if std::path::Path::new(&shutdown_path).exists() {
+                        println!("Shutdown signal detected. Stopping workers...");
+                        shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
                         break;
                     }
-                    let game_idx = counter.fetch_add(1, Ordering::Relaxed);
-                    let game_mv = mv.load(Ordering::Relaxed);
-
-                    agent_p1.reset_game();
-                    agent_p2.reset_game();
-                    let game_start = Instant::now();
-                    let result = play_game(
-                        agent_p1.as_mut(),
-                        agent_p2.as_mut(),
-                        board_size,
-                        max_walls,
-                        max_steps,
-                        false,
-                        None,
-                    )?;
-                    let game_elapsed = game_start.elapsed().as_secs_f64();
-                    println!("{}-{} - selfplay finished in {:.4}", pid, tid, game_elapsed);
-
-                    write_replay(&output_dir, Some(&tmp_dir), &result, game_mv, game_idx, pid)?;
+                    if let Ok(latest) = load_latest_model(&latest_yaml_path) {
+                        if latest.version != current {
+                            let new_path = pt_to_onnx_path(&latest.filename);
+                            if std::path::Path::new(&new_path).exists() {
+                                println!("New model detected: version {} -> {} ({})", current, latest.version, new_path);
+                                current = latest.version;
+                                model_version.store(latest.version, std::sync::atomic::Ordering::Relaxed);
+                                let _ = front_tx.send(FrontMsg::Reload(new_path)).await;
+                            }
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
-                Ok(())
-            })?;
-        worker_handles.push(handle);
-    }
-    drop(req_tx);
+                Ok::<(), anyhow::Error>(())
+            })
+        };
 
-    // Main thread: poll latest.yaml and shutdown sentinel.
-    let mut current_version = initial_model_version;
-    loop {
-        if Path::new(&shutdown_path).exists() {
-            println!("Shutdown signal detected. Stopping workers...");
-            shutdown.store(true, Ordering::Relaxed);
-            break;
-        }
-        if let Ok(new_latest) = load_latest_model(&latest_yaml_path) {
-            if new_latest.version != current_version {
-                let new_path = pt_to_onnx_path(&new_latest.filename);
-                if Path::new(&new_path).exists() {
-                    println!(
-                        "New model detected: version {} -> {} ({})",
-                        current_version, new_latest.version, new_path
-                    );
-                    current_version = new_latest.version;
-                    model_version_atomic.store(new_latest.version, Ordering::Relaxed);
-                    let _ = ctrl_tx.send(CtrlMsg::ReloadModel(new_path));
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-
-    for h in worker_handles {
-        let _ = h.join();
-    }
-    let _ = ctrl_tx.send(CtrlMsg::Shutdown);
-    let _ = coord_handle.join();
+        drop(front_tx);
+        let _ = main_handle.await?;
+        for h in handles { h.await??; }
+        let _ = coord.batcher.join();
+        let _ = coord.inference.join();
+        let _ = coord.post.join();
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     Ok(())
 }
