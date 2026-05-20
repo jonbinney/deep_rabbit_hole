@@ -136,12 +136,12 @@ impl ResolvedRustConfig {
         Self {
             threads_per_process: pick_usize(
                 cli.threads_per_process,
-                yaml.and_then(|c| c.threads_per_process),
+                None, // SelfPlayWorkerConfig uses games_per_process (not split)
                 1,
             ),
             games_per_thread: pick_usize(
                 cli.games_per_thread,
-                yaml.and_then(|c| c.games_per_thread),
+                yaml.and_then(|c| c.games_per_process),
                 1,
             ),
             eval_batch_size: pick_usize(
