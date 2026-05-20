@@ -383,12 +383,10 @@ pub fn apply_dirichlet_noise_to_root_children(
 /// `prior_clean`) carry over unchanged.
 pub fn promote_subtree(old_arena: &NodeArena, new_root_idx: usize) -> NodeArena {
     let mut new_nodes: Vec<Node> = Vec::new();
-    let mut idx_map: std::collections::HashMap<usize, usize> =
-        std::collections::HashMap::new();
+    let mut idx_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
 
     // BFS so parents always get assigned a new index before children.
-    let mut queue: std::collections::VecDeque<usize> =
-        std::collections::VecDeque::new();
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
     queue.push_back(new_root_idx);
     idx_map.insert(new_root_idx, 0);
     let old_root = old_arena.get(new_root_idx);
@@ -896,8 +894,12 @@ mod tests {
         expand_node(&mut arena, 0, &priors, &mech);
 
         // Snapshot prior_clean before noise.
-        let clean_before: Vec<f32> = arena.get(0).children.iter()
-            .map(|&i| arena.get(i).prior_clean).collect();
+        let clean_before: Vec<f32> = arena
+            .get(0)
+            .children
+            .iter()
+            .map(|&i| arena.get(i).prior_clean)
+            .collect();
 
         apply_dirichlet_noise_to_root_children(&mut arena, 0, 0.25, 0.5);
 
@@ -905,13 +907,18 @@ mod tests {
         let mut any_changed = false;
         for (offset, &child_idx) in arena.get(0).children.iter().enumerate() {
             let c = arena.get(child_idx);
-            assert!((c.prior_clean - clean_before[offset]).abs() < 1e-6,
-                "prior_clean must not be modified");
+            assert!(
+                (c.prior_clean - clean_before[offset]).abs() < 1e-6,
+                "prior_clean must not be modified"
+            );
             if (c.prior - c.prior_clean).abs() > 1e-6 {
                 any_changed = true;
             }
         }
-        assert!(any_changed, "noise should change at least one child's prior");
+        assert!(
+            any_changed,
+            "noise should change at least one child's prior"
+        );
     }
 
     #[test]
@@ -944,10 +951,15 @@ mod tests {
         let total = crate::actions::policy_size(5);
         let mut priors = vec![0.0f32; total];
         // Three valid actions with similar priors so vl can spread them out.
-        let valid: Vec<usize> = mask.iter().enumerate()
-            .filter_map(|(i, &v)| if v { Some(i) } else { None }).collect();
+        let valid: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None })
+            .collect();
         assert!(valid.len() >= 3);
-        for &i in &valid[..3] { priors[i] = 1.0 / 3.0; }
+        for &i in &valid[..3] {
+            priors[i] = 1.0 / 3.0;
+        }
         expand_node(&mut arena, 0, &priors, &mech);
         arena.get_mut(0).visit_count = 0;
 
@@ -958,8 +970,10 @@ mod tests {
             // First-level child is path[1] (path[0] is the root).
             first_level_choices.insert(path[1]);
         }
-        assert!(first_level_choices.len() >= 2,
-            "vl should drive at least two distinct first-level child selections");
+        assert!(
+            first_level_choices.len() >= 2,
+            "vl should drive at least two distinct first-level child selections"
+        );
     }
 
     #[test]
@@ -969,8 +983,11 @@ mod tests {
         let mut arena = NodeArena::new(data);
 
         let mask = mech.get_action_mask_immut(data);
-        let valid: Vec<usize> = mask.iter().enumerate()
-            .filter_map(|(i, &v)| if v { Some(i) } else { None }).collect();
+        let valid: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None })
+            .collect();
         assert!(valid.len() >= 2);
 
         let mut d1 = data;
@@ -1011,8 +1028,8 @@ mod tests {
 
         // Snapshot.
         let (root_v, root_s) = (arena.get(0).visit_count, arena.get(0).value_sum);
-        let (c1_v, c1_s)     = (arena.get(c1).visit_count, arena.get(c1).value_sum);
-        let (c2_v, c2_s)     = (arena.get(c2).visit_count, arena.get(c2).value_sum);
+        let (c1_v, c1_s) = (arena.get(c1).visit_count, arena.get(c1).value_sum);
+        let (c2_v, c2_s) = (arena.get(c2).visit_count, arena.get(c2).value_sum);
 
         let path = vec![0usize, c1, c2];
         apply_virtual_loss(&mut arena, &path, 3);

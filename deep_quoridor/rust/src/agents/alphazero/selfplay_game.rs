@@ -35,7 +35,9 @@ fn sample_action(
     assert!(!visit_counts.is_empty() && !action_indices.is_empty());
     if temperature == 0.0 {
         let max_v = visit_counts.iter().max().copied().unwrap_or(0);
-        let tied: Vec<usize> = visit_counts.iter().enumerate()
+        let tied: Vec<usize> = visit_counts
+            .iter()
+            .enumerate()
             .filter_map(|(i, &v)| if v == max_v { Some(i) } else { None })
             .collect();
         if deterministic {
@@ -44,7 +46,10 @@ fn sample_action(
         let mut rng = rand::thread_rng();
         return action_indices[tied[rng.gen_range(0..tied.len())]];
     }
-    let total: f64 = visit_counts.iter().map(|&v| (v as f64).powf(1.0 / temperature as f64)).sum();
+    let total: f64 = visit_counts
+        .iter()
+        .map(|&v| (v as f64).powf(1.0 / temperature as f64))
+        .sum();
     if total <= 0.0 {
         return action_indices[0];
     }
@@ -76,7 +81,8 @@ pub async fn play_game_async(
     max_walls: i32,
     max_steps: i32,
 ) -> Result<GameResult> {
-    let mechanics = QGameMechanics::new(board_size as usize, max_walls as usize, max_steps as usize);
+    let mechanics =
+        QGameMechanics::new(board_size as usize, max_walls as usize, max_steps as usize);
     let mut data = mechanics.create_initial_state();
     let (orig_to_rot, _) = create_rotation_mapping(board_size);
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
@@ -86,7 +92,9 @@ pub async fn play_game_async(
     for step in 0..max_steps {
         let current_player = mechanics.repr().get_current_player(data) as i32;
         let mask = mechanics.get_action_mask_immut(data);
-        if !mask.iter().any(|&m| m) { break; }
+        if !mask.iter().any(|&m| m) {
+            break;
+        }
 
         let resnet_input = compact_state_to_resnet_input(&mechanics, data);
 
@@ -105,12 +113,17 @@ pub async fn play_game_async(
         let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
             let rotated_data = rotate_compact_state(&mechanics, data);
             let rotated_input = compact_state_to_resnet_input(&mechanics, rotated_data)
-                .index_axis(Axis(0), 0).to_owned();
+                .index_axis(Axis(0), 0)
+                .to_owned();
             let rotated_policy = remap_policy(&policy, &orig_to_rot);
             let rotated_mask = remap_mask(&mask, &orig_to_rot);
             (rotated_input, rotated_policy, rotated_mask)
         } else {
-            (resnet_input.index_axis(Axis(0), 0).to_owned(), policy.clone(), mask.clone())
+            (
+                resnet_input.index_axis(Axis(0), 0).to_owned(),
+                policy.clone(),
+                mask.clone(),
+            )
         };
         replay_items.push(ReplayBufferItem {
             input_array: stored_input_3d,
@@ -130,7 +143,11 @@ pub async fn play_game_async(
         if mechanics.check_win(data, current_player as usize) {
             winner = Some(current_player);
             for item in replay_items.iter_mut() {
-                item.value = if item.player == current_player { 1.0 } else { -1.0 };
+                item.value = if item.player == current_player {
+                    1.0
+                } else {
+                    -1.0
+                };
             }
             return Ok(GameResult {
                 winner,
@@ -139,7 +156,11 @@ pub async fn play_game_async(
             });
         }
     }
-    Ok(GameResult { winner, num_turns: max_steps, replay_items })
+    Ok(GameResult {
+        winner,
+        num_turns: max_steps,
+        replay_items,
+    })
 }
 
 async fn run_az_select(
@@ -157,7 +178,12 @@ async fn run_az_select(
         Some(t) if step >= t => 0.0,
         _ => settings.temperature,
     };
-    let action_idx = sample_action(&visit_counts, &action_indices, temperature, settings.deterministic_tie_break);
+    let action_idx = sample_action(
+        &visit_counts,
+        &action_indices,
+        temperature,
+        settings.deterministic_tie_break,
+    );
 
     // Build full policy vector from visit counts.
     let total_visits: u32 = visit_counts.iter().sum();
@@ -173,8 +199,11 @@ async fn run_az_select(
 
 fn random_select(mask: &[bool]) -> (usize, Vec<f32>) {
     use rand::Rng;
-    let valid: Vec<usize> = mask.iter().enumerate()
-        .filter_map(|(i, &v)| if v { Some(i) } else { None }).collect();
+    let valid: Vec<usize> = mask
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &v)| if v { Some(i) } else { None })
+        .collect();
     let mut rng = rand::thread_rng();
     let idx = valid[rng.gen_range(0..valid.len())];
     let mut p = vec![0.0f32; mask.len()];

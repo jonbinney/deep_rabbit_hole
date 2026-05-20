@@ -141,7 +141,8 @@ struct ResolvedRustConfig {
 impl ResolvedRustConfig {
     fn resolve(cli: &Cli, yaml: Option<&SelfPlayWorkerConfig>) -> Self {
         let pick_usize = |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d).max(1);
-        let pick_usize_zero_ok = |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
+        let pick_usize_zero_ok =
+            |c: Option<usize>, y: Option<usize>, d: usize| c.or(y).unwrap_or(d);
         let pick_u32 = |c: Option<u32>, y: Option<u32>, d: u32| c.or(y).unwrap_or(d);
         let pick_u64 = |c: Option<u64>, y: Option<u64>, d: u64| c.or(y).unwrap_or(d);
         let pick_bool = |yaml_v: Option<bool>, d: bool| yaml_v.unwrap_or(d);
@@ -149,21 +150,44 @@ impl ResolvedRustConfig {
             .map(|n| n.get())
             .unwrap_or(1);
         Self {
-            games_per_process: pick_usize(cli.games_per_process, yaml.and_then(|c| c.games_per_process), 1),
-            leaf_parallelism: pick_usize(cli.leaf_parallelism, yaml.and_then(|c| c.leaf_parallelism), 1),
+            games_per_process: pick_usize(
+                cli.games_per_process,
+                yaml.and_then(|c| c.games_per_process),
+                1,
+            ),
+            leaf_parallelism: pick_usize(
+                cli.leaf_parallelism,
+                yaml.and_then(|c| c.leaf_parallelism),
+                1,
+            ),
             virtual_loss: pick_u32(cli.virtual_loss, yaml.and_then(|c| c.virtual_loss), 3),
             enable_tree_reuse: if cli.no_tree_reuse {
                 false
             } else {
                 pick_bool(yaml.and_then(|c| c.enable_tree_reuse), true)
             },
-            mcts_worker_threads: pick_usize(cli.mcts_worker_threads, yaml.and_then(|c| c.mcts_worker_threads), default_workers),
-            eval_batch_size: pick_usize(cli.eval_batch_size, yaml.and_then(|c| c.eval_batch_size), 1),
-            eval_max_wait_ms: pick_u64(cli.eval_max_wait_ms, yaml.and_then(|c| c.eval_max_wait_ms), 0),
-            eval_cache_max_size: pick_usize_zero_ok(cli.eval_cache_max_size, yaml.and_then(|c| c.eval_cache_max_size), 100000),
+            mcts_worker_threads: pick_usize(
+                cli.mcts_worker_threads,
+                yaml.and_then(|c| c.mcts_worker_threads),
+                default_workers,
+            ),
+            eval_batch_size: pick_usize(
+                cli.eval_batch_size,
+                yaml.and_then(|c| c.eval_batch_size),
+                1,
+            ),
+            eval_max_wait_ms: pick_u64(
+                cli.eval_max_wait_ms,
+                yaml.and_then(|c| c.eval_max_wait_ms),
+                0,
+            ),
+            eval_cache_max_size: pick_usize_zero_ok(
+                cli.eval_cache_max_size,
+                yaml.and_then(|c| c.eval_cache_max_size),
+                100000,
+            ),
         }
     }
-
 }
 
 /// Boxed agent trait object for dynamic dispatch.
@@ -473,10 +497,14 @@ fn run_continuous_batched(
     use quoridor_rs::selfplay_config::load_latest_model;
     use tokio::sync::mpsc as tokio_mpsc;
 
-    let latest_yaml_path = cli.latest_model_yaml.as_deref()
+    let latest_yaml_path = cli
+        .latest_model_yaml
+        .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--latest-model-yaml is required with --continuous"))?
         .to_string();
-    let shutdown_path = cli.shutdown_file.as_deref()
+    let shutdown_path = cli
+        .shutdown_file
+        .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--shutdown-file is required with --continuous"))?
         .to_string();
     let tmp_dir = format!("{}/tmp", cli.output_dir);
@@ -492,7 +520,10 @@ fn run_continuous_batched(
         rust_cfg.enable_tree_reuse, rust_cfg.eval_batch_size, rust_cfg.eval_max_wait_ms,
         rust_cfg.eval_cache_max_size, rust_cfg.mcts_worker_threads,
     );
-    println!("Polling: {}\nShutdown: {}\nOutput: {}", latest_yaml_path, shutdown_path, cli.output_dir);
+    println!(
+        "Polling: {}\nShutdown: {}\nOutput: {}",
+        latest_yaml_path, shutdown_path, cli.output_dir
+    );
 
     println!("Waiting for initial model...");
     loop {
@@ -502,9 +533,13 @@ fn run_continuous_batched(
         }
         if std::path::Path::new(&latest_yaml_path).exists() {
             let onnx_path = pt_to_onnx_path(
-                &load_latest_model(&latest_yaml_path).map(|m| m.filename).unwrap_or_default(),
+                &load_latest_model(&latest_yaml_path)
+                    .map(|m| m.filename)
+                    .unwrap_or_default(),
             );
-            if std::path::Path::new(&onnx_path).exists() { break; }
+            if std::path::Path::new(&onnx_path).exists() {
+                break;
+            }
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }

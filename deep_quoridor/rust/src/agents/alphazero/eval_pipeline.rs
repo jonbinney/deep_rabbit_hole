@@ -149,7 +149,11 @@ pub fn spawn_coordinator(
         })
         .expect("spawn post");
 
-    CoordinatorHandles { batcher, inference, post }
+    CoordinatorHandles {
+        batcher,
+        inference,
+        post,
+    }
 }
 
 fn run_batcher(
@@ -168,7 +172,9 @@ fn run_batcher(
             Some(m) => m,
             None => break, // channel closed; drain done
         };
-        counters.batcher_wait_ns.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        counters
+            .batcher_wait_ns
+            .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
         let first_req = match first {
             FrontMsg::Req(r) => r,
             FrontMsg::Reload(p) => {
@@ -222,10 +228,7 @@ fn run_batcher(
     }
 }
 
-fn flush_batch(
-    inf_tx: &std::sync::mpsc::SyncSender<InferenceIn>,
-    reqs: Vec<EvalRequest>,
-) {
+fn flush_batch(inf_tx: &std::sync::mpsc::SyncSender<InferenceIn>, reqs: Vec<EvalRequest>) {
     if reqs.is_empty() {
         return;
     }
@@ -257,18 +260,17 @@ fn run_inference(
                 let shape = stacked.shape().to_vec();
                 let input_data: Vec<f32> = stacked.iter().copied().collect();
                 let batch_len = reqs.len();
-                let input_value = match ort::value::Value::from_array(
-                    (shape.as_slice(), input_data),
-                ) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let msg = format!("Failed to build ONNX input: {}", e);
-                        for r in reqs {
-                            let _ = r.responder.send(Err(anyhow::anyhow!(msg.clone())));
+                let input_value =
+                    match ort::value::Value::from_array((shape.as_slice(), input_data)) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let msg = format!("Failed to build ONNX input: {}", e);
+                            for r in reqs {
+                                let _ = r.responder.send(Err(anyhow::anyhow!(msg.clone())));
+                            }
+                            continue;
                         }
-                        continue;
-                    }
-                };
+                    };
                 let gpu_t0 = Instant::now();
                 let outputs = match session.run(ort::inputs!["input" => input_value]) {
                     Ok(o) => o,
@@ -280,9 +282,13 @@ fn run_inference(
                         continue;
                     }
                 };
-                counters.gpu_ns.fetch_add(gpu_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                counters
+                    .gpu_ns
+                    .fetch_add(gpu_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
                 counters.batches.fetch_add(1, Ordering::Relaxed);
-                counters.items.fetch_add(batch_len as u64, Ordering::Relaxed);
+                counters
+                    .items
+                    .fetch_add(batch_len as u64, Ordering::Relaxed);
                 let value_tensor = match outputs["value"].try_extract_tensor::<f32>() {
                     Ok(t) => t,
                     Err(e) => {
@@ -305,9 +311,17 @@ fn run_inference(
                 };
                 let values: Vec<f32> = value_tensor.1.to_vec();
                 let policy: Vec<f32> = policy_tensor.1.to_vec();
-                debug_assert!(batch_len > 0, "Batch should never be empty here (flush_batch guards is_empty)");
+                debug_assert!(
+                    batch_len > 0,
+                    "Batch should never be empty here (flush_batch guards is_empty)"
+                );
                 let policy_size = policy.len() / batch_len;
-                let outputs = BatchOutputs { values, policy, policy_size, reqs };
+                let outputs = BatchOutputs {
+                    values,
+                    policy,
+                    policy_size,
+                    reqs,
+                };
                 let _ = post_tx.send(PostIn::Outputs(outputs));
             }
             InferenceIn::Reload(path) => match load_session(&path) {
@@ -336,7 +350,12 @@ fn run_postprocess(
     while let Ok(msg) = post_rx.recv() {
         match msg {
             PostIn::Outputs(out) => {
-                let BatchOutputs { values, policy, policy_size, reqs } = out;
+                let BatchOutputs {
+                    values,
+                    policy,
+                    policy_size,
+                    reqs,
+                } = out;
                 // Parallel finalize over the request batch.
                 let post_t0 = Instant::now();
                 let finalized: Vec<EvalResult> = reqs
@@ -349,14 +368,22 @@ fn run_postprocess(
                             &req.work_action_mask,
                             req.rot_to_orig.as_deref(),
                         );
-                        EvalResult { value: values[i], priors }
+                        EvalResult {
+                            value: values[i],
+                            priors,
+                        }
                     })
                     .collect();
-                counters.postprocess_ns.fetch_add(post_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                counters
+                    .postprocess_ns
+                    .fetch_add(post_t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
                 // Insert into cache (serial — DashMap is sharded internally, parallel
                 // inserts have contention; serial is fine here).
                 for (req, res) in reqs.iter().zip(finalized.iter()) {
-                    if cache_max > 0 && cache.len() >= cache_max && !FIRST_FULL.swap(true, Ordering::Relaxed) {
+                    if cache_max > 0
+                        && cache.len() >= cache_max
+                        && !FIRST_FULL.swap(true, Ordering::Relaxed)
+                    {
                         eprintln!("eval-pipeline: cache reached cap of {} entries — further inserts will be skipped (by design)", cache_max);
                     }
                     if cache_max > 0 && cache.len() < cache_max {
@@ -383,7 +410,10 @@ mod tests {
     use ndarray::Array4;
     use tokio::sync::oneshot;
 
-    fn make_request(policy_size: usize, board_size: i32) -> (EvalRequest, oneshot::Receiver<Result<EvalResult>>) {
+    fn make_request(
+        policy_size: usize,
+        board_size: i32,
+    ) -> (EvalRequest, oneshot::Receiver<Result<EvalResult>>) {
         let m = (board_size * 2 + 3) as usize;
         let features = Array4::<f32>::zeros((1, 5, m, m));
         let mask = vec![true; policy_size];
@@ -417,7 +447,9 @@ mod tests {
             rxs.push(rx);
         }
         let values: Vec<f32> = (0..batch_len).map(|i| i as f32 * 0.1 - 0.4).collect();
-        let policy: Vec<f32> = (0..batch_len * policy_size).map(|i| (i as f32).sin()).collect();
+        let policy: Vec<f32> = (0..batch_len * policy_size)
+            .map(|i| (i as f32).sin())
+            .collect();
 
         // Expected from serial loop using finalize_policy directly.
         let mut expected: Vec<Vec<f32>> = Vec::with_capacity(batch_len);
@@ -426,16 +458,23 @@ mod tests {
             expected.push(finalize_policy(logits, &vec![true; policy_size], None));
         }
 
-        post_tx.send(PostIn::Outputs(BatchOutputs {
-            values: values.clone(),
-            policy: policy.clone(),
-            policy_size,
-            reqs,
-        })).unwrap();
+        post_tx
+            .send(PostIn::Outputs(BatchOutputs {
+                values: values.clone(),
+                policy: policy.clone(),
+                policy_size,
+                reqs,
+            }))
+            .unwrap();
         post_tx.send(PostIn::Shutdown).unwrap();
 
         // Drive the post stage on this thread.
-        run_postprocess(Arc::clone(&cache), 1024, post_rx, Arc::new(PipelineCounters::default()));
+        run_postprocess(
+            Arc::clone(&cache),
+            1024,
+            post_rx,
+            Arc::new(PipelineCounters::default()),
+        );
 
         for (i, rx) in rxs.into_iter().enumerate() {
             let res = rx.blocking_recv().unwrap().unwrap();

@@ -16,8 +16,7 @@ use crate::agents::alphazero::eval_pipeline::{EvalCache, EvalRequest, EvalResult
 use crate::agents::alphazero::evaluator::prepare_eval_input;
 use crate::agents::alphazero::mcts::{
     apply_dirichlet_noise_to_root_children, backpropagate, backpropagate_result, expand_node,
-    promote_subtree, select_leaf_with_vl, undo_virtual_loss, ChildInfo, MCTSConfig,
-    NodeArena,
+    promote_subtree, select_leaf_with_vl, undo_virtual_loss, ChildInfo, MCTSConfig, NodeArena,
 };
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
@@ -87,11 +86,15 @@ impl LeafParallelMCTS {
             self.arena = None;
             return;
         }
-        let Some(old) = self.arena.take() else { return; };
+        let Some(old) = self.arena.take() else {
+            return;
+        };
         let root = old.get(0);
-        let chosen = root.children.iter().copied().find(|&c| {
-            old.get(c).action_index == Some(action_idx)
-        });
+        let chosen = root
+            .children
+            .iter()
+            .copied()
+            .find(|&c| old.get(c).action_index == Some(action_idx));
         self.arena = chosen.map(|c| promote_subtree(&old, c));
     }
 
@@ -112,7 +115,9 @@ impl LeafParallelMCTS {
         let action_mask = mechanics.get_action_mask_immut(root_data);
         let root_value;
         if arena.get(0).children.is_empty() {
-            let (v, priors) = self.evaluate_once(root_data, mechanics, &action_mask).await?;
+            let (v, priors) = self
+                .evaluate_once(root_data, mechanics, &action_mask)
+                .await?;
             expand_node(&mut arena, 0, &priors, mechanics);
             root_value = v;
         } else {
@@ -128,14 +133,16 @@ impl LeafParallelMCTS {
         // (Re-)apply Dirichlet noise to the new root's children.
         if self.cfg.noise_epsilon > 0.0 {
             let num_valid = action_mask.iter().filter(|&&m| m).count();
-            let alpha = self.cfg.noise_alpha.unwrap_or_else(|| 10.0 / num_valid.max(1) as f32);
+            let alpha = self
+                .cfg
+                .noise_alpha
+                .unwrap_or_else(|| 10.0 / num_valid.max(1) as f32);
             apply_dirichlet_noise_to_root_children(&mut arena, 0, self.cfg.noise_epsilon, alpha);
         }
 
-        let total = self
-            .cfg
-            .n
-            .unwrap_or_else(|| self.cfg.k.unwrap_or(10) * action_mask.iter().filter(|&&m| m).count() as u32);
+        let total = self.cfg.n.unwrap_or_else(|| {
+            self.cfg.k.unwrap_or(10) * action_mask.iter().filter(|&&m| m).count() as u32
+        });
 
         let mut iters_done: u32 = 0;
         let k = self.lp.leaf_parallelism.max(1);
@@ -146,8 +153,15 @@ impl LeafParallelMCTS {
 
             // Selection phase: pick `outer` leaves; classify each as Terminal, Hit, or Miss.
             enum Item {
-                Terminal { path: SmallVec<[usize; 32]>, value: f64 },
-                Hit { path: SmallVec<[usize; 32]>, leaf_idx: usize, result: EvalResult },
+                Terminal {
+                    path: SmallVec<[usize; 32]>,
+                    value: f64,
+                },
+                Hit {
+                    path: SmallVec<[usize; 32]>,
+                    leaf_idx: usize,
+                    result: EvalResult,
+                },
                 Miss {
                     path: SmallVec<[usize; 32]>,
                     leaf_idx: usize,
@@ -167,7 +181,11 @@ impl LeafParallelMCTS {
                     // Terminal value convention: matches the synchronous mcts::search reference.
                     // backpropagate_result alternates sign while walking up; from the leaf's player-to-move
                     // perspective, a winner means the previous player won (so a sign flip happens during backprop).
-                    let v = if mechanics.winner(leaf_data).is_some() { 1.0 } else { 0.0 };
+                    let v = if mechanics.winner(leaf_data).is_some() {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     items.push(Item::Terminal { path, value: v });
                     continue;
                 }
@@ -193,7 +211,12 @@ impl LeafParallelMCTS {
 
                 // Miss: build features in this task and queue a send.
                 let leaf_mask = mechanics.get_action_mask_immut(leaf_data);
-                let prep = prepare_eval_input(mechanics, leaf_data, &leaf_mask, &mut self.rotation_mappings);
+                let prep = prepare_eval_input(
+                    mechanics,
+                    leaf_data,
+                    &leaf_mask,
+                    &mut self.rotation_mappings,
+                );
                 let (tx, rx) = oneshot::channel();
                 let req = EvalRequest {
                     state: leaf_data,
@@ -211,9 +234,10 @@ impl LeafParallelMCTS {
             // Send all miss requests.
             for req in to_send {
                 // Sender is async; await is OK here.
-                self.sender.send(FrontMsg::Req(req)).await.map_err(|_| {
-                    anyhow::anyhow!("eval pipeline front channel closed")
-                })?;
+                self.sender
+                    .send(FrontMsg::Req(req))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("eval pipeline front channel closed"))?;
             }
 
             // Process items in selection order. For Misses, await the oneshot.
@@ -225,14 +249,19 @@ impl LeafParallelMCTS {
                         backpropagate_result(&mut arena, leaf, value);
                         iters_done += 1;
                     }
-                    Item::Hit { path, leaf_idx, result } => {
+                    Item::Hit {
+                        path,
+                        leaf_idx,
+                        result,
+                    } => {
                         undo_virtual_loss(&mut arena, &path, vl);
                         expand_node(&mut arena, leaf_idx, &result.priors, mechanics);
                         backpropagate(&mut arena, leaf_idx, -result.value as f64);
                         iters_done += 1;
                     }
                     Item::Miss { path, leaf_idx, rx } => {
-                        let result = rx.await
+                        let result = rx
+                            .await
                             .map_err(|_| anyhow::anyhow!("eval responder dropped"))??;
                         undo_virtual_loss(&mut arena, &path, vl);
                         expand_node(&mut arena, leaf_idx, &result.priors, mechanics);
@@ -251,15 +280,19 @@ impl LeafParallelMCTS {
         } else {
             root_value
         };
-        let children: Vec<ChildInfo> = root.children.iter().map(|&ci| {
-            let c = arena.get(ci);
-            let ai = c.action_index.expect("child node must have action_index");
-            ChildInfo {
-                action: crate::actions::action_index_to_action(bs, ai),
-                action_index: ai,
-                visit_count: c.visit_count,
-            }
-        }).collect();
+        let children: Vec<ChildInfo> = root
+            .children
+            .iter()
+            .map(|&ci| {
+                let c = arena.get(ci);
+                let ai = c.action_index.expect("child node must have action_index");
+                ChildInfo {
+                    action: crate::actions::action_index_to_action(bs, ai),
+                    action_index: ai,
+                    visit_count: c.visit_count,
+                }
+            })
+            .collect();
 
         // Stash the arena for tree reuse on the next call.
         self.arena = Some(arena);
@@ -286,10 +319,13 @@ impl LeafParallelMCTS {
             rot_to_orig: prep.rot_to_orig,
             responder: tx,
         };
-        self.sender.send(FrontMsg::Req(req)).await.map_err(|_| {
-            anyhow::anyhow!("eval pipeline front channel closed")
-        })?;
-        let res = rx.await.map_err(|_| anyhow::anyhow!("responder dropped"))??;
+        self.sender
+            .send(FrontMsg::Req(req))
+            .await
+            .map_err(|_| anyhow::anyhow!("eval pipeline front channel closed"))?;
+        let res = rx
+            .await
+            .map_err(|_| anyhow::anyhow!("responder dropped"))??;
         Ok((res.value, res.priors))
     }
 }
@@ -313,7 +349,11 @@ mod tests {
                 match msg {
                     FrontMsg::Req(req) => {
                         let n_valid = req.work_action_mask.iter().filter(|&&v| v).count();
-                        let p = if n_valid > 0 { 1.0 / n_valid as f32 } else { 0.0 };
+                        let p = if n_valid > 0 {
+                            1.0 / n_valid as f32
+                        } else {
+                            0.0
+                        };
                         let mut priors = vec![0.0f32; req.work_action_mask.len()];
                         for (i, &v) in req.work_action_mask.iter().enumerate() {
                             if v {
@@ -410,7 +450,10 @@ mod tests {
             let visited = std::collections::HashSet::new();
             let (children, _) = mcts.search(data, &mech, &visited).await.unwrap();
             let visited_top: u32 = children.iter().filter(|c| c.visit_count > 0).count() as u32;
-            assert!(visited_top >= 2, "K=8 vl=3 should spread visits across ≥2 root children");
+            assert!(
+                visited_top >= 2,
+                "K=8 vl=3 should spread visits across ≥2 root children"
+            );
 
             // Drop mcts (holds Sender clone) before tx, then await stub.
             drop(mcts);
@@ -498,7 +541,10 @@ mod tests {
             assert!(mcts.arena.is_some());
 
             mcts.note_model_version(2);
-            assert!(mcts.arena.is_none(), "tree should be cleared on version change");
+            assert!(
+                mcts.arena.is_none(),
+                "tree should be cleared on version change"
+            );
 
             // Drop mcts (holds Sender clone) before tx so stub exits.
             drop(mcts);
@@ -507,4 +553,3 @@ mod tests {
         });
     }
 }
-
