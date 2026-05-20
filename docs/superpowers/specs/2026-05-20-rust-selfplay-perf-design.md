@@ -114,8 +114,8 @@ while iters_done < mcts_n:
 During descent, at each node entered (including the leaf) apply
 `visit_count += vl, value_sum -= vl`. When the result comes back, walk the
 same path and `visit_count -= vl, value_sum += vl` before doing real
-backprop. The path is stored as a `SmallVec<[usize; depth_est]>` to avoid
-heap allocation in the hot loop.
+backprop. The path is stored as a `SmallVec<[usize; 32]>` — chosen to
+cover typical Quoridor MCTS tree depth without spilling to the heap.
 
 ### Cache hit short-circuit
 
