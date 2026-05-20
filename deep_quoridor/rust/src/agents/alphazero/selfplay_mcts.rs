@@ -16,7 +16,7 @@ use crate::agents::alphazero::eval_pipeline::{EvalCache, EvalRequest, EvalResult
 use crate::agents::alphazero::evaluator::prepare_eval_input;
 use crate::agents::alphazero::mcts::{
     apply_dirichlet_noise_to_root_children, backpropagate, backpropagate_result, expand_node,
-    promote_subtree, select_leaf_with_vl, undo_virtual_loss, ChildInfo, MCTSConfig, Node,
+    promote_subtree, select_leaf_with_vl, undo_virtual_loss, ChildInfo, MCTSConfig,
     NodeArena,
 };
 use crate::compact::q_bit_repr::CompactState;
@@ -140,7 +140,7 @@ impl LeafParallelMCTS {
                 },
             }
             let mut items: Vec<Item> = Vec::with_capacity(outer as usize);
-            let mut to_send: Vec<(usize, EvalRequest)> = Vec::new();
+            let mut to_send: Vec<EvalRequest> = Vec::new();
 
             for _ in 0..outer {
                 let path = select_leaf_with_vl(&mut arena, 0, self.cfg.ucb_c, vl, visited_states);
@@ -149,6 +149,9 @@ impl LeafParallelMCTS {
 
                 // Terminal?
                 if mechanics.is_game_over(leaf_data) {
+                    // Terminal value convention: matches the synchronous mcts::search reference.
+                    // backpropagate_result alternates sign while walking up; from the leaf's player-to-move
+                    // perspective, a winner means the previous player won (so a sign flip happens during backprop).
                     let v = if mechanics.winner(leaf_data).is_some() { 1.0 } else { 0.0 };
                     items.push(Item::Terminal { path, value: v });
                     continue;
@@ -184,13 +187,14 @@ impl LeafParallelMCTS {
                     rot_to_orig: prep.rot_to_orig,
                     responder: tx,
                 };
-                to_send.push((items.len(), req));
-                // Placeholder; rx assigned after this loop so we can borrow mutably below.
+                to_send.push(req);
+                // rx is moved into the Item; the matching send happens after this loop so we don't
+                // borrow self.sender while iterating.
                 items.push(Item::Miss { path, leaf_idx, rx });
             }
 
             // Send all miss requests.
-            for (_, req) in to_send {
+            for req in to_send {
                 // Sender is async; await is OK here.
                 self.sender.send(FrontMsg::Req(req)).await.map_err(|_| {
                     anyhow::anyhow!("eval pipeline front channel closed")
@@ -275,6 +279,3 @@ impl LeafParallelMCTS {
     }
 }
 
-// Silence unused-warning during incremental build.
-#[allow(dead_code)]
-fn _force_use(_: Node, _: ChildInfo) {}
