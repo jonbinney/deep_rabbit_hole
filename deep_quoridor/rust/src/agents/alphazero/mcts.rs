@@ -79,6 +79,9 @@ pub struct Node {
     pub losses: u32,
     /// Prior probability from the neural network.
     pub prior: f32,
+    /// Un-noised network prior; never modified after construction. Used to
+    /// re-apply Dirichlet noise to new-root children after tree reuse.
+    pub prior_clean: f32,
 }
 
 impl Node {
@@ -94,6 +97,7 @@ impl Node {
             wins: 0,
             losses: 0,
             prior: 1.0,
+            prior_clean: 1.0,
         }
     }
 
@@ -109,6 +113,7 @@ impl Node {
             wins: 0,
             losses: 0,
             prior,
+            prior_clean: prior,
         }
     }
 
