@@ -11,6 +11,7 @@
 //! Control messages (`Reload(path)`, `Shutdown`) ride the front mpsc as
 //! enum variants so ordering with batches is preserved.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::Arc;
 use std::thread;
@@ -26,6 +27,9 @@ use tokio::sync::oneshot;
 
 use crate::agents::alphazero::evaluator::finalize_policy;
 use crate::compact::q_bit_repr::CompactState;
+
+/// One-time sentinel for cache-saturation warning.
+static FIRST_FULL: AtomicBool = AtomicBool::new(false);
 
 /// Shared eval cache: maps a (compact) state to its (value, masked priors).
 pub type EvalCache = DashMap<CompactState, EvalResult>;
@@ -160,6 +164,9 @@ fn run_batcher(
         reqs.push(first_req);
 
         // Fill batch up to `batch_size`, deadline = first arrival + max_wait.
+        // Note: max_wait = 0 (eval_max_wait_ms=0) effectively forces batch-size-1
+        // because the deadline expires before the first try_recv runs. This is the
+        // intended "ship immediately" behavior.
         let deadline = Instant::now() + max_wait;
         while reqs.len() < batch_size {
             let now = Instant::now();
@@ -272,6 +279,7 @@ fn run_inference(
                 };
                 let values: Vec<f32> = value_tensor.1.to_vec();
                 let policy: Vec<f32> = policy_tensor.1.to_vec();
+                debug_assert!(batch_len > 0, "Batch should never be empty here (flush_batch guards is_empty)");
                 let policy_size = policy.len() / batch_len;
                 let outputs = BatchOutputs { values, policy, policy_size, reqs };
                 let _ = post_tx.send(PostIn::Outputs(outputs));
@@ -319,6 +327,9 @@ fn run_postprocess(
                 // Insert into cache (serial — DashMap is sharded internally, parallel
                 // inserts have contention; serial is fine here).
                 for (req, res) in reqs.iter().zip(finalized.iter()) {
+                    if cache_max > 0 && cache.len() >= cache_max && !FIRST_FULL.swap(true, Ordering::Relaxed) {
+                        eprintln!("eval-pipeline: cache reached cap of {} entries — further inserts will be skipped (by design)", cache_max);
+                    }
                     if cache_max > 0 && cache.len() < cache_max {
                         cache.insert(req.state, res.clone());
                     }
@@ -328,7 +339,10 @@ fn run_postprocess(
                     let _ = req.responder.send(Ok(res));
                 }
             }
-            PostIn::Reload => continue,
+            PostIn::Reload => {
+                // nothing to do; cache clear and session swap already happened in run_inference
+                continue;
+            }
             PostIn::Shutdown => return,
         }
     }
