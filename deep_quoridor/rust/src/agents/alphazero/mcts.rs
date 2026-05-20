@@ -297,6 +297,31 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
     }
 }
 
+/// Mix Dirichlet noise into the `prior` field of all children of `root_idx`,
+/// leaving `prior_clean` untouched. Iterates over children, samples a Dirichlet
+/// over them, and replaces `prior[i] ← (1-ε) * prior_clean[i] + ε * noise[i]`.
+pub fn apply_dirichlet_noise_to_root_children(
+    arena: &mut NodeArena,
+    root_idx: usize,
+    epsilon: f32,
+    alpha: f32,
+) {
+    let child_ids: Vec<usize> = arena.get(root_idx).children.clone();
+    if child_ids.is_empty() {
+        return;
+    }
+    let dirichlet = match Dirichlet::new_with_size(alpha, child_ids.len()) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let mut rng = rand::thread_rng();
+    let noise: Vec<f32> = dirichlet.sample(&mut rng);
+    for (i, &child_idx) in child_ids.iter().enumerate() {
+        let c = arena.get_mut(child_idx);
+        c.prior = (1.0 - epsilon) * c.prior_clean + epsilon * noise[i];
+    }
+}
+
 /// Run MCTS search and return child information.
 pub fn search(
     config: &MCTSConfig,
@@ -313,16 +338,7 @@ pub fn search(
     // so that the loop structure matches the Python implementation (where iteration 0
     // always selects root itself, expands it, and backpropagates through it).
     let action_mask = mechanics.get_action_mask_immut(root_data);
-    let (root_value, mut root_priors) = evaluator.evaluate(root_data, mechanics, &action_mask)?;
-
-    // Apply Dirichlet noise at root if configured
-    if config.noise_epsilon > 0.0 {
-        let alpha = config.noise_alpha.unwrap_or_else(|| {
-            let num_valid = action_mask.iter().filter(|&&m| m).count();
-            10.0 / num_valid.max(1) as f32
-        });
-        apply_dirichlet_noise(&mut root_priors, config.noise_epsilon, alpha);
-    }
+    let (root_value, root_priors) = evaluator.evaluate(root_data, mechanics, &action_mask)?;
 
     // Determine number of iterations
     let num_valid = action_mask.iter().filter(|&&m| m).count() as u32;
@@ -333,6 +349,13 @@ pub fn search(
     // Special case: n=0 means just use priors (expand root once without simulating)
     if n_iterations == 0 {
         expand_node(&mut arena, 0, &root_priors, mechanics);
+        if config.noise_epsilon > 0.0 {
+            let alpha = config.noise_alpha.unwrap_or_else(|| {
+                let num_valid = action_mask.iter().filter(|&&m| m).count();
+                10.0 / num_valid.max(1) as f32
+            });
+            apply_dirichlet_noise_to_root_children(&mut arena, 0, config.noise_epsilon, alpha);
+        }
         let root = arena.get(0);
         let children = root.children.clone();
 
@@ -388,6 +411,15 @@ pub fn search(
             };
 
             expand_node(&mut arena, current_idx, &leaf_priors, mechanics);
+
+            // Apply Dirichlet noise to root children after root expansion (first iteration)
+            if config.noise_epsilon > 0.0 && current_idx == 0 {
+                let alpha = config.noise_alpha.unwrap_or_else(|| {
+                    let num_valid = action_mask.iter().filter(|&&m| m).count();
+                    10.0 / num_valid.max(1) as f32
+                });
+                apply_dirichlet_noise_to_root_children(&mut arena, 0, config.noise_epsilon, alpha);
+            }
 
             // Backpropagate negative value (from opponent's perspective)
             backpropagate(&mut arena, current_idx, -value as f64);
@@ -734,6 +766,40 @@ mod tests {
 
         let sum: f32 = priors.iter().sum();
         assert!((sum - 1.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_apply_dirichlet_noise_arena_modifies_only_prior() {
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+        let total = crate::actions::policy_size(5);
+        let mut priors = vec![0.0f32; total];
+        let mask = mech.get_action_mask_immut(data);
+        for (i, &v) in mask.iter().enumerate() {
+            if v {
+                priors[i] = 1.0 / mask.iter().filter(|&&m| m).count() as f32;
+            }
+        }
+        expand_node(&mut arena, 0, &priors, &mech);
+
+        // Snapshot prior_clean before noise.
+        let clean_before: Vec<f32> = arena.get(0).children.iter()
+            .map(|&i| arena.get(i).prior_clean).collect();
+
+        apply_dirichlet_noise_to_root_children(&mut arena, 0, 0.25, 0.5);
+
+        // prior_clean unchanged, prior changed.
+        let mut any_changed = false;
+        for (offset, &child_idx) in arena.get(0).children.iter().enumerate() {
+            let c = arena.get(child_idx);
+            assert!((c.prior_clean - clean_before[offset]).abs() < 1e-6,
+                "prior_clean must not be modified");
+            if (c.prior - c.prior_clean).abs() > 1e-6 {
+                any_changed = true;
+            }
+        }
+        assert!(any_changed, "noise should change at least one child's prior");
     }
 
     #[test]
