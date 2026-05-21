@@ -54,7 +54,7 @@ fn sample_action(
         return action_indices[0];
     }
     let mut rng = rand::thread_rng();
-    let r: f64 = rng.gen();
+    let r: f64 = rng.r#gen();
     let mut cum = 0.0;
     for (i, &v) in visit_counts.iter().enumerate() {
         cum += (v as f64).powf(1.0 / temperature as f64) / total;

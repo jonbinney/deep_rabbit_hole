@@ -99,7 +99,7 @@ pub fn apply_temperature_and_sample(
             .collect();
 
         let mut rng = rand::thread_rng();
-        let r: f64 = rng.gen();
+        let r: f64 = rng.r#gen();
         let mut cumulative = 0.0;
 
         for (i, &p) in probs.iter().enumerate() {

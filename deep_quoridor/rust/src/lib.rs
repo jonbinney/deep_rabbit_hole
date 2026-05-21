@@ -1,3 +1,9 @@
+// The pyo3 0.22 `#[pyfunction]` / `#[pymethods]` macros generate code that
+// performs unsafe operations inside `unsafe fn` bodies without explicit
+// `unsafe {}` blocks, which trips the edition-2024 `unsafe_op_in_unsafe_fn`
+// lint at every pyo3 callsite. Allow it crate-wide.
+#![allow(unsafe_op_in_unsafe_fn)]
+
 #[cfg(feature = "python")]
 use numpy::{
     PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,

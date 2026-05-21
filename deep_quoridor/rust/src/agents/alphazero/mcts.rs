@@ -191,7 +191,7 @@ pub fn expand_node(
     let new_children: Vec<usize> = priors
         .iter()
         .enumerate()
-        .filter(|(_, &p)| p > 1e-10)
+        .filter(|&(_, &p)| p > 1e-10)
         .map(|(action_idx, &prior)| {
             let mut child_data = parent_data;
             mechanics.apply_action_index(&mut child_data, action_idx);
@@ -326,7 +326,7 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
     let valid_indices: Vec<usize> = priors
         .iter()
         .enumerate()
-        .filter(|(_, &p)| p > 1e-10)
+        .filter(|&(_, &p)| p > 1e-10)
         .map(|(i, _)| i)
         .collect();
 
