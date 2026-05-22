@@ -646,10 +646,7 @@ fn run_continuous_batched(
                     p1.reset_tree();
                     if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
                     let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let game_start = std::time::Instant::now();
                     let result = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
-                    let elapsed = game_start.elapsed().as_secs_f64();
-                    println!("{}-{} - selfplay finished in {:.4}", pid, idx, elapsed);
                     write_replay(&output_dir, Some(&tmp_dir), &result, mv, idx, pid)?;
                 }
                 Ok::<(), anyhow::Error>(())
