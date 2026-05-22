@@ -451,7 +451,7 @@ class AlphaZeroAgent(TrainableAgent):
             (dummy_input,),
             str(path),
             export_params=True,
-            opset_version=17,
+            opset_version=18,
             do_constant_folding=True,
             input_names=["input"],
             output_names=["policy_logits", "value"],
@@ -461,6 +461,7 @@ class AlphaZeroAgent(TrainableAgent):
                 "value": {0: "batch_size"},
             },
             external_data=False,
+            dynamo=False,
         )
         print(f"AlphaZero model exported to ONNX at {path}")
 
