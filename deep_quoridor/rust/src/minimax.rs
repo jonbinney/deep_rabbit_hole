@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
-use rand::seq::SliceRandom;
 use rand::Rng;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
 use crate::actions::get_valid_move_actions;

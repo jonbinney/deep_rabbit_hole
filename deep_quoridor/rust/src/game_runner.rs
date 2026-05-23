@@ -8,7 +8,7 @@
 use ndarray::Array3;
 
 use crate::actions::{
-    action_index_to_action, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL,
+    ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL, action_index_to_action,
 };
 use crate::agents::ActionSelector;
 use crate::compact::q_bit_repr::CompactState;

@@ -130,8 +130,8 @@ pub fn compact_state_to_resnet_input(
 mod tests {
     use super::*;
     use crate::actions::ACTION_MOVE;
-    use crate::game_state::{create_initial_state, GameState};
-    use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
+    use crate::game_state::{GameState, create_initial_state};
+    use crate::grid::{CELL_FREE, CELL_WALL, set_wall_cells};
     use ndarray::Array1;
 
     #[test]

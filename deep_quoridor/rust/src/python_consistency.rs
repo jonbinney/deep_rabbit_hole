@@ -10,15 +10,15 @@ use crate::agents::alphazero::agent::apply_temperature_and_sample;
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::evaluator::UniformMockEvaluator;
 #[cfg(feature = "binary")]
-use crate::agents::alphazero::mcts::{search, ChildInfo, MCTSConfig};
+use crate::agents::alphazero::mcts::{ChildInfo, MCTSConfig, search};
 #[cfg(feature = "binary")]
 use crate::agents::alphazero::{AlphaZeroAgent, AlphaZeroAgentConfig};
 #[cfg(feature = "binary")]
-use crate::game_runner::{play_game, GameResult, PlayGameObserver};
+use crate::game_runner::{GameResult, PlayGameObserver, play_game};
 use crate::game_state::GameState;
 use crate::grid_helpers::grid_game_state_to_resnet_input;
 #[cfg(feature = "binary")]
-use crate::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
+use crate::replay_writer::{GameMetadata, write_game_npz, write_game_yaml};
 use crate::rotation::build_rotated_state;
 #[cfg(feature = "binary")]
 use ndarray::{Array1, Array2, Array4, Ix2, OwnedRepr};

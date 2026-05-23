@@ -20,14 +20,14 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use clap::Parser;
 
+use quoridor_rs::agents::ActionSelector;
 use quoridor_rs::agents::alphazero::AlphaZeroAgent;
 use quoridor_rs::agents::onnx_agent::OnnxAgent;
 use quoridor_rs::agents::random_agent::RandomAgent;
-use quoridor_rs::agents::ActionSelector;
-use quoridor_rs::game_runner::{play_game, GameResult};
-use quoridor_rs::replay_writer::{write_game_npz, write_game_yaml, GameMetadata};
+use quoridor_rs::game_runner::{GameResult, play_game};
+use quoridor_rs::replay_writer::{GameMetadata, write_game_npz, write_game_yaml};
 use quoridor_rs::selfplay_config::{
-    load_config, load_latest_model, AlphaZeroConfig, QuoridorConfig, SelfPlayWorkerConfig,
+    AlphaZeroConfig, QuoridorConfig, SelfPlayWorkerConfig, load_config, load_latest_model,
 };
 
 /// Convert a `.pt` model path to its corresponding `.onnx` path.
@@ -323,7 +323,7 @@ fn run_batch_batched(
     rust_cfg: ResolvedRustConfig,
 ) -> Result<()> {
     use quoridor_rs::agents::alphazero::eval_pipeline::{self, EvalCache, FrontMsg};
-    use quoridor_rs::agents::alphazero::selfplay_game::{play_game_async, GameSettings, P2};
+    use quoridor_rs::agents::alphazero::selfplay_game::{GameSettings, P2, play_game_async};
     use quoridor_rs::agents::alphazero::selfplay_mcts::{LeafParallelConfig, LeafParallelMCTS};
     use tokio::sync::mpsc as tokio_mpsc;
 
@@ -342,9 +342,14 @@ fn run_batch_batched(
     );
     println!(
         "games_per_process={}, leaf_parallelism={}, virtual_loss={}, tree_reuse={}, eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}, mcts_worker_threads={}",
-        rust_cfg.games_per_process, rust_cfg.leaf_parallelism, rust_cfg.virtual_loss,
-        rust_cfg.enable_tree_reuse, rust_cfg.eval_batch_size, rust_cfg.eval_max_wait_ms,
-        rust_cfg.eval_cache_max_size, rust_cfg.mcts_worker_threads,
+        rust_cfg.games_per_process,
+        rust_cfg.leaf_parallelism,
+        rust_cfg.virtual_loss,
+        rust_cfg.enable_tree_reuse,
+        rust_cfg.eval_batch_size,
+        rust_cfg.eval_max_wait_ms,
+        rust_cfg.eval_cache_max_size,
+        rust_cfg.mcts_worker_threads,
     );
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -492,7 +497,7 @@ fn run_continuous_batched(
     rust_cfg: ResolvedRustConfig,
 ) -> Result<()> {
     use quoridor_rs::agents::alphazero::eval_pipeline::{self, EvalCache, FrontMsg};
-    use quoridor_rs::agents::alphazero::selfplay_game::{play_game_async, GameSettings, P2};
+    use quoridor_rs::agents::alphazero::selfplay_game::{GameSettings, P2, play_game_async};
     use quoridor_rs::agents::alphazero::selfplay_mcts::{LeafParallelConfig, LeafParallelMCTS};
     use quoridor_rs::selfplay_config::load_latest_model;
     use tokio::sync::mpsc as tokio_mpsc;
@@ -516,9 +521,14 @@ fn run_continuous_batched(
     );
     println!(
         "games_per_process={}, leaf_parallelism={}, virtual_loss={}, tree_reuse={}, eval_batch_size={}, eval_max_wait_ms={}, eval_cache_max_size={}, mcts_worker_threads={}",
-        rust_cfg.games_per_process, rust_cfg.leaf_parallelism, rust_cfg.virtual_loss,
-        rust_cfg.enable_tree_reuse, rust_cfg.eval_batch_size, rust_cfg.eval_max_wait_ms,
-        rust_cfg.eval_cache_max_size, rust_cfg.mcts_worker_threads,
+        rust_cfg.games_per_process,
+        rust_cfg.leaf_parallelism,
+        rust_cfg.virtual_loss,
+        rust_cfg.enable_tree_reuse,
+        rust_cfg.eval_batch_size,
+        rust_cfg.eval_max_wait_ms,
+        rust_cfg.eval_cache_max_size,
+        rust_cfg.mcts_worker_threads,
     );
     println!(
         "Polling: {}\nShutdown: {}\nOutput: {}",

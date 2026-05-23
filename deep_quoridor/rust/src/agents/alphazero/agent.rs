@@ -12,7 +12,7 @@ use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
 
 use super::evaluator::{Evaluator, OnnxEvaluator};
-use super::mcts::{search, MCTSConfig};
+use super::mcts::{MCTSConfig, search};
 
 /// Configuration for the AlphaZero agent.
 #[derive(Debug, Clone)]

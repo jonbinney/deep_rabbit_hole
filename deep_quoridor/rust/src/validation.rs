@@ -3,7 +3,7 @@
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2};
 
 use crate::grid::{
-    check_wall_cells, is_wall_potential_block, set_wall_cells, CELL_FREE, CELL_WALL,
+    CELL_FREE, CELL_WALL, check_wall_cells, is_wall_potential_block, set_wall_cells,
 };
 use crate::pathfinding::distance_to_row;
 

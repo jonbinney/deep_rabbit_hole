@@ -11,9 +11,9 @@
 //! Control messages (`Reload(path)`, `Shutdown`) ride the front mpsc as
 //! enum variants so ordering with batches is preserved.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -384,7 +384,10 @@ fn run_postprocess(
                         && cache.len() >= cache_max
                         && !FIRST_FULL.swap(true, Ordering::Relaxed)
                     {
-                        eprintln!("eval-pipeline: cache reached cap of {} entries — further inserts will be skipped (by design)", cache_max);
+                        eprintln!(
+                            "eval-pipeline: cache reached cap of {} entries — further inserts will be skipped (by design)",
+                            cache_max
+                        );
                     }
                     if cache_max > 0 && cache.len() < cache_max {
                         cache.insert(req.state, res.clone());

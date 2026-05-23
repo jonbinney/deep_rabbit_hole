@@ -15,8 +15,8 @@ use tokio::sync::oneshot;
 use crate::agents::alphazero::eval_pipeline::{EvalCache, EvalRequest, EvalResult, FrontMsg};
 use crate::agents::alphazero::evaluator::prepare_eval_input;
 use crate::agents::alphazero::mcts::{
-    apply_dirichlet_noise_to_root_children, backpropagate, backpropagate_result, expand_node,
-    promote_subtree, select_leaf_with_vl, undo_virtual_loss, ChildInfo, MCTSConfig, NodeArena,
+    ChildInfo, MCTSConfig, NodeArena, apply_dirichlet_noise_to_root_children, backpropagate,
+    backpropagate_result, expand_node, promote_subtree, select_leaf_with_vl, undo_virtual_loss,
 };
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;

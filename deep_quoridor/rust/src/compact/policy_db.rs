@@ -16,15 +16,15 @@ use std::sync::Arc;
 use arrow::array::{Array, FixedSizeBinaryArray, Int8Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use dashmap::DashMap;
-use parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use parquet::arrow::ArrowWriter;
+use parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::WriterProperties;
 use parquet::file::statistics::Statistics;
 use parquet::format::KeyValue;
+use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::SeedableRng;
 
 use super::q_bit_repr::CompactState;
 use super::q_game_mechanics::QGameMechanics;
@@ -178,7 +178,7 @@ impl PolicyDb {
                 _ => {
                     return Err(
                         format!("unexpected stats variant for state column: {stats:?}").into(),
-                    )
+                    );
                 }
             };
             row_groups.push(RowGroupStats {
