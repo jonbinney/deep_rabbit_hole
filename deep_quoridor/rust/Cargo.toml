@@ -46,6 +46,7 @@ smallvec = "1.13"
 default = ["python"]
 python = ["pyo3", "numpy"]
 binary = ["clap", "ort", "serde_yaml", "ndarray-npy", "zip", "rand_distr", "tokio", "futures"]
+gpu = ["binary", "ort/cuda"]
 
 [dev-dependencies]
 tempfile = "3"

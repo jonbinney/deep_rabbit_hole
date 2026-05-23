@@ -21,6 +21,7 @@ use anyhow::{Context, Result};
 use dashmap::DashMap;
 use ndarray::{Array4, Axis};
 use ort::session::Session;
+use ort::session::builder::GraphOptimizationLevel;
 use rayon::prelude::*;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::oneshot;
@@ -102,9 +103,25 @@ enum PostIn {
 }
 
 /// Open an ONNX `Session` from a file path.
+///
+/// Built with the `gpu` feature, this registers the CUDA execution provider
+/// with a CPU fallback, so a host without a working CUDA stack still runs.
+/// Without the feature the session uses the CPU execution provider only.
 pub fn load_session(model_path: &str) -> Result<Session> {
-    Session::builder()
+    let builder = Session::builder()
         .context("Failed to create ONNX session builder")?
+        .with_optimization_level(GraphOptimizationLevel::Level3)
+        .context("Failed to set graph optimization level")?;
+
+    #[cfg(feature = "gpu")]
+    let builder = builder
+        .with_execution_providers([
+            ort::execution_providers::CUDAExecutionProvider::default().build(),
+            ort::execution_providers::CPUExecutionProvider::default().build(),
+        ])
+        .context("Failed to register CUDA/CPU execution providers")?;
+
+    builder
         .commit_from_file(model_path)
         .with_context(|| format!("Failed to load ONNX model from {}", model_path))
 }
