@@ -108,6 +108,15 @@ enum PostIn {
 /// with a CPU fallback, so a host without a working CUDA stack still runs.
 /// Without the feature the session uses the CPU execution provider only.
 pub fn load_session(model_path: &str) -> Result<Session> {
+    #[cfg(feature = "gpu")]
+    if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+        anyhow::bail!(
+            "gpu feature is enabled but ORT_DYLIB_PATH is not set. Point it at the \
+             onnxruntime-gpu shared library (…/onnxruntime/capi/libonnxruntime.so.<version>) \
+             and put the CUDA and cuDNN lib directories on LD_LIBRARY_PATH."
+        );
+    }
+
     let builder = Session::builder()
         .context("Failed to create ONNX session builder")?
         .with_optimization_level(GraphOptimizationLevel::Level3)
