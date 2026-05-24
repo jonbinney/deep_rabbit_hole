@@ -117,10 +117,14 @@ pub fn load_session(model_path: &str) -> Result<Session> {
         );
     }
 
+    // NOTE: `with_optimization_level`/`with_execution_providers` return
+    // `Result<Self, ort::Error<SessionBuilder>>`; that error carries the builder
+    // back for recovery and is not `Send`/`Sync`, so anyhow's `.context()` does
+    // not apply. Convert through the error's `Display` instead.
     let builder = Session::builder()
         .context("Failed to create ONNX session builder")?
         .with_optimization_level(GraphOptimizationLevel::Level3)
-        .context("Failed to set graph optimization level")?;
+        .map_err(|e| anyhow::anyhow!("Failed to set graph optimization level: {e}"))?;
 
     #[cfg(feature = "gpu")]
     let builder = builder
@@ -128,8 +132,11 @@ pub fn load_session(model_path: &str) -> Result<Session> {
             ort::execution_providers::CUDAExecutionProvider::default().build(),
             ort::execution_providers::CPUExecutionProvider::default().build(),
         ])
-        .context("Failed to register CUDA/CPU execution providers")?;
+        .map_err(|e| anyhow::anyhow!("Failed to register CUDA/CPU execution providers: {e}"))?;
 
+    // `commit_from_file` takes `&mut self` in this ort version, so the final
+    // builder must be a mutable binding (works for both gpu and non-gpu paths).
+    let mut builder = builder;
     builder
         .commit_from_file(model_path)
         .with_context(|| format!("Failed to load ONNX model from {}", model_path))
