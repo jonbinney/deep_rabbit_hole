@@ -22,7 +22,7 @@ wandb:
 self_play:
   program: rust
   num_processes: 1
-  mcts_worker_threads: 12
+  mcts_worker_threads: 18
   games_per_process: 128
   eval_batch_size: 1024
   leaf_parallelism: 16
@@ -32,8 +32,9 @@ self_play:
   eval_max_wait_ms: 1
   alphazero:
     mcts_noise_epsilon: 0.25
+    temperature: 3.0
 training:
-  games_per_training_step: 50
+  games_per_training_step: 100
   learning_rate: 0.001
   batch_size: 2048
   weight_decay: 0.0001
@@ -52,14 +53,12 @@ benchmarks:
     - random
     - greedy:p_random=0.3,nick=greedy-03
     - greedy
-    - simple:branching_factor=16,nick=simple-bf16
-- every: 1 models
+- every: 10 models
   jobs:
   - type: tournament
-    prefix: full
+    prefix: ""
     times: 10
     opponents:
     - random
     - greedy:p_random=0.3,nick=greedy-03
     - greedy
-    - simple:branching_factor=16,nick=simple-bf16
