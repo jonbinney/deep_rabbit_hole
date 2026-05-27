@@ -448,7 +448,7 @@ fn run_batch_batched(
                     if idx >= num_games { break; }
                     p1.reset_tree();
                     if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
-                    let result = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
+                    let (result, _game_metrics) = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
                     write_replay(&output_dir, None, &result, model_version, idx, pid)?;
                     let mut s = stats.lock().unwrap();
                     match result.winner {
@@ -656,7 +656,7 @@ fn run_continuous_batched(
                     p1.reset_tree();
                     if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
                     let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let result = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
+                    let (result, _game_metrics) = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
                     write_replay(&output_dir, Some(&tmp_dir), &result, mv, idx, pid)?;
                 }
                 Ok::<(), anyhow::Error>(())
