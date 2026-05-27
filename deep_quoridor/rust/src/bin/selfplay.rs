@@ -123,6 +123,11 @@ struct Cli {
     /// Periodically print pipeline counters (GPU time, batcher wait, postprocess time).
     #[arg(long, default_value = "false")]
     profile_counters: bool,
+
+    /// Directory to write per-model-version MCTS metric JSON records. When omitted,
+    /// metric collection is disabled.
+    #[arg(long)]
+    metrics_dir: Option<String>,
 }
 
 /// Resolved runtime config (CLI overrides > YAML > defaults).
@@ -594,6 +599,15 @@ fn run_continuous_batched(
         let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pid = std::process::id();
 
+        use quoridor_rs::agents::alphazero::selfplay_metrics::SelfPlayAccumulator;
+        let metrics_dir = cli.metrics_dir.clone();
+        if let Some(ref d) = metrics_dir {
+            std::fs::create_dir_all(d)?;
+        }
+        let metrics = std::sync::Arc::new(std::sync::Mutex::new(SelfPlayAccumulator::new(
+            initial_version,
+        )));
+
         let print_task = if profile_counters {
             let counters = std::sync::Arc::clone(&counters);
             let shutdown = std::sync::Arc::clone(&shutdown);
@@ -641,6 +655,8 @@ fn run_continuous_batched(
             let board_size = q.board_size;
             let max_walls = q.max_walls;
             let max_steps = q.max_steps as i32;
+            let metrics = std::sync::Arc::clone(&metrics);
+            let metrics_enabled = metrics_dir.is_some();
             handles.push(tokio::spawn(async move {
                 let mut p1 = LeafParallelMCTS::new(mcts_cfg.clone(), lp_cfg, front_tx.clone(), std::sync::Arc::clone(&cache));
                 let mut p2: P2 = match p2_kind.as_deref() {
@@ -656,8 +672,11 @@ fn run_continuous_batched(
                     p1.reset_tree();
                     if let P2::AlphaZero(m) = &mut p2 { m.reset_tree(); }
                     let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let (result, _game_metrics) = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
+                    let (result, game_metrics) = play_game_async(&mut p1, &mut p2, settings, board_size, max_walls, max_steps).await?;
                     write_replay(&output_dir, Some(&tmp_dir), &result, mv, idx, pid)?;
+                    if metrics_enabled {
+                        metrics.lock().unwrap().fold_game(&game_metrics);
+                    }
                 }
                 Ok::<(), anyhow::Error>(())
             }));
@@ -668,12 +687,21 @@ fn run_continuous_batched(
             let front_tx = front_tx.clone();
             let shutdown = std::sync::Arc::clone(&shutdown);
             let model_version = std::sync::Arc::clone(&model_version);
+            let metrics = std::sync::Arc::clone(&metrics);
+            let metrics_dir = metrics_dir.clone();
+            let pid_for_metrics = pid;
             tokio::spawn(async move {
                 let mut current = initial_version;
                 loop {
                     if std::path::Path::new(&shutdown_path).exists() {
                         println!("Shutdown signal detected. Stopping workers...");
                         shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if let Some(ref d) = metrics_dir {
+                            let mut m = metrics.lock().unwrap();
+                            if let Err(e) = m.flush_and_reset(d, pid_for_metrics) {
+                                eprintln!("selfplay-metrics: final flush failed: {:#}", e);
+                            }
+                        }
                         break;
                     }
                     if let Ok(latest) = load_latest_model(&latest_yaml_path) {
@@ -683,6 +711,13 @@ fn run_continuous_batched(
                                 println!("New model detected: version {} -> {} ({})", current, latest.version, new_path);
                                 current = latest.version;
                                 model_version.store(latest.version, std::sync::atomic::Ordering::Relaxed);
+                                if let Some(ref d) = metrics_dir {
+                                    let mut m = metrics.lock().unwrap();
+                                    if let Err(e) = m.flush_and_reset(d, pid_for_metrics) {
+                                        eprintln!("selfplay-metrics: flush failed: {:#}", e);
+                                    }
+                                    m.set_version(latest.version);
+                                }
                                 let _ = front_tx.send(FrontMsg::Reload(new_path)).await;
                             }
                         }
