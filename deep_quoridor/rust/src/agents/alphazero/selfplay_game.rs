@@ -171,7 +171,7 @@ async fn run_az_select(
     settings: GameSettings,
     step: usize,
 ) -> Result<(usize, Vec<f32>)> {
-    let (children, _root_value) = mcts.search(data, mechanics, visited).await?;
+    let (children, _root_value, _stats) = mcts.search(data, mechanics, visited).await?;
     let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
     let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
     let temperature = match settings.drop_t_on_step {

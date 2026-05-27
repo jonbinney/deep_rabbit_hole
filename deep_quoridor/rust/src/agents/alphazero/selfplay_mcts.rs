@@ -29,6 +29,29 @@ pub struct LeafParallelConfig {
     pub enable_tree_reuse: bool,
 }
 
+/// Lightweight per-search diagnostics, accumulated cheaply during one `search()`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SearchStats {
+    /// Number of MCTS simulations (selected leaves) this search.
+    pub sims: u32,
+    /// Simulations whose selected leaf was a win-terminal game state.
+    pub terminal_wins: u32,
+    /// Simulations whose selected leaf hit the max_steps cap.
+    pub truncations: u32,
+    /// Deepest selection path length (nodes from root to leaf, inclusive).
+    pub max_depth: u32,
+    /// Sum of selection-path lengths (divide by `sims` for mean depth).
+    pub sum_depth: u64,
+    /// Total nodes in the arena at search end.
+    pub nodes: u32,
+    /// Arena nodes that have at least one child (internal/expanded nodes).
+    pub internal_nodes: u32,
+    /// Entropy (nats) of the root child visit distribution.
+    pub root_visit_entropy: f64,
+    /// Fraction of root visits on the single most-visited child.
+    pub top_move_visit_frac: f64,
+}
+
 /// One LeafParallelMCTS per game agent. Lives across moves so tree reuse can
 /// preserve the subtree of the chosen child.
 pub struct LeafParallelMCTS {
@@ -104,7 +127,7 @@ impl LeafParallelMCTS {
         root_data: CompactState,
         mechanics: &QGameMechanics,
         visited_states: &HashSet<CompactState>,
-    ) -> Result<(Vec<ChildInfo>, f32)> {
+    ) -> Result<(Vec<ChildInfo>, f32, SearchStats)> {
         // Fresh arena unless we have a reusable one matching the root state.
         let mut arena = match self.arena.take() {
             Some(a) if a.get(0).data == root_data => a,
@@ -144,6 +167,7 @@ impl LeafParallelMCTS {
             self.cfg.k.unwrap_or(10) * action_mask.iter().filter(|&&m| m).count() as u32
         });
 
+        let mut stats = SearchStats::default();
         let mut iters_done: u32 = 0;
         let k = self.lp.leaf_parallelism.max(1);
         let vl = self.lp.virtual_loss;
@@ -176,6 +200,13 @@ impl LeafParallelMCTS {
                 let leaf_idx = *path.last().unwrap();
                 let leaf_data = arena.get(leaf_idx).data;
 
+                let depth = path.len() as u32;
+                stats.sims += 1;
+                stats.sum_depth += depth as u64;
+                if depth > stats.max_depth {
+                    stats.max_depth = depth;
+                }
+
                 // Terminal?
                 if mechanics.is_game_over(leaf_data) {
                     // Terminal value convention: matches the synchronous mcts::search reference.
@@ -187,11 +218,17 @@ impl LeafParallelMCTS {
                         0.0
                     };
                     items.push(Item::Terminal { path, value: v });
+                    if v > 0.0 {
+                        stats.terminal_wins += 1;
+                    } else {
+                        stats.truncations += 1;
+                    }
                     continue;
                 }
                 if let Some(max) = self.cfg.max_steps {
                     if mechanics.repr().get_completed_steps(leaf_data) >= max as usize {
                         items.push(Item::Terminal { path, value: 0.0 });
+                        stats.truncations += 1;
                         continue;
                     }
                 }
@@ -294,10 +331,32 @@ impl LeafParallelMCTS {
             })
             .collect();
 
+        // Root visit spread (entropy in nats + top-move fraction).
+        let total_visits: u64 = children.iter().map(|c| c.visit_count as u64).sum();
+        if total_visits > 0 {
+            let mut entropy = 0.0f64;
+            let mut max_v = 0u32;
+            for c in &children {
+                if c.visit_count > 0 {
+                    let p = c.visit_count as f64 / total_visits as f64;
+                    entropy -= p * p.ln();
+                    if c.visit_count > max_v {
+                        max_v = c.visit_count;
+                    }
+                }
+            }
+            stats.root_visit_entropy = entropy;
+            stats.top_move_visit_frac = max_v as f64 / total_visits as f64;
+        }
+        stats.nodes = arena.len() as u32;
+        stats.internal_nodes = (0..arena.len())
+            .filter(|&i| !arena.get(i).children.is_empty())
+            .count() as u32;
+
         // Stash the arena for tree reuse on the next call.
         self.arena = Some(arena);
 
-        Ok((children, computed_root_value))
+        Ok((children, computed_root_value, stats))
     }
 
     /// Run a single eval through the pipeline (used to seed root expansion).
@@ -407,7 +466,7 @@ mod tests {
                 LeafParallelMCTS::new(mcts_cfg.clone(), lp_cfg, tx.clone(), Arc::clone(&cache));
 
             let visited = std::collections::HashSet::new();
-            let (children, _root_value) = mcts.search(data, &mech, &visited).await.unwrap();
+            let (children, _root_value, _stats) = mcts.search(data, &mech, &visited).await.unwrap();
             let total: u32 = children.iter().map(|c| c.visit_count).sum();
             // Should be exactly n iterations of MCTS expansion under the root.
             assert!(total >= 20, "expected ≥20 child visits, got {}", total);
@@ -448,7 +507,7 @@ mod tests {
             let mut mcts = LeafParallelMCTS::new(mcts_cfg, lp_cfg, tx.clone(), Arc::clone(&cache));
 
             let visited = std::collections::HashSet::new();
-            let (children, _) = mcts.search(data, &mech, &visited).await.unwrap();
+            let (children, _, _stats) = mcts.search(data, &mech, &visited).await.unwrap();
             let visited_top: u32 = children.iter().filter(|c| c.visit_count > 0).count() as u32;
             assert!(
                 visited_top >= 2,
@@ -491,17 +550,64 @@ mod tests {
 
             let visited = std::collections::HashSet::new();
             // First search at the initial state.
-            let (children_1, _) = mcts.search(data, &mech, &visited).await.unwrap();
+            let (children_1, _, _stats) = mcts.search(data, &mech, &visited).await.unwrap();
             let chosen = children_1.iter().max_by_key(|c| c.visit_count).unwrap();
 
             // Advance root and search again from the resulting state.
             let mut next_state = data;
             mech.apply_action_index(&mut next_state, chosen.action_index);
             mcts.advance_root(chosen.action_index);
-            let (children_2, _) = mcts.search(next_state, &mech, &visited).await.unwrap();
+            let (children_2, _, _stats) = mcts.search(next_state, &mech, &visited).await.unwrap();
             assert!(!children_2.is_empty());
 
             // Drop mcts (holds Sender clone) before tx, then await stub.
+            drop(mcts);
+            drop(tx);
+            let _ = stub.await;
+        });
+    }
+
+    #[test]
+    fn test_search_stats_are_sane() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mech = QGameMechanics::new(5, 0, 200);
+            let data = mech.create_initial_state();
+            let cache = Arc::new(EvalCache::new());
+            let (tx, rx) = tokio_mpsc::channel::<FrontMsg>(128);
+            let stub = spawn_stub_coordinator(rx, Arc::clone(&cache));
+
+            let mcts_cfg = MCTSConfig {
+                n: Some(40),
+                ucb_c: 1.4,
+                noise_epsilon: 0.0,
+                ..Default::default()
+            };
+            let lp_cfg = LeafParallelConfig {
+                leaf_parallelism: 4,
+                virtual_loss: 1,
+                enable_tree_reuse: false,
+            };
+            let mut mcts = LeafParallelMCTS::new(mcts_cfg, lp_cfg, tx.clone(), Arc::clone(&cache));
+            let visited = std::collections::HashSet::new();
+            let (_children, _v, stats) = mcts.search(data, &mech, &visited).await.unwrap();
+
+            assert_eq!(stats.sims, 40, "sims should equal mcts_n");
+            assert!(stats.max_depth >= 1, "max_depth must be >= 1");
+            assert!(stats.sum_depth >= stats.sims as u64, "each sim has depth >= 1");
+            assert!(stats.nodes >= 1);
+            assert!(stats.internal_nodes >= 1);
+            assert!(stats.root_visit_entropy >= 0.0);
+            assert!(
+                stats.top_move_visit_frac > 0.0 && stats.top_move_visit_frac <= 1.0,
+                "top_move_visit_frac in (0,1], got {}",
+                stats.top_move_visit_frac
+            );
+
             drop(mcts);
             drop(tx);
             let _ = stub.await;
