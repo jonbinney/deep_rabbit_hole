@@ -39,6 +39,7 @@ clap = { version = "4.5", features = ["derive"], optional = true }
 ort = { version = "=2.0.0-rc.12", optional = true }
 anyhow = "1"
 serde_yaml = { version = "0.9", optional = true }
+serde_json = { version = "1", optional = true }
 ndarray-npy = { version = "0.9", optional = true }
 zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
 rand_distr = { version = "0.4", optional = true }
@@ -49,7 +50,7 @@ smallvec = "1.13"
 [features]
 default = ["python"]
 python = ["pyo3", "numpy"]
-binary = ["clap", "ort", "serde_yaml", "ndarray-npy", "zip", "rand_distr", "tokio", "futures"]
+binary = ["clap", "ort", "serde_yaml", "serde_json", "ndarray-npy", "zip", "rand_distr", "tokio", "futures"]
 gpu = ["binary", "ort/cuda", "ort/load-dynamic"]
 
 [dev-dependencies]
