@@ -5,7 +5,16 @@ import subprocess
 import time
 from pathlib import Path
 
-from v2 import benchmarks, check_ai_available, load_config_and_setup_run, run_ai_reporter, self_play, train
+from v2 import (
+    benchmarks,
+    check_ai_available,
+    load_config_and_setup_run,
+    metrics_dir_for,
+    run_ai_reporter,
+    run_selfplay_metrics,
+    self_play,
+    train,
+)
 from v2.common import ShutdownSignal
 
 # Prevents getting messages in the console every few lines telling you to install weave
@@ -95,6 +104,8 @@ if __name__ == "__main__":
         selfplay_env = _selfplay_subprocess_env()
         if selfplay_env is not None:
             print(f"Self-play GPU env: ORT_DYLIB_PATH={selfplay_env['ORT_DYLIB_PATH']}")
+        metrics_dir = metrics_dir_for(config)
+        os.makedirs(metrics_dir, exist_ok=True)
         config_file_path = str(config.paths.config_file)
         for i in range(config.self_play.num_processes):
             cmd = [
@@ -108,10 +119,15 @@ if __name__ == "__main__":
                 str(config.paths.latest_model_yaml),
                 "--shutdown-file",
                 str(ShutdownSignal.file_path(config)),
+                "--metrics-dir",
+                metrics_dir,
             ]
             proc = subprocess.Popen(cmd, env=selfplay_env)
             rust_subprocesses.append(proc)
             print(f"Started Rust self-play process {proc.pid}")
+        selfplay_metrics_process = mp.Process(target=run_selfplay_metrics, args=[config])
+        selfplay_metrics_process.start()
+        self_play_processes.append(selfplay_metrics_process)
     else:
         for i in range(config.self_play.num_processes):
             p = mp.Process(target=self_play, args=[config])
