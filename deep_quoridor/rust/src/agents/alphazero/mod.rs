@@ -7,8 +7,8 @@ pub mod eval_pipeline;
 pub mod evaluator;
 pub mod mcts;
 pub mod selfplay_game;
-pub mod selfplay_metrics;
 pub mod selfplay_mcts;
+pub mod selfplay_metrics;
 
 pub mod agent;
 pub use agent::{AlphaZeroAgent, AlphaZeroAgentConfig};

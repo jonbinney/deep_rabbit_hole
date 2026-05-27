@@ -598,7 +598,10 @@ mod tests {
 
             assert_eq!(stats.sims, 40, "sims should equal mcts_n");
             assert!(stats.max_depth >= 1, "max_depth must be >= 1");
-            assert!(stats.sum_depth >= stats.sims as u64, "each sim has depth >= 1");
+            assert!(
+                stats.sum_depth >= stats.sims as u64,
+                "each sim has depth >= 1"
+            );
             assert!(stats.nodes >= 1);
             assert!(stats.internal_nodes >= 1);
             assert!(stats.root_visit_entropy >= 0.0);

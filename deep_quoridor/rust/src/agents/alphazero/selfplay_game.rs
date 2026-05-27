@@ -268,7 +268,7 @@ fn random_select(mask: &[bool]) -> (usize, Vec<f32>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_actions, OPENING_PLIES};
+    use super::{OPENING_PLIES, hash_actions};
 
     #[test]
     fn identical_sequences_hash_equal_different_differ() {
@@ -277,8 +277,16 @@ mod tests {
         let mut c = a.clone();
         c[9] = 99; // differs only after the opening
 
-        assert_eq!(hash_actions(&a), hash_actions(&b), "identical games hash equal");
-        assert_ne!(hash_actions(&a), hash_actions(&c), "different full games differ");
+        assert_eq!(
+            hash_actions(&a),
+            hash_actions(&b),
+            "identical games hash equal"
+        );
+        assert_ne!(
+            hash_actions(&a),
+            hash_actions(&c),
+            "different full games differ"
+        );
 
         let open_a = hash_actions(&a[..a.len().min(OPENING_PLIES)]);
         let open_c = hash_actions(&c[..c.len().min(OPENING_PLIES)]);

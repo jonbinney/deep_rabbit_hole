@@ -156,8 +156,7 @@ mod tests {
         acc.flush_and_reset(&dir_s, 4242).unwrap();
 
         let path = format!("{}/v7_pid4242.json", dir_s);
-        let v: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(v["model_version"], 7);
         assert_eq!(v["games_generated"], 3);
         assert_eq!(v["sims"], 300);
@@ -167,7 +166,10 @@ mod tests {
 
         std::fs::remove_file(&path).unwrap();
         acc.flush_and_reset(&dir_s, 4242).unwrap();
-        assert!(!std::path::Path::new(&path).exists(), "empty flush writes nothing");
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "empty flush writes nothing"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
