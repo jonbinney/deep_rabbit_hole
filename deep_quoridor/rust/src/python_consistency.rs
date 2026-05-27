@@ -44,6 +44,8 @@ fn python_reference(board_size: i32, max_walls: i32) -> (Vec<[i32; 3]>, Vec<bool
 }
 
 fn run_python(script_path: &str, args: &[String]) -> String {
+    use std::io::Read;
+
     let mut candidates = Vec::new();
     if let Ok(python) = std::env::var("PYTHON") {
         candidates.push(python);
@@ -51,27 +53,100 @@ fn run_python(script_path: &str, args: &[String]) -> String {
     candidates.push("python".to_string());
     candidates.push("python3".to_string());
 
+    // Per-subprocess timeout. The real-model parity reference has been observed to
+    // hang intermittently (only under CI/contention; not reproducible in isolation).
+    // Without this it blocks forever in `output()`. The timeout turns a hang into a
+    // fast failure that carries a stack trace (see SIGABRT + PYTHONFAULTHANDLER below).
+    // Overridable via env for slower machines.
+    let timeout_secs: u64 = std::env::var("DEEP_QUORIDOR_PY_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(45);
+
     for candidate in candidates {
-        let output = Command::new(&candidate)
+        let spawned = Command::new(&candidate)
             .arg(script_path)
             .args(args)
-            .output();
+            // Pin BLAS/OpenMP threads to 1. Avoids torch CPU thread-pool
+            // oversubscription across the concurrently-run parity tests (the
+            // suspected hang trigger), and is parity-safe for these small models.
+            .env("OMP_NUM_THREADS", "1")
+            .env("MKL_NUM_THREADS", "1")
+            .env("OPENBLAS_NUM_THREADS", "1")
+            // Make SIGABRT dump all-thread Python tracebacks (used on timeout).
+            .env("PYTHONFAULTHANDLER", "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
 
-        match output {
-            Ok(output) if output.status.success() => {
-                return String::from_utf8(output.stdout).expect("python stdout should be utf-8");
-            }
-            Ok(output) => {
-                panic!(
-                    "python command '{}' failed:\nstdout:\n{}\nstderr:\n{}",
-                    candidate,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
+        let mut child = match spawned {
+            Ok(child) => child,
             Err(err) if err.kind() == ErrorKind::NotFound => continue,
             Err(err) => panic!("failed to run python command '{}': {}", candidate, err),
+        };
+
+        // Drain stdout/stderr on threads so a chatty child can't deadlock on a full
+        // pipe while we poll for completion.
+        let mut out_pipe = child.stdout.take().expect("child stdout piped");
+        let mut err_pipe = child.stderr.take().expect("child stderr piped");
+        let out_reader = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = out_pipe.read_to_string(&mut s);
+            s
+        });
+        let err_reader = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = err_pipe.read_to_string(&mut s);
+            s
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        // Hang: ask Python to dump all-thread tracebacks (faulthandler
+                        // catches SIGABRT), let it write, then kill and report.
+                        let pid = child.id();
+                        let _ = Command::new("kill")
+                            .arg("-ABRT")
+                            .arg(pid.to_string())
+                            .status();
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let err = err_reader.join().unwrap_or_default();
+                        let out = out_reader.join().unwrap_or_default();
+                        let out_lines: Vec<&str> = out.lines().collect();
+                        let tail_start = out_lines.len().saturating_sub(20);
+                        panic!(
+                            "python command '{}' timed out after {}s (likely hang).\n\
+                             Set DEEP_QUORIDOR_PY_TIMEOUT_SECS to adjust.\n\
+                             === faulthandler stderr (all-thread traceback) ===\n{}\n\
+                             === stdout tail ===\n{}",
+                            candidate,
+                            timeout_secs,
+                            err,
+                            out_lines[tail_start..].join("\n"),
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                Err(err) => panic!("error waiting on python command '{}': {}", candidate, err),
+            }
+        };
+
+        let stdout = out_reader.join().expect("stdout reader thread panicked");
+        let stderr = err_reader.join().expect("stderr reader thread panicked");
+
+        if status.success() {
+            return stdout;
         }
+        panic!(
+            "python command '{}' failed:\nstdout:\n{}\nstderr:\n{}",
+            candidate, stdout, stderr
+        );
     }
 
     panic!("no python interpreter found for cross-language consistency test");
