@@ -99,6 +99,18 @@ pub struct UniformMockEvaluator;
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
     pub fn new(model_path: &str) -> Result<Self> {
+        // Fail fast when built with `gpu` (which enables ort/load-dynamic) but
+        // ORT_DYLIB_PATH isn't set: in that case `Session::builder()` deadlocks
+        // on a dynamic-loader futex instead of erroring out. Same guard pattern
+        // as eval_pipeline::load_session.
+        #[cfg(feature = "gpu")]
+        if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+            anyhow::bail!(
+                "gpu feature is enabled but ORT_DYLIB_PATH is not set. Point it at the \
+                 onnxruntime-gpu shared library (.../onnxruntime/capi/libonnxruntime.so.<version>) \
+                 and put the CUDA and cuDNN lib directories on LD_LIBRARY_PATH."
+            );
+        }
         // Pin ORT intra-op threads to 1: ORT defaults to all CPU cores, and
         // parallel CPU sessions (e.g. concurrent tests on CI) oversubscribe its
         // threadpool and intermittently deadlock. For production GPU inference
