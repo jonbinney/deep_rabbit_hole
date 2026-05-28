@@ -26,8 +26,14 @@ pub struct OnnxAgent {
 impl OnnxAgent {
     /// Load an ONNX model from the given path.
     pub fn new(model_path: &str) -> Result<Self> {
+        // Pin ORT intra-op threads to 1. Without this, ORT defaults to all
+        // available CPU cores; multiple concurrent sessions (e.g. parallel
+        // tests on CPU CI) oversubscribe its threadpool and intermittently
+        // deadlock. For production GPU inference intra-op threading is moot.
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
+            .with_intra_threads(1)
+            .map_err(|e| anyhow::anyhow!("Failed to set intra-op thread count: {e}"))?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
         Ok(Self { session })

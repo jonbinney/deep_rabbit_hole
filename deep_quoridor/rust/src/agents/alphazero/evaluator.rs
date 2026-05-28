@@ -99,8 +99,14 @@ pub struct UniformMockEvaluator;
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
     pub fn new(model_path: &str) -> Result<Self> {
+        // Pin ORT intra-op threads to 1: ORT defaults to all CPU cores, and
+        // parallel CPU sessions (e.g. concurrent tests on CI) oversubscribe its
+        // threadpool and intermittently deadlock. For production GPU inference
+        // this is moot.
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
+            .with_intra_threads(1)
+            .map_err(|e| anyhow::anyhow!("Failed to set intra-op thread count: {e}"))?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
         Ok(Self {

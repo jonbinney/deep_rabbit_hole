@@ -124,7 +124,13 @@ pub fn load_session(model_path: &str) -> Result<Session> {
     let builder = Session::builder()
         .context("Failed to create ONNX session builder")?
         .with_optimization_level(GraphOptimizationLevel::Level3)
-        .map_err(|e| anyhow::anyhow!("Failed to set graph optimization level: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to set graph optimization level: {e}"))?
+        // Pin ORT intra-op threads to 1: ORT defaults to all CPU cores, and
+        // parallel CPU sessions (e.g. concurrent tests on CI) oversubscribe
+        // its threadpool and intermittently deadlock. For production GPU
+        // inference this is moot.
+        .with_intra_threads(1)
+        .map_err(|e| anyhow::anyhow!("Failed to set intra-op thread count: {e}"))?;
 
     #[cfg(feature = "gpu")]
     let builder = builder
