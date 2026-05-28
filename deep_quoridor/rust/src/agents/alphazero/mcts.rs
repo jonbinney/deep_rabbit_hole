@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use rand_distr::{Dirichlet, Distribution};
+use smallvec::SmallVec;
 
 use crate::actions::action_index_to_action;
 #[cfg(test)]
@@ -79,6 +80,9 @@ pub struct Node {
     pub losses: u32,
     /// Prior probability from the neural network.
     pub prior: f32,
+    /// Un-noised network prior; never modified after construction. Used to
+    /// re-apply Dirichlet noise to new-root children after tree reuse.
+    pub prior_clean: f32,
 }
 
 impl Node {
@@ -94,6 +98,7 @@ impl Node {
             wins: 0,
             losses: 0,
             prior: 1.0,
+            prior_clean: 1.0,
         }
     }
 
@@ -109,6 +114,7 @@ impl Node {
             wins: 0,
             losses: 0,
             prior,
+            prior_clean: prior,
         }
     }
 
@@ -133,6 +139,11 @@ pub struct NodeArena {
 }
 
 impl NodeArena {
+    /// Construct from a pre-filled `Vec<Node>` (used by `promote_subtree`).
+    pub fn from_nodes(nodes: Vec<Node>) -> Self {
+        Self { nodes }
+    }
+
     /// Create a new arena with a root node.
     pub fn new(root_data: CompactState) -> Self {
         let root = Node::new_root(root_data);
@@ -180,7 +191,7 @@ pub fn expand_node(
     let new_children: Vec<usize> = priors
         .iter()
         .enumerate()
-        .filter(|(_, &p)| p > 1e-10)
+        .filter(|&(_, &p)| p > 1e-10)
         .map(|(action_idx, &prior)| {
             let mut child_data = parent_data;
             mechanics.apply_action_index(&mut child_data, action_idx);
@@ -228,6 +239,52 @@ pub fn select_child(
     best_idx
 }
 
+/// Apply a virtual loss along `path` (root → leaf inclusive). For each node,
+/// `visit_count += vl` and `value_sum -= vl`. Call `undo_virtual_loss` before
+/// real backprop to restore the baseline.
+pub fn apply_virtual_loss(arena: &mut NodeArena, path: &[usize], vl: u32) {
+    let vl_f = vl as f64;
+    for &idx in path {
+        let n = arena.get_mut(idx);
+        n.visit_count += vl;
+        n.value_sum -= vl_f;
+    }
+}
+
+/// Reverse `apply_virtual_loss`.
+pub fn undo_virtual_loss(arena: &mut NodeArena, path: &[usize], vl: u32) {
+    let vl_f = vl as f64;
+    for &idx in path {
+        let n = arena.get_mut(idx);
+        n.visit_count -= vl;
+        n.value_sum += vl_f;
+    }
+}
+
+/// Descend from `root_idx` to a leaf using PUCT, applying a virtual loss of
+/// magnitude `vl` to every node touched (including the leaf). Returns the path
+/// root→leaf (inclusive). The caller must eventually call `undo_virtual_loss`
+/// on this path before doing real backprop.
+pub fn select_leaf_with_vl(
+    arena: &mut NodeArena,
+    root_idx: usize,
+    ucb_c: f32,
+    vl: u32,
+    visited_states: &HashSet<CompactState>,
+) -> SmallVec<[usize; 32]> {
+    let mut path: SmallVec<[usize; 32]> = SmallVec::new();
+    let mut current = root_idx;
+    loop {
+        path.push(current);
+        if arena.get(current).should_expand() {
+            break;
+        }
+        current = select_child(arena, current, ucb_c, visited_states);
+    }
+    apply_virtual_loss(arena, &path, vl);
+    path
+}
+
 /// Backpropagate a value up the tree.
 pub fn backpropagate(arena: &mut NodeArena, node_idx: usize, mut value: f64) {
     let mut current = Some(node_idx);
@@ -269,7 +326,7 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
     let valid_indices: Vec<usize> = priors
         .iter()
         .enumerate()
-        .filter(|(_, &p)| p > 1e-10)
+        .filter(|&(_, &p)| p > 1e-10)
         .map(|(i, _)| i)
         .collect();
 
@@ -292,12 +349,95 @@ pub fn apply_dirichlet_noise(priors: &mut [f32], epsilon: f32, alpha: f32) {
     }
 }
 
+/// Mix Dirichlet noise into the `prior` field of all children of `root_idx`,
+/// leaving `prior_clean` untouched. Iterates over children, samples a Dirichlet
+/// over them, and replaces `prior[i] ← (1-ε) * prior_clean[i] + ε * noise[i]`.
+pub fn apply_dirichlet_noise_to_root_children(
+    arena: &mut NodeArena,
+    root_idx: usize,
+    epsilon: f32,
+    alpha: f32,
+) {
+    let child_ids: Vec<usize> = arena.get(root_idx).children.clone();
+    if child_ids.is_empty() {
+        return;
+    }
+    let dirichlet = match Dirichlet::new_with_size(alpha, child_ids.len()) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let mut rng = rand::thread_rng();
+    let noise: Vec<f32> = dirichlet.sample(&mut rng);
+    for (i, &child_idx) in child_ids.iter().enumerate() {
+        let c = arena.get_mut(child_idx);
+        c.prior = (1.0 - epsilon) * c.prior_clean + epsilon * noise[i];
+    }
+}
+
+/// Copy the subtree rooted at `new_root_idx` of `old_arena` into a fresh
+/// `NodeArena`. The new arena's root is the copy of `new_root_idx`, with its
+/// `parent` and `action_index` cleared. All descendants are copied; siblings
+/// of `new_root_idx` (and their descendants) are dropped.
+///
+/// Statistics (`visit_count`, `value_sum`, `wins`, `losses`, `prior`,
+/// `prior_clean`) carry over unchanged.
+pub fn promote_subtree(old_arena: &NodeArena, new_root_idx: usize) -> NodeArena {
+    let mut new_nodes: Vec<Node> = Vec::new();
+    let mut idx_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+
+    // BFS so parents always get assigned a new index before children.
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    queue.push_back(new_root_idx);
+    idx_map.insert(new_root_idx, 0);
+    let old_root = old_arena.get(new_root_idx);
+    new_nodes.push(Node {
+        data: old_root.data,
+        parent: None,
+        action_index: None,
+        children: Vec::new(),
+        visit_count: old_root.visit_count,
+        value_sum: old_root.value_sum,
+        wins: old_root.wins,
+        losses: old_root.losses,
+        prior: old_root.prior,
+        prior_clean: old_root.prior_clean,
+    });
+
+    while let Some(old_idx) = queue.pop_front() {
+        let new_idx = idx_map[&old_idx];
+        let old_node = old_arena.get(old_idx);
+        let mut new_children: Vec<usize> = Vec::with_capacity(old_node.children.len());
+        for &old_child in &old_node.children {
+            let new_child_idx = new_nodes.len();
+            idx_map.insert(old_child, new_child_idx);
+            let c = old_arena.get(old_child);
+            new_nodes.push(Node {
+                data: c.data,
+                parent: Some(new_idx),
+                action_index: c.action_index,
+                children: Vec::new(),
+                visit_count: c.visit_count,
+                value_sum: c.value_sum,
+                wins: c.wins,
+                losses: c.losses,
+                prior: c.prior,
+                prior_clean: c.prior_clean,
+            });
+            new_children.push(new_child_idx);
+            queue.push_back(old_child);
+        }
+        new_nodes[new_idx].children = new_children;
+    }
+
+    NodeArena::from_nodes(new_nodes)
+}
+
 /// Run MCTS search and return child information.
-pub fn search<E: Evaluator>(
+pub fn search(
     config: &MCTSConfig,
     root_data: CompactState,
     mechanics: &QGameMechanics,
-    evaluator: &mut E,
+    evaluator: &mut dyn Evaluator,
     visited_states: &HashSet<CompactState>,
 ) -> anyhow::Result<(Vec<ChildInfo>, f32)> {
     let bs = mechanics.repr().board_size() as i32;
@@ -308,16 +448,7 @@ pub fn search<E: Evaluator>(
     // so that the loop structure matches the Python implementation (where iteration 0
     // always selects root itself, expands it, and backpropagates through it).
     let action_mask = mechanics.get_action_mask_immut(root_data);
-    let (root_value, mut root_priors) = evaluator.evaluate(root_data, mechanics, &action_mask)?;
-
-    // Apply Dirichlet noise at root if configured
-    if config.noise_epsilon > 0.0 {
-        let alpha = config.noise_alpha.unwrap_or_else(|| {
-            let num_valid = action_mask.iter().filter(|&&m| m).count();
-            10.0 / num_valid.max(1) as f32
-        });
-        apply_dirichlet_noise(&mut root_priors, config.noise_epsilon, alpha);
-    }
+    let (root_value, root_priors) = evaluator.evaluate(root_data, mechanics, &action_mask)?;
 
     // Determine number of iterations
     let num_valid = action_mask.iter().filter(|&&m| m).count() as u32;
@@ -328,6 +459,13 @@ pub fn search<E: Evaluator>(
     // Special case: n=0 means just use priors (expand root once without simulating)
     if n_iterations == 0 {
         expand_node(&mut arena, 0, &root_priors, mechanics);
+        if config.noise_epsilon > 0.0 {
+            let alpha = config.noise_alpha.unwrap_or_else(|| {
+                let num_valid = action_mask.iter().filter(|&&m| m).count();
+                10.0 / num_valid.max(1) as f32
+            });
+            apply_dirichlet_noise_to_root_children(&mut arena, 0, config.noise_epsilon, alpha);
+        }
         let root = arena.get(0);
         let children = root.children.clone();
 
@@ -383,6 +521,15 @@ pub fn search<E: Evaluator>(
             };
 
             expand_node(&mut arena, current_idx, &leaf_priors, mechanics);
+
+            // Apply Dirichlet noise to root children after root expansion (first iteration)
+            if config.noise_epsilon > 0.0 && current_idx == 0 {
+                let alpha = config.noise_alpha.unwrap_or_else(|| {
+                    let num_valid = action_mask.iter().filter(|&&m| m).count();
+                    10.0 / num_valid.max(1) as f32
+                });
+                apply_dirichlet_noise_to_root_children(&mut arena, 0, config.noise_epsilon, alpha);
+            }
 
             // Backpropagate negative value (from opponent's perspective)
             backpropagate(&mut arena, current_idx, -value as f64);
@@ -732,6 +879,49 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_dirichlet_noise_arena_modifies_only_prior() {
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+        let total = crate::actions::policy_size(5);
+        let mut priors = vec![0.0f32; total];
+        let mask = mech.get_action_mask_immut(data);
+        for (i, &v) in mask.iter().enumerate() {
+            if v {
+                priors[i] = 1.0 / mask.iter().filter(|&&m| m).count() as f32;
+            }
+        }
+        expand_node(&mut arena, 0, &priors, &mech);
+
+        // Snapshot prior_clean before noise.
+        let clean_before: Vec<f32> = arena
+            .get(0)
+            .children
+            .iter()
+            .map(|&i| arena.get(i).prior_clean)
+            .collect();
+
+        apply_dirichlet_noise_to_root_children(&mut arena, 0, 0.25, 0.5);
+
+        // prior_clean unchanged, prior changed.
+        let mut any_changed = false;
+        for (offset, &child_idx) in arena.get(0).children.iter().enumerate() {
+            let c = arena.get(child_idx);
+            assert!(
+                (c.prior_clean - clean_before[offset]).abs() < 1e-6,
+                "prior_clean must not be modified"
+            );
+            if (c.prior - c.prior_clean).abs() > 1e-6 {
+                any_changed = true;
+            }
+        }
+        assert!(
+            any_changed,
+            "noise should change at least one child's prior"
+        );
+    }
+
+    #[test]
     fn test_child_action_index_roundtrips_to_action() {
         let bs = 5;
         let mech = QGameMechanics::new(5, 3, 200);
@@ -748,5 +938,114 @@ mod tests {
         for c in &children {
             assert_eq!(action_to_index(bs, &c.action), c.action_index);
         }
+    }
+
+    #[test]
+    fn test_select_leaf_with_vl_diversifies_concurrent_selections() {
+        use smallvec::SmallVec;
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+
+        let mask = mech.get_action_mask_immut(data);
+        let total = crate::actions::policy_size(5);
+        let mut priors = vec![0.0f32; total];
+        // Three valid actions with similar priors so vl can spread them out.
+        let valid: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None })
+            .collect();
+        assert!(valid.len() >= 3);
+        for &i in &valid[..3] {
+            priors[i] = 1.0 / 3.0;
+        }
+        expand_node(&mut arena, 0, &priors, &mech);
+        arena.get_mut(0).visit_count = 0;
+
+        let visited = HashSet::new();
+        let mut first_level_choices = std::collections::HashSet::new();
+        for _ in 0..3 {
+            let path: SmallVec<[usize; 32]> = select_leaf_with_vl(&mut arena, 0, 1.4, 3, &visited);
+            // First-level child is path[1] (path[0] is the root).
+            first_level_choices.insert(path[1]);
+        }
+        assert!(
+            first_level_choices.len() >= 2,
+            "vl should drive at least two distinct first-level child selections"
+        );
+    }
+
+    #[test]
+    fn test_promote_subtree_keeps_only_chosen_branch() {
+        let mech = QGameMechanics::new(5, 0, 200);
+        let data = mech.create_initial_state();
+        let mut arena = NodeArena::new(data);
+
+        let mask = mech.get_action_mask_immut(data);
+        let valid: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v { Some(i) } else { None })
+            .collect();
+        assert!(valid.len() >= 2);
+
+        let mut d1 = data;
+        mech.apply_action_index(&mut d1, valid[0]);
+        let mut d2 = data;
+        mech.apply_action_index(&mut d2, valid[1]);
+        let c1 = arena.alloc_child(0, valid[0], d1, 0.5);
+        let c2 = arena.alloc_child(0, valid[1], d2, 0.5);
+        arena.get_mut(0).children = vec![c1, c2];
+        arena.get_mut(c1).visit_count = 7;
+        arena.get_mut(c1).value_sum = 3.5;
+        // Give c1 a grandchild so we can confirm it survives the promotion.
+        let g = arena.alloc_child(c1, valid[0], d1, 0.5);
+        arena.get_mut(c1).children = vec![g];
+        arena.get_mut(g).visit_count = 4;
+
+        let new_arena = promote_subtree(&arena, c1);
+
+        // New arena has root + g (2 nodes).
+        assert_eq!(new_arena.len(), 2);
+        assert_eq!(new_arena.get(0).visit_count, 7);
+        assert!((new_arena.get(0).value_sum - 3.5).abs() < 1e-9);
+        assert!(new_arena.get(0).parent.is_none());
+        assert_eq!(new_arena.get(0).children.len(), 1);
+        let new_g = new_arena.get(0).children[0];
+        assert_eq!(new_arena.get(new_g).visit_count, 4);
+        assert_eq!(new_arena.get(new_g).parent, Some(0));
+    }
+
+    #[test]
+    fn test_virtual_loss_apply_undo_round_trip() {
+        let (_, data) = make_mech_state();
+        let mut arena = NodeArena::new(data);
+        let c1 = arena.alloc_child(0, 0, data, 0.5);
+        let c2 = arena.alloc_child(c1, 0, data, 0.5);
+        arena.get_mut(0).children = vec![c1];
+        arena.get_mut(c1).children = vec![c2];
+
+        // Snapshot.
+        let (root_v, root_s) = (arena.get(0).visit_count, arena.get(0).value_sum);
+        let (c1_v, c1_s) = (arena.get(c1).visit_count, arena.get(c1).value_sum);
+        let (c2_v, c2_s) = (arena.get(c2).visit_count, arena.get(c2).value_sum);
+
+        let path = vec![0usize, c1, c2];
+        apply_virtual_loss(&mut arena, &path, 3);
+
+        assert_eq!(arena.get(0).visit_count, root_v + 3);
+        assert!((arena.get(0).value_sum - (root_s - 3.0)).abs() < 1e-9);
+        assert_eq!(arena.get(c1).visit_count, c1_v + 3);
+        assert_eq!(arena.get(c2).visit_count, c2_v + 3);
+
+        undo_virtual_loss(&mut arena, &path, 3);
+
+        assert_eq!(arena.get(0).visit_count, root_v);
+        assert!((arena.get(0).value_sum - root_s).abs() < 1e-9);
+        assert_eq!(arena.get(c1).visit_count, c1_v);
+        assert!((arena.get(c1).value_sum - c1_s).abs() < 1e-9);
+        assert_eq!(arena.get(c2).visit_count, c2_v);
+        assert!((arena.get(c2).value_sum - c2_s).abs() < 1e-9);
     }
 }

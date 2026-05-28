@@ -4,6 +4,7 @@ matplotlib
 numba<=0.61
 numpy
 onnx
+onnxruntime-gpu==1.26.0
 onnxscript
 open_spiel
 pettingzoo

@@ -122,6 +122,7 @@ def train(config: Config):
 
     training_steps = 0
     last_game = 0
+    total_moves_played = 0
     model_version = 1
     moves_per_game = []
     game_filename = []
@@ -152,6 +153,7 @@ def train(config: Config):
 
             f.rename(new_name)
             moves_per_game.append(game_info.game_length)
+            total_moves_played += game_info.game_length
             game_filename.append(new_name.name)
             wandb_run.log(
                 {
@@ -203,6 +205,7 @@ def train(config: Config):
                 "total_loss": total_loss,
                 "learning_rate": alphazero_agent.evaluator.get_learning_rate(),
                 "games_played": last_game,
+                "moves_played": total_moves_played,
                 "replay_buffer_games": buffer_size,
                 "replay_buffer_moves": total_moves,
                 "time-sample": time_sample,

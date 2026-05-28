@@ -11,6 +11,38 @@ from v2.common import ShutdownSignal
 # Prevents getting messages in the console every few lines telling you to install weave
 os.environ["WANDB_DISABLE_WEAVE"] = "true"
 
+
+def _selfplay_subprocess_env():
+    """Environment for the Rust self-play subprocess.
+
+    A selfplay binary built with the ``gpu`` feature loads ONNX Runtime
+    dynamically, so it needs ``ORT_DYLIB_PATH`` pointing at the onnxruntime-gpu
+    shared library and the CUDA/cuDNN wheel libs on ``LD_LIBRARY_PATH``. We
+    discover both from the installed packages so GPU self-play works without
+    manual shell setup. Returns ``None`` (inherit the current environment) when
+    onnxruntime isn't installed, in which case a CPU build runs unchanged.
+    """
+    import importlib.util
+
+    spec = importlib.util.find_spec("onnxruntime")
+    if spec is None or not spec.origin:
+        return None
+    pkg_dir = Path(spec.origin).parent
+    dylibs = sorted(pkg_dir.glob("capi/libonnxruntime.so*"))
+    if not dylibs:
+        return None
+
+    site_packages = pkg_dir.parent
+    nvidia_libs = [str(p) for p in sorted((site_packages / "nvidia").glob("*/lib")) if p.is_dir()]
+
+    env = dict(os.environ)
+    env["ORT_DYLIB_PATH"] = str(dylibs[-1])
+    ld_parts = nvidia_libs + ([env["LD_LIBRARY_PATH"]] if env.get("LD_LIBRARY_PATH") else [])
+    if ld_parts:
+        env["LD_LIBRARY_PATH"] = ":".join(ld_parts)
+    return env
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Quoridor agent")
     parser.add_argument("config_file", type=str, help="Path to YAML configuration file")
@@ -60,8 +92,11 @@ if __name__ == "__main__":
 
     if config.self_play.program == "rust":
         # Spawn Rust self-play processes in continuous mode
+        selfplay_env = _selfplay_subprocess_env()
+        if selfplay_env is not None:
+            print(f"Self-play GPU env: ORT_DYLIB_PATH={selfplay_env['ORT_DYLIB_PATH']}")
         config_file_path = str(config.paths.config_file)
-        for i in range(config.self_play.num_workers):
+        for i in range(config.self_play.num_processes):
             cmd = [
                 config.self_play.rust_selfplay_binary,
                 "--config",
@@ -74,11 +109,11 @@ if __name__ == "__main__":
                 "--shutdown-file",
                 str(ShutdownSignal.file_path(config)),
             ]
-            proc = subprocess.Popen(cmd)
+            proc = subprocess.Popen(cmd, env=selfplay_env)
             rust_subprocesses.append(proc)
             print(f"Started Rust self-play process {proc.pid}")
     else:
-        for i in range(config.self_play.num_workers):
+        for i in range(config.self_play.num_processes):
             p = mp.Process(target=self_play, args=[config])
             p.start()
             self_play_processes.append(p)

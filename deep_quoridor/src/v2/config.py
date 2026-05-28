@@ -64,8 +64,16 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
 
 
 class SelfPlayConfig(StrictBaseModel):
-    num_workers: int
-    parallel_games: int
+    num_processes: int
+    games_per_process: int
+    # Leaf-parallel MCTS knobs (Rust self-play only).
+    leaf_parallelism: int = 16
+    virtual_loss: int = 3
+    enable_tree_reuse: bool = True
+    mcts_worker_threads: Optional[int] = None
+    eval_batch_size: int = 2048
+    eval_max_wait_ms: int = 0
+    eval_cache_max_size: int = 100000
     alphazero: Optional[AlphaZeroSelfPlayConfig] = None
     program: Literal["python", "rust"] = "python"
     rust_selfplay_binary: Optional[str] = None

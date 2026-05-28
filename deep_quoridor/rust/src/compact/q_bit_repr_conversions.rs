@@ -51,8 +51,8 @@ impl QBitRepr {
         // We need to scan the grid for wall markers and convert to wall indices
         // We use check_wall_cells to verify that the cells are specifically set to CELL_WALL
         // (not just occupied by boundary walls or other things)
-        use crate::grid::check_wall_cells;
         use crate::grid::CELL_WALL;
+        use crate::grid::check_wall_cells;
 
         for wall_row in 0..(self.board_size() - 1) {
             for wall_col in 0..(self.board_size() - 1) {

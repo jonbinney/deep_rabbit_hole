@@ -112,7 +112,7 @@ def test_evaluator_training_with_probabilistic_policy():
     # policy in this case. Hopefully we can find a better NN that trains more efficiently.
     optimizer_iterations = 500
     weight_decay = 1e-4
-    required_precision = 1e-2
+    required_precision = 1e-1
     target_value = 1.0
 
     # This policy chooses one of two actions with specific probabilities

@@ -1,8 +1,9 @@
-//! Evaluator trait and ONNX implementation for MCTS.
+//! Evaluator trait and implementations for MCTS.
 
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use ndarray::Array4;
 use ort::session::Session;
 
 use crate::agents::onnx_agent::softmax;
@@ -23,6 +24,64 @@ pub trait Evaluator {
     ) -> Result<(f32, Vec<f32>)>;
 }
 
+/// Result of `prepare_eval_input`: features ready for inference plus the
+/// rotated mask and (if rotation was applied) the inverse mapping to restore
+/// the original action-space ordering on the output policy.
+pub struct PreparedEvalInput {
+    pub features: Array4<f32>,
+    pub work_action_mask: Vec<bool>,
+    pub rot_to_orig: Option<Vec<usize>>,
+}
+
+/// Apply the player-1 rotation (if needed) and build the ResNet input tensor.
+///
+/// `rotation_mappings` is a per-evaluator cache of (orig_to_rot, rot_to_orig)
+/// keyed by board size — caching avoids recomputing the mapping on every call.
+pub fn prepare_eval_input(
+    mechanics: &QGameMechanics,
+    data: CompactState,
+    action_mask: &[bool],
+    rotation_mappings: &mut HashMap<i32, (Vec<usize>, Vec<usize>)>,
+) -> PreparedEvalInput {
+    let bs = mechanics.repr().board_size() as i32;
+    let current_player = mechanics.repr().get_current_player(data);
+
+    let mappings = rotation_mappings
+        .entry(bs)
+        .or_insert_with(|| create_rotation_mapping(bs));
+    let (orig_to_rot, rot_to_orig) = (&mappings.0, &mappings.1);
+
+    let (work_data, work_action_mask, rot_to_orig_out) = if current_player == 1 {
+        let rotated_data = rotate_compact_state(mechanics, data);
+        let rotated_mask = remap_mask(action_mask, orig_to_rot);
+        (rotated_data, rotated_mask, Some(rot_to_orig.clone()))
+    } else {
+        (data, action_mask.to_vec(), None)
+    };
+
+    let features = compact_state_to_resnet_input(mechanics, work_data);
+
+    PreparedEvalInput {
+        features,
+        work_action_mask,
+        rot_to_orig: rot_to_orig_out,
+    }
+}
+
+/// Convert raw `policy_logits` from the network into masked-softmax priors in
+/// the original (un-rotated) action space.
+pub fn finalize_policy(
+    policy_logits: &[f32],
+    work_action_mask: &[bool],
+    rot_to_orig: Option<&[usize]>,
+) -> Vec<f32> {
+    let priors_work = masked_softmax(policy_logits, work_action_mask);
+    match rot_to_orig {
+        Some(map) => remap_policy(&priors_work, map),
+        None => priors_work,
+    }
+}
+
 /// ONNX-based evaluator for MCTS.
 ///
 /// Loads a neural network model and uses it to evaluate positions,
@@ -40,8 +99,26 @@ pub struct UniformMockEvaluator;
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
     pub fn new(model_path: &str) -> Result<Self> {
+        // Fail fast when built with `gpu` (which enables ort/load-dynamic) but
+        // ORT_DYLIB_PATH isn't set: in that case `Session::builder()` deadlocks
+        // on a dynamic-loader futex instead of erroring out. Same guard pattern
+        // as eval_pipeline::load_session.
+        #[cfg(feature = "gpu")]
+        if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+            anyhow::bail!(
+                "gpu feature is enabled but ORT_DYLIB_PATH is not set. Point it at the \
+                 onnxruntime-gpu shared library (.../onnxruntime/capi/libonnxruntime.so.<version>) \
+                 and put the CUDA and cuDNN lib directories on LD_LIBRARY_PATH."
+            );
+        }
+        // Pin ORT intra-op threads to 1: ORT defaults to all CPU cores, and
+        // parallel CPU sessions (e.g. concurrent tests on CI) oversubscribe its
+        // threadpool and intermittently deadlock. For production GPU inference
+        // this is moot.
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
+            .with_intra_threads(1)
+            .map_err(|e| anyhow::anyhow!("Failed to set intra-op thread count: {e}"))?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
         Ok(Self {
@@ -58,35 +135,16 @@ impl Evaluator for OnnxEvaluator {
         mechanics: &QGameMechanics,
         action_mask: &[bool],
     ) -> Result<(f32, Vec<f32>)> {
-        let bs = mechanics.repr().board_size() as i32;
-        let current_player = mechanics.repr().get_current_player(data);
+        let prepared = prepare_eval_input(
+            mechanics,
+            data,
+            action_mask,
+            &mut self.rotation_mappings_by_board_size,
+        );
 
-        let mappings = self
-            .rotation_mappings_by_board_size
-            .entry(bs)
-            .or_insert_with(|| create_rotation_mapping(bs));
-        let (orig_to_rot, rot_to_orig) = (&mappings.0, &mappings.1);
-
-        // For player 1, the network always sees the board rotated 180° so the
-        // current player faces downward. The compact rotation matches the tensor
-        // of `build_rotated_state`, but `QGameMechanics::goal_rows` is owned by
-        // the mechanics and does not flip — so wall-mask validation on rotated
-        // data treats walls that block the rotated player's path as legal. Remap
-        // the (correct) original mask into rotated index space instead.
-        let (work_data, work_action_mask, rot_to_orig_slice) = if current_player == 1 {
-            let rotated_data = rotate_compact_state(mechanics, data);
-            let rotated_mask = remap_mask(action_mask, orig_to_rot);
-            (rotated_data, rotated_mask, Some(rot_to_orig.as_slice()))
-        } else {
-            (data, action_mask.to_vec(), None)
-        };
-
-        // Build ResNet input tensor
-        let resnet_input = compact_state_to_resnet_input(mechanics, work_data);
-
-        // Convert to flat vec for ORT
-        let shape = resnet_input.shape().to_vec();
-        let input_data: Vec<f32> = resnet_input.iter().copied().collect();
+        // Convert features to flat vec for ORT
+        let shape = prepared.features.shape().to_vec();
+        let input_data: Vec<f32> = prepared.features.iter().copied().collect();
         let input_value = ort::value::Value::from_array((shape.as_slice(), input_data))
             .context("Failed to create ONNX input value")?;
 
@@ -102,18 +160,16 @@ impl Evaluator for OnnxEvaluator {
             .context("Failed to extract value")?;
         let value = value_tensor.1[0];
 
-        // Extract policy logits and apply mask
+        // Extract policy logits and apply mask + un-rotation
         let policy_logits = outputs["policy_logits"]
             .try_extract_tensor::<f32>()
             .context("Failed to extract policy logits")?;
 
-        // Apply masked softmax to get priors
-        let priors_work = masked_softmax(policy_logits.1, &work_action_mask);
-        let priors = if let Some(rot_to_orig) = rot_to_orig_slice {
-            remap_policy(&priors_work, rot_to_orig)
-        } else {
-            priors_work
-        };
+        let priors = finalize_policy(
+            policy_logits.1,
+            &prepared.work_action_mask,
+            prepared.rot_to_orig.as_deref(),
+        );
 
         Ok((value, priors))
     }

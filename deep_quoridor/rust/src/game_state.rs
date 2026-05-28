@@ -4,10 +4,10 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMu
 use std::hash::{Hash, Hasher};
 
 use crate::actions::{
-    compute_full_action_mask, policy_size, ACTION_MOVE, ACTION_WALL_HORIZONTAL,
-    ACTION_WALL_VERTICAL,
+    ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL, compute_full_action_mask,
+    policy_size,
 };
-use crate::grid::{set_wall_cells, CELL_FREE, CELL_WALL};
+use crate::grid::{CELL_FREE, CELL_WALL, set_wall_cells};
 
 /// A complete game state wrapper for Quoridor.
 ///

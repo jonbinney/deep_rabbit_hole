@@ -9,7 +9,7 @@
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
-use crate::actions::{action_index_to_action, action_to_index, policy_size, ACTION_MOVE};
+use crate::actions::{ACTION_MOVE, action_index_to_action, action_to_index, policy_size};
 use crate::compact::q_bit_repr::{CompactState, WALL_HORIZONTAL, WALL_VERTICAL};
 use crate::compact::q_game_mechanics::QGameMechanics;
 use crate::game_state::GameState;

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
-use rand::seq::SliceRandom;
 use rand::Rng;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
 use crate::actions::get_valid_move_actions;
@@ -143,7 +143,7 @@ pub fn sample_actions(
             .collect();
 
         for _ in 0..num_wall_actions_needed {
-            let r: f32 = rng.gen();
+            let r: f32 = rng.r#gen();
             for (j, &cum_weight) in cumulative.iter().enumerate() {
                 if r <= cum_weight {
                     indices.push(j);

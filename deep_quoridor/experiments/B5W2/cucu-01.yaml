@@ -23,8 +23,8 @@ wandb:
     when_min:
       - dumb_score
 self_play:
-  num_workers: 4
-  parallel_games: 10
+  num_processes: 4
+  games_per_process: 40
   alphazero:
     mcts_noise_epsilon: 0.25
 training:
