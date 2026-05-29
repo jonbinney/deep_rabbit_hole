@@ -32,6 +32,8 @@ mod python_consistency;
 #[cfg(feature = "binary")]
 pub mod game_runner;
 #[cfg(feature = "binary")]
+pub mod play_server;
+#[cfg(feature = "binary")]
 pub mod replay_writer;
 #[cfg(feature = "binary")]
 pub mod selfplay_config;
