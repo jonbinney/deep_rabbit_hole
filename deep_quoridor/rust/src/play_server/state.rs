@@ -3,14 +3,19 @@
 
 use serde::Serialize;
 
-use crate::actions::{action_index_to_action, ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL};
+use crate::actions::{
+    ACTION_MOVE, ACTION_WALL_HORIZONTAL, ACTION_WALL_VERTICAL, action_index_to_action,
+};
 
 /// Single legal action carried over the wire. The client never needs to know
 /// the action-index encoding; it just looks at `kind` and the coords.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum EnrichedAction {
-    Move { index: u32, to: [i32; 2] },
+    Move {
+        index: u32,
+        to: [i32; 2],
+    },
     Wall {
         index: u32,
         row: i32,
@@ -175,10 +180,7 @@ mod tests {
 
         let actions = enrich_legal_actions(n, &mask);
         assert_eq!(actions.len(), 2);
-        assert!(matches!(
-            actions[0],
-            EnrichedAction::Move { index: 0, .. }
-        ));
+        assert!(matches!(actions[0], EnrichedAction::Move { index: 0, .. }));
         assert!(matches!(
             actions[1],
             EnrichedAction::Wall {

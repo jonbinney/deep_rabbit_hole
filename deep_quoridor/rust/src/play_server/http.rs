@@ -30,13 +30,11 @@ pub fn handle_request(
     // Strip query string if any.
     let path = url.split('?').next().unwrap_or(&url).to_string();
 
-    let result: Result<Response<std::io::Cursor<Vec<u8>>>, HandlerError> = (|| {
-        match (&method, path.as_str()) {
+    let result: Result<Response<std::io::Cursor<Vec<u8>>>, HandlerError> =
+        (|| match (&method, path.as_str()) {
             (&Method::Get, "/") => Ok(html_response(INDEX_HTML)),
             (&Method::Get, "/static/app.css") => Ok(text_response("text/css", APP_CSS)),
-            (&Method::Get, "/static/app.js") => {
-                Ok(text_response("application/javascript", APP_JS))
-            }
+            (&Method::Get, "/static/app.js") => Ok(text_response("application/javascript", APP_JS)),
             (&Method::Get, "/api/config") => {
                 let view = get_config(cfg, default_mcts_n);
                 Ok(json_response(serde_json::to_value(view).map_err(|e| {
@@ -53,9 +51,7 @@ pub fn handle_request(
                     HandlerError::Internal(format!("serializing response: {e}"))
                 })?))
             }
-            (&Method::Post, p)
-                if p.starts_with("/api/games/") && p.ends_with("/move") =>
-            {
+            (&Method::Post, p) if p.starts_with("/api/games/") && p.ends_with("/move") => {
                 let id = &p["/api/games/".len()..p.len() - "/move".len()];
                 let body = read_body(&mut req)
                     .map_err(|e| HandlerError::BadRequest(format!("reading body: {e}")))?;
@@ -77,9 +73,11 @@ pub fn handle_request(
                     HandlerError::Internal(format!("serializing response: {e}"))
                 })?))
             }
-            _ => Err(HandlerError::NotFound(format!("no route for {} {}", method, path))),
-        }
-    })();
+            _ => Err(HandlerError::NotFound(format!(
+                "no route for {} {}",
+                method, path
+            ))),
+        })();
 
     let response = match result {
         Ok(r) => r,
@@ -98,10 +96,7 @@ fn html_response(body: &'static str) -> Response<std::io::Cursor<Vec<u8>>> {
     text_response("text/html; charset=utf-8", body)
 }
 
-fn text_response(
-    content_type: &str,
-    body: &'static str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+fn text_response(content_type: &str, body: &'static str) -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_string(body).with_header(
         Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
             .expect("content-type header"),

@@ -45,13 +45,10 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let cfg = Arc::new(
-        ServerConfig::load(&cli.play_dir).context("loading server config")?,
-    );
+    let cfg = Arc::new(ServerConfig::load(&cli.play_dir).context("loading server config")?);
     let registry = GameRegistry::new();
     let bind = format!("{}:{}", cli.bind, cli.port);
-    let server = Server::http(&bind)
-        .map_err(|e| anyhow::anyhow!("failed to bind {bind}: {e}"))?;
+    let server = Server::http(&bind).map_err(|e| anyhow::anyhow!("failed to bind {bind}: {e}"))?;
     eprintln!(
         "play_server listening on http://{bind}  (board {}x{}, {} model(s))",
         cfg.board_size,

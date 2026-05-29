@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rand::RngCore;
 
 use crate::agents::ActionSelector;
@@ -21,7 +21,7 @@ use crate::compact::q_bit_repr::{CompactState, WALL_HORIZONTAL, WALL_VERTICAL};
 use crate::compact::q_game_mechanics::QGameMechanics;
 use crate::play_server::config::ServerConfig;
 use crate::play_server::state::{
-    enrich_action, enrich_legal_actions, EnrichedAction, StateView, WallEntry, WallOrientation,
+    EnrichedAction, StateView, WallEntry, WallOrientation, enrich_action, enrich_legal_actions,
 };
 
 pub type GameId = String;
@@ -80,8 +80,8 @@ impl GameSession {
             .to_str()
             .ok_or_else(|| anyhow!("model path is not valid UTF-8"))?;
         let agent_config = Self::agent_config(mcts_n, cfg.default_mcts_c_puct, cfg.max_steps);
-        let agent = AlphaZeroAgent::new(model_str, agent_config)
-            .context("constructing AlphaZeroAgent")?;
+        let agent =
+            AlphaZeroAgent::new(model_str, agent_config).context("constructing AlphaZeroAgent")?;
         Ok(Self {
             mechanics,
             state,
@@ -221,9 +221,10 @@ impl GameSession {
 fn list_walls(mechanics: &QGameMechanics, state: CompactState, board_size: i32) -> Vec<WallEntry> {
     let mut out = Vec::new();
     let wall_size = (board_size - 1) as usize;
-    for (orientation_const, orientation) in
-        [(WALL_VERTICAL, WallOrientation::V), (WALL_HORIZONTAL, WallOrientation::H)]
-    {
+    for (orientation_const, orientation) in [
+        (WALL_VERTICAL, WallOrientation::V),
+        (WALL_HORIZONTAL, WallOrientation::H),
+    ] {
         for row in 0..wall_size {
             for col in 0..wall_size {
                 if mechanics

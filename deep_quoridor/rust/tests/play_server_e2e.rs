@@ -49,8 +49,7 @@ fn play_server_serves_a_few_moves_against_real_model() {
     let registry = GameRegistry::new();
 
     // Bind to port 0; read assigned port.
-    let server =
-        Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind tiny_http"));
+    let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind tiny_http"));
     let addr = server.server_addr();
     let port = match addr {
         tiny_http::ListenAddr::IP(sock) => sock.port(),
