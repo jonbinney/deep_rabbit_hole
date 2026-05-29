@@ -4,6 +4,6 @@
 //! `docs/superpowers/specs/2026-05-29-quoridor-play-server-design.md`.
 
 pub mod config;
+pub mod handlers;
 pub mod session;
 pub mod state;
-// pub mod handlers;  // added in Task 5

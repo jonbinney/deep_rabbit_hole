@@ -55,6 +55,16 @@ pub struct WallEntry {
     pub orientation: WallOrientation,
 }
 
+impl EnrichedAction {
+    /// The bare action index common to all variants.
+    pub fn index(&self) -> u32 {
+        match self {
+            EnrichedAction::Move { index, .. } => *index,
+            EnrichedAction::Wall { index, .. } => *index,
+        }
+    }
+}
+
 /// Map an action index to its semantic enrichment (move dest / wall coords +
 /// orientation). Matches the convention in `actions::action_index_to_action`:
 /// indices < N*N are moves; the next (N-1)^2 are vertical walls; the
@@ -94,6 +104,12 @@ pub fn enrich_legal_actions(board_size: i32, mask: &[bool]) -> Vec<EnrichedActio
 mod tests {
     use super::*;
     use crate::actions::policy_size;
+
+    #[test]
+    fn enriched_action_index_returns_bare_index() {
+        assert_eq!(enrich_action(5, 7).index(), 7);
+        assert_eq!(enrich_action(5, 25).index(), 25); // first vertical wall on 5x5
+    }
 
     #[test]
     fn enrich_move_action_round_trips_coords() {
