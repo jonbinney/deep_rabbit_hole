@@ -5,5 +5,6 @@
 
 pub mod config;
 pub mod handlers;
+pub mod http;
 pub mod session;
 pub mod state;

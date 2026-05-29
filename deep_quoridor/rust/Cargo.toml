@@ -63,6 +63,10 @@ gpu = ["binary", "ort/cuda", "ort/load-dynamic"]
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 ureq = { version = "2", default-features = false, features = ["json"] }
+# Mirrored from optional `binary`-feature deps so integration tests can name
+# these types directly (Cargo resolves a separate copy per target otherwise).
+tiny_http = "0.12"
+serde_json = "1"
 
 [profile.release]
 # Enable optimizations for better performance
