@@ -349,8 +349,12 @@ function render() {
   } else {
     turnEl.textContent = "AI thinking";
   }
-  $("#walls-p1").textContent = v.p1_walls;
-  $("#walls-p2").textContent = v.p2_walls;
+  // Map walls-left by role, not server index: when the human is P1 we
+  // want "You" to show p2_walls, not p1_walls.
+  const youWalls = v.human_player === 0 ? v.p1_walls : v.p2_walls;
+  const aiWalls  = v.human_player === 0 ? v.p2_walls : v.p1_walls;
+  $("#walls-you").textContent = youWalls;
+  $("#walls-ai").textContent = aiWalls;
   $("#completed-steps").textContent = `${v.completed_steps} / ${v.max_steps}`;
 
   // Game-over banner
