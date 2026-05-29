@@ -289,10 +289,11 @@ function render() {
     }
   }
 
-  // Click handlers on legal actions -- only when it's the human's turn
-  // and we are not waiting on the server.
-  const humanTurn =
-    v.winner === null && v.current_player === v.human_player && !STATE.pending;
+  // Click handlers on legal actions -- only when it's the human's turn.
+  // (sendMove() ignores clicks while STATE.pending is true, so we don't
+  // gate handler attachment on pending here -- if we did, the post-AI
+  // render would land with pending still true and we'd attach nothing.)
+  const humanTurn = v.winner === null && v.current_player === v.human_player;
   if (humanTurn) {
     let wallId = 0;
     for (const a of v.legal_actions) {
