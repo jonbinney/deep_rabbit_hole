@@ -39,7 +39,7 @@ struct Cli {
     bind: String,
 
     /// Default MCTS simulations per move shown in the UI slider.
-    #[arg(long, default_value_t = 400)]
+    #[arg(long, default_value_t = 1000)]
     default_mcts_n: u32,
 }
 
