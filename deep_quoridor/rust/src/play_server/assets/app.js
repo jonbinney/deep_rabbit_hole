@@ -194,18 +194,30 @@ function clearError() {
 }
 
 // ---- coordinate transforms ----
+//
+// We always render the human's home row at the bottom. Server P0
+// starts at server row 0; P1 starts at server row N-1. CSS-grid row 0
+// renders at the top of the screen, so:
+//
+//   - human == P0 -> vertical flip (row N-1 - r), cols unchanged.
+//   - human == P1 -> no flip (P1 already at server row N-1 = bottom).
+//
+// Cols stay put so a wall's "left" half in server space stays the
+// left half in display space; the anchor/extends-right rule the
+// hover logic below relies on then needs no further inversion.
 
 function mirrorPawn(r, c) {
   const N = STATE.view.board_size;
-  return STATE.view.human_player === 1 ? [N - 1 - r, N - 1 - c] : [r, c];
+  return STATE.view.human_player === 0 ? [N - 1 - r, c] : [r, c];
 }
 
-// A wall at server (r, c) sits between rows r and r+1, spanning cols c
-// and c+1. Under 180 deg rotation it lives between rows (N-2-r) and
-// (N-1-r), spanning cols (N-2-c) and (N-1-c) -- same orientation.
+// Server walls are indexed by their (top, left) corner. After a
+// vertical flip, what was server-top becomes display-bottom -- so the
+// display (top, left) corner of the wall is at row N-2-r (one less
+// than N-1-r because the wall spans two pawn rows).
 function mirrorWall(r, c) {
   const N = STATE.view.board_size;
-  return STATE.view.human_player === 1 ? [N - 2 - r, N - 2 - c] : [r, c];
+  return STATE.view.human_player === 0 ? [N - 2 - r, c] : [r, c];
 }
 
 // Return the (gr, gc) grid coordinates of the 3 cells that make up a
@@ -290,12 +302,20 @@ function render() {
   }
 
   // Click handlers on legal actions -- only when it's the human's turn.
-  // (sendMove() ignores clicks while STATE.pending is true, so we don't
-  // gate handler attachment on pending here -- if we did, the post-AI
-  // render would land with pending still true and we'd attach nothing.)
+  // sendMove() ignores clicks while STATE.pending is true, so we don't
+  // need to also gate handler attachment on pending.
+  //
+  // Anchor-only attachment: each wall is interactive *only* on its
+  // display-top-left cell -- the left half for horizontal walls, the
+  // top half for vertical walls. This means:
+  //   - Each grid cell triggers at most one wall, so hovering doesn't
+  //     light up two overlapping walls at once.
+  //   - Intersection posts (the small squares between four pawn cells)
+  //     never trigger a wall, since they are never any wall's anchor.
+  //   - The wall the user sees on hover is the one that "starts here
+  //     and extends right (H) or down (V)" in display coordinates.
   const humanTurn = v.winner === null && v.current_player === v.human_player;
   if (humanTurn) {
-    let wallId = 0;
     for (const a of v.legal_actions) {
       if (a.kind === "move") {
         const [dr, dc] = mirrorPawn(a.to[0], a.to[1]);
@@ -304,26 +324,18 @@ function render() {
         cell.addEventListener("click", () => sendMove(a));
       } else {
         const [dr, dc] = mirrorWall(a.row, a.col);
-        const groupCells = wallGroupCells(dr, dc, a.orientation).map(
+        const group = wallGroupCells(dr, dc, a.orientation).map(
           ([gr, gc]) => cells[gr][gc],
         );
-        // Tag the three cells so group-hover can find them all.
-        const groupId = `wall-${wallId++}`;
-        for (const c of groupCells) {
-          c.classList.add(`legal-wall-${a.orientation}`);
-          c.dataset.wallGroup = groupId;
-          c.addEventListener("click", () => sendMove(a));
-        }
-        // Group hover: mouseenter on any cell of the group highlights
-        // all three. Re-querying by attribute keeps the closure free of
-        // a captured array reference per cell.
-        const setHover = (on) => {
-          for (const c of groupCells) c.classList.toggle("wall-hover", on);
-        };
-        for (const c of groupCells) {
-          c.addEventListener("mouseenter", () => setHover(true));
-          c.addEventListener("mouseleave", () => setHover(false));
-        }
+        const anchor = group[0]; // first cell is the display top-left
+        anchor.classList.add(`legal-wall-${a.orientation}`);
+        anchor.addEventListener("click", () => sendMove(a));
+        anchor.addEventListener("mouseenter", () => {
+          for (const c of group) c.classList.add("wall-hover");
+        });
+        anchor.addEventListener("mouseleave", () => {
+          for (const c of group) c.classList.remove("wall-hover");
+        });
       }
     }
   }

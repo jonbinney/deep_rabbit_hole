@@ -159,19 +159,13 @@ main {
 }
 .legal-move:hover::before { inset: 18%; }
 
-/* Legal wall slots — clickable; the cell stays in its base color until
- * the whole group is hovered, when JS adds `.wall-hover` to all 3 cells
- * that make up the wall. */
+/* Legal wall anchors -- the click target for each legal wall. The class
+ * is only applied to the cell at the wall's display top-left (left half
+ * for H, top half for V). Hovering the anchor triggers JS that adds
+ * `.wall-hover` to all 3 cells of the wall. */
 .legal-wall-h,
 .legal-wall-v {
   cursor: pointer;
-}
-.legal-wall-h:hover,
-.legal-wall-v:hover {
-  /* faint hint that this cell itself is interactive even before the
-   * group hover synchronizes -- mostly invisible thanks to overlap with
-   * .wall-hover, but covers brief mouseenter races. */
-  filter: brightness(1.04);
 }
 
 /* Group-hover preview: all 3 cells of a legal wall pre-painted in a
