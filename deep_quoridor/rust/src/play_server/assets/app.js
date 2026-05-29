@@ -1,18 +1,25 @@
-// Quoridor play server — vanilla JS frontend.
+// Quoridor play server -- vanilla JS frontend.
 //
-// Coordinates: the server speaks absolute Quoridor coordinates with (0,0) at
-// the top-left and player 0 starting on row 0. We always render the human's
-// home row at the bottom, so when `human_player == 1` we mirror coordinates
-// 180° before placing anything on the board grid.
+// Coordinates: the server speaks absolute Quoridor coordinates with (0,0)
+// at the top-left and player 0 starting on row 0. We always render the
+// human's home row at the bottom, so when `human_player == 1` we mirror
+// coordinates 180 deg before placing anything on the board grid.
 //
-// The board is a (2N-1) x (2N-1) CSS grid alternating pawn cells, wall slots,
-// and wall posts. Server `legal_actions` already carry the kind/coords so the
-// client never has to mirror Python's action-encoding logic.
+// The board is a (2N-1) x (2N-1) CSS grid alternating pawn cells, wall
+// slots, and wall posts. Server `legal_actions` already carry the
+// kind/coords so the client never has to mirror Python's action-encoding
+// logic.
+//
+// Move flow uses an optimistic update: when the human clicks an action,
+// we immediately apply a local approximation of the new state (move the
+// pawn, place the wall, flip the turn) so the UI reflects the click
+// without waiting for the AI. When the server responds with the
+// authoritative post-AI state, we replace the local state and re-render.
 
 const STATE = {
   cfg: null,    // /api/config response
   gameId: null,
-  view: null,   // last StateView from server
+  view: null,   // last StateView (server- or optimistically-derived)
   pending: false,
 };
 
@@ -45,6 +52,8 @@ async function fetchJson(url, options) {
   }
   return resp.json();
 }
+
+// ---- setup ----
 
 async function init() {
   try {
@@ -101,24 +110,72 @@ async function startGame() {
   }
 }
 
-async function sendMove(actionIndex) {
+// ---- optimistic update ----
+
+// Apply a local approximation of `action` to `view` so the UI reflects
+// the human's move immediately. The server's response will overwrite
+// this with the authoritative state, which also includes the AI's reply.
+//
+// We do not attempt to recompute the post-action legal_actions; clicks
+// are disabled while we wait on the server.
+function applyOptimistic(view, action) {
+  const o = JSON.parse(JSON.stringify(view));
+  const mover = o.current_player;
+  if (action.kind === "move") {
+    if (mover === 0) o.p1_pos = action.to;
+    else o.p2_pos = action.to;
+    // Detect immediate win: reaching the opposite home row ends the game.
+    const N = o.board_size;
+    const goalRow = mover === 0 ? N - 1 : 0;
+    if (action.to[0] === goalRow) o.winner = mover;
+  } else {
+    o.walls.push({
+      row: action.row,
+      col: action.col,
+      orientation: action.orientation,
+    });
+    if (mover === 0) o.p1_walls -= 1;
+    else o.p2_walls -= 1;
+  }
+  o.last_action = { ...action };
+  o.move_history = [...o.move_history, action.index];
+  o.current_player = 1 - mover;
+  o.completed_steps += 1;
+  o.legal_actions = [];
+  return o;
+}
+
+async function sendMove(action) {
   if (STATE.pending || !STATE.gameId) return;
   clearError();
+
+  // Optimistic render: show the human's move now.
+  STATE.view = applyOptimistic(STATE.view, action);
+  render();
   setPending(true);
+
   try {
     const data = await fetchJson(`/api/games/${STATE.gameId}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action_index: actionIndex }),
+      body: JSON.stringify({ action_index: action.index }),
     });
     STATE.view = data.state;
     render();
   } catch (e) {
     showError("Move rejected: " + e.message);
+    // Roll back to the truth from the server.
+    try {
+      const fresh = await fetchJson(`/api/games/${STATE.gameId}`);
+      STATE.view = fresh.state;
+      render();
+    } catch (_) { /* leave optimistic view; user will retry */ }
   } finally {
     setPending(false);
   }
 }
+
+// ---- ui-state helpers ----
 
 function setPending(p) {
   STATE.pending = p;
@@ -143,12 +200,29 @@ function mirrorPawn(r, c) {
   return STATE.view.human_player === 1 ? [N - 1 - r, N - 1 - c] : [r, c];
 }
 
-// A wall at server (r, c) sits between rows r and r+1, spanning cols c and
-// c+1. Under 180 deg rotation it lives between rows (N-2-r) and (N-1-r),
-// spanning cols (N-2-c) and (N-1-c) -- same orientation.
+// A wall at server (r, c) sits between rows r and r+1, spanning cols c
+// and c+1. Under 180 deg rotation it lives between rows (N-2-r) and
+// (N-1-r), spanning cols (N-2-c) and (N-1-c) -- same orientation.
 function mirrorWall(r, c) {
   const N = STATE.view.board_size;
   return STATE.view.human_player === 1 ? [N - 2 - r, N - 2 - c] : [r, c];
+}
+
+// Return the (gr, gc) grid coordinates of the 3 cells that make up a
+// wall at display (dr, dc): the two halves and the post between them.
+function wallGroupCells(dr, dc, orientation) {
+  if (orientation === "h") {
+    return [
+      [2 * dr + 1, 2 * dc],
+      [2 * dr + 1, 2 * dc + 1],
+      [2 * dr + 1, 2 * dc + 2],
+    ];
+  }
+  return [
+    [2 * dr, 2 * dc + 1],
+    [2 * dr + 1, 2 * dc + 1],
+    [2 * dr + 2, 2 * dc + 1],
+  ];
 }
 
 // ---- render ----
@@ -184,8 +258,9 @@ function render() {
     }
   }
 
-  // Pawns -- keep colors tied to the server player index so walls-left
-  // counters line up with the pawn colors regardless of orientation.
+  // Pawns -- colors stay tied to the server player index so the
+  // walls-left counters in the side panel always match the pawn colors
+  // regardless of orientation.
   const [p1r, p1c] = mirrorPawn(v.p1_pos[0], v.p1_pos[1]);
   const [p2r, p2c] = mirrorPawn(v.p2_pos[0], v.p2_pos[1]);
   cells[2 * p1r][2 * p1c].appendChild(make("div", { class: "pawn p1" }));
@@ -194,14 +269,9 @@ function render() {
   // Placed walls
   for (const w of v.walls) {
     const [dr, dc] = mirrorWall(w.row, w.col);
-    if (w.orientation === "h") {
-      cells[2 * dr + 1][2 * dc].classList.add("wall-placed-h");
-      cells[2 * dr + 1][2 * dc + 1].classList.add("wall-placed-h");
-      cells[2 * dr + 1][2 * dc + 2].classList.add("wall-placed-h");
-    } else {
-      cells[2 * dr][2 * dc + 1].classList.add("wall-placed-v");
-      cells[2 * dr + 1][2 * dc + 1].classList.add("wall-placed-v");
-      cells[2 * dr + 2][2 * dc + 1].classList.add("wall-placed-v");
+    const placedCls = `wall-placed-${w.orientation}`;
+    for (const [gr, gc] of wallGroupCells(dr, dc, w.orientation)) {
+      cells[gr][gc].classList.add(placedCls);
     }
   }
 
@@ -213,42 +283,45 @@ function render() {
       cells[2 * dr][2 * dc].classList.add("last-move");
     } else {
       const [dr, dc] = mirrorWall(la.row, la.col);
-      if (la.orientation === "h") {
-        cells[2 * dr + 1][2 * dc].classList.add("last-wall");
-        cells[2 * dr + 1][2 * dc + 1].classList.add("last-wall");
-        cells[2 * dr + 1][2 * dc + 2].classList.add("last-wall");
-      } else {
-        cells[2 * dr][2 * dc + 1].classList.add("last-wall");
-        cells[2 * dr + 1][2 * dc + 1].classList.add("last-wall");
-        cells[2 * dr + 2][2 * dc + 1].classList.add("last-wall");
+      for (const [gr, gc] of wallGroupCells(dr, dc, la.orientation)) {
+        cells[gr][gc].classList.add("last-wall");
       }
     }
   }
 
-  // Click handlers on legal actions -- only when it's the human's turn.
-  const humanTurn = v.winner === null && v.current_player === v.human_player;
+  // Click handlers on legal actions -- only when it's the human's turn
+  // and we are not waiting on the server.
+  const humanTurn =
+    v.winner === null && v.current_player === v.human_player && !STATE.pending;
   if (humanTurn) {
+    let wallId = 0;
     for (const a of v.legal_actions) {
       if (a.kind === "move") {
         const [dr, dc] = mirrorPawn(a.to[0], a.to[1]);
         const cell = cells[2 * dr][2 * dc];
         cell.classList.add("legal-move");
-        cell.addEventListener("click", () => sendMove(a.index));
+        cell.addEventListener("click", () => sendMove(a));
       } else {
         const [dr, dc] = mirrorWall(a.row, a.col);
-        const tag = (gr, gc) => {
-          const c = cells[gr][gc];
+        const groupCells = wallGroupCells(dr, dc, a.orientation).map(
+          ([gr, gc]) => cells[gr][gc],
+        );
+        // Tag the three cells so group-hover can find them all.
+        const groupId = `wall-${wallId++}`;
+        for (const c of groupCells) {
           c.classList.add(`legal-wall-${a.orientation}`);
-          c.addEventListener("click", () => sendMove(a.index));
+          c.dataset.wallGroup = groupId;
+          c.addEventListener("click", () => sendMove(a));
+        }
+        // Group hover: mouseenter on any cell of the group highlights
+        // all three. Re-querying by attribute keeps the closure free of
+        // a captured array reference per cell.
+        const setHover = (on) => {
+          for (const c of groupCells) c.classList.toggle("wall-hover", on);
         };
-        if (a.orientation === "h") {
-          tag(2 * dr + 1, 2 * dc);
-          tag(2 * dr + 1, 2 * dc + 1);
-          tag(2 * dr + 1, 2 * dc + 2);
-        } else {
-          tag(2 * dr, 2 * dc + 1);
-          tag(2 * dr + 1, 2 * dc + 1);
-          tag(2 * dr + 2, 2 * dc + 1);
+        for (const c of groupCells) {
+          c.addEventListener("mouseenter", () => setHover(true));
+          c.addEventListener("mouseleave", () => setHover(false));
         }
       }
     }
