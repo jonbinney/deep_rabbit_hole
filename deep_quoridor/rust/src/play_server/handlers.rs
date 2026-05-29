@@ -279,6 +279,6 @@ mod tests {
         let resp = apply_move(&reg, &id, req).unwrap();
         // After the human moves it becomes the AI's turn — the handler then
         // runs the AI step automatically — so move_history has at least 2.
-        assert!(resp.state.move_history.len() >= 1);
+        assert!(resp.state.move_history.len() >= 2);
     }
 }
