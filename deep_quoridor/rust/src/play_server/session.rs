@@ -14,6 +14,7 @@ use rand::RngCore;
 
 use crate::agents::ActionSelector;
 use crate::agents::alphazero::agent::{AlphaZeroAgent, AlphaZeroAgentConfig};
+#[cfg(test)]
 use crate::agents::alphazero::evaluator::Evaluator;
 use crate::agents::alphazero::mcts::MCTSConfig;
 use crate::compact::q_bit_repr::{CompactState, WALL_HORIZONTAL, WALL_VERTICAL};
