@@ -101,7 +101,8 @@ pub fn enrich_action(board_size: i32, index: usize) -> EnrichedAction {
 pub fn enrich_legal_actions(board_size: i32, mask: &[bool]) -> Vec<EnrichedAction> {
     mask.iter()
         .enumerate()
-        .filter_map(|(i, &legal)| legal.then(|| enrich_action(board_size, i)))
+        .filter(|&(_, legal)| *legal)
+        .map(|(i, _)| enrich_action(board_size, i))
         .collect()
 }
 
