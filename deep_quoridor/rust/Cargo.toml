@@ -9,7 +9,12 @@ edition = "2024"
 
 [lib]
 name = "quoridor_rs"
-crate-type = ["cdylib", "rlib"]
+# Only `rlib` is listed so `cargo test` doesn't emit a `.so` alongside the
+# `.rlib` and trigger cargo's "output filename collision" warning (cargo
+# issue #6313, surfaces when one target has multiple crate-types and the
+# binaries depend on the same lib). The python wheel build sets
+# `crate-type = ["cdylib"]` via `[tool.maturin]` in pyproject.toml.
+crate-type = ["rlib"]
 
 [[bin]]
 name = "create_policy_db"
