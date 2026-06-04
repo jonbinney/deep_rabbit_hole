@@ -103,3 +103,13 @@ def test_invalid_override_format(config_file):
 def test_invalid_key_rejected_by_pydantic(config_file):
     with pytest.raises(Exception):
         load_user_config(config_file, overrides=["nonexistent_key=value"])
+
+
+def test_override_source_run(config_file):
+    config = load_user_config(config_file, overrides=["training.source_run=/path/to/old/run"])
+    assert config.training.source_run == "/path/to/old/run"
+
+
+def test_source_run_defaults_to_none(config_file):
+    config = load_user_config(config_file)
+    assert config.training.source_run is None

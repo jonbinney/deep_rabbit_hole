@@ -113,6 +113,7 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
+    source_run: Optional[str] = None
     lr_scheduler: Optional[LRSchedulerConfig] = None
 
 
