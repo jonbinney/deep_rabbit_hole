@@ -1,32 +1,29 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
+from pydantic_yaml import to_yaml_file
 
-from v2.offline_preload import select_games
+from v2.offline_preload import preload_symlinks, select_games
+from v2.yaml_models import GameInfo
 
 
 def test_select_games_source_larger_than_buffer():
-    # Source has 5 games totaling 50 moves; buffer holds 25 moves.
-    # Newest games are at the end; take from the end until cumulative >= 25.
-    entries = [
-        ("game_0000001.npz", 10),
-        ("game_0000002.npz", 10),
-        ("game_0000003.npz", 10),
-        ("game_0000004.npz", 10),
-        ("game_0000005.npz", 10),
+    # 5 games, buffer holds 3 games. Take the newest 3 in ascending order.
+    filenames = [
+        "game_0000001.npz",
+        "game_0000002.npz",
+        "game_0000003.npz",
+        "game_0000004.npz",
+        "game_0000005.npz",
     ]
-    result = select_games(entries, buffer_size=25)
-    # Newest 3 games (4, 5 wouldn't be enough; need 3 to reach >= 25).
-    # Returned in ascending (chronological) order.
+    result = select_games(filenames, buffer_size=3)
     assert result == ["game_0000003.npz", "game_0000004.npz", "game_0000005.npz"]
 
 
 def test_select_games_source_smaller_than_buffer():
-    entries = [
-        ("game_0000001.npz", 10),
-        ("game_0000002.npz", 10),
-    ]
-    result = select_games(entries, buffer_size=100)
+    filenames = ["game_0000001.npz", "game_0000002.npz"]
+    result = select_games(filenames, buffer_size=100)
     assert result == ["game_0000001.npz", "game_0000002.npz"]
 
 
@@ -34,35 +31,23 @@ def test_select_games_empty_source():
     assert select_games([], buffer_size=100) == []
 
 
-def test_select_games_exact_equal_cumulative():
-    entries = [
-        ("game_0000001.npz", 10),
-        ("game_0000002.npz", 10),
-    ]
-    # Newest one alone has exactly 10 moves; buffer wants >= 10.
-    result = select_games(entries, buffer_size=10)
-    assert result == ["game_0000002.npz"]
+def test_select_games_buffer_equals_source_size():
+    filenames = ["game_0000001.npz", "game_0000002.npz"]
+    result = select_games(filenames, buffer_size=2)
+    assert result == ["game_0000001.npz", "game_0000002.npz"]
 
 
 def test_select_games_input_order_does_not_matter():
-    # The function sorts by filename internally, so any input order yields the
-    # same chronological result.
-    entries = [
-        ("game_0000005.npz", 10),
-        ("game_0000001.npz", 10),
-        ("game_0000003.npz", 10),
-        ("game_0000002.npz", 10),
-        ("game_0000004.npz", 10),
+    # The function sorts internally, so any input order yields the same chronological result.
+    filenames = [
+        "game_0000005.npz",
+        "game_0000001.npz",
+        "game_0000003.npz",
+        "game_0000002.npz",
+        "game_0000004.npz",
     ]
-    result = select_games(entries, buffer_size=25)
+    result = select_games(filenames, buffer_size=3)
     assert result == ["game_0000003.npz", "game_0000004.npz", "game_0000005.npz"]
-
-
-import numpy as np
-from pydantic_yaml import to_yaml_file
-
-from v2.offline_preload import preload_symlinks
-from v2.yaml_models import GameInfo
 
 
 def _make_source_game(source_replay_dir: Path, name: str, game_length: int, model_version: int = 0) -> None:
@@ -97,9 +82,9 @@ def test_preload_symlinks_creates_npz_and_yaml_symlinks(tmp_path):
     dest_ready = tmp_path / "new_run" / "ready"
     dest_ready.mkdir(parents=True)
 
-    count = preload_symlinks(source_run, dest_ready, buffer_size=25)
+    count = preload_symlinks(source_run, dest_ready, buffer_size=3)
 
-    # Newest 3 games (totaling 30 >= 25) are selected.
+    # Newest 3 games are selected.
     assert count == 3
     expected = {"game_0000003", "game_0000004", "game_0000005"}
     npz_links = {p.stem for p in dest_ready.glob("*.npz")}
@@ -163,3 +148,15 @@ def test_preload_symlinks_aborts_when_yaml_sidecar_missing(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="game_0000002.yaml"):
         preload_symlinks(source_run, dest_ready, buffer_size=10)
+
+
+def test_preload_symlinks_ignores_missing_yaml_for_non_selected_game(tmp_path):
+    # 5 source games, but buffer_size=2 selects only the newest 2.
+    # Delete the yaml for an oldest game (not selected) and confirm preload still succeeds.
+    source_run = _make_source_run(tmp_path, num_games=5, moves_per_game=10)
+    (source_run / "replay_buffers" / "game_0000001.yaml").unlink()
+    dest_ready = tmp_path / "new_run" / "ready"
+    dest_ready.mkdir(parents=True)
+
+    count = preload_symlinks(source_run, dest_ready, buffer_size=2)
+    assert count == 2

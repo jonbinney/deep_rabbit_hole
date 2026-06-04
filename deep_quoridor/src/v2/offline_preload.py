@@ -8,40 +8,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic_yaml import parse_yaml_file_as
 
-from v2.yaml_models import GameInfo
+def select_games(filenames: list[str], buffer_size: int) -> list[str]:
+    """Return the newest `buffer_size` filenames in chronological (ascending) order.
 
-
-def select_games(entries: list[tuple[str, int]], buffer_size: int) -> list[str]:
-    """Pick newest games (by filename) whose cumulative game_length covers `buffer_size`.
-
-    `entries` is a list of (filename, game_length) pairs. The source numbers games
-    monotonically (`game_NNNNNNN.npz`), so sorting filenames ascending is chronological.
-
-    Returns the selected filenames in ascending (chronological) order. If the source has
-    fewer total moves than `buffer_size`, returns every entry.
+    Source replay-buffer filenames are monotonically numbered (`game_NNNNNNN.npz`), so
+    sorting ascending is chronological. If `filenames` has fewer than `buffer_size`
+    entries, returns them all.
     """
-    sorted_asc = sorted(entries, key=lambda e: e[0])
-    # Walk newest-first (descending), collect names until cumulative >= buffer_size.
-    selected: list[str] = []
-    cumulative = 0
-    for name, length in reversed(sorted_asc):
-        selected.append(name)
-        cumulative += length
-        if cumulative >= buffer_size:
-            break
-    # Return in ascending (chronological) order to match the trainer's ready/-sort.
-    selected.reverse()
-    return selected
+    return sorted(filenames)[-buffer_size:]
 
 
 def preload_symlinks(source_run: Path, dest_ready: Path, buffer_size: int) -> int:
     """Symlink the newest source games (.npz + .yaml each) into `dest_ready`.
 
-    Reads `<source_run>/replay_buffers/` for `.npz` files, parses each sibling `.yaml` for
-    its `game_length`, picks games newest-first until cumulative >= `buffer_size`, and
-    creates symlinks (preserving source basenames) for both files in `dest_ready`.
+    Reads `<source_run>/replay_buffers/` for `.npz` files, picks the newest
+    `buffer_size` games by filename (which the trainer trims by count, not by
+    move total), and creates symlinks (preserving source basenames) for both
+    files in `dest_ready`.
 
     Returns the number of games linked. Raises:
       - FileNotFoundError if `<source_run>/replay_buffers/` does not exist, or if any
@@ -56,20 +40,13 @@ def preload_symlinks(source_run: Path, dest_ready: Path, buffer_size: int) -> in
     if not npz_paths:
         raise ValueError(f"Source dir contains no .npz files: {source_replay}")
 
-    # Build (name, game_length) entries; abort if any yaml sidecar is missing.
-    entries: list[tuple[str, int]] = []
-    for npz_path in npz_paths:
-        yaml_path = npz_path.with_suffix(".yaml")
-        if not yaml_path.is_file():
-            raise FileNotFoundError(f"Missing yaml sidecar: {yaml_path}")
-        info = parse_yaml_file_as(GameInfo, yaml_path)
-        entries.append((npz_path.name, info.game_length))
-
-    selected = select_games(entries, buffer_size)
+    selected = select_games([p.name for p in npz_paths], buffer_size)
 
     for name in selected:
         npz_src = source_replay / name
         yaml_src = npz_src.with_suffix(".yaml")
+        if not yaml_src.is_file():
+            raise FileNotFoundError(f"Missing yaml sidecar: {yaml_src}")
         npz_dst = Path(dest_ready) / name
         yaml_dst = npz_dst.with_suffix(".yaml")
         npz_dst.symlink_to(npz_src.resolve())
