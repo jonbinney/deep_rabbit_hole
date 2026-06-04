@@ -23,8 +23,9 @@ Activated by a new CLI flag: `python train_v2.py CONFIG --source-run <run_dir>`.
 When set, `train_v2.py`:
 1. Skips spawning all self-play workers and the `selfplay_metrics_process`.
 2. Symlinks the newest games from `<source_run>/replay_buffers/` into the new run's
-   `replay_buffers/ready/`. Selection is newest-first by filename until cumulative
-   `game_length` ≥ `config.training.replay_buffer_size`.
+   `replay_buffers/ready/`. Selects the newest `config.training.replay_buffer_size`
+   games by filename (the trainer's existing trim limit is `len(moves_per_game) >
+   replay_buffer_size` — a count of games, not moves).
 3. Starts `train`, benchmark processes, and `ai_report` exactly as today.
 
 The trainer's existing ready/-pickup loop ingests the symlinks indistinguishably from fresh
@@ -113,27 +114,27 @@ startup so the behavior is visible.
 Lives in a new module `v2/offline_preload.py`, exposing two functions:
 
 ```python
-def select_games(entries: list[tuple[str, int]], buffer_size: int) -> list[str]:
-    """Given (filename, game_length) pairs, return filenames in chronological order
-    that together cover at least `buffer_size` moves, taking newest-first."""
+def select_games(filenames: list[str], buffer_size: int) -> list[str]:
+    """Return the newest `buffer_size` filenames sorted ascending (chronological).
+    If fewer are available, return them all."""
 
 def preload_symlinks(source_run: Path, dest_ready: Path, buffer_size: int) -> int:
-    """List source <source_run>/replay_buffers/*.npz + .yaml pairs, choose newest-first
-    until cumulative moves >= buffer_size, symlink both files for each chosen game into
-    dest_ready. Return the count of games linked."""
+    """List <source_run>/replay_buffers/*.npz, pick the newest `buffer_size` games by
+    filename, symlink both `.npz` and `.yaml` of each chosen game into `dest_ready`.
+    Return the count of games linked."""
 ```
+
+`buffer_size` is in **games** — matches the trainer's existing trim semantics
+(`len(moves_per_game) > config.training.replay_buffer_size` at `trainer.py:208`).
 
 Procedure inside `preload_symlinks`:
 
 1. Validate `<source_run>/replay_buffers/` exists and contains at least one `.npz`.
-2. For each `.npz`, parse its sibling `.yaml` via the existing `GameInfo` model to get
-   `game_length`. Abort listing any `.npz` whose `.yaml` is missing.
-3. Sort by filename descending (newest first — source numbers monotonically).
-4. Walk accumulating `game_length` until cumulative ≥ `buffer_size`. If the source has fewer
-   total moves than the buffer, take everything and log the shortfall.
-5. Reverse the selection back to ascending (chronological) order.
-6. For each selected game, create symlinks for both `.npz` and `.yaml` in `dest_ready`,
-   keeping their source basenames.
+2. List `*.npz` filenames sorted ascending (source numbers monotonically, so this is
+   chronological).
+3. Take the last `buffer_size` filenames (or all of them, if fewer exist).
+4. For each selected game, verify its `.yaml` sidecar exists (abort if not), then create
+   symlinks for both `.npz` and `.yaml` in `dest_ready`, keeping the source basenames.
 
 The trainer's existing ready/-pickup loop sorts ascending, renames sequentially to
 `game_NNNNNNN.npz`, moves into `replay_buffers/`, parses yaml, updates internal lists. Order
@@ -174,11 +175,12 @@ acceptable; we don't add extra validation.
 
 - Source dir missing, has no `replay_buffers/`, or contains zero `.npz` files → abort with
   the source path in the error.
-- Any `.npz` lacks its sibling `.yaml` → abort, listing the offending file.
+- Any selected `.npz` lacks its sibling `.yaml` → abort, listing the offending file. (Only
+  selected games' yamls are checked; non-selected games' missing yamls are ignored.)
 - Symlink creation fails (permissions, filesystem) → abort, propagating the OS error with the
   path.
-- Source has fewer total moves than `replay_buffer_size` → ingest everything; log how many
-  moves were loaded vs requested.
+- Source has fewer than `replay_buffer_size` games → ingest everything; log how many games
+  were loaded vs requested.
 - User sets `training.source_run` in yaml directly (no CLI flag) → works identically; the CLI
   flag is just sugar. The rust-binary-validation skip *only* fires via the CLI flag, so a
   yaml-only user must also set `self_play.program=python` themselves. Acceptable — the CLI is
@@ -196,12 +198,12 @@ acceptable; we don't add extra validation.
 
 **Unit tests:**
 
-- `select_games(entries, buffer_size)`:
-  - source > buffer: selects newest games until cumulative ≥ buffer; returned in ascending
-    (chronological) order.
-  - source < buffer: returns all entries.
+- `select_games(filenames, buffer_size)`:
+  - source > buffer: returns the newest `buffer_size` filenames in ascending (chronological)
+    order.
+  - source < buffer: returns all filenames.
   - empty source: returns empty list.
-  - boundary: exact-equal cumulative.
+  - input-order independence: result is the same regardless of input list order.
 - `preload_symlinks(source, dest_ready, buffer_size)`:
   - creates both `.npz` and `.yaml` symlinks per game.
   - returns the count of games linked.
@@ -215,7 +217,7 @@ acceptable; we don't add extra validation.
 - Fixture: a small "source" run dir with ~5 synthetic `.npz`+`.yaml` pairs (real numpy arrays
   small enough to be cheap, real `GameInfo` yamls).
 - Run `train_v2.py --source-run <fixture>` with a config setting `finish_after: "2 models"`
-  and `replay_buffer_size` slightly less than the fixture's total moves.
+  and `replay_buffer_size` smaller than the fixture's game count.
 - Assert: at least `model_1.pt` and `model_2.pt` are written to the new run's
   `checkpoints/`; no rust subprocess is invoked; symlinks exist in the new run's
   `replay_buffers/` after ingestion; the per-game ingestion wandb log call for a
