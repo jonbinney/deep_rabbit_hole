@@ -53,6 +53,52 @@ class Sampler:
         ]
 
 
+def _should_skip_iteration(
+    total_moves: int,
+    batch_size: int,
+    games_per_training_step: float,
+    training_steps: int,
+    last_game: int,
+    offline_mode: bool,
+) -> bool:
+    """Decide whether to skip this iteration of the trainer's main loop.
+
+    Always skip when the buffer holds fewer moves than one batch. In online mode also
+    skip when the trainer is ahead of self-play (the `games_per_training_step` gate).
+    In offline mode the buffer is static and there is no production cadence to wait on,
+    so we train every iteration once enough moves are available.
+    """
+    if total_moves < batch_size:
+        return True
+    if offline_mode:
+        return False
+    games_needed_to_train = games_per_training_step * (training_steps + 1)
+    return games_needed_to_train > last_game
+
+
+def _build_game_log(
+    game_info,
+    model_version: int,
+    last_game: int,
+    offline_mode: bool,
+) -> dict:
+    """Per-game wandb log payload emitted when a game is ingested from ready/.
+
+    `model_lag` is meaningful only when games arrive from live self-play, since it
+    compares the trainer's current model version against the version that *produced*
+    the game. In offline mode the source's `game_info.model_version` came from a
+    different training run and the subtraction is nonsense, so the key is omitted.
+    """
+    log = {
+        "game_length": game_info.game_length,
+        "Game num": last_game,
+        "Model version": model_version,
+    }
+    if not offline_mode:
+        log["model_lag"] = model_version - 1 - game_info.model_version
+    return log
+
+
 def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdown_event: threading.Event):
     LatestModel.wait_for_creation(config)
 
@@ -72,6 +118,7 @@ def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdow
 
 def train(config: Config):
     batch_size = config.training.batch_size
+    offline_mode = config.training.source_run is not None
     alphazero_agent = create_alphazero(config, config.self_play.alphazero, overrides={"training_mode": True})
     alphazero_agent.evaluator.setup_lr_scheduler(config.training.lr_scheduler)
 
@@ -155,14 +202,7 @@ def train(config: Config):
             moves_per_game.append(game_info.game_length)
             total_moves_played += game_info.game_length
             game_filename.append(new_name.name)
-            wandb_run.log(
-                {
-                    "game_length": game_info.game_length,
-                    "model_lag": model_version - 1 - game_info.model_version,
-                    "Game num": last_game,
-                    "Model version": model_version,
-                }
-            )
+            wandb_run.log(_build_game_log(game_info, model_version, last_game, offline_mode))
 
         # Trim oldest games to stay within the replay buffer size limit
         while len(moves_per_game) > config.training.replay_buffer_size:
@@ -172,9 +212,14 @@ def train(config: Config):
 
         total_moves = sum(moves_per_game)
 
-        games_needed_to_train = config.training.games_per_training_step * (training_steps + 1)
-
-        if total_moves < batch_size or games_needed_to_train > last_game:
+        if _should_skip_iteration(
+            total_moves=total_moves,
+            batch_size=batch_size,
+            games_per_training_step=config.training.games_per_training_step,
+            training_steps=training_steps,
+            last_game=last_game,
+            offline_mode=offline_mode,
+        ):
             time.sleep(1)
             continue
 
