@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictBaseModel(BaseModel):
@@ -83,13 +83,22 @@ class InitialModel(StrictBaseModel):
     file: Optional[str] = None
     wandb_project: Optional[str] = None
     wandb_alias: Optional[str] = None
+    run: Optional[str] = None
 
-    @field_validator("wandb_alias")
-    @classmethod
-    def file_and_wandb_mutually_exclusive(cls, v, info):
-        if v is not None and info.data.get("file") is not None:
-            raise ValueError("Cannot specify both 'file' and 'wandb_alias' in initial_model")
-        return v
+    @model_validator(mode="after")
+    def at_most_one_source(self) -> "InitialModel":
+        sources = [
+            ("file", self.file),
+            ("wandb_alias", self.wandb_alias),
+            ("run", self.run),
+        ]
+        set_sources = [name for name, val in sources if val is not None]
+        if len(set_sources) > 1:
+            raise ValueError(
+                "At most one of file, wandb_alias, run may be set in initial_model; "
+                f"got: {set_sources}"
+            )
+        return self
 
 
 class CosineWarmRestartsSchedulerConfig(StrictBaseModel):

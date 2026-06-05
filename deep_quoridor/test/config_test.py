@@ -113,3 +113,47 @@ def test_override_source_run(config_file):
 def test_source_run_defaults_to_none(config_file):
     config = load_user_config(config_file)
     assert config.training.source_run is None
+
+
+def test_initial_model_run_accepted(config_file):
+    config = load_user_config(
+        config_file, overrides=["training.initial_model.run=/some/old/run"]
+    )
+    assert config.training.initial_model is not None
+    assert config.training.initial_model.run == "/some/old/run"
+    assert config.training.initial_model.file is None
+    assert config.training.initial_model.wandb_alias is None
+
+
+def test_initial_model_rejects_file_plus_run(config_file):
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.file=/a.pt",
+                "training.initial_model.run=/some/old/run",
+            ],
+        )
+
+
+def test_initial_model_rejects_wandb_alias_plus_run(config_file):
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.wandb_alias=m1",
+                "training.initial_model.run=/some/old/run",
+            ],
+        )
+
+
+def test_initial_model_rejects_file_plus_wandb_alias(config_file):
+    # Existing behavior; restated under the new model_validator.
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.file=/a.pt",
+                "training.initial_model.wandb_alias=m1",
+            ],
+        )
