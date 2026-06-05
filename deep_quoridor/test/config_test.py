@@ -106,9 +106,7 @@ def test_invalid_key_rejected_by_pydantic(config_file):
 
 
 def test_initial_model_run_accepted(config_file):
-    config = load_user_config(
-        config_file, overrides=["training.initial_model.run=/some/old/run"]
-    )
+    config = load_user_config(config_file, overrides=["training.initial_model.run=/some/old/run"])
     assert config.training.initial_model is not None
     assert config.training.initial_model.run == "/some/old/run"
     assert config.training.initial_model.file is None
@@ -150,9 +148,7 @@ def test_initial_model_rejects_file_plus_wandb_alias(config_file):
 
 
 def test_initial_replay_buffer_accepted(config_file):
-    config = load_user_config(
-        config_file, overrides=["training.initial_replay_buffer.run=/some/old/run"]
-    )
+    config = load_user_config(config_file, overrides=["training.initial_replay_buffer.run=/some/old/run"])
     assert config.training.initial_replay_buffer is not None
     assert config.training.initial_replay_buffer.run == "/some/old/run"
 

@@ -1,7 +1,8 @@
 """Preload selected games from a previous run's replay_buffers into a new run's ready/ dir.
 
-Used by `train_v2.py` when `--source-run` (config.training.source_run) is set, to seed
-the replay buffer for a fresh-architecture training run without spawning self-play.
+Used by `train_v2.py` when `config.training.initial_replay_buffer` is set, to seed the
+replay buffer from a previous run's games (typically when training a new architecture
+on the same lineage of self-play data).
 """
 
 from __future__ import annotations

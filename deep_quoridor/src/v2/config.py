@@ -95,10 +95,7 @@ class InitialModel(StrictBaseModel):
         ]
         set_sources = [name for name, val in sources if val is not None]
         if len(set_sources) > 1:
-            raise ValueError(
-                "At most one of file, wandb_alias, run may be set in initial_model; "
-                f"got: {set_sources}"
-            )
+            raise ValueError(f"At most one of file, wandb_alias, run may be set in initial_model; got: {set_sources}")
         return self
 
 
