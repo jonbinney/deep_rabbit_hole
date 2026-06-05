@@ -187,3 +187,36 @@ def test_self_play_enabled_can_be_false(config_file):
 def test_selfplay_off_without_replay_buffer_is_rejected(config_file):
     with pytest.raises(Exception, match="initial_replay_buffer"):
         load_user_config(config_file, overrides=["self_play.enabled=False"])
+
+
+def test_initial_model_run_resolves_to_latest_filename(tmp_path):
+    """alphazero_params_dict_from_config translates initial_model.run into the
+    .pt filename recorded in <run>/models/latest.yaml."""
+    from pydantic_yaml import to_yaml_file
+    from v2.common import alphazero_params_dict_from_config
+    from v2.config import Config, load_user_config
+    from v2.yaml_models import LatestModel
+
+    # Build a fake "old run" with a latest.yaml pointing at a model file.
+    old_run = tmp_path / "old_run"
+    models_dir = old_run / "models"
+    models_dir.mkdir(parents=True)
+    to_yaml_file(
+        models_dir / "latest.yaml",
+        LatestModel(filename=str(old_run / "models" / "checkpoints" / "model_42.pt"), version=42),
+    )
+
+    # Build a config that points initial_model.run at the fake run.
+    cfg_data = dict(EXAMPLE_CONFIG)
+    cfg_data["training"] = {
+        **EXAMPLE_CONFIG["training"],
+        "initial_model": {"run": str(old_run)},
+    }
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg_data, sort_keys=False))
+
+    user = load_user_config(str(cfg_path))
+    config = Config.from_user(user, str(tmp_path), create_dirs=False)
+
+    params = alphazero_params_dict_from_config(config)
+    assert params["model_filename"] == str(old_run / "models" / "checkpoints" / "model_42.pt")

@@ -1,10 +1,12 @@
 import re
 import time
 from abc import abstractmethod
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 import wandb
 from agents.alphazero import AlphaZeroAgent, AlphaZeroParams
+from pydantic_yaml import parse_yaml_file_as
 from v2.config import AlphaZeroPlayConfig, AlphaZeroSelfPlayConfig, Config
 from v2.yaml_models import LatestModel
 
@@ -135,11 +137,15 @@ def alphazero_params_dict_from_config(
         im = config.training.initial_model
         if im.file:
             params_dict["model_filename"] = im.file
-        if im.wandb_alias:
+        elif im.wandb_alias:
             params_dict["wandb_alias"] = im.wandb_alias
             params_dict["wandb_project"] = im.wandb_project or (
                 config.wandb.project if config.wandb else "deep_quoridor"
             )
+        elif im.run:
+            latest_yaml = Path(im.run) / "models" / "latest.yaml"
+            latest = parse_yaml_file_as(LatestModel, latest_yaml)
+            params_dict["model_filename"] = latest.filename
 
     # Add network config
     if config.alphazero.network.type == "mlp":
