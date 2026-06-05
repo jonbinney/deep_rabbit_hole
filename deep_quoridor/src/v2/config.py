@@ -64,6 +64,7 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
 
 
 class SelfPlayConfig(StrictBaseModel):
+    enabled: bool = True
     num_processes: int
     games_per_process: int
     # Leaf-parallel MCTS knobs (Rust self-play only).
@@ -215,6 +216,15 @@ class UserConfig(StrictBaseModel):
             current_datetime = datetime.now().strftime("%Y%m%d-%H%M")
             return v.replace("$DATETIME", current_datetime)
         return v
+
+    @model_validator(mode="after")
+    def selfplay_off_requires_replay_buffer(self) -> "UserConfig":
+        if not self.self_play.enabled and self.training.initial_replay_buffer is None:
+            raise ValueError(
+                "When self_play.enabled is False, training.initial_replay_buffer must be set "
+                "(otherwise the trainer would hang forever waiting for games)."
+            )
+        return self
 
 
 class PathsConfig(StrictBaseModel):
@@ -392,7 +402,7 @@ def load_config_and_setup_run(
     with config_filename.open(mode="w") as f:
         f.write(to_yaml_str_ordered(user_config))
 
-    use_rust = config.self_play.program == "rust"
+    use_rust = config.self_play.enabled and config.self_play.program == "rust"
     if use_rust:
         # Apply default Rust binary path if not specified in config
         if config.self_play.rust_selfplay_binary is None:

@@ -166,3 +166,24 @@ def test_source_run_field_no_longer_exists(config_file):
     # Removed in favor of training.initial_replay_buffer.
     with pytest.raises(Exception, match="source_run|extra"):
         load_user_config(config_file, overrides=["training.source_run=/some/old/run"])
+
+
+def test_self_play_enabled_defaults_true(config_file):
+    config = load_user_config(config_file)
+    assert config.self_play.enabled is True
+
+
+def test_self_play_enabled_can_be_false(config_file):
+    config = load_user_config(
+        config_file,
+        overrides=[
+            "self_play.enabled=False",
+            "training.initial_replay_buffer.run=/some/old/run",
+        ],
+    )
+    assert config.self_play.enabled is False
+
+
+def test_selfplay_off_without_replay_buffer_is_rejected(config_file):
+    with pytest.raises(Exception, match="initial_replay_buffer"):
+        load_user_config(config_file, overrides=["self_play.enabled=False"])
