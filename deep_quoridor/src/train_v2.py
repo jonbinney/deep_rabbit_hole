@@ -53,26 +53,6 @@ def _selfplay_subprocess_env():
     return env
 
 
-def source_run_overrides(source_run: str | None) -> list[str]:
-    """Build the config overrides implied by ``--source-run <run_dir>``.
-
-    When ``--source-run`` is set, the run executes in offline mode: no self-play
-    workers are spawned. We inject two overrides:
-      - ``training.source_run=<run_dir>`` (the single source of truth for "offline mode")
-      - ``self_play.program=python`` so ``load_config_and_setup_run`` doesn't reject the
-        run when the source's old config has ``program=rust`` but no rust binary is
-        available locally.
-
-    Returns the empty list when ``source_run`` is None.
-    """
-    if source_run is None:
-        return []
-    return [
-        f"training.source_run={source_run}",
-        "self_play.program=python",
-    ]
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Quoridor agent")
     parser.add_argument("config_file", type=str, help="Path to YAML configuration file")
@@ -85,27 +65,12 @@ if __name__ == "__main__":
         nargs="*",
         help="Configuration overrides (e.g., run_id=my_run self_play.program=rust)",
     )
-    parser.add_argument(
-        "--source-run",
-        type=str,
-        default=None,
-        help=(
-            "Run in offline mode: symlink the newest games from <run_dir>/replay_buffers/ "
-            "into this run's replay_buffers/ready/ and skip spawning self-play. "
-            "Use when training a new network architecture on a previous run's games."
-        ),
-    )
 
     args = parser.parse_args()
 
-    extra_overrides = source_run_overrides(args.source_run)
-    if extra_overrides:
-        print(f"Offline mode: injecting overrides {extra_overrides}")
-    overrides = (args.overrides or []) + extra_overrides
-
     runs_dir = args.runs_dir if args.runs_dir is not None else str(Path(__file__).parent.parent)
 
-    config = load_config_and_setup_run(args.config_file, runs_dir, overrides=overrides)
+    config = load_config_and_setup_run(args.config_file, runs_dir, overrides=args.overrides)
 
     # Validate AI report prerequisites before spawning anything, so a misconfigured
     # run aborts early instead of failing silently inside a sibling process.
@@ -121,14 +86,13 @@ if __name__ == "__main__":
     # Make sure we don't have the shutdown signal from a previous run
     ShutdownSignal.clear(config)
 
-    offline_mode = config.training.source_run is not None
-    if offline_mode:
+    if config.training.initial_replay_buffer is not None:
         n_loaded = preload_symlinks(
-            source_run=Path(config.training.source_run),
+            source_run=Path(config.training.initial_replay_buffer.run),
             dest_ready=config.paths.replay_buffers_ready,
             buffer_size=config.training.replay_buffer_size,
         )
-        print(f"Offline mode: linked {n_loaded} games from {config.training.source_run}")
+        print(f"Preloaded {n_loaded} games from {config.training.initial_replay_buffer.run}")
 
     train_process = mp.Process(target=train, args=[config])
     train_process.start()
@@ -144,7 +108,7 @@ if __name__ == "__main__":
     self_play_processes = []
     rust_subprocesses = []
 
-    if not offline_mode:
+    if config.self_play.enabled:
         if config.self_play.program == "rust":
             # Spawn Rust self-play processes in continuous mode
             selfplay_env = _selfplay_subprocess_env()
