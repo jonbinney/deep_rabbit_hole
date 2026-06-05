@@ -9,7 +9,12 @@ edition = "2024"
 
 [lib]
 name = "quoridor_rs"
-crate-type = ["cdylib", "rlib"]
+# Only `rlib` is listed so `cargo test` doesn't emit a `.so` alongside the
+# `.rlib` and trigger cargo's "output filename collision" warning (cargo
+# issue #6313, surfaces when one target has multiple crate-types and the
+# binaries depend on the same lib). The python wheel build sets
+# `crate-type = ["cdylib"]` via `[tool.maturin]` in pyproject.toml.
+crate-type = ["rlib"]
 
 [[bin]]
 name = "create_policy_db"
@@ -19,6 +24,11 @@ required-features = ["binary"]
 [[bin]]
 name = "selfplay"
 path = "src/bin/selfplay.rs"
+required-features = ["binary"]
+
+[[bin]]
+name = "play_server"
+path = "src/bin/play_server.rs"
 required-features = ["binary"]
 
 [dependencies]
@@ -39,6 +49,8 @@ clap = { version = "4.5", features = ["derive"], optional = true }
 ort = { version = "=2.0.0-rc.12", optional = true }
 anyhow = "1"
 serde_yaml = { version = "0.9", optional = true }
+serde_json = { version = "1", optional = true }
+tiny_http = { version = "0.12", optional = true }
 ndarray-npy = { version = "0.9", optional = true }
 zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
 rand_distr = { version = "0.4", optional = true }
@@ -49,12 +61,17 @@ smallvec = "1.13"
 [features]
 default = ["python"]
 python = ["pyo3", "numpy"]
-binary = ["clap", "ort", "serde_yaml", "ndarray-npy", "zip", "rand_distr", "tokio", "futures"]
+binary = ["clap", "ort", "serde_yaml", "serde_json", "ndarray-npy", "zip", "rand_distr", "tokio", "futures", "tiny_http"]
 gpu = ["binary", "ort/cuda", "ort/load-dynamic"]
 
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+ureq = { version = "2", default-features = false, features = ["json"] }
+# Mirrored from optional `binary`-feature deps so integration tests can name
+# these types directly (Cargo resolves a separate copy per target otherwise).
+tiny_http = "0.12"
+serde_json = "1"
 
 [profile.release]
 # Enable optimizations for better performance

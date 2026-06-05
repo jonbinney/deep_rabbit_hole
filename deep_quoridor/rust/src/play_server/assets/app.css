@@ -1,0 +1,311 @@
+/* Quoridor play server -- warm wood-and-stone palette.
+ *
+ * The board reads as three distinct surfaces:
+ *   --cell      pawn squares          (lightest)
+ *   --slot      empty wall channels   (mid-tone groove)
+ *   --wall      placed wall pieces    (darkest, walnut)
+ *
+ * Keeping these three values clearly separated is what makes a placed
+ * vertical wall look like a single vertical bar rather than a cross at
+ * the post intersection -- the perpendicular empty channels stay
+ * groove-tan, not wall-walnut.
+ */
+
+:root {
+  --pawn-size: 56px;
+  --post-size: 14px;
+
+  --bg: #f1e7d3;
+  --cell: #ead7ad;
+  --slot: #c9b07a;
+  --post: #b59b65;
+  --wall: #3a2412;
+  --wall-preview: rgba(58, 36, 18, 0.55);
+
+  --pawn-p1: #1e3a8a;
+  --pawn-p2: #b91c1c;
+  --legal-move: rgba(34, 113, 50, 0.65);
+
+  --last-action: #d97706;
+
+  --board-frame: #2b1a0c;
+  --card-bg: #fffaf1;
+  --card-border: #c9b48a;
+  --ink: #2a1f10;
+  --ink-muted: #6b5a3f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 245, 220, 0.45), transparent 50%),
+    radial-gradient(circle at 85% 90%, rgba(120, 80, 30, 0.18), transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+header {
+  padding: 1.25rem 1.75rem;
+  background: var(--board-frame);
+  color: #f3e6c8;
+  border-bottom: 3px solid #1a0f06;
+  box-shadow: 0 2px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+header h1 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+}
+
+main {
+  display: flex;
+  flex-direction: row;
+  gap: 2rem;
+  padding: 2rem;
+  align-items: flex-start;
+}
+
+/* ---- Board ---- */
+
+#board-wrapper {
+  position: relative;
+}
+
+#board {
+  display: grid;
+  gap: 0;
+  border: 6px solid var(--board-frame);
+  border-radius: 3px;
+  background: var(--board-frame);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(40, 24, 8, 0.35),
+    0 2px 4px rgba(40, 24, 8, 0.2);
+}
+
+.cell {
+  position: relative;
+}
+
+/* Surface colors per cell type */
+.pawn-cell    { background: var(--cell); }
+.wall-h-half,
+.wall-v-half  { background: var(--slot); }
+.post         { background: var(--post); }
+
+/* Subtle inset to suggest carved board */
+.pawn-cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  pointer-events: none;
+}
+
+/* Placed walls -- darkest surface, beat any other class. */
+.wall-placed-h,
+.wall-placed-v,
+.wall-placed-h.post,
+.wall-placed-v.post {
+  background: var(--wall);
+}
+
+/* Pawn pieces */
+.pawn {
+  position: absolute;
+  top: 12%; left: 12%; right: 12%; bottom: 12%;
+  border-radius: 50%;
+  border: 2px solid #fdf4d8;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.25),
+    inset 0 2px 3px rgba(255, 255, 255, 0.35);
+}
+.pawn.p1 { background: var(--pawn-p1); }
+.pawn.p2 { background: var(--pawn-p2); }
+
+/* Last-action highlights */
+.last-move::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 2px dashed var(--last-action);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.last-wall {
+  outline: 2px solid var(--last-action);
+  outline-offset: -2px;
+}
+
+/* Legal-move highlights (clickable pawn destinations) */
+.legal-move {
+  cursor: pointer;
+}
+.legal-move::before {
+  content: "";
+  position: absolute;
+  inset: 32%;
+  border-radius: 50%;
+  background: var(--legal-move);
+  transition: inset 120ms ease-out;
+}
+.legal-move:hover::before { inset: 18%; }
+
+/* Legal wall anchors -- the click target for each legal wall. The class
+ * is only applied to the cell at the wall's display top-left (left half
+ * for H, top half for V). Hovering the anchor triggers JS that adds
+ * `.wall-hover` to all 3 cells of the wall. */
+.legal-wall-h,
+.legal-wall-v {
+  cursor: pointer;
+}
+
+/* Group-hover preview: all 3 cells of a legal wall pre-painted in a
+ * translucent walnut, so the player sees the full wall they're about to
+ * place. */
+.wall-hover {
+  background: var(--wall-preview) !important;
+}
+
+/* ---- Side panel ---- */
+
+#side-panel {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#side-panel fieldset {
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  padding: 1rem;
+  background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+#side-panel legend {
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-weight: 600;
+  padding: 0 0.4rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+#side-panel label {
+  display: block;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+#side-panel input[type="range"] {
+  width: 100%;
+  accent-color: var(--wall);
+}
+#side-panel select {
+  width: 100%;
+  padding: 0.4rem;
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  background: white;
+  font: inherit;
+}
+
+.who-goes-first label {
+  display: inline-block;
+  margin-right: 1rem;
+  font-weight: normal;
+}
+
+#new-game-button {
+  margin-top: 0.6rem;
+  width: 100%;
+  padding: 0.7rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: var(--board-frame);
+  color: #f3e6c8;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 120ms ease-out;
+}
+#new-game-button:hover  { background: #1f1207; }
+#new-game-button:disabled {
+  background: #8a7a5e;
+  color: #ede1c1;
+  cursor: not-allowed;
+}
+
+#status-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+#status-panel h2 {
+  margin: 0 0 0.6rem;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+#status-panel p {
+  margin: 0.35rem 0;
+  font-size: 0.95rem;
+}
+
+.muted     { color: var(--ink-muted); font-size: 0.85rem; margin: 0.6rem 0 0; }
+.error     { color: #9b1c1c; font-size: 0.9rem; }
+
+/* ---- Spinner ---- */
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-left: 0.4em;
+}
+.spinner[hidden] { display: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Game-over banner ---- */
+
+#game-over-banner {
+  display: none;
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1.4rem 2.4rem;
+  background: rgba(20, 12, 4, 0.92);
+  color: #f3e6c8;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-size: 1.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  pointer-events: none;
+  text-align: center;
+  border: 1px solid rgba(255, 230, 180, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}

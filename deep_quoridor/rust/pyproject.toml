@@ -1,0 +1,23 @@
+# Python build configuration for maturin.
+#
+# Cargo.toml declares `[lib] crate-type = ["rlib"]` so `cargo test` doesn't
+# emit overlapping cdylib outputs (cargo issue #6313). The Python wheel
+# needs a `cdylib` -- maturin reads `crate-type` from this file and passes
+# it through, so wheel builds still produce `libquoridor_rs.so`.
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "quoridor-rs"
+requires-python = ">=3.8"
+
+[tool.maturin]
+# `bindings = "pyo3"` is what makes maturin emit a cdylib even when
+# Cargo.toml's `[lib] crate-type` is only `rlib` -- cdylib is the format
+# Python loads, but we don't want it as a default cargo output (it would
+# collide with the rlib's filename when binaries are built; see cargo
+# issue #6313).
+bindings = "pyo3"
+features = ["pyo3/extension-module"]

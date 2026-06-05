@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use ndarray::Axis;
 
-use crate::agents::alphazero::selfplay_mcts::LeafParallelMCTS;
+use crate::agents::alphazero::selfplay_mcts::{LeafParallelMCTS, SearchStats};
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
 use crate::game_runner::{GameResult, ReplayBufferItem};
@@ -65,6 +65,34 @@ fn sample_action(
     action_indices[action_indices.len() - 1]
 }
 
+/// Number of leading plies that define a game's "opening" for uniqueness.
+pub const OPENING_PLIES: usize = 8;
+
+/// Per-game MCTS diagnostics, summed over the game's searches, plus move-sequence hashes.
+#[derive(Debug, Clone, Default)]
+pub struct GameMetrics {
+    pub sims: u64,
+    pub terminal_wins: u64,
+    pub truncations: u64,
+    pub max_depth: u32,
+    pub sum_depth: u64,
+    pub moves: u64,
+    pub sum_root_entropy: f64,
+    pub sum_top_move_frac: f64,
+    pub sum_nodes: u64,
+    pub sum_internal_nodes: u64,
+    pub full_hash: u64,
+    pub opening_hash: u64,
+}
+
+/// Deterministic (within-process) hash of a move-index sequence.
+fn hash_actions(actions: &[usize]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    actions.hash(&mut h);
+    h.finish()
+}
+
 /// Per-game settings for action selection.
 #[derive(Debug, Clone, Copy)]
 pub struct GameSettings {
@@ -80,7 +108,7 @@ pub async fn play_game_async(
     board_size: i32,
     max_walls: i32,
     max_steps: i32,
-) -> Result<GameResult> {
+) -> Result<(GameResult, GameMetrics)> {
     let mechanics =
         QGameMechanics::new(board_size as usize, max_walls as usize, max_steps as usize);
     let mut data = mechanics.create_initial_state();
@@ -88,6 +116,8 @@ pub async fn play_game_async(
     let mut replay_items: Vec<ReplayBufferItem> = Vec::new();
     let visited = HashSet::new();
     let mut winner: Option<i32> = None;
+    let mut gm = GameMetrics::default();
+    let mut actions: Vec<usize> = Vec::new();
 
     for step in 0..max_steps {
         let current_player = mechanics.repr().get_current_player(data) as i32;
@@ -98,16 +128,37 @@ pub async fn play_game_async(
 
         let resnet_input = compact_state_to_resnet_input(&mechanics, data);
 
-        let (action_idx, policy) = if current_player == 0 {
-            run_az_select(p1, data, &mechanics, &visited, settings, step as usize).await?
+        let (action_idx, policy, stats) = if current_player == 0 {
+            let (a, p, s) =
+                run_az_select(p1, data, &mechanics, &visited, settings, step as usize).await?;
+            (a, p, Some(s))
         } else {
             match p2 {
                 P2::AlphaZero(m) => {
-                    run_az_select(m, data, &mechanics, &visited, settings, step as usize).await?
+                    let (a, p, s) =
+                        run_az_select(m, data, &mechanics, &visited, settings, step as usize)
+                            .await?;
+                    (a, p, Some(s))
                 }
-                P2::Random => random_select(&mask),
+                P2::Random => {
+                    let (a, p) = random_select(&mask);
+                    (a, p, None)
+                }
             }
         };
+        if let Some(s) = stats {
+            gm.moves += 1;
+            gm.sims += s.sims as u64;
+            gm.terminal_wins += s.terminal_wins as u64;
+            gm.truncations += s.truncations as u64;
+            gm.max_depth = gm.max_depth.max(s.max_depth);
+            gm.sum_depth += s.sum_depth;
+            gm.sum_root_entropy += s.root_visit_entropy;
+            gm.sum_top_move_frac += s.top_move_visit_frac;
+            gm.sum_nodes += s.nodes as u64;
+            gm.sum_internal_nodes += s.internal_nodes as u64;
+        }
+        actions.push(action_idx);
 
         // Replay capture (current-player-downward frame).
         let (stored_input_3d, stored_policy, stored_mask) = if current_player == 1 {
@@ -142,25 +193,29 @@ pub async fn play_game_async(
 
         if mechanics.check_win(data, current_player as usize) {
             winner = Some(current_player);
-            for item in replay_items.iter_mut() {
-                item.value = if item.player == current_player {
-                    1.0
-                } else {
-                    -1.0
-                };
-            }
-            return Ok(GameResult {
-                winner,
-                num_turns: step + 1,
-                replay_items,
-            });
+            break;
         }
     }
-    Ok(GameResult {
-        winner,
-        num_turns: max_steps,
-        replay_items,
-    })
+    if let Some(w) = winner {
+        for item in replay_items.iter_mut() {
+            item.value = if item.player == w { 1.0 } else { -1.0 };
+        }
+    }
+    gm.full_hash = hash_actions(&actions);
+    gm.opening_hash = hash_actions(&actions[..actions.len().min(OPENING_PLIES)]);
+    let num_turns = if winner.is_some() {
+        actions.len() as i32
+    } else {
+        max_steps
+    };
+    Ok((
+        GameResult {
+            winner,
+            num_turns,
+            replay_items,
+        },
+        gm,
+    ))
 }
 
 async fn run_az_select(
@@ -170,8 +225,8 @@ async fn run_az_select(
     visited: &HashSet<CompactState>,
     settings: GameSettings,
     step: usize,
-) -> Result<(usize, Vec<f32>)> {
-    let (children, _root_value) = mcts.search(data, mechanics, visited).await?;
+) -> Result<(usize, Vec<f32>, SearchStats)> {
+    let (children, _root_value, stats) = mcts.search(data, mechanics, visited).await?;
     let visit_counts: Vec<u32> = children.iter().map(|c| c.visit_count).collect();
     let action_indices: Vec<usize> = children.iter().map(|c| c.action_index).collect();
     let temperature = match settings.drop_t_on_step {
@@ -194,7 +249,7 @@ async fn run_az_select(
             policy[c.action_index] = c.visit_count as f32 / total_visits as f32;
         }
     }
-    Ok((action_idx, policy))
+    Ok((action_idx, policy, stats))
 }
 
 fn random_select(mask: &[bool]) -> (usize, Vec<f32>) {
@@ -209,4 +264,32 @@ fn random_select(mask: &[bool]) -> (usize, Vec<f32>) {
     let mut p = vec![0.0f32; mask.len()];
     p[idx] = 1.0;
     (idx, p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OPENING_PLIES, hash_actions};
+
+    #[test]
+    fn identical_sequences_hash_equal_different_differ() {
+        let a = vec![3usize, 7, 1, 9, 2, 4, 8, 0, 5, 6];
+        let b = a.clone();
+        let mut c = a.clone();
+        c[9] = 99; // differs only after the opening
+
+        assert_eq!(
+            hash_actions(&a),
+            hash_actions(&b),
+            "identical games hash equal"
+        );
+        assert_ne!(
+            hash_actions(&a),
+            hash_actions(&c),
+            "different full games differ"
+        );
+
+        let open_a = hash_actions(&a[..a.len().min(OPENING_PLIES)]);
+        let open_c = hash_actions(&c[..c.len().min(OPENING_PLIES)]);
+        assert_eq!(open_a, open_c, "same opening hashes equal");
+    }
 }

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quoridor — vs AlphaZero</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Quoridor vs AlphaZero</h1>
+    </header>
+    <main>
+      <section id="board-wrapper">
+        <div id="board" aria-label="Quoridor board"></div>
+        <div id="game-over-banner"></div>
+      </section>
+
+      <aside id="side-panel">
+        <fieldset class="setup">
+          <legend>New game</legend>
+
+          <label>
+            Model:
+            <select id="model-select"></select>
+          </label>
+
+          <label>
+            MCTS sims: <span id="mcts-n-display"></span>
+            <input id="mcts-n" type="range" min="8" max="2000" step="8" />
+          </label>
+
+          <fieldset class="who-goes-first">
+            <legend>Who goes first?</legend>
+            <label><input type="radio" name="human-player" value="0" checked /> You</label>
+            <label><input type="radio" name="human-player" value="1" /> AI</label>
+          </fieldset>
+
+          <button id="new-game-button" type="button">Start new game</button>
+
+          <p class="muted">
+            Board: <span id="board-size-display">—</span>
+          </p>
+        </fieldset>
+
+        <section id="status-panel">
+          <h2>Status</h2>
+          <p>
+            <strong>Turn:</strong>
+            <span id="turn-display">—</span>
+            <span id="spinner" class="spinner" hidden></span>
+          </p>
+          <p><strong>You — walls remaining:</strong> <span id="walls-you">—</span></p>
+          <p><strong>AI — walls remaining:</strong> <span id="walls-ai">—</span></p>
+          <p><strong>Step:</strong> <span id="completed-steps">—</span></p>
+          <p id="error-display" class="error" hidden></p>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
