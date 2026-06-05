@@ -101,6 +101,16 @@ class InitialModel(StrictBaseModel):
         return self
 
 
+class InitialReplayBuffer(StrictBaseModel):
+    """Configures preloading the replay buffer from a previous run.
+
+    `run` points at a run directory (parent of `replay_buffers/`), mirroring
+    `InitialModel.run`. At preload time the loader reads `<run>/replay_buffers/`.
+    """
+
+    run: str
+
+
 class CosineWarmRestartsSchedulerConfig(StrictBaseModel):
     type: Literal["cosine_warm_restarts"] = "cosine_warm_restarts"
     t_0: int = 200
@@ -122,7 +132,7 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
-    source_run: Optional[str] = None
+    initial_replay_buffer: Optional[InitialReplayBuffer] = None
     lr_scheduler: Optional[LRSchedulerConfig] = None
 
 

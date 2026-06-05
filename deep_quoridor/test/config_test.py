@@ -105,16 +105,6 @@ def test_invalid_key_rejected_by_pydantic(config_file):
         load_user_config(config_file, overrides=["nonexistent_key=value"])
 
 
-def test_override_source_run(config_file):
-    config = load_user_config(config_file, overrides=["training.source_run=/path/to/old/run"])
-    assert config.training.source_run == "/path/to/old/run"
-
-
-def test_source_run_defaults_to_none(config_file):
-    config = load_user_config(config_file)
-    assert config.training.source_run is None
-
-
 def test_initial_model_run_accepted(config_file):
     config = load_user_config(
         config_file, overrides=["training.initial_model.run=/some/old/run"]
@@ -157,3 +147,22 @@ def test_initial_model_rejects_file_plus_wandb_alias(config_file):
                 "training.initial_model.wandb_alias=m1",
             ],
         )
+
+
+def test_initial_replay_buffer_accepted(config_file):
+    config = load_user_config(
+        config_file, overrides=["training.initial_replay_buffer.run=/some/old/run"]
+    )
+    assert config.training.initial_replay_buffer is not None
+    assert config.training.initial_replay_buffer.run == "/some/old/run"
+
+
+def test_initial_replay_buffer_defaults_to_none(config_file):
+    config = load_user_config(config_file)
+    assert config.training.initial_replay_buffer is None
+
+
+def test_source_run_field_no_longer_exists(config_file):
+    # Removed in favor of training.initial_replay_buffer.
+    with pytest.raises(Exception, match="source_run|extra"):
+        load_user_config(config_file, overrides=["training.source_run=/some/old/run"])
