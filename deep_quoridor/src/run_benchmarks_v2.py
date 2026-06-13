@@ -8,9 +8,18 @@ Reuses `benchmarks.create_benchmark_processes` from the v2 package; does not
 train, run self-play, or generate AI reports.
 """
 
+import argparse
+import multiprocessing as mp
+import os
+import time
 from pathlib import Path
 
+from v2 import benchmarks
+from v2.common import ShutdownSignal
 from v2.config import Config, load_user_config
+
+# Match train_v2.py: suppress wandb's "install weave" log spam.
+os.environ["WANDB_DISABLE_WEAVE"] = "true"
 
 
 def _derive_base_dir(run_dir: Path) -> str:
@@ -65,5 +74,48 @@ def main(args) -> int:
         print(f"No benchmarks configured in {run_dir}/config.yaml; nothing to run.")
         return 0
 
-    # Spawning is added in Task 3.
+    mp.set_start_method("spawn", force=True)
+    ShutdownSignal.clear(config)
+
+    benchmark_processes = benchmarks.create_benchmark_processes(config)
+    for p in benchmark_processes:
+        p.start()
+    print(f"Started {len(benchmark_processes)} benchmark processes")
+
+    try:
+        b_count_prev = -1
+        while True:
+            b_count = sum(p.is_alive() for p in benchmark_processes)
+            if b_count != b_count_prev:
+                print(f"Waiting for {b_count} benchmark processes")
+                b_count_prev = b_count
+            if b_count == 0:
+                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nCaught Ctrl-C; signaling shutdown...")
+        ShutdownSignal.signal(config)
+        for p in benchmark_processes:
+            p.join()
+
+    ShutdownSignal.clear(config)
     return 0
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run just the benchmark schedules from an existing run's config.yaml.",
+    )
+    parser.add_argument(
+        "run_dir",
+        type=str,
+        help="Path to an existing run directory (e.g. /path/to/runs/<run_id>/).",
+    )
+    parser.add_argument(
+        "-o",
+        "--overrides",
+        nargs="*",
+        help="Configuration overrides (e.g., benchmarks.0.every=2 minutes).",
+    )
+    args = parser.parse_args()
+    raise SystemExit(main(args))
