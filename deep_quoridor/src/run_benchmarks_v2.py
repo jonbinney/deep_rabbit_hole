@@ -59,9 +59,7 @@ def _check_run_dir(run_dir: Path) -> None:
         raise FileNotFoundError(f"No config.yaml in {run_dir}")
     latest_yaml = run_dir / "models" / "latest.yaml"
     if not latest_yaml.is_file():
-        raise FileNotFoundError(
-            f"No models/latest.yaml in {run_dir}; the run has no trained model to benchmark."
-        )
+        raise FileNotFoundError(f"No models/latest.yaml in {run_dir}; the run has no trained model to benchmark.")
 
 
 def main(args) -> int:
