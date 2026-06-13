@@ -1,9 +1,10 @@
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 import yaml
 
-from run_benchmarks_v2 import _derive_base_dir, _load_config
+from run_benchmarks_v2 import _check_run_dir, _derive_base_dir, _load_config, main
 
 
 EXAMPLE_CONFIG = {
@@ -73,3 +74,45 @@ def test_load_config_raises_when_config_yaml_missing(tmp_path):
     run_dir.mkdir(parents=True)
     with pytest.raises(FileNotFoundError, match="config.yaml"):
         _load_config(run_dir, overrides=None)
+
+
+def test_check_run_dir_raises_when_run_dir_missing(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Run directory not found"):
+        _check_run_dir(tmp_path / "does-not-exist")
+
+
+def test_check_run_dir_raises_when_config_yaml_missing(tmp_path):
+    run_dir = tmp_path / "runs" / "my-run"
+    run_dir.mkdir(parents=True)
+    with pytest.raises(FileNotFoundError, match="config.yaml"):
+        _check_run_dir(run_dir)
+
+
+def test_check_run_dir_raises_when_latest_yaml_missing(tmp_path):
+    run_dir = _make_run_dir(tmp_path)
+    with pytest.raises(FileNotFoundError, match="models/latest.yaml"):
+        _check_run_dir(run_dir)
+
+
+def test_check_run_dir_passes_when_all_present(tmp_path):
+    run_dir = _make_run_dir(tmp_path)
+    (run_dir / "models").mkdir()
+    (run_dir / "models" / "latest.yaml").write_text("filename: /tmp/m.pt\nversion: 0\n")
+    _check_run_dir(run_dir)  # no exception
+
+
+def test_main_exits_zero_when_no_benchmarks(tmp_path, capsys):
+    run_dir = _make_run_dir(tmp_path)
+    (run_dir / "models").mkdir()
+    (run_dir / "models" / "latest.yaml").write_text("filename: /tmp/m.pt\nversion: 0\n")
+
+    # Strip the benchmarks section from the config.yaml.
+    cfg = yaml.safe_load((run_dir / "config.yaml").read_text())
+    cfg["benchmarks"] = []
+    (run_dir / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    args = Namespace(run_dir=str(run_dir), overrides=None)
+    exit_code = main(args)
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "No benchmarks configured" in captured.out
