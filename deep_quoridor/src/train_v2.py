@@ -86,6 +86,7 @@ if __name__ == "__main__":
     # Make sure we don't have the shutdown signal from a previous run
     ShutdownSignal.clear(config)
 
+    games_already_trained_on = 0
     if config.training.initial_replay_buffer is not None:
         n_loaded = preload_symlinks(
             source_run=Path(config.training.initial_replay_buffer.run),
@@ -93,8 +94,9 @@ if __name__ == "__main__":
             buffer_size=config.training.replay_buffer_size,
         )
         print(f"Preloaded {n_loaded} games from {config.training.initial_replay_buffer.run}")
+        games_already_trained_on = n_loaded
 
-    train_process = mp.Process(target=train, args=[config])
+    train_process = mp.Process(target=train, args=[config, games_already_trained_on])
     train_process.start()
 
     benchmark_processes = benchmarks.create_benchmark_processes(config)

@@ -56,8 +56,7 @@ class Sampler:
 def _should_skip_iteration(
     total_moves: int,
     batch_size: int,
-    games_per_training_step: float,
-    training_steps: int,
+    games_needed_to_train: int,
     last_game: int,
     selfplay_disabled: bool,
 ) -> bool:
@@ -65,7 +64,7 @@ def _should_skip_iteration(
 
     Always skip when the buffer holds fewer moves than one batch. When self-play is
     enabled, also skip when the trainer is ahead of self-play (the
-    `games_per_training_step` gate). When self-play is disabled the buffer is static
+    `games_needed_to_train` gate). When self-play is disabled the buffer is static
     and there is no production cadence to wait on, so we train every iteration once
     enough moves are available.
     """
@@ -73,7 +72,6 @@ def _should_skip_iteration(
         return True
     if selfplay_disabled:
         return False
-    games_needed_to_train = games_per_training_step * (training_steps + 1)
     return games_needed_to_train > last_game
 
 
@@ -118,7 +116,15 @@ def model_uploader(config: Config, every: str, model_id: str, wandb_run, shutdow
         trigger.wait(lambda: shutdown_event.is_set())
 
 
-def train(config: Config):
+def train(config: Config, games_already_trained_on: int = 0):
+    """
+    Main training loop.
+
+    Args:
+        config: Config object
+        games_already_trained_on: used to determine when to train next. This is used when preloading a replay buffer from a
+            previous run, so that the trainer doesn't train on the same games multiple times.
+    """
     batch_size = config.training.batch_size
     selfplay_disabled = not config.self_play.enabled
     omit_model_lag = config.training.initial_replay_buffer is not None
@@ -170,7 +176,7 @@ def train(config: Config):
     if config.training.finish_after:
         finish_condition = JobTrigger.from_string(config, config.training.finish_after)
 
-    training_steps = 0
+    games_needed_to_train = games_already_trained_on + config.training.games_per_training_step
     last_game = 0
     total_moves_played = 0
     model_version = 1
@@ -218,8 +224,7 @@ def train(config: Config):
         if _should_skip_iteration(
             total_moves=total_moves,
             batch_size=batch_size,
-            games_per_training_step=config.training.games_per_training_step,
-            training_steps=training_steps,
+            games_needed_to_train=games_needed_to_train,
             last_game=last_game,
             selfplay_disabled=selfplay_disabled,
         ):
@@ -243,7 +248,7 @@ def train(config: Config):
         # Train the network for one step using the samples
         Timer.start("train")
         policy_loss, value_loss, total_loss = alphazero_agent.evaluator.train_iteration_v2(samples)
-        training_steps += 1
+        games_needed_to_train += config.training.games_per_training_step
         time_train = Timer.finish("train")
 
         wandb_run.log(
