@@ -2,11 +2,11 @@ run_id: jdb-b9w10-baseconfig
 quoridor:
   board_size: 9
   max_walls: 10
-  max_steps: 100
+  max_steps: 120
 alphazero:
   network:
     type: resnet
-    num_blocks: 6
+    num_blocks: 12
     num_channels: 32
   mcts_n: 1000
   mcts_c_puct: 1.2
@@ -32,10 +32,11 @@ self_play:
   eval_max_wait_ms: 1
   alphazero:
     mcts_noise_epsilon: 0.25
-    temperature: 3.0
+    temperature: 1.0
+    drop_t_on_step: 12
 training:
   games_per_training_step: 100
-  learning_rate: 0.001
+  learning_rate: 0.0001
   batch_size: 2048
   weight_decay: 0.0001
   replay_buffer_size: 20000
@@ -50,15 +51,15 @@ benchmarks:
     prefix: raw
     times: 10
     opponents:
-    - random
     - greedy:p_random=0.3,nick=greedy-03
     - greedy
+    - simple:branching_factor=16,nick=simple-bf16
 - every: 10 models
   jobs:
   - type: tournament
     prefix: ""
     times: 10
     opponents:
-    - random
     - greedy:p_random=0.3,nick=greedy-03
     - greedy
+    - simple:branching_factor=16,nick=simple-bf16
