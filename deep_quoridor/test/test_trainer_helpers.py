@@ -8,8 +8,7 @@ def test_should_skip_when_not_enough_moves():
         _should_skip_iteration(
             total_moves=10,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=0,
+            games_needed_to_train=100,
             last_game=100,
             selfplay_disabled=False,
         )
@@ -19,8 +18,7 @@ def test_should_skip_when_not_enough_moves():
         _should_skip_iteration(
             total_moves=10,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=0,
+            games_needed_to_train=100,
             last_game=100,
             selfplay_disabled=True,
         )
@@ -28,40 +26,37 @@ def test_should_skip_when_not_enough_moves():
     )
 
 
-def test_selfplay_on_honors_games_per_step_gate():
-    # Enough moves, but games_per_training_step * (steps+1) > last_game: skip.
+def test_selfplay_on_honors_games_needed_gate():
+    # Enough moves, but games_needed_to_train > last_game: skip.
     assert (
         _should_skip_iteration(
             total_moves=1000,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=99,
+            games_needed_to_train=100,
             last_game=100,
             selfplay_disabled=False,
         )
         is False
-    )  # 1.0 * 100 == last_game; not greater, so train.
+    )  # 100 == last_game; not greater, so train.
     assert (
         _should_skip_iteration(
             total_moves=1000,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=100,
+            games_needed_to_train=101,
             last_game=100,
             selfplay_disabled=False,
         )
         is True
-    )  # 1.0 * 101 > 100; throttle.
+    )  # 101 > 100; throttle.
 
 
-def test_selfplay_off_skips_games_per_step_gate():
+def test_selfplay_off_skips_games_needed_gate():
     # Same parameters that would throttle now train.
     assert (
         _should_skip_iteration(
             total_moves=1000,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=100,
+            games_needed_to_train=101,
             last_game=100,
             selfplay_disabled=True,
         )
@@ -71,8 +66,7 @@ def test_selfplay_off_skips_games_per_step_gate():
         _should_skip_iteration(
             total_moves=1000,
             batch_size=64,
-            games_per_training_step=1.0,
-            training_steps=10_000,
+            games_needed_to_train=1_000_000,
             last_game=100,
             selfplay_disabled=True,
         )
