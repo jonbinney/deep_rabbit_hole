@@ -72,11 +72,11 @@ Browser
         ▼
     Client GPU (WebGPU)
 
-Thin server (evolved rust/src/play_server)
+Thin server (new Python app — FastAPI)
   serves: SPA + .wasm + model .onnx files
   sets:   COOP/COEP + correct wasm/wasm-streaming MIME headers
-  API:    GET /api/models  (reuses config.rs model listing)
-  (deleted: /api/games*, session.rs, server-side MCTS)
+  API:    GET /api/models, GET /api/config (reuse existing Python config loaders)
+  (the old Rust rust/src/play_server is retired: MCTS/ONNX/session move to WASM)
 ```
 
 ### Key decisions (with rationale)
@@ -107,10 +107,16 @@ Thin server (evolved rust/src/play_server)
    `wasm-bindgen` out of the core lib and avoids the cdylib/rlib target conflict
    already documented in `rust/Cargo.toml`.
 
-5. **Server: evolve the existing Rust `play_server`** into a thin static host
-   rather than adopt an off-the-shelf static server. *Why:* M3/M4 (run-dir
-   browsing, REST high scores) will want server code again, in Rust, which the
-   team already uses here.
+5. **Server: a new Python app (FastAPI)** that fully replaces the Rust
+   `play_server`. *Why Python, not the existing Rust server:* the server no
+   longer touches the AI at all (MCTS + ONNX now run in WASM), so there is no
+   reason to keep it in Rust. The team already uses Python, it has strong web
+   libraries, and — decisively — the run directories, trainer, config, and
+   yaml models are **already Python** (`src/v2/config.py`, `yaml_models.py`,
+   etc.), so M3 (run-dir browsing) and M4 (REST high scores) reuse existing
+   Python code instead of reimplementing it. FastAPI gives easy custom headers
+   (COOP/COEP) via middleware, `.wasm` static serving, and a clean REST surface
+   for later. (Flask/Starlette are viable; FastAPI is the recommendation.)
 
 ## Components
 
@@ -168,16 +174,23 @@ finalize location in the plan).
 - Bridges `quoridor-wasm`'s `eval_batch_cb` to `session.run(...)` and posts
   progress/result messages to the main thread.
 
-### D. Thin server (evolved `play_server`)
+### D. Thin server (new Python app — FastAPI)
 
-- Serves the built SPA + `.wasm` + `<play-dir>/models/*.onnx`.
+- A new Python package (e.g. `src/play_server_web/` or a small FastAPI app under
+  the existing `src/`), launched with uvicorn.
+- Serves the built SPA + `.wasm` + `<play-dir>/models/*.onnx` (static mounts).
 - Sends **COOP: `same-origin`** + **COEP: `require-corp`** (so ORT's CPU-fallback
-  threads work) and correct `application/wasm` MIME for streaming compile.
-- Keeps a small **`GET /api/models`** endpoint (reuse `config.rs` listing) plus
-  `GET /api/config` for board dimensions and default params.
-- **Deletes** `/api/games`, `/api/games/<id>/move`, `session.rs`, and the
-  server-side MCTS/ONNX path (that logic now lives client-side; much of
-  `session.rs`'s view-building maps to `quoridor-wasm`'s `StateView`).
+  threads work) via middleware, and correct `application/wasm` MIME for streaming
+  compile.
+- Small JSON API:
+  - **`GET /api/models`** — lists `<play-dir>/models/*.onnx`, reusing the
+    project's existing Python config/yaml loaders (`src/v2/config.py`,
+    `yaml_models.py`) rather than reimplementing the Rust `config.rs` listing.
+  - **`GET /api/config`** — board dimensions + default AlphaZero params.
+- The old Rust `rust/src/play_server/` module (HTTP, handlers, session,
+  server-side MCTS/ONNX) is **retired**: game play, the `StateView` shape, and
+  move/undo logic all move into `quoridor-wasm`. (The `EnrichedAction`/
+  `StateView` types are a useful reference when porting the view shape to WASM.)
 
 ## Data flow: one AI move
 
@@ -198,7 +211,8 @@ finalize location in the plan).
   bundles (including the worker + `.wasm`).
 - **`onnxruntime-web`** from npm.
 - Dev: Vite dev server (with COOP/COEP dev headers to mirror prod). Prod: `vite
-  build` output is what the Rust server serves.
+  build` output is what the Python (FastAPI/uvicorn) server serves as static
+  files.
 
 ## Testing
 
@@ -212,9 +226,10 @@ finalize location in the plan).
   cross-language consistency harness.
 - **Svelte component tests** (Vitest): board rendering from `StateView`, legal-
   move highlighting, undo reducing history, progress-bar binding.
-- **Server tests:** static routes serve with correct MIME + COOP/COEP headers;
-  `/api/models` lists `.onnx`. Adapt the existing `play_server_e2e.rs` (drop the
-  game/move cases).
+- **Server tests (Python, pytest + FastAPI `TestClient`):** static routes serve
+  with correct `application/wasm` MIME + COOP/COEP headers; `/api/models` lists
+  `.onnx`; `/api/config` returns board dims. (The Rust `play_server_e2e.rs` is
+  retired with the module.)
 - **Manual smoke:** real browser, WebGPU on and forced-off (CPU fallback), full
   game vs AI with visible progress bar and working undo.
 
@@ -223,7 +238,8 @@ finalize location in the plan).
 - `run_search`'s `result` already carries the **root policy** → M2 heatmap.
 - The async driver can emit **tree snapshots** on `progress` → M2 live tree.
 - The config drawer renders a **general yaml-shaped tree** → more params later.
-- The server keeps its Rust HTTP layer → M3 run-dir routes + M4 REST slot in.
+- The Python server → M3 run-dir routes + M4 REST slot straight into existing
+  Python run/config/training code.
 
 ## Risks / open questions for the plan
 
