@@ -195,3 +195,6 @@ Cargo.lock
 
 # Mac crap
 .DS_Store
+
+# Superpowers brainstorm companion scratch files
+.superpowers/
