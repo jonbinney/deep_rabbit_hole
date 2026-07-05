@@ -10,6 +10,7 @@ from v2 import (
     check_ai_available,
     load_config_and_setup_run,
     metrics_dir_for,
+    preload_symlinks,
     run_ai_reporter,
     run_selfplay_metrics,
     self_play,
@@ -85,7 +86,17 @@ if __name__ == "__main__":
     # Make sure we don't have the shutdown signal from a previous run
     ShutdownSignal.clear(config)
 
-    train_process = mp.Process(target=train, args=[config])
+    games_already_trained_on = 0
+    if config.training.initial_replay_buffer is not None:
+        n_loaded = preload_symlinks(
+            source_run=Path(config.training.initial_replay_buffer.run),
+            dest_ready=config.paths.replay_buffers_ready,
+            buffer_size=config.training.replay_buffer_size,
+        )
+        print(f"Preloaded {n_loaded} games from {config.training.initial_replay_buffer.run}")
+        games_already_trained_on = n_loaded
+
+    train_process = mp.Process(target=train, args=[config, games_already_trained_on])
     train_process.start()
 
     benchmark_processes = benchmarks.create_benchmark_processes(config)
@@ -99,40 +110,41 @@ if __name__ == "__main__":
     self_play_processes = []
     rust_subprocesses = []
 
-    if config.self_play.program == "rust":
-        # Spawn Rust self-play processes in continuous mode
-        selfplay_env = _selfplay_subprocess_env()
-        if selfplay_env is not None:
-            print(f"Self-play GPU env: ORT_DYLIB_PATH={selfplay_env['ORT_DYLIB_PATH']}")
-        metrics_dir = metrics_dir_for(config)
-        os.makedirs(metrics_dir, exist_ok=True)
-        config_file_path = str(config.paths.config_file)
-        for i in range(config.self_play.num_processes):
-            cmd = [
-                config.self_play.rust_selfplay_binary,
-                "--config",
-                config_file_path,
-                "--output-dir",
-                str(config.paths.replay_buffers_ready),
-                "--continuous",
-                "--latest-model-yaml",
-                str(config.paths.latest_model_yaml),
-                "--shutdown-file",
-                str(ShutdownSignal.file_path(config)),
-                "--metrics-dir",
-                metrics_dir,
-            ]
-            proc = subprocess.Popen(cmd, env=selfplay_env)
-            rust_subprocesses.append(proc)
-            print(f"Started Rust self-play process {proc.pid}")
-        selfplay_metrics_process = mp.Process(target=run_selfplay_metrics, args=[config])
-        selfplay_metrics_process.start()
-        self_play_processes.append(selfplay_metrics_process)
-    else:
-        for i in range(config.self_play.num_processes):
-            p = mp.Process(target=self_play, args=[config])
-            p.start()
-            self_play_processes.append(p)
+    if config.self_play.enabled:
+        if config.self_play.program == "rust":
+            # Spawn Rust self-play processes in continuous mode
+            selfplay_env = _selfplay_subprocess_env()
+            if selfplay_env is not None:
+                print(f"Self-play GPU env: ORT_DYLIB_PATH={selfplay_env['ORT_DYLIB_PATH']}")
+            metrics_dir = metrics_dir_for(config)
+            os.makedirs(metrics_dir, exist_ok=True)
+            config_file_path = str(config.paths.config_file)
+            for i in range(config.self_play.num_processes):
+                cmd = [
+                    config.self_play.rust_selfplay_binary,
+                    "--config",
+                    config_file_path,
+                    "--output-dir",
+                    str(config.paths.replay_buffers_ready),
+                    "--continuous",
+                    "--latest-model-yaml",
+                    str(config.paths.latest_model_yaml),
+                    "--shutdown-file",
+                    str(ShutdownSignal.file_path(config)),
+                    "--metrics-dir",
+                    metrics_dir,
+                ]
+                proc = subprocess.Popen(cmd, env=selfplay_env)
+                rust_subprocesses.append(proc)
+                print(f"Started Rust self-play process {proc.pid}")
+            selfplay_metrics_process = mp.Process(target=run_selfplay_metrics, args=[config])
+            selfplay_metrics_process.start()
+            self_play_processes.append(selfplay_metrics_process)
+        else:
+            for i in range(config.self_play.num_processes):
+                p = mp.Process(target=self_play, args=[config])
+                p.start()
+                self_play_processes.append(p)
 
     train_process.join()
     ShutdownSignal.signal(config)

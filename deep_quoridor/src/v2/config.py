@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictBaseModel(BaseModel):
@@ -64,6 +64,7 @@ class AlphaZeroSelfPlayConfig(StrictBaseModel):
 
 
 class SelfPlayConfig(StrictBaseModel):
+    enabled: bool = True
     num_processes: int
     games_per_process: int
     # Leaf-parallel MCTS knobs (Rust self-play only).
@@ -83,13 +84,29 @@ class InitialModel(StrictBaseModel):
     file: Optional[str] = None
     wandb_project: Optional[str] = None
     wandb_alias: Optional[str] = None
+    run: Optional[str] = None
 
-    @field_validator("wandb_alias")
-    @classmethod
-    def file_and_wandb_mutually_exclusive(cls, v, info):
-        if v is not None and info.data.get("file") is not None:
-            raise ValueError("Cannot specify both 'file' and 'wandb_alias' in initial_model")
-        return v
+    @model_validator(mode="after")
+    def at_most_one_source(self) -> "InitialModel":
+        sources = [
+            ("file", self.file),
+            ("wandb_alias", self.wandb_alias),
+            ("run", self.run),
+        ]
+        set_sources = [name for name, val in sources if val is not None]
+        if len(set_sources) > 1:
+            raise ValueError(f"At most one of file, wandb_alias, run may be set in initial_model; got: {set_sources}")
+        return self
+
+
+class InitialReplayBuffer(StrictBaseModel):
+    """Configures preloading the replay buffer from a previous run.
+
+    `run` points at a run directory (parent of `replay_buffers/`), mirroring
+    `InitialModel.run`. At preload time the loader reads `<run>/replay_buffers/`.
+    """
+
+    run: str
 
 
 class CosineWarmRestartsSchedulerConfig(StrictBaseModel):
@@ -113,6 +130,7 @@ class TrainingConfig(StrictBaseModel):
     save_onnx: bool = False
     finish_after: Optional[str] = None
     initial_model: Optional[InitialModel] = None
+    initial_replay_buffer: Optional[InitialReplayBuffer] = None
     lr_scheduler: Optional[LRSchedulerConfig] = None
 
 
@@ -195,6 +213,15 @@ class UserConfig(StrictBaseModel):
             current_datetime = datetime.now().strftime("%Y%m%d-%H%M")
             return v.replace("$DATETIME", current_datetime)
         return v
+
+    @model_validator(mode="after")
+    def selfplay_off_requires_replay_buffer(self) -> "UserConfig":
+        if not self.self_play.enabled and self.training.initial_replay_buffer is None:
+            raise ValueError(
+                "When self_play.enabled is False, training.initial_replay_buffer must be set "
+                "(otherwise the trainer would hang forever waiting for games)."
+            )
+        return self
 
 
 class PathsConfig(StrictBaseModel):
@@ -372,7 +399,7 @@ def load_config_and_setup_run(
     with config_filename.open(mode="w") as f:
         f.write(to_yaml_str_ordered(user_config))
 
-    use_rust = config.self_play.program == "rust"
+    use_rust = config.self_play.enabled and config.self_play.program == "rust"
     if use_rust:
         # Apply default Rust binary path if not specified in config
         if config.self_play.rust_selfplay_binary is None:

@@ -103,3 +103,116 @@ def test_invalid_override_format(config_file):
 def test_invalid_key_rejected_by_pydantic(config_file):
     with pytest.raises(Exception):
         load_user_config(config_file, overrides=["nonexistent_key=value"])
+
+
+def test_initial_model_run_accepted(config_file):
+    config = load_user_config(config_file, overrides=["training.initial_model.run=/some/old/run"])
+    assert config.training.initial_model is not None
+    assert config.training.initial_model.run == "/some/old/run"
+    assert config.training.initial_model.file is None
+    assert config.training.initial_model.wandb_alias is None
+
+
+def test_initial_model_rejects_file_plus_run(config_file):
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.file=/a.pt",
+                "training.initial_model.run=/some/old/run",
+            ],
+        )
+
+
+def test_initial_model_rejects_wandb_alias_plus_run(config_file):
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.wandb_alias=m1",
+                "training.initial_model.run=/some/old/run",
+            ],
+        )
+
+
+def test_initial_model_rejects_file_plus_wandb_alias(config_file):
+    # Existing behavior; restated under the new model_validator.
+    with pytest.raises(Exception, match="initial_model"):
+        load_user_config(
+            config_file,
+            overrides=[
+                "training.initial_model.file=/a.pt",
+                "training.initial_model.wandb_alias=m1",
+            ],
+        )
+
+
+def test_initial_replay_buffer_accepted(config_file):
+    config = load_user_config(config_file, overrides=["training.initial_replay_buffer.run=/some/old/run"])
+    assert config.training.initial_replay_buffer is not None
+    assert config.training.initial_replay_buffer.run == "/some/old/run"
+
+
+def test_initial_replay_buffer_defaults_to_none(config_file):
+    config = load_user_config(config_file)
+    assert config.training.initial_replay_buffer is None
+
+
+def test_source_run_field_no_longer_exists(config_file):
+    # Removed in favor of training.initial_replay_buffer.
+    with pytest.raises(Exception, match="source_run|extra"):
+        load_user_config(config_file, overrides=["training.source_run=/some/old/run"])
+
+
+def test_self_play_enabled_defaults_true(config_file):
+    config = load_user_config(config_file)
+    assert config.self_play.enabled is True
+
+
+def test_self_play_enabled_can_be_false(config_file):
+    config = load_user_config(
+        config_file,
+        overrides=[
+            "self_play.enabled=False",
+            "training.initial_replay_buffer.run=/some/old/run",
+        ],
+    )
+    assert config.self_play.enabled is False
+
+
+def test_selfplay_off_without_replay_buffer_is_rejected(config_file):
+    with pytest.raises(Exception, match="initial_replay_buffer"):
+        load_user_config(config_file, overrides=["self_play.enabled=False"])
+
+
+def test_initial_model_run_resolves_to_latest_filename(tmp_path):
+    """alphazero_params_dict_from_config translates initial_model.run into the
+    .pt filename recorded in <run>/models/latest.yaml."""
+    from pydantic_yaml import to_yaml_file
+    from v2.common import alphazero_params_dict_from_config
+    from v2.config import Config, load_user_config
+    from v2.yaml_models import LatestModel
+
+    # Build a fake "old run" with a latest.yaml pointing at a model file.
+    old_run = tmp_path / "old_run"
+    models_dir = old_run / "models"
+    models_dir.mkdir(parents=True)
+    to_yaml_file(
+        models_dir / "latest.yaml",
+        LatestModel(filename=str(old_run / "models" / "checkpoints" / "model_42.pt"), version=42),
+    )
+
+    # Build a config that points initial_model.run at the fake run.
+    cfg_data = dict(EXAMPLE_CONFIG)
+    cfg_data["training"] = {
+        **EXAMPLE_CONFIG["training"],
+        "initial_model": {"run": str(old_run)},
+    }
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg_data, sort_keys=False))
+
+    user = load_user_config(str(cfg_path))
+    config = Config.from_user(user, str(tmp_path), create_dirs=False)
+
+    params = alphazero_params_dict_from_config(config)
+    assert params["model_filename"] == str(old_run / "models" / "checkpoints" / "model_42.pt")
