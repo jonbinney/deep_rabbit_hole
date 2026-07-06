@@ -12,9 +12,9 @@ pub mod agent;
 #[cfg(feature = "binary")]
 pub mod eval_pipeline;
 #[cfg(feature = "binary")]
-pub mod selfplay_mcts;
-#[cfg(feature = "binary")]
 pub mod selfplay_game;
+#[cfg(feature = "binary")]
+pub mod selfplay_mcts;
 #[cfg(feature = "binary")]
 pub mod selfplay_metrics;
 

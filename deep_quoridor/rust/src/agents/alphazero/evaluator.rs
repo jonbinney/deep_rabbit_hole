@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
 #[cfg(feature = "binary")]
 use anyhow::Context;
+use anyhow::Result;
 use ndarray::Array4;
 #[cfg(feature = "binary")]
 use ort::session::Session;
