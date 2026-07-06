@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 mod game;
+mod search;
 mod view;
 
 use game::WasmGame;
@@ -20,23 +21,50 @@ pub struct Game {
 impl Game {
     #[wasm_bindgen(constructor)]
     pub fn new(board_size: i32, max_walls: i32, max_steps: i32, human_player: i32) -> Game {
-        Game { inner: WasmGame::new(board_size, max_walls, max_steps, human_player) }
+        Game {
+            inner: WasmGame::new(board_size, max_walls, max_steps, human_player),
+        }
     }
 
     /// Returns the `StateView` as a JS object.
     #[wasm_bindgen(js_name = stateView)]
     pub fn state_view(&self) -> Result<JsValue, JsValue> {
-        serde_wasm_bindgen::to_value(&self.inner.view()).map_err(|e| JsValue::from_str(&e.to_string()))
+        serde_wasm_bindgen::to_value(&self.inner.view())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen(js_name = applyAction)]
     pub fn apply_action(&mut self, action_index: u32) -> Result<JsValue, JsValue> {
-        self.inner.apply_action(action_index).map_err(|e| JsValue::from_str(&e))?;
+        self.inner
+            .apply_action(action_index)
+            .map_err(|e| JsValue::from_str(&e))?;
         self.state_view()
     }
 
     pub fn undo(&mut self, count: usize) -> Result<JsValue, JsValue> {
         self.inner.undo(count);
         self.state_view()
+    }
+
+    #[wasm_bindgen(js_name = runSearch)]
+    pub async fn run_search(
+        &self,
+        mcts_n: u32,
+        c_puct: f32,
+        leaf_parallelism: u32,
+        virtual_loss: u32,
+        eval_batch: js_sys::Function,
+        progress: js_sys::Function,
+    ) -> Result<JsValue, JsValue> {
+        crate::search::run_search_js(
+            &self.inner,
+            mcts_n,
+            c_puct,
+            leaf_parallelism,
+            virtual_loss,
+            eval_batch,
+            progress,
+        )
+        .await
     }
 }
