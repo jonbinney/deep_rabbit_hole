@@ -1059,6 +1059,13 @@ pub async fn run_search_js(
     eval_batch: js_sys::Function,
     progress: js_sys::Function,
 ) -> Result<JsValue, JsValue> {
+    // Guard the boundary: searching a finished game leaves the root unexpanded,
+    // so `run_batched_search` returns no children and `best_action` would panic
+    // (a hard wasm abort under `panic = "abort"`). Surface a catchable JS error.
+    if game.mechanics().is_game_over(game.state()) {
+        return Err(JsValue::from_str("cannot run search: game is already over"));
+    }
+
     let cfg = MCTSConfig {
         n: Some(mcts_n),
         k: None,
