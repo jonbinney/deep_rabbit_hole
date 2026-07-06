@@ -135,3 +135,19 @@ def test_placeholder_when_no_static_dir(tmp_path):
     r = client.get("/")
     assert r.status_code == 200
     assert "SPA build not found" in r.text
+
+
+import importlib
+
+
+def test_main_returns_1_on_missing_config(tmp_path):
+    mod = importlib.import_module("run_play_server_web")
+
+    class Args:
+        run_dir = str(tmp_path)  # no config.yaml here
+        static_dir = None
+        models_dir = None
+        host = "127.0.0.1"
+        port = 8080
+
+    assert mod.main(Args()) == 1
