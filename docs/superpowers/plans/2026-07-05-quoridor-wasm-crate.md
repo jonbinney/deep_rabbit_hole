@@ -1148,12 +1148,16 @@ Make `WasmGame::state` and `WasmGame::mechanics` accessible (they were made `pub
 Create `rust/quoridor-wasm/tests/web.rs`:
 ```rust
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 // A JS mock eval that resolves to zero values + zero logits of width 512.
+// NOTE on the runner: with `run_in_browser` above, run `wasm-pack test
+// --headless --chrome` and keep the ESM `export function` form below. To run
+// under Node instead (`wasm-pack test --node`), REMOVE the `run_in_browser`
+// line and change the two `export function X` to `module.exports.X = function`
+// (the Node harness is CommonJS). Pick one; they don't mix.
 #[wasm_bindgen(inline_js = "
 export function makeMockEval() {
   return function(flat, n, c, h, w) {
@@ -1192,7 +1196,6 @@ async fn run_search_returns_a_legal_action() {
         if idx == action { found = true; break; }
     }
     assert!(found, "runSearch action must be one of the legal actions");
-    let _ = JsFuture::from; // keep import used
 }
 ```
 For this to compile, mark the crate's public items reachable from an integration test: `Game`, `Game::new`, `Game::run_search`, `Game::state_view`, and `init` must be `pub` (they are, via `#[wasm_bindgen]`).
