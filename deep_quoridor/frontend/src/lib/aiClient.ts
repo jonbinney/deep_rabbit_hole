@@ -21,9 +21,13 @@ export class AiClient {
   newGame(o: {
     model: string; boardSize: number; maxWalls: number; maxSteps: number;
     humanPlayer: number; params: Params;
-  }) { this.worker.postMessage({ type: "newGame", ...o }); }
+  }) {
+    // `params` may be a Svelte $state proxy, which postMessage can't structure-
+    // clone (DataCloneError). Spread into a plain object first.
+    this.worker.postMessage({ type: "newGame", ...o, params: { ...o.params } });
+  }
 
   move(index: number) { this.worker.postMessage({ type: "move", index }); }
   undo(count: number) { this.worker.postMessage({ type: "undo", count }); }
-  setParams(params: Params) { this.worker.postMessage({ type: "setParams", params }); }
+  setParams(params: Params) { this.worker.postMessage({ type: "setParams", params: { ...params } }); }
 }
