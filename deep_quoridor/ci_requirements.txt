@@ -19,3 +19,6 @@ pyyaml
 pydantic
 pydantic-yaml
 jax
+fastapi
+uvicorn
+httpx

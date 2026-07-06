@@ -19,3 +19,6 @@ sb3_contrib
 stable_baselines3
 pydantic
 pydantic-yaml
+fastapi
+uvicorn
+httpx
