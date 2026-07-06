@@ -151,3 +151,31 @@ def test_main_returns_1_on_missing_config(tmp_path):
         port = 8080
 
     assert mod.main(Args()) == 1
+
+
+def test_api_and_models_resolve_with_static_dir_mounted(tmp_path):
+    # Regression: the SPA catch-all mount ("/") must not shadow /api or /models.
+    run_dir, models = _make_run_dir(tmp_path)
+    (models / "model_1.onnx").write_bytes(b"ONNXDATA")
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html><title>spa</title>")
+    # Decoy files under the SPA dir that would shadow the API if routing were wrong.
+    (static / "api").mkdir()
+    (static / "api" / "config").write_text("DECOY")
+    client = TestClient(create_app(run_dir, static_dir=static))
+
+    assert client.get("/api/config").json()["board_size"] == 5
+    assert client.get("/api/models").json()["models"] == ["model_1.onnx", "model_2.onnx"]
+    r = client.get("/models/model_1.onnx")
+    assert r.status_code == 200 and r.content == b"ONNXDATA"
+
+
+def test_coop_coep_headers_on_model_file(tmp_path):
+    run_dir, models = _make_run_dir(tmp_path)
+    (models / "model_1.onnx").write_bytes(b"ONNXDATA")
+    client = TestClient(create_app(run_dir))
+    r = client.get("/models/model_1.onnx")
+    assert r.status_code == 200
+    assert r.headers["cross-origin-opener-policy"] == "same-origin"
+    assert r.headers["cross-origin-embedder-policy"] == "require-corp"
