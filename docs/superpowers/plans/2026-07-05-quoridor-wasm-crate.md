@@ -1299,4 +1299,4 @@ git commit -m "docs(wasm): quoridor-wasm README with build + JS API"
 
 - **Real-model parity test** vs native `selfplay_mcts` (needs a real `.onnx` + the ort pipeline). The determinism test here guards the driver logic; full parity belongs with the integration spike.
 - **Eval caching** (a per-search `HashMap<CompactState, EvalOutput>`) — self-play uses one; skipped for M1 simplicity, easy to add to `run_batched_search`.
-- **Dirichlet noise / root pre-expansion** — play mode uses `noise_epsilon = 0`, so the driver lets the first iteration expand the root; add self-play-style root handling only if needed.
+- **Dirichlet noise** — play mode uses `noise_epsilon = 0`, so no root noise is applied. (Root pre-expansion itself *is* implemented — Task 3 pre-expands the root before the parallel loop to avoid leaf-collision duplicate children.)
