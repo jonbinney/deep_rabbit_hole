@@ -18,8 +18,8 @@ use crate::compact::q_game_mechanics::QGameMechanics;
 
 use super::evaluator::{finalize_policy, prepare_eval_input};
 use super::mcts::{
-    backpropagate, backpropagate_result, expand_node, select_leaf_with_vl, undo_virtual_loss,
-    ChildInfo, MCTSConfig, NodeArena,
+    ChildInfo, MCTSConfig, NodeArena, backpropagate, backpropagate_result, expand_node,
+    select_leaf_with_vl, undo_virtual_loss,
 };
 
 /// Leaf-parallel batching knobs (play-mode subset of `LeafParallelConfig`).
@@ -31,7 +31,10 @@ pub struct BatchedSearchConfig {
 
 impl Default for BatchedSearchConfig {
     fn default() -> Self {
-        Self { leaf_parallelism: 8, virtual_loss: 1 }
+        Self {
+            leaf_parallelism: 8,
+            virtual_loss: 1,
+        }
     }
 }
 
@@ -58,6 +61,10 @@ pub fn best_action(children: &[ChildInfo]) -> usize {
 /// `progress(done, total)` is called after each backprop round.
 /// Returns `(children, root_value)` where `children` carries per-move visit
 /// counts (the play policy) and `root_value` is the negated mean root value.
+///
+/// Note: this driver ignores `cfg.penalize_visited_states`; it always searches
+/// with a clean (empty) visited set. Penalizing visited states is a self-play
+/// concern; M1 play-mode leaves it false.
 pub async fn run_batched_search<E, EFut, P>(
     cfg: &MCTSConfig,
     bs_cfg: &BatchedSearchConfig,
@@ -77,9 +84,31 @@ where
 
     let root_mask = mechanics.get_action_mask_immut(root_data);
     let num_valid = root_mask.iter().filter(|&&b| b).count() as u32;
-    let total = cfg.n.unwrap_or_else(|| cfg.k.unwrap_or(1) * num_valid).max(1);
+    let total = cfg
+        .n
+        .unwrap_or_else(|| cfg.k.unwrap_or(1) * num_valid)
+        .max(1);
     let k = bs_cfg.leaf_parallelism.max(1);
     let vl = bs_cfg.virtual_loss;
+
+    // Pre-expand the root with a single eval so the first parallel round descends
+    // into real children instead of all `k` leaves colliding on the unexpanded
+    // root (which would call expand_node k times and duplicate every child).
+    // Mirrors the root handling in `selfplay_mcts`.
+    if !mechanics.is_game_over(root_data) && arena.get(0).should_expand() {
+        let prep = prepare_eval_input(mechanics, root_data, &root_mask, &mut rotation_mappings);
+        let out = eval_batch(vec![prep.features])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("eval_batch returned no output for root"))?;
+        let priors = finalize_policy(
+            &out.policy_logits,
+            &prep.work_action_mask,
+            prep.rot_to_orig.as_deref(),
+        );
+        expand_node(&mut arena, 0, &priors, mechanics);
+    }
 
     let mut done: u32 = 0;
     while done < total {
@@ -93,7 +122,10 @@ where
             rot_to_orig: Option<Vec<usize>>,
         }
         enum Item {
-            Terminal { path: smallvec::SmallVec<[usize; 32]>, value: f64 },
+            Terminal {
+                path: smallvec::SmallVec<[usize; 32]>,
+                value: f64,
+            },
             Eval(Pending),
         }
 
@@ -106,7 +138,11 @@ where
             let leaf_data = arena.get(leaf_idx).data;
 
             if mechanics.is_game_over(leaf_data) {
-                let v = if mechanics.winner(leaf_data).is_some() { 1.0 } else { 0.0 };
+                let v = if mechanics.winner(leaf_data).is_some() {
+                    1.0
+                } else {
+                    0.0
+                };
                 items.push(Item::Terminal { path, value: v });
                 continue;
             }
@@ -146,10 +182,18 @@ where
                     let out = out_iter
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("eval_batch returned too few outputs"))?;
-                    let priors =
-                        finalize_policy(&out.policy_logits, &p.work_action_mask, p.rot_to_orig.as_deref());
+                    let priors = finalize_policy(
+                        &out.policy_logits,
+                        &p.work_action_mask,
+                        p.rot_to_orig.as_deref(),
+                    );
                     undo_virtual_loss(&mut arena, &p.path, vl);
-                    expand_node(&mut arena, p.leaf_idx, &priors, mechanics);
+                    // Guard against intra-round leaf collisions: two leaves selected
+                    // in the same round can be the same not-yet-expanded node. Expand
+                    // it only once; every colliding leaf still backpropagates its value.
+                    if arena.get(p.leaf_idx).should_expand() {
+                        expand_node(&mut arena, p.leaf_idx, &priors, mechanics);
+                    }
                     backpropagate(&mut arena, p.leaf_idx, -out.value as f64);
                 }
             }
@@ -187,6 +231,7 @@ mod tests {
     use super::*;
     use crate::compact::q_game_mechanics::QGameMechanics;
     use std::cell::Cell;
+    use std::collections::HashSet;
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -218,7 +263,10 @@ mod tests {
         // safe upper bound from the feature grid.
         let out: Vec<EvalOutput> = batch
             .iter()
-            .map(|_| EvalOutput { value: 0.0, policy_logits: vec![0.0f32; 512] })
+            .map(|_| EvalOutput {
+                value: 0.0,
+                policy_logits: vec![0.0f32; 512],
+            })
             .collect();
         std::future::ready(Ok(out))
     }
@@ -227,8 +275,15 @@ mod tests {
     fn search_returns_a_legal_move_and_counts_sum_to_n() {
         let mechanics = QGameMechanics::new(5, 2, 50);
         let root = mechanics.create_initial_state();
-        let cfg = MCTSConfig { n: Some(64), noise_epsilon: 0.0, ..MCTSConfig::default() };
-        let bs = BatchedSearchConfig { leaf_parallelism: 8, virtual_loss: 1 };
+        let cfg = MCTSConfig {
+            n: Some(64),
+            noise_epsilon: 0.0,
+            ..MCTSConfig::default()
+        };
+        let bs = BatchedSearchConfig {
+            leaf_parallelism: 8,
+            virtual_loss: 1,
+        };
 
         let progress_calls = Cell::new(0u32);
         let last = Cell::new((0u32, 0u32));
@@ -249,8 +304,24 @@ mod tests {
         let mask = mechanics.get_action_mask_immut(root);
         let chosen = best_action(&children);
         assert!(mask[chosen], "chosen action must be legal");
+
+        // Each legal action appears exactly once — duplicate action_index values
+        // are the signature of the leaf-collision / double-expand bug.
+        let unique: HashSet<usize> = children.iter().map(|c| c.action_index).collect();
+        assert_eq!(
+            unique.len(),
+            children.len(),
+            "children must have distinct actions"
+        );
+
+        // With the root pre-expanded, essentially every simulation lands a visit
+        // on a child; allow one batch of slack for in-flight rounds.
         let total_visits: u32 = children.iter().map(|c| c.visit_count).sum();
-        assert!(total_visits >= 1, "children accrued visits");
+        assert!(
+            total_visits >= 64 - 8,
+            "child visit sum ({total_visits}) should be ~n=64"
+        );
+
         assert!(progress_calls.get() >= 1, "progress fired at least once");
         assert_eq!(last.get(), (64, 64), "progress ends at (n, n)");
     }
@@ -259,16 +330,30 @@ mod tests {
     fn search_is_deterministic_without_noise() {
         let mechanics = QGameMechanics::new(5, 2, 50);
         let root = mechanics.create_initial_state();
-        let cfg = MCTSConfig { n: Some(48), noise_epsilon: 0.0, ..MCTSConfig::default() };
-        let bs = BatchedSearchConfig { leaf_parallelism: 4, virtual_loss: 1 };
+        let cfg = MCTSConfig {
+            n: Some(48),
+            noise_epsilon: 0.0,
+            ..MCTSConfig::default()
+        };
+        let bs = BatchedSearchConfig {
+            leaf_parallelism: 4,
+            virtual_loss: 1,
+        };
 
         let run = || {
-            block_on(run_batched_search(&cfg, &bs, root, &mechanics, mock_eval, |_, _| {}))
-                .unwrap()
-                .0
-                .iter()
-                .map(|c| (c.action_index, c.visit_count))
-                .collect::<Vec<_>>()
+            block_on(run_batched_search(
+                &cfg,
+                &bs,
+                root,
+                &mechanics,
+                mock_eval,
+                |_, _| {},
+            ))
+            .unwrap()
+            .0
+            .iter()
+            .map(|c| (c.action_index, c.visit_count))
+            .collect::<Vec<_>>()
         };
         assert_eq!(run(), run(), "no-noise search must be reproducible");
     }
