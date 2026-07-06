@@ -40,7 +40,9 @@ impl WasmGame {
         self.mechanics.repr().get_current_player(self.state) as i32
     }
 
-    fn is_game_over(&self) -> bool {
+    /// A win, or hitting the step cap (draw). This is the crate's single source
+    /// of truth for "game over" — `apply_action` and `run_search_js` both use it.
+    pub fn is_game_over(&self) -> bool {
         self.mechanics.is_game_over(self.state)
             || self.mechanics.repr().get_completed_steps(self.state) >= self.max_steps as usize
     }

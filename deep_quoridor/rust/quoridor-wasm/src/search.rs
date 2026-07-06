@@ -45,6 +45,11 @@ fn split_outputs(result: &JsValue, n: usize) -> Result<Vec<EvalOutput>, JsValue>
             "eval result 'values' length != batch size",
         ));
     }
+    if n != 0 && logits_v.len() % n != 0 {
+        return Err(JsValue::from_str(
+            "eval result 'logits' length is not a multiple of batch size",
+        ));
+    }
     let p = if n == 0 { 0 } else { logits_v.len() / n };
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
@@ -71,7 +76,7 @@ pub async fn run_search_js(
     // Guard the boundary: searching a finished game leaves the root unexpanded,
     // so `run_batched_search` returns no children and `best_action` would panic
     // (a hard wasm abort under `panic = "abort"`). Surface a catchable JS error.
-    if game.mechanics().is_game_over(game.state()) {
+    if game.is_game_over() {
         return Err(JsValue::from_str("cannot run search: game is already over"));
     }
 
