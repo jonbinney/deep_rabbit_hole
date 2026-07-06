@@ -4,7 +4,7 @@ type Params = { mctsN: number; cPuct: number; leafParallelism: number; virtualLo
 
 export class AiClient {
   private worker: Worker;
-  onState?: (v: StateView) => void;
+  onState?: (v: StateView, thinking: boolean) => void;
   onProgress?: (done: number, total: number) => void;
   onError?: (msg: string) => void;
 
@@ -12,7 +12,7 @@ export class AiClient {
     this.worker = new Worker(new URL("../ai.worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (e: MessageEvent) => {
       const m = e.data;
-      if (m.type === "state") this.onState?.(m.view);
+      if (m.type === "state") this.onState?.(m.view, m.thinking);
       else if (m.type === "progress") this.onProgress?.(m.done, m.total);
       else if (m.type === "error") this.onError?.(m.message);
     };

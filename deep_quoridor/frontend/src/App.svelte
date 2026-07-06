@@ -17,17 +17,26 @@
   let humanPlayer = $state(0);
   let params = $state({ mctsN: 200, cPuct: 1.4, leafParallelism: 8, virtualLoss: 1 });
 
+  // True only when the human may act: their turn, game live, AI not working.
+  const awaitingHuman = $derived(
+    !!view && view.winner == null && view.current_player === view.human_player && !thinking,
+  );
+
   const ai = new AiClient();
-  ai.onState = (v) => { view = v; thinking = false; progress = null; };
+  ai.onState = (v, t) => { view = v; thinking = t; if (!t) progress = null; };
   ai.onProgress = (done, total) => { thinking = true; progress = { done, total }; };
   ai.onError = (m) => { error = m; thinking = false; };
 
   onMount(async () => {
-    config = await fetchConfig();
-    models = await fetchModels();
-    model = models.default ?? models.models[0] ?? "";
-    params = { ...params, mctsN: config.defaults.mcts_n, cPuct: config.defaults.mcts_c_puct };
-    newGame();
+    try {
+      config = await fetchConfig();
+      models = await fetchModels();
+      model = models.default ?? models.models[0] ?? "";
+      params = { ...params, mctsN: config.defaults.mcts_n, cPuct: config.defaults.mcts_c_puct };
+      newGame();
+    } catch (e) {
+      error = `Failed to load config/models: ${e}`;
+    }
   });
 
   function newGame() {
@@ -45,12 +54,12 @@
   <div>
     {#if error}<p class="err">Error: {error}</p>{/if}
     {#if view}
-      <Board {view} disabled={thinking || view.winner != null} onaction={act} />
+      <Board {view} disabled={!awaitingHuman} onaction={act} />
     {:else}
       <p>Loading…</p>
     {/if}
   </div>
-  <ControlRail {view} {thinking} {progress} onundo={() => ai.undo(1)} onnewgame={newGame} />
+  <ControlRail {view} {thinking} {progress} onundo={() => ai.undo(2)} onnewgame={newGame} />
   <ConfigDrawer {config} {models} {model} {params}
     onchange={(o) => { model = o.model; params = o.params; ai.setParams(o.params); }} />
 </div>

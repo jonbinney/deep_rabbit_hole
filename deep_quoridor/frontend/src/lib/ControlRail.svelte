@@ -21,7 +21,12 @@
   {#if view?.winner != null}
     <div class="card"><strong>{view.winner === view.human_player ? "You win!" : "AI wins"}</strong></div>
   {/if}
-  <button onclick={onundo} disabled={thinking || !view || view.move_history.length === 0}>↶ Undo</button>
+  <!-- Undo my last move: removes the AI's reply + my move (2 plies), back to my turn.
+       Only when it's my turn with at least my move + a reply to undo. -->
+  <button
+    onclick={onundo}
+    disabled={thinking || !view || view.move_history.length < 2 || view.current_player !== view.human_player}
+  >↶ Undo</button>
   <button onclick={onnewgame} disabled={thinking}>New game</button>
   {#if view}
     <div class="card">
