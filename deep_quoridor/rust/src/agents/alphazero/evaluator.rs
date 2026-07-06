@@ -2,11 +2,13 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+#[cfg(feature = "binary")]
+use anyhow::Context;
 use ndarray::Array4;
+#[cfg(feature = "binary")]
 use ort::session::Session;
 
-use crate::agents::onnx_agent::softmax;
 use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
 use crate::grid_helpers::compact_state_to_resnet_input;
@@ -86,6 +88,7 @@ pub fn finalize_policy(
 ///
 /// Loads a neural network model and uses it to evaluate positions,
 /// returning both a value estimate and policy priors.
+#[cfg(feature = "binary")]
 pub struct OnnxEvaluator {
     session: Session,
     rotation_mappings_by_board_size: HashMap<i32, (Vec<usize>, Vec<usize>)>,
@@ -96,6 +99,7 @@ pub struct OnnxEvaluator {
 /// Returns value=0.0 and a uniform prior over valid actions.
 pub struct UniformMockEvaluator;
 
+#[cfg(feature = "binary")]
 impl OnnxEvaluator {
     /// Create a new evaluator from an ONNX model file.
     pub fn new(model_path: &str) -> Result<Self> {
@@ -128,6 +132,7 @@ impl OnnxEvaluator {
     }
 }
 
+#[cfg(feature = "binary")]
 impl Evaluator for OnnxEvaluator {
     fn evaluate(
         &mut self,
@@ -206,6 +211,14 @@ pub fn masked_softmax(logits: &[f32], mask: &[bool]) -> Vec<f32> {
         .map(|(&l, &valid)| if valid { l } else { -1e32 })
         .collect();
     softmax(&masked)
+}
+
+/// Numerically-stable softmax over a slice.
+pub fn softmax(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let exp_values: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f32 = exp_values.iter().sum();
+    exp_values.iter().map(|&x| x / sum).collect()
 }
 
 #[cfg(test)]

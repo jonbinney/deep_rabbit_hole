@@ -10,13 +10,7 @@ use crate::compact::q_bit_repr::CompactState;
 use crate::compact::q_game_mechanics::QGameMechanics;
 use crate::grid_helpers::compact_state_to_resnet_input;
 
-/// Compute softmax of a slice of logits.
-pub fn softmax(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let exp_values: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp_values.iter().sum();
-    exp_values.iter().map(|&x| x / sum).collect()
-}
+pub use crate::agents::alphazero::evaluator::softmax;
 
 /// An agent that uses an ONNX model to select actions (greedy argmax).
 pub struct OnnxAgent {

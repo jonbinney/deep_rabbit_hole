@@ -9,7 +9,6 @@ use crate::compact::q_game_mechanics::QGameMechanics;
 pub mod onnx_agent;
 pub mod random_agent;
 
-#[cfg(feature = "binary")]
 pub mod alphazero;
 
 #[derive(Debug, Clone, Default)]

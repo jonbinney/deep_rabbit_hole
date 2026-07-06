@@ -19,6 +19,7 @@ pub mod compact;
 pub mod game_state;
 pub mod grid;
 pub mod grid_helpers;
+#[cfg(feature = "parallel")]
 mod minimax;
 mod pathfinding;
 pub mod rotation;
