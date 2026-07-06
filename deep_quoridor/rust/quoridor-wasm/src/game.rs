@@ -5,7 +5,7 @@ use quoridor_rs::compact::q_bit_repr::{CompactState, WALL_HORIZONTAL, WALL_VERTI
 use quoridor_rs::compact::q_game_mechanics::QGameMechanics;
 
 use crate::view::{
-    enrich_action, enrich_legal_actions, EnrichedAction, StateView, WallEntry, WallOrientation,
+    EnrichedAction, StateView, WallEntry, WallOrientation, enrich_action, enrich_legal_actions,
 };
 
 pub struct WasmGame {
@@ -25,8 +25,14 @@ impl WasmGame {
             QGameMechanics::new(board_size as usize, max_walls as usize, max_steps as usize);
         let state = mechanics.create_initial_state();
         Self {
-            mechanics, state, board_size, max_walls, max_steps, human_player,
-            last_action: None, move_history: Vec::new(),
+            mechanics,
+            state,
+            board_size,
+            max_walls,
+            max_steps,
+            human_player,
+            last_action: None,
+            move_history: Vec::new(),
         }
     }
 
@@ -86,13 +92,7 @@ impl WasmGame {
         let repr = self.mechanics.repr();
         let (p1r, p1c) = repr.get_player_position(self.state, 0);
         let (p2r, p2c) = repr.get_player_position(self.state, 1);
-        let winner = if self.mechanics.check_win(self.state, 0) {
-            Some(0)
-        } else if self.mechanics.check_win(self.state, 1) {
-            Some(1)
-        } else {
-            None
-        };
+        let winner = self.mechanics.winner(self.state).map(|p| p as i32);
         StateView {
             board_size: self.board_size,
             max_walls: self.max_walls,
@@ -116,13 +116,21 @@ impl WasmGame {
 fn list_walls(mechanics: &QGameMechanics, state: CompactState, board_size: i32) -> Vec<WallEntry> {
     let mut out = Vec::new();
     let wall_size = (board_size - 1) as usize;
-    for (orientation_const, orientation) in
-        [(WALL_VERTICAL, WallOrientation::V), (WALL_HORIZONTAL, WallOrientation::H)]
-    {
+    for (orientation_const, orientation) in [
+        (WALL_VERTICAL, WallOrientation::V),
+        (WALL_HORIZONTAL, WallOrientation::H),
+    ] {
         for row in 0..wall_size {
             for col in 0..wall_size {
-                if mechanics.repr().get_wall(state, row, col, orientation_const) {
-                    out.push(WallEntry { row: row as i32, col: col as i32, orientation });
+                if mechanics
+                    .repr()
+                    .get_wall(state, row, col, orientation_const)
+                {
+                    out.push(WallEntry {
+                        row: row as i32,
+                        col: col as i32,
+                        orientation,
+                    });
                 }
             }
         }
