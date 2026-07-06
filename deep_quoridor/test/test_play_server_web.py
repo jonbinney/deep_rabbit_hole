@@ -68,3 +68,70 @@ def test_build_config_view_board_and_defaults(tmp_path):
     assert d["temperature"] is None
     assert d["mcts_noise_epsilon"] == 0.0
     assert d["mcts_worker_threads"] is None
+
+
+from fastapi.testclient import TestClient
+
+from v2.play_server_web.app import create_app
+
+
+def _make_run_dir(tmp_path):
+    (tmp_path / "config.yaml").write_text(MINIMAL_CONFIG_YAML)
+    models = tmp_path / "models" / "checkpoints"
+    _touch(models, "model_1.onnx", "model_2.onnx")
+    return tmp_path, models
+
+
+def test_api_config_endpoint(tmp_path):
+    run_dir, _ = _make_run_dir(tmp_path)
+    client = TestClient(create_app(run_dir))
+    r = client.get("/api/config")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["board_size"] == 5
+    assert body["defaults"]["mcts_n"] == 123
+
+
+def test_api_models_endpoint(tmp_path):
+    run_dir, _ = _make_run_dir(tmp_path)
+    client = TestClient(create_app(run_dir))
+    r = client.get("/api/models")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["models"] == ["model_1.onnx", "model_2.onnx"]
+    assert body["default"] == "model_2.onnx"
+
+
+def test_static_serving_headers_and_wasm_mime(tmp_path):
+    run_dir, _ = _make_run_dir(tmp_path)
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html><title>hi</title>")
+    (static / "app_bg.wasm").write_bytes(b"\x00asm")
+    client = TestClient(create_app(run_dir, static_dir=static))
+
+    idx = client.get("/")
+    assert idx.status_code == 200
+    assert idx.headers["cross-origin-opener-policy"] == "same-origin"
+    assert idx.headers["cross-origin-embedder-policy"] == "require-corp"
+
+    wasm = client.get("/app_bg.wasm")
+    assert wasm.status_code == 200
+    assert wasm.headers["content-type"] == "application/wasm"
+
+
+def test_models_are_served_as_static(tmp_path):
+    run_dir, models = _make_run_dir(tmp_path)
+    (models / "model_1.onnx").write_bytes(b"ONNXDATA")
+    client = TestClient(create_app(run_dir))
+    r = client.get("/models/model_1.onnx")
+    assert r.status_code == 200
+    assert r.content == b"ONNXDATA"
+
+
+def test_placeholder_when_no_static_dir(tmp_path):
+    run_dir, _ = _make_run_dir(tmp_path)
+    client = TestClient(create_app(run_dir))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "SPA build not found" in r.text
