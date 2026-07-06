@@ -374,6 +374,10 @@ pub fn best_action(children: &[ChildInfo]) -> usize {
 /// `progress(done, total)` is called after each backprop round.
 /// Returns `(children, root_value)` where `children` carries per-move visit
 /// counts (the play policy) and `root_value` is the negated mean root value.
+///
+/// Note: this driver always searches from a clean (empty) visited set — it does
+/// NOT honor `cfg.penalize_visited_states` (that is a self-play concern). M1
+/// play-mode callers leave it `false`.
 pub async fn run_batched_search<E, EFut, P>(
     cfg: &MCTSConfig,
     bs_cfg: &BatchedSearchConfig,
@@ -396,6 +400,22 @@ where
     let total = cfg.n.unwrap_or_else(|| cfg.k.unwrap_or(1) * num_valid).max(1);
     let k = bs_cfg.leaf_parallelism.max(1);
     let vl = bs_cfg.virtual_loss;
+
+    // Pre-expand the root with a single eval so the first parallel round descends
+    // into real children instead of all `k` leaves colliding on the unexpanded
+    // root (which would call expand_node k times and duplicate every child).
+    // Mirrors the root handling in `selfplay_mcts`.
+    if !mechanics.is_game_over(root_data) && arena.get(0).should_expand() {
+        let prep = prepare_eval_input(mechanics, root_data, &root_mask, &mut rotation_mappings);
+        let out = eval_batch(vec![prep.features])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("eval_batch returned no output for root"))?;
+        let priors =
+            finalize_policy(&out.policy_logits, &prep.work_action_mask, prep.rot_to_orig.as_deref());
+        expand_node(&mut arena, 0, &priors, mechanics);
+    }
 
     let mut done: u32 = 0;
     while done < total {
@@ -465,7 +485,12 @@ where
                     let priors =
                         finalize_policy(&out.policy_logits, &p.work_action_mask, p.rot_to_orig.as_deref());
                     undo_virtual_loss(&mut arena, &p.path, vl);
-                    expand_node(&mut arena, p.leaf_idx, &priors, mechanics);
+                    // Guard against intra-round leaf collisions: two leaves selected
+                    // in the same round can be the same not-yet-expanded node. Expand
+                    // it only once; every colliding leaf still backpropagates its value.
+                    if arena.get(p.leaf_idx).should_expand() {
+                        expand_node(&mut arena, p.leaf_idx, &priors, mechanics);
+                    }
                     backpropagate(&mut arena, p.leaf_idx, -out.value as f64);
                 }
             }
@@ -503,6 +528,7 @@ mod tests {
     use super::*;
     use crate::compact::q_game_mechanics::QGameMechanics;
     use std::cell::Cell;
+    use std::collections::HashSet;
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -565,8 +591,17 @@ mod tests {
         let mask = mechanics.get_action_mask_immut(root);
         let chosen = best_action(&children);
         assert!(mask[chosen], "chosen action must be legal");
+
+        // Each legal action appears exactly once — duplicate action_index values
+        // are the signature of the leaf-collision / double-expand bug.
+        let unique: HashSet<usize> = children.iter().map(|c| c.action_index).collect();
+        assert_eq!(unique.len(), children.len(), "children must have distinct actions");
+
+        // With the root pre-expanded, essentially every simulation lands a visit
+        // on a child; allow one batch of slack for in-flight rounds.
         let total_visits: u32 = children.iter().map(|c| c.visit_count).sum();
-        assert!(total_visits >= 1, "children accrued visits");
+        assert!(total_visits >= 64 - 8, "child visit sum ({total_visits}) should be ~n=64");
+
         assert!(progress_calls.get() >= 1, "progress fired at least once");
         assert_eq!(last.get(), (64, 64), "progress ends at (n, n)");
     }
