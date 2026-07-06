@@ -1,15 +1,42 @@
 use wasm_bindgen::prelude::*;
 
-/// Call once from JS on startup to route Rust panics to `console.error`.
+mod game;
+mod view;
+
+use game::WasmGame;
+
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
 }
 
-/// Smoke binding to prove the crate links against quoridor-rs core.
+/// JS-facing handle around a game session.
 #[wasm_bindgen]
-pub fn core_board_size(board_size: usize, max_walls: usize, max_steps: usize) -> usize {
-    let mechanics =
-        quoridor_rs::compact::q_game_mechanics::QGameMechanics::new(board_size, max_walls, max_steps);
-    mechanics.repr().board_size()
+pub struct Game {
+    inner: WasmGame,
+}
+
+#[wasm_bindgen]
+impl Game {
+    #[wasm_bindgen(constructor)]
+    pub fn new(board_size: i32, max_walls: i32, max_steps: i32, human_player: i32) -> Game {
+        Game { inner: WasmGame::new(board_size, max_walls, max_steps, human_player) }
+    }
+
+    /// Returns the `StateView` as a JS object.
+    #[wasm_bindgen(js_name = stateView)]
+    pub fn state_view(&self) -> Result<JsValue, JsValue> {
+        serde_wasm_bindgen::to_value(&self.inner.view()).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = applyAction)]
+    pub fn apply_action(&mut self, action_index: u32) -> Result<JsValue, JsValue> {
+        self.inner.apply_action(action_index).map_err(|e| JsValue::from_str(&e))?;
+        self.state_view()
+    }
+
+    pub fn undo(&mut self, count: usize) -> Result<JsValue, JsValue> {
+        self.inner.undo(count);
+        self.state_view()
+    }
 }
