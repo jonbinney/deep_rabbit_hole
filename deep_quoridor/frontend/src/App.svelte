@@ -69,8 +69,9 @@
     {/if}
   </div>
   <ControlRail {view} {thinking} {progress} onundo={() => ai.undo(2)} onnewgame={newGame} />
-  <ConfigDrawer {config} {models} {model} {params}
-    onchange={(o) => { model = o.model; params = o.params; ai.setParams(o.params); }} />
+  <ConfigDrawer {config} {models} {model} {params} {humanPlayer}
+    onchange={(o) => { model = o.model; params = o.params; ai.setParams(o.params); }}
+    onhumanplayer={(p) => { humanPlayer = p; }} />
 </div>
 
 <style>
