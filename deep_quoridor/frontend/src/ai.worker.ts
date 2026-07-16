@@ -32,13 +32,20 @@ async function loadSession(model: string) {
   session = await ort.InferenceSession.create(`/models/${model}`, {
     executionProviders: ["webgpu", "wasm"],
   });
+  console.log("[ai] session ready:", session.inputNames, "->", session.outputNames);
 }
 
 function post(msg: unknown) { (self as unknown as Worker).postMessage(msg); }
 function postState(view: StateView, thinking: boolean) { post({ type: "state", view, thinking }); }
 
+let loggedFirstBatch = false;
+
 async function evalBatch(flat: Float32Array, n: number, c: number, h: number, w: number) {
   if (!session) throw new Error("no model session");
+  if (!loggedFirstBatch) {
+    console.log(`[ai] first eval batch: n=${n} c=${c} h=${h} w=${w} floats=${flat.length}`);
+    loggedFirstBatch = true;
+  }
   return runEval(session as unknown as OrtLikeSession, ort.Tensor as never, flat, n, c, h, w);
 }
 
@@ -49,10 +56,13 @@ function progress(done: number, total: number) {
 /** Play one AI move if it's the AI's turn and the game isn't over (turns alternate). */
 async function aiMoveIfNeeded(view: StateView): Promise<StateView> {
   if (view.winner !== null || view.current_player === view.human_player) return view;
+  console.log(`[ai] searching: mctsN=${params.mctsN} currentPlayer=${view.current_player} human=${view.human_player}`);
+  const t0 = performance.now();
   const res = await game!.runSearch(
     params.mctsN, params.cPuct, params.leafParallelism, params.virtualLoss,
     evalBatch, progress,
   );
+  console.log(`[ai] search done in ${Math.round(performance.now() - t0)}ms -> action ${res.action}`);
   return game!.applyAction(res.action) as StateView;
 }
 
@@ -64,6 +74,7 @@ self.onmessage = async (e: MessageEvent) => {
   busy = true;
   try {
     if (m.type === "newGame") {
+      console.log("[ai] newGame model=", m.model);
       await ensureWasm();
       params = m.params;
       await loadSession(m.model);
@@ -83,6 +94,7 @@ self.onmessage = async (e: MessageEvent) => {
       postState(view, false);
     }
   } catch (err) {
+    console.error("[ai] error handling", m?.type, err);
     post({ type: "error", message: String(err) });
   } finally {
     busy = false;

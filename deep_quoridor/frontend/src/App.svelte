@@ -54,6 +54,15 @@
   <div>
     {#if error}<p class="err">Error: {error}</p>{/if}
     {#if view}
+      <div class="status" class:thinking>
+        {#if view.winner != null}
+          {view.winner === view.human_player ? "You won! 🎉" : "AI won"}
+        {:else if thinking}
+          <span class="dot"></span> AI is thinking…{#if progress} {progress.done}/{progress.total} sims{/if}
+        {:else}
+          Your move — you are blue, at the bottom, moving up
+        {/if}
+      </div>
       <Board {view} disabled={!awaitingHuman} onaction={act} />
     {:else}
       <p>Loading…</p>
@@ -67,4 +76,19 @@
 <style>
   .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
   .err { color: #c0392b; }
+  .status {
+    font-weight: 600;
+    margin-bottom: 8px;
+    min-height: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status.thinking { color: #b45309; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #b45309;
+    animation: pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 </style>
