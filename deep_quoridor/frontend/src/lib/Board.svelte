@@ -69,12 +69,12 @@
   /* Placed walls: darkest walnut, wins over slot color. */
   .cell.placed { background: #3a2412; }
 
-  /* Wall preview under the cursor. */
+  /* Wall preview: only shown while hovering a placeable wall (no persistent
+     tint on the 32 empty legal-wall slots). */
   .cell.preview { background: rgba(58, 36, 18, 0.55); }
 
-  /* Legal wall anchor: faint cue that this gutter is clickable. */
+  /* Legal wall anchors are clickable but otherwise invisible until hovered. */
   .cell.legal-wall { cursor: pointer; }
-  .cell.legal-wall:not(.preview) { background: rgba(58, 36, 18, 0.18); }
 
   .cell.clickable { cursor: pointer; }
 
