@@ -38,14 +38,8 @@ async function loadSession(model: string) {
 function post(msg: unknown) { (self as unknown as Worker).postMessage(msg); }
 function postState(view: StateView, thinking: boolean) { post({ type: "state", view, thinking }); }
 
-let loggedFirstBatch = false;
-
 async function evalBatch(flat: Float32Array, n: number, c: number, h: number, w: number) {
   if (!session) throw new Error("no model session");
-  if (!loggedFirstBatch) {
-    console.log(`[ai] first eval batch: n=${n} c=${c} h=${h} w=${w} floats=${flat.length}`);
-    loggedFirstBatch = true;
-  }
   return runEval(session as unknown as OrtLikeSession, ort.Tensor as never, flat, n, c, h, w);
 }
 
@@ -55,7 +49,8 @@ function progress(done: number, total: number) {
 
 /** Play one AI move if it's the AI's turn and the game isn't over (turns alternate). */
 async function aiMoveIfNeeded(view: StateView): Promise<StateView> {
-  if (view.winner !== null || view.current_player === view.human_player) return view;
+  // `!= null` catches both null and undefined (a None winner must not read as "over").
+  if (view.winner != null || view.current_player === view.human_player) return view;
   console.log(`[ai] searching: mctsN=${params.mctsN} currentPlayer=${view.current_player} human=${view.human_player}`);
   const t0 = performance.now();
   const res = await game!.runSearch(

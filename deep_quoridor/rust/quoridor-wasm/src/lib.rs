@@ -1,3 +1,4 @@
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 mod game;
@@ -29,7 +30,13 @@ impl Game {
     /// Returns the `StateView` as a JS object.
     #[wasm_bindgen(js_name = stateView)]
     pub fn state_view(&self) -> Result<JsValue, JsValue> {
-        serde_wasm_bindgen::to_value(&self.inner.view())
+        // Serialize `Option::None` as JS `null` (not `undefined`) so the fields
+        // the TS types declare as `T | null` (winner, last_action) actually
+        // arrive as `null` and `=== null` checks on the JS side hold.
+        let ser = serde_wasm_bindgen::Serializer::new().serialize_missing_as_null(true);
+        self.inner
+            .view()
+            .serialize(&ser)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 

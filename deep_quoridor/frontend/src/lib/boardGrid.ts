@@ -105,7 +105,8 @@ export function buildBoardGrid(view: StateView, interactive: boolean): BoardGrid
     }
   }
 
-  const humanTurn = view.winner === null && view.current_player === view.human_player;
+  // `== null` catches both null and undefined (older serializers emit undefined).
+  const humanTurn = view.winner == null && view.current_player === view.human_player;
   if (interactive && humanTurn) {
     for (const a of view.legal_actions) {
       if (a.kind === "move") {
