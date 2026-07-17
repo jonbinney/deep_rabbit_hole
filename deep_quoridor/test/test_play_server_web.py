@@ -75,16 +75,17 @@ from fastapi.testclient import TestClient
 from v2.play_server_web.app import create_app
 
 
-def _make_run_dir(tmp_path):
+def _make_play_dir(tmp_path):
+    # A play dir: config.yaml + a flat models/ dir of .onnx files.
     (tmp_path / "config.yaml").write_text(MINIMAL_CONFIG_YAML)
-    models = tmp_path / "models" / "checkpoints"
+    models = tmp_path / "models"
     _touch(models, "model_1.onnx", "model_2.onnx")
     return tmp_path, models
 
 
 def test_api_config_endpoint(tmp_path):
-    run_dir, _ = _make_run_dir(tmp_path)
-    client = TestClient(create_app(run_dir))
+    play_dir, _ = _make_play_dir(tmp_path)
+    client = TestClient(create_app(play_dir))
     r = client.get("/api/config")
     assert r.status_code == 200
     body = r.json()
@@ -93,8 +94,8 @@ def test_api_config_endpoint(tmp_path):
 
 
 def test_api_models_endpoint(tmp_path):
-    run_dir, _ = _make_run_dir(tmp_path)
-    client = TestClient(create_app(run_dir))
+    play_dir, _ = _make_play_dir(tmp_path)
+    client = TestClient(create_app(play_dir))
     r = client.get("/api/models")
     assert r.status_code == 200
     body = r.json()
@@ -103,12 +104,12 @@ def test_api_models_endpoint(tmp_path):
 
 
 def test_static_serving_headers_and_wasm_mime(tmp_path):
-    run_dir, _ = _make_run_dir(tmp_path)
+    play_dir, _ = _make_play_dir(tmp_path)
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text("<!doctype html><title>hi</title>")
     (static / "app_bg.wasm").write_bytes(b"\x00asm")
-    client = TestClient(create_app(run_dir, static_dir=static))
+    client = TestClient(create_app(play_dir, static_dir=static))
 
     idx = client.get("/")
     assert idx.status_code == 200
@@ -121,17 +122,17 @@ def test_static_serving_headers_and_wasm_mime(tmp_path):
 
 
 def test_models_are_served_as_static(tmp_path):
-    run_dir, models = _make_run_dir(tmp_path)
+    play_dir, models = _make_play_dir(tmp_path)
     (models / "model_1.onnx").write_bytes(b"ONNXDATA")
-    client = TestClient(create_app(run_dir))
+    client = TestClient(create_app(play_dir))
     r = client.get("/models/model_1.onnx")
     assert r.status_code == 200
     assert r.content == b"ONNXDATA"
 
 
 def test_placeholder_when_no_static_dir(tmp_path):
-    run_dir, _ = _make_run_dir(tmp_path)
-    client = TestClient(create_app(run_dir))
+    play_dir, _ = _make_play_dir(tmp_path)
+    client = TestClient(create_app(play_dir))
     r = client.get("/")
     assert r.status_code == 200
     assert "SPA build not found" in r.text
@@ -144,7 +145,7 @@ def test_main_returns_1_on_missing_config(tmp_path):
     mod = importlib.import_module("run_play_server_web")
 
     class Args:
-        run_dir = str(tmp_path)  # no config.yaml here
+        play_dir = str(tmp_path)  # no config.yaml here
         static_dir = None
         models_dir = None
         host = "127.0.0.1"
@@ -155,7 +156,7 @@ def test_main_returns_1_on_missing_config(tmp_path):
 
 def test_api_and_models_resolve_with_static_dir_mounted(tmp_path):
     # Regression: the SPA catch-all mount ("/") must not shadow /api or /models.
-    run_dir, models = _make_run_dir(tmp_path)
+    play_dir, models = _make_play_dir(tmp_path)
     (models / "model_1.onnx").write_bytes(b"ONNXDATA")
     static = tmp_path / "static"
     static.mkdir()
@@ -163,7 +164,7 @@ def test_api_and_models_resolve_with_static_dir_mounted(tmp_path):
     # Decoy files under the SPA dir that would shadow the API if routing were wrong.
     (static / "api").mkdir()
     (static / "api" / "config").write_text("DECOY")
-    client = TestClient(create_app(run_dir, static_dir=static))
+    client = TestClient(create_app(play_dir, static_dir=static))
 
     assert client.get("/api/config").json()["board_size"] == 5
     assert client.get("/api/models").json()["models"] == ["model_1.onnx", "model_2.onnx"]
@@ -172,9 +173,9 @@ def test_api_and_models_resolve_with_static_dir_mounted(tmp_path):
 
 
 def test_coop_coep_headers_on_model_file(tmp_path):
-    run_dir, models = _make_run_dir(tmp_path)
+    play_dir, models = _make_play_dir(tmp_path)
     (models / "model_1.onnx").write_bytes(b"ONNXDATA")
-    client = TestClient(create_app(run_dir))
+    client = TestClient(create_app(play_dir))
     r = client.get("/models/model_1.onnx")
     assert r.status_code == 200
     assert r.headers["cross-origin-opener-policy"] == "same-origin"

@@ -22,19 +22,23 @@ mimetypes.add_type("application/wasm", ".wasm")
 
 _PLACEHOLDER = (
     "<!doctype html><title>Quoridor</title>"
-    "<p>SPA build not found. Build the frontend (Plan 3) and start the server "
+    "<p>SPA build not found. Build the frontend and start the server "
     "with --static-dir pointing at the build output.</p>"
 )
 
 
 def create_app(
-    run_dir: Path,
+    play_dir: Path,
     static_dir: Optional[Path] = None,
     models_dir: Optional[Path] = None,
 ) -> FastAPI:
-    run_dir = Path(run_dir)
-    config_file = run_dir / "config.yaml"
-    models_dir = Path(models_dir) if models_dir is not None else run_dir / "models" / "checkpoints"
+    """`play_dir` is a directory containing `config.yaml` and a `models/`
+    subdirectory of `.onnx` files. Every model uses the settings in
+    `config.yaml` (served via /api/config); the models are just a pickable list.
+    """
+    play_dir = Path(play_dir)
+    config_file = play_dir / "config.yaml"
+    models_dir = Path(models_dir) if models_dir is not None else play_dir / "models"
 
     app = FastAPI(title="Quoridor play server")
 
