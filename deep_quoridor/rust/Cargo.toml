@@ -36,10 +36,10 @@ pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 numpy = { version = "0.22", optional = true }
 ndarray = "0.16"
 rand = "0.8"
-dashmap = "6"
-rayon = "1.10"
-arrow = "53"
-parquet = { version = "53", default-features = false, features = ["arrow", "zstd"] }
+dashmap = { version = "6", optional = true }
+rayon = { version = "1.10", optional = true }
+arrow = { version = "53", optional = true }
+parquet = { version = "53", default-features = false, features = ["arrow", "zstd"], optional = true }
 serde = { version = "1", features = ["derive"] }
 clap = { version = "4.5", features = ["derive"], optional = true }
 # Pinned exactly: ort is pre-release and makes breaking API changes between
@@ -53,16 +53,18 @@ serde_json = { version = "1", optional = true }
 tiny_http = { version = "0.12", optional = true }
 ndarray-npy = { version = "0.9", optional = true }
 zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
-rand_distr = { version = "0.4", optional = true }
+rand_distr = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"], optional = true }
 futures = { version = "0.3", optional = true }
 smallvec = "1.13"
 
 [features]
 default = ["python"]
-python = ["pyo3", "numpy"]
-binary = ["clap", "ort", "serde_yaml", "serde_json", "ndarray-npy", "zip", "rand_distr", "tokio", "futures", "tiny_http"]
+python = ["pyo3", "numpy", "policy_db", "parallel"]
+binary = ["clap", "ort", "serde_yaml", "serde_json", "ndarray-npy", "zip", "tokio", "futures", "tiny_http", "policy_db", "parallel"]
 gpu = ["binary", "ort/cuda", "ort/load-dynamic"]
+policy_db = ["dep:arrow", "dep:parquet", "dep:dashmap"]
+parallel = ["dep:rayon", "dep:dashmap"]
 
 [dev-dependencies]
 tempfile = "3"
@@ -78,3 +80,9 @@ serde_json = "1"
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[workspace]
+members = ["quoridor-wasm"]
+# `cargo build`/`cargo test` at the root operate on quoridor-rs only; the wasm
+# crate is built explicitly via wasm-pack (it targets wasm32).
+default-members = ["."]

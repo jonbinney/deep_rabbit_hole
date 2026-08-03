@@ -195,3 +195,9 @@ Cargo.lock
 
 # Mac crap
 .DS_Store
+
+# Superpowers brainstorm companion scratch files
+.superpowers/
+
+# The broad Python lib/ pattern above must not swallow the frontend source dir.
+!deep_quoridor/frontend/src/lib/
