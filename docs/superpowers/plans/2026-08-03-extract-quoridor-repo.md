@@ -94,6 +94,11 @@ GPU passthrough needs NVIDIA Container Toolkit on the host, which cannot be chec
 
 If **no**, continue anyway — build the container without `runArgs`, and Task 10's training leg falls back to Julian running it on the host. Note the decision in the results doc.
 
+**Answered 2026-08-03: yes.** `docker run --rm --gpus all ubuntu nvidia-smi` on the host
+returned an NVIDIA GeForce RTX 3050 Laptop GPU, driver 560.35.03, CUDA 12.6. Include
+`runArgs`. Note the card has **4 GB VRAM** with ~137 MB already used by the display — see
+the note in Task 10 Step 2.
+
 - [ ] **Step 3: Write the post-create script**
 
 The existing `.venv` is a dead artifact from another machine (`pyvenv.cfg` points at `/home/julian/aaae/...`, built `--without-pip`). Delete and rebuild it.
@@ -934,6 +939,12 @@ If Task 2 reported `cuda: True`:
 cd /workspaces/lll_alpha_quoridor
 PYTHONPATH=src /workspaces/deep_rabbit_hole/.venv/bin/python src/train_v2.py /tmp/gate-run.yaml 2>&1 | tee /tmp/gate-run.log
 ```
+
+**VRAM watch.** The card is a 4 GB RTX 3050 Laptop with the display already on it. The
+network is tiny, so `batch_size: 2048` is not the concern — four self-play processes each
+holding a CUDA context is. On `CUDA out of memory`, drop `self_play.num_processes` to 2,
+then 1, and record the value that worked. A smaller process count still satisfies the gate:
+the claim is that the machinery turns, not that it trains fast.
 
 If Task 2 reported `cuda: False`, **stop and hand off**:
 
