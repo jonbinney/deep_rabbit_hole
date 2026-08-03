@@ -44,6 +44,13 @@ they move as-is with their path prefixes stripped.
 filter would have left them behind. Copying rather than filtering history handles this for
 free.
 
+**Both requirements files are wrong in three ways.** `networkx` (used by
+`src/agents/alphazero/mcts_gexf.py`) and `absl-py` (used by `src/osaz/*`) are imported but
+listed in neither file, while `tensorflow` is listed in both and imported nowhere. CI passes
+today because it never exercises those code paths, so these are pre-existing latent bugs
+rather than move regressions — they belong in PR #1's requirements cleanup, not the initial
+commit.
+
 **The dev environment is currently broken.** `.venv/pyvenv.cfg` points at
 `/home/julian/aaae/...` — a different machine — and was built `--without-pip`; its `python`
 symlink now resolves to system 3.14.4 rather than the 3.12 it was created with, and
@@ -83,6 +90,7 @@ owner may move later, so nothing hardcodes `adamantivm`.
 
 ```
 .github/workflows/{python-app,rust-ci}.yml   from root, path prefixes stripped
+.github/prompts/selfplay_rust_python_debugging.md   from root, quoridor-specific
 .devcontainer/                                extended: Rust, wasm-pack, maturin, gh, GPU
 .gitignore                                    derived subset
 AGENTS.md  CLAUDE.md  pytest.ini  ruff.toml   from root
@@ -116,7 +124,7 @@ mlflow/ wandb*/`, and the six unrelated project directories.
 
 ### Required changes
 
-"Verbatim" cannot be literal. These five are the complete set of edits in the initial commit:
+"Verbatim" cannot be literal. These six are the complete set of edits in the initial commit:
 
 1. **CI workflow paths.** Both workflows hardcode `deep_quoridor/` in `paths:` filters,
    `cache-dependency-path`, `PYTHONPATH`, and `working-directory`. Strip the prefix. No
@@ -129,6 +137,24 @@ mlflow/ wandb*/`, and the six unrelated project directories.
 4. **Devcontainer.** Rust toolchain, `wasm-pack`, `maturin`, `gh`, Python 3.12 with a real
    venv, and GPU passthrough (see below). Without this there is no way to run the gate.
 5. **Stale `deep_quoridor/` prefixes** in `AGENTS.md` and `frontend/README.md`.
+6. **Hardcoded `deep_quoridor/` paths in code.** Two of these are functional breaks, not
+   prose:
+   - `src/v2/ai_report.py` — line 450 computes `repo_root` by walking four parents
+     (`v2 → src → deep_quoridor → repo root`), which lands one level too high in the new
+     layout, and lines 355–358 and 413 then join a `deep_quoridor/` prefix that no longer
+     exists. Fix: three parents, and drop the prefix from all five paths.
+   - `scripts/bench_rust_selfplay.sh` — `BIN="deep_quoridor/rust/target/release/selfplay"`
+     (line 10) and `cd deep_quoridor/rust` (line 13), both resolved from the repo root.
+
+   Cosmetic but user-facing, fixed in the same commit: the build hint in
+   `src/v2/config.py:412`, the `.expect("rust crate should live under deep_quoridor/")`
+   messages in `rust/src/python_consistency.rs` (the surrounding logic is relative and
+   survives the move), and docstrings in `src/ai_report_cli.py`,
+   `src/run_benchmarks_v2.py`, `src/v2/wandb_metrics.py`, `src/v2/play_server_web/README.md`,
+   `rust/README.md`, and `rust/RUST_FOR_PYTHONISTAS.md`.
+
+   Left alone: `src/osaz/logs/*.md`, which are historical tracebacks containing absolute
+   paths from Julian's old machine. They are a record of what happened, not instructions.
 
 ### Devcontainer
 
@@ -215,7 +241,8 @@ its own, so a load-bearing one reverts cleanly without taking the README or work
 4. **Prune dead code** — the `*_reference.py` scripts (`mcts_game_reference.py`,
    `step_trace_reference.py`, `selfplay_real_model_reference.py`) and unused `train_*.py`
    variants. Each checked for live references first.
-5. **Clean `requirements.txt`** — drop what is not used.
+5. **Fix the requirements files** — add the missing `networkx` and `absl-py`, drop the
+   unused `tensorflow`, and review the remainder for anything else unused.
 
 ## Deliverable 4: cleanup PR on deep_rabbit_hole
 
