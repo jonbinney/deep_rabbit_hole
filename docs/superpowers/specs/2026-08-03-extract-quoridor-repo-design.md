@@ -12,6 +12,13 @@ build, and play exactly as the current one does before any cleanup happens.
 This is the first of two projects. The second — publishing the frontend as a static GitHub
 Pages site with no server dependency — gets its own spec once this lands.
 
+## Working conventions
+
+Nothing lands directly on `main` in `deep_rabbit_hole`. All work — specs, plans,
+devcontainer configs, code — goes onto a feature branch and reaches `main` through a pull
+request, so Julian's colleagues can review and approve it. This spec and the devcontainer
+are on `jac/extract-quoridor-repo`.
+
 ## Non-goals
 
 - Static-ifying the frontend or deploying to Pages. That is project 2.
@@ -95,8 +102,11 @@ The tracked Rust fixtures (`rust/fixtures/alphazero_B5W2_mv1.{onnx,pt}`, 412 KB 
 along. They are the only model in git and the only thing the new repo can demo itself with
 before a training run produces one.
 
-`.devcontainer/` is currently untracked in `deep_rabbit_hole` and moves to the new repo,
-where it gets committed. It stays untracked in `deep_rabbit_hole`.
+`.devcontainer/` is committed to `deep_rabbit_hole` on `jac/extract-quoridor-repo` so it is
+reviewable there, and copied into the new repo. The cleanup PR keeps it in
+`deep_rabbit_hole` with the quoridor-specific tooling (Rust, `wasm-pack`, `maturin`)
+stripped out — GPU passthrough, Python 3.12, node and `gh` stay useful for the other ML
+projects that remain.
 
 ### Excluded
 
@@ -213,7 +223,8 @@ Only after the new repo is verified green.
 
 Remove `deep_quoridor/`, `docs/superpowers/`, `.github/workflows/{python-app,rust-ci}.yml`,
 and `experiments/2026_05_23_jon_b9w10_performance/`. Rewrite the root `README.md` with a
-pointer to `adamantivm/lll_alpha_quoridor`.
+pointer to `adamantivm/lll_alpha_quoridor`. Strip the quoridor-specific tooling from
+`.devcontainer/` but leave the container itself in place.
 
 Julian gives Jon, Alejandro, Diego, and Nick a heads-up before merging — between them they
 authored 470 of the 937 commits.
