@@ -1,7 +1,16 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/rust:1": {
+      "profile": "default"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/nvidia-cuda:1": {
+      "installCudnn": true
+    },
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
-  }
+  },
+  "runArgs": ["--gpus", "all"],
+  "postCreateCommand": ".devcontainer/post-create.sh"
 }
