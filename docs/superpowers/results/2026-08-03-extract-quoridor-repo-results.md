@@ -179,11 +179,13 @@ execution, not before:
   a winner. Confirmed working directly by playing it, not just by serving
   the routes.
 - **CI on the new repo**: both GitHub Actions workflows (Python application,
-  Rust CI) ran green via `workflow_dispatch` on `main` before any PR
-  existed, and green again via the `improvements` branch's pull request —
-  the latter being the first real exercise of the workflows' `paths:`
-  filters, which only evaluate against an actual base commit to diff
-  against.
+  Rust CI) were separately confirmed green via `workflow_dispatch` on `main`
+  before any PR existed. The `improvements` branch's pull request exercised
+  only the *Python application* workflow — it ran and went green, the first
+  real exercise of its `paths:` filter against an actual base commit. Rust
+  CI's `paths:` filter (`rust/**`, `src/action_reference.py`) correctly did
+  not fire on that PR, since it touches no Rust files; that filter has not
+  been exercised by a PR that does.
 
 ## What was pruned, and what was deliberately kept
 
@@ -246,9 +248,16 @@ same move (all superseded by, or specific to, the extracted project).
 
 The devcontainer was trimmed rather than removed, since it still serves this
 repo's other ML projects: the Rust feature and its wasm-pack/pkg-config/
-libssl-dev provisioning were dropped (nothing left in this repo needs them),
-while the Python 3.12 base, Node, GitHub CLI, CUDA feature and GPU
-passthrough (`--gpus all`) were kept. The provisioning script's earlier fix
+libssl-dev provisioning were dropped, while the Python 3.12 base, Node,
+GitHub CLI, CUDA feature and GPU passthrough (`--gpus all`) were kept. This
+is not because nothing left in the repo touches Rust — `experiments/onnx/rs/`
+is a tracked Cargo project, and its `run_quoridor.sh` runs `cargo build` —
+but because that remaining usage is incidental and not part of any verified
+workflow here, unlike the Quoridor project's Rust code, which this move
+removed along with its CI gate. The feature was dropped deliberately on that
+basis; anyone picking up `experiments/onnx/rs/` will need to reinstall a
+Rust toolchain (and pkg-config/libssl-dev, if it also pulls in `openssl-sys`
+transitively) themselves. The provisioning script's earlier fix
 — never deleting the live host `.venv`, only creating it if absent, and
 driving pip through `.venv/bin/python -m pip` rather than the venv's console
 scripts — was preserved as-is. The script's final `pip install -r
@@ -261,11 +270,21 @@ sensible default for a shared devcontainer venv.
 A handful of now-dangling references to the removed tree were also found and
 fixed, beyond the plan's own file list: this repo's root `CLAUDE.md`
 consisted solely of an import of `deep_quoridor/agents.md`, which no longer
-exists, and is now empty; `AGENTS.md` carried a Rust-specific rule scoped to
-`deep_quoridor/rust`, now removed; and `.vscode/settings.json` pointed
-`rust-analyzer.linkedProjects` at `deep_quoridor/rust/Cargo.toml`, now
-removed. A final grep for `deep_quoridor` across tracked source, config and
-doc files turned up only the intentional pointer in this repo's `README.md`.
+exists, so the file was deleted rather than left as an empty tracked file;
+`AGENTS.md` carried a Rust-specific rule scoped to `deep_quoridor/rust`, now
+removed; and `.vscode/settings.json` pointed `rust-analyzer.linkedProjects`
+at `deep_quoridor/rust/Cargo.toml`, now removed. A final grep for
+`deep_quoridor` across tracked source, config and doc files also turned up
+two dead `.vscode/launch.json` debug configurations ("Train AlphaZero",
+"PyTest Deep Quoridor") and three stale `.gitignore` lines (two script
+ignores under `deep_quoridor/`, one negation exempting a frontend `lib/`
+dir); these were missed in the pass that cleaned up `.vscode/settings.json`
+and have now been removed the same way. After that cleanup, the only
+`deep_quoridor` references left in tracked files are the intentional pointer
+in this repo's `README.md` and this results document's own prose describing
+the move. `.env` still carries a stale `deep_quoridor/src` entry in its
+`PYTHONPATH` line, but `.env` is untracked by intent (it also holds
+credentials) and editing it is out of scope here; it was left alone.
 
 Two nested `.gitignore` files inside `deep_quoridor/` (`frontend/.gitignore`,
 covering `node_modules` and `dist`; `rust/quoridor-wasm/.gitignore`, covering
