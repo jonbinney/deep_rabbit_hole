@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-# Provisions the toolchain the quoridor work needs. Run by devcontainer.json's
-# postCreateCommand, and safe to re-run by hand against a live container.
+# Provisions the toolchain the ML projects in this repo need. Run by
+# devcontainer.json's postCreateCommand, and safe to re-run by hand against a
+# live container.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> apt packages"
 sudo apt-get update -qq
-# pkg-config and libssl-dev: needed to build openssl-sys, pulled in via
-# ort -> ureq -> native-tls when building the rust crate's `binary` feature.
-sudo apt-get install -y -qq python3.12 python3.12-venv python3-pip pkg-config libssl-dev
-
-echo "==> wasm-pack"
-command -v wasm-pack >/dev/null || \
-  curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+sudo apt-get install -y -qq python3.12 python3.12-venv python3-pip
 
 echo "==> python venv (3.12)"
 # This workspace is bind-mounted from the host, so .venv is the host's own
@@ -41,10 +36,9 @@ if [ -x "$REPO_ROOT/.venv/bin/pip" ]; then
 fi
 "$REPO_ROOT/.venv/bin/python" -m pip install --upgrade pip
 
-echo "==> python requirements"
-# Full requirements (not ci_requirements) -- the latter pins torch==2.9.1+cpu
-# and so cannot support GPU training. maturin is listed there, so it lands in
-# the venv rather than needing a separate install.
-"$REPO_ROOT/.venv/bin/python" -m pip install -r "$REPO_ROOT/deep_quoridor/requirements.txt"
+# No single requirements.txt covers this repo -- each project under it
+# (object_tracker_0/, annotation_utils/, deep_water_level/, camera_control/,
+# pytorch_exercises/) has its own. Install per-project as needed rather than
+# pinning this shared venv to one of them.
 
 echo "==> done"

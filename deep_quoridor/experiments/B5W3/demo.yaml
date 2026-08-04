@@ -1,8 +1,0 @@
-extend: base.yaml
-run_id: demo-$DATETIME
-
-alphazero:
-  mcts_n: 200
-
-training:
-  batch_size: 16
