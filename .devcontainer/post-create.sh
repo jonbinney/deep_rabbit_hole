@@ -7,7 +7,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> apt packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3.12 python3.12-venv python3-pip
+# pkg-config and libssl-dev: needed to build openssl-sys, pulled in via
+# ort -> ureq -> native-tls when building the rust crate's `binary` feature.
+sudo apt-get install -y -qq python3.12 python3.12-venv python3-pip pkg-config libssl-dev
 
 echo "==> wasm-pack"
 command -v wasm-pack >/dev/null || \
