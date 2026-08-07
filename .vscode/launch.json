@@ -2,19 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train AlphaZero",
-            "type": "debugpy",
-            "request": "launch",
-            "console": "integratedTerminal",
-            "program": "deep_quoridor/src/train.py",
-            "args": [
-                "-N", "3", "-W", "0", "-e", "1000", "-i", "43", "-p",
-                "alphazero:training_mode=true",
-                "-r", "arenaresults2", "computationtimes",
-            ],
-            "justMyCode": false
-        },
-        {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
@@ -214,18 +201,6 @@
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/annotation_description.txt",
                 "--narration_output_path",
                 "${workspaceFolder}/datasets/rabbits_2024_08_12_25_10min_div2/annotations/narration.txt",
-            ]
-        },
-        {
-            "name": "PyTest Deep Quoridor",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "pytest",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "args": [
-                "deep_quoridor",
-                "-s"
             ]
         }
     ],
